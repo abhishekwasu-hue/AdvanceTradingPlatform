@@ -221,11 +221,13 @@ test("option-chain", async ({ page }) => {
   await page.goto("/option-chain");
   await expect(page.locator("tr[data-atm]")).toBeVisible({ timeout: 15_000 });
   await page.waitForLoadState("networkidle");
-  // Hidden: the whole summary (prices, and the fixture's made-up PCR / IV), the strike and premium columns and every OI
-  // figure (the fixture's numbers). Shown: the chain's OI bars by side, the highest-OI marks and the ATM row.
+  // No real per-strike OI is stored for the as-of day, so every fixture value is hidden: the whole summary (prices, and
+  // the made-up PCR / IV), the strike and premium columns, every OI figure, its bar and the highest-OI mark. Shown: the
+  // chain's header, its Calls / Puts OI column titles and the ATM row.
   await capture(page, "option-chain", [
     "[data-block='chain-summary'] { display: none !important; }",
-    "[data-chain-scroll] td[data-col$='-oi'] > span.relative { visibility: hidden !important; }",
+    "[data-chain-scroll] td[data-col$='-oi'] > span { visibility: hidden !important; }",
+    "[data-chain-scroll] td[data-max-oi] { box-shadow: none !important; }",
     "[data-chain-scroll] [data-col$='-ltp'], [data-chain-scroll] tr > th[scope='row'], [data-chain-scroll] th[data-front-hide] { display: none !important; }",
   ].join("\n"), async () => {
     // The header cells of the hidden columns (they carry no data attribute of their own): marked here, hidden above.
@@ -317,10 +319,10 @@ test("journal", async ({ page }) => {
   await expect(page.locator("[data-block='journal-list']")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("tab", { name: "Week" }).click();
   await page.waitForLoadState("networkidle");
-  // On the Week tab: the discipline score card only (the cards after it would be cut by the crop), with its made-up
-  // figures hidden - the score, the decision count and each part's points (the part names and the card stay).
+  // On the Week tab: the discipline score card only (the cards after it would be cut by the crop), with every made-up
+  // value hidden - the score, the decision count, each part's points and its bar (the title and part names stay).
   await capture(page, "journal", ["[data-front-score] ~ * { visibility: hidden !important; }",
-    "div:has(> [data-score]) { display: none !important; } [data-component] .font-tabular { visibility: hidden !important; }"].join("\n"), async () => {
+    "div:has(> [data-score]) { display: none !important; } [data-component] .font-tabular, [data-component] > div[aria-hidden] { visibility: hidden !important; }"].join("\n"), async () => {
     await page.getByText("Discipline score").first().evaluate((el) => {
       const card = el.closest("section, [data-block], div.rounded-panel") ?? el;
       card.setAttribute("data-front-score", "");

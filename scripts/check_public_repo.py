@@ -132,8 +132,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "e64acfe2d5604b173a9939193ac2746ecaea09513c1ccdf155b8a857d1be76c9",
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "62f83981eed0910df2678d1f604a7dcb9c5b71cd63f9232470eec992294dca87",
     # M95: the front door's Journal image - the Week tab's discipline score card on the e2e journal fixture, every figure
-    # hidden (part names and bars only, no amount, no price); re-pin after regenerating it (frontend/scripts/front-images/)
-    "frontend/public/front/journal.png": "f558b0192d957b71d806b85819d2c3830c19db88ab375e4fad75bedeff0f6135",
+    # hidden (title and part names only, no amount, no price); re-pin after regenerating it (frontend/scripts/front-images/)
+    "frontend/public/front/journal.png": "fb1fc25f931c2c496d3317810bfdb6a4f60355ebe32c66f06eed99aa8a4b9924",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",

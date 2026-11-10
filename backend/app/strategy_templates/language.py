@@ -150,6 +150,19 @@ TOKENS: Dict[str, str] = {
                                       " {timeframe} chart"),
     "previous_day_high_rejected": ("the market was turned away from the previous day's high and the close went below the"
                                    " bar before on the {timeframe} chart"),
+    # M94 family H "Intraday" (H1-H5): structure words only - no price, no number, no instruction
+    "fallen_angel_broken_upward": ("after an open above the previous close, a fall from the session high and a tight base, the close"
+                                   " broke above the base on the {timeframe} chart"),
+    "fallen_angel_broken_downward": ("after an open below the previous close, a rise from the session low and a tight base, the"
+                                     " close broke below the base on the {timeframe} chart"),
+    "abcd_higher_low_turned_up": ("after a new session high the pullback held a higher low and the close turned up from it on the"
+                                  " {timeframe} chart"),
+    "abcd_lower_high_turned_down": ("after a new session low the rally held a lower high and the close turned down from it on the"
+                                    " {timeframe} chart"),
+    "session_flag_broken_upward": ("after a strong move up and a tight, shallow consolidation, the close broke above it to a new"
+                                   " session high on the {timeframe} chart"),
+    "session_flag_broken_downward": ("after a strong move down and a tight, shallow consolidation, the close broke below it to a new"
+                                     " session low on the {timeframe} chart"),
     # STRAT-X (owner decision 30 Oct): C6 previous-day high / low break and retest (a generic intraday template), B12
     # multi-week high breakout, D9 Weekly trend and Daily pullback - structure words only, no price, no number
     "previous_day_high_retest_held": ("the close broke above the previous day's high on the {timeframe} chart and the retest of that"

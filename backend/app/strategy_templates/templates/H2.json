@@ -1,0 +1,59 @@
+{
+  "schema": "atp.template/1",
+  "id": "H2",
+  "version": 1,
+  "name": "ABCD",
+  "family": "H",
+  "idea": "Within one session: a first leg makes a new session high (B), the pullback holds a higher low (C) above the session's low (A); the signal is the turn back up from C once C is a confirmed swing. The idea is wrong below C.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "vol_mult", "label": "Volume against the same time of day", "help": "The bar that makes the new session high (low for the downside): its volume against the same time of day in the previous sessions, at least this many times (0 means no volume condition).", "type": "float", "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "vwap", "label": "Close on the side of the session VWAP", "help": "The bar that makes the new session high closes above the session VWAP (below for the downside).", "type": "bool", "default": true},
+    {"key": "skip", "label": "Quiet minutes after the open", "help": "No new session high counts from a bar that starts in this many minutes from the session's open (0 means none).", "type": "int", "default": 0, "min": 0, "max": 240, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the session's earlier high the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "degree", "label": "Swing size", "help": "Which swings count as the high and the higher low: 0 is the smallest, 3 the largest. A swing is known only once price has come back from it.", "type": "int", "default": 0, "min": 0, "max": 3, "step": 1},
+    {"key": "turn_n", "label": "The turn (bars)", "help": "The turn: the close goes above the highest high (below the lowest low for the downside) of this many bars before it.", "type": "int", "default": 1, "min": 1, "max": 100, "step": 1},
+    {"key": "expiry", "label": "Turn within (bars)", "help": "The turn must come within this many bars after the new session high, in the same session.", "type": "int", "default": 12, "min": 1, "max": 200, "step": 1},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range the distances and buffers are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "buf", "label": "Buffer", "help": "How many average true ranges beyond the higher low (0 means not set: the higher low itself).", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "step": 0.1},
+    {"key": "exit_n", "label": "A new low against (bars)", "help": "For the template's exit signal: a close beyond the low (high for the downside) of this many bars before it.", "type": "int", "default": 1, "min": 1, "max": 100, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "long",
+  "setup": {
+    "kind": "event",
+    "long": "DayExtremeBreak(\"up\", $vol_mult, $vwap, $skip, $k)",
+    "short": "DayExtremeBreak(\"down\", $vol_mult, $vwap, $skip, $k)",
+    "expiry_bars": "$expiry",
+    "same_bar": false,
+    "session_bound": true
+  },
+  "trigger": {
+    "long": "SwingDirection($degree) == \"UP\" AND SwingHigh($degree) >= SessionHigh()[1] AND SwingLow($degree) > SessionLow() AND close > SwingLow($degree) AND close > Max(high, $turn_n)[1]",
+    "short": "SwingDirection($degree) == \"DOWN\" AND SwingLow($degree) <= SessionLow()[1] AND SwingHigh($degree) < SessionHigh() AND close < SwingHigh($degree) AND close < Min(low, $turn_n)[1]"
+  },
+  "invalidation": {
+    "long": "SwingLow($degree) - $buf * ATR($atr_n)[1]",
+    "short": "SwingHigh($degree) + $buf * ATR($atr_n)[1]"
+  },
+  "exit_signal": {
+    "long": "close < Min(low, $exit_n)[1]",
+    "short": "close > Max(high, $exit_n)[1]"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "abcd_higher_low_turned_up"
+      }
+    ],
+    "short": [
+      {
+        "token": "abcd_lower_high_turned_down"
+      }
+    ]
+  }
+}

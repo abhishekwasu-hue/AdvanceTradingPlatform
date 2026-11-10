@@ -62,6 +62,33 @@ describe("M64 Settings › Risk limits model", () => {
   });
 });
 
+describe("M94 R3 Profit give-back stop row", () => {
+  const GIVEBACK: RiskLimitsView = { ...VIEW, checks: [...VIEW.checks,
+    { id: "profit_giveback", label: "Profit give-back stop", group: "main", enabled: false, saved: false,
+      help: "Once today's profit falls back this share from its peak, no new entry for the rest of today. Exits always work.",
+      fields: [{ key: "giveback_pct", label: "Of today's peak profit", unit: "%", min: 0, max: 100, whole: false, optional: false, value: null, min_open: true }] }] };
+
+  it("starts off and Not set, and needs his own % to switch on", () => {
+    const draft = draftOf(GIVEBACK);
+    expect(draft.checks.profit_giveback).toEqual({ enabled: false, values: { giveback_pct: "" } });
+    expect(bodyOf(GIVEBACK, draft).body?.checks).toEqual({});                 // off by default sends nothing
+    draft.checks.profit_giveback.enabled = true;
+    expect(bodyOf(GIVEBACK, draft).problem).toBe("Profit give-back stop: enter a value to switch it on.");
+    draft.checks.profit_giveback.values.giveback_pct = "0";
+    expect(bodyOf(GIVEBACK, draft).problem).toBe("Profit give-back stop: of today's peak profit must be more than 0 and at most 100.");
+    draft.checks.profit_giveback.values.giveback_pct = "120";
+    expect(bodyOf(GIVEBACK, draft).problem).toBe("Profit give-back stop: of today's peak profit must be more than 0 and at most 100.");
+    draft.checks.profit_giveback.values.giveback_pct = "30";
+    expect(bodyOf(GIVEBACK, draft).body?.checks).toEqual({ profit_giveback: { enabled: true, values: { giveback_pct: 30 } } });
+  });
+
+  it("says its value in words and that it holds back new entries only", () => {
+    const on = { ...GIVEBACK.checks[2], enabled: true, saved: true, fields: [{ ...GIVEBACK.checks[2].fields[0], value: 30 }] };
+    expect(valueWords(on)).toBe("30%");
+    expect(on.help).toMatch(/no new entry for the rest of today\. Exits always work\.$/);
+  });
+});
+
 describe("M64 RM-3 block message", () => {
   const block: RiskBlock = { check: "max_lots_per_order", text: "Max lots per order is 5 - this order is 8 lots. Place 5 lots?", admin: false,
     link: "/settings/risk-limits#max_lots_per_order", link_text: "Change limit", smaller_lots: 5 };

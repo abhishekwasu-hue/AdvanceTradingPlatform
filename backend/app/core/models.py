@@ -153,6 +153,9 @@ class RiskConfig(BaseModel):
     # skips a NEW automated entry against an open position of another bot; exits are never affected. M68 PR-5 (TS1-052,
     # owner decision D3, provisional M68Q-3): None = Not set = allowed - only a saved "deny" holds an entry back.
     opposite_positions: Literal["allow", "deny"] | None = None
+    # M94 R3 (app/risk_engine/giveback.py): the profit give-back stop - once today's P&L falls back this % of its peak
+    # profit, no new entry for the rest of the trading day. None = not set (off); exits are never checked (ADR-0004).
+    giveback_pct: float | None = None
 
     def with_capital(self, balance: Optional[float]) -> "RiskConfig":
         """DEF-0 D1: the trader's own capital when set, else `balance` (the PAPER account balance) - never a built-in

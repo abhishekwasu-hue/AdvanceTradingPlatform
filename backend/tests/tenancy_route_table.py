@@ -901,6 +901,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/risk-settings/limits"): "member",
     ("PUT", "/api/risk-settings/limits"): "trader",
     ("POST", "/api/risk-settings/loss-streak/resume"): "trader",
+    ("POST", "/api/risk-settings/size-calculator"): "self: M94 R1 position-size calculator - sizes the typed values only; reads no settings, stores nothing",
     ("POST", "/api/risk/evaluate"): S_COMPUTE,
     ("GET", "/api/risk/events"): "member",
     ("GET", "/api/risk/limits"): "member",

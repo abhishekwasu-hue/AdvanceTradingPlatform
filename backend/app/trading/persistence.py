@@ -129,24 +129,34 @@ async def build_trading_day_state(session: AsyncSession, user: User, *, now: Opt
     open_positions = await session.scalar(
         select(one_each).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
     )
-    # P0.5 / T6: open positions count at their last mark, so a day going wrong while positions are still open
-    # reaches the daily-loss limit before the exits realise it.
-    unrealised = await open_unrealised_pnl(session, tenant_id)
     trades_today = await session.scalar(
         select(one_each).where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start, not_a_split())
     )
-    daily_pnl = await session.scalar(
-        select(func.coalesce(func.sum(TradeRecord.pnl), 0.0))
-        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time >= today_start)
-    )
+    daily_pnl = await day_pnl(session, tenant_id, now=now)
 
     streak = await loss_streak_count(session, tenant_id, now=now)
+    # M94 R3: today's peak profit and whether the trader's own give-back stop holds (None: the check is off).
+    from app.risk_engine import giveback
+    peak = await giveback.state_for(session, tenant_id, daily_pnl, now=now)
 
     return TradingDayState(
-        trades_today=trades_today or 0, daily_pnl=float(daily_pnl or 0.0) + unrealised,
+        trades_today=trades_today or 0, daily_pnl=daily_pnl,
         consecutive_losses=streak["losses_in_a_row"], open_positions=open_positions or 0,
         last_loss_at=streak.get("last_loss_at"), as_of=now or datetime.now(UTC),
+        day_peak_pnl=peak.peak if peak is not None else None, giveback_reached=peak.hit if peak is not None else False,
     )
+
+
+async def day_pnl(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None) -> float:
+    """Today's P&L as the risk engine counts it: closed today (the Indian trading day) + open today at its last mark
+    (P0.5 / T6: a day going wrong while positions are still open reaches the daily-loss limit before the exits realise
+    it). The daily loss limit and the M94 R3 give-back stop read this one value."""
+    unrealised = await open_unrealised_pnl(session, tenant_id)
+    closed = await session.scalar(
+        select(func.coalesce(func.sum(TradeRecord.pnl), 0.0))
+        .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time >= trading_day_start(now))
+    )
+    return float(closed or 0.0) + unrealised
 
 
 async def _pause_settings(session: AsyncSession, tenant_id: int) -> Tuple[str, Optional[datetime], Optional[int]]:

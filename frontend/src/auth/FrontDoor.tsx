@@ -131,11 +131,11 @@ export function FrontDoorDetails({ t, googleOn, brokers, videoUrl }: {
       <IntroVideo t={t} url={videoUrl} />
       <section aria-labelledby="front-benefits">
         <h2 id="front-benefits" className="text-t15 font-semibold text-fg">{t.benefitsTitle}</h2>
-        <ul className="mt-space-3 grid grid-cols-1 gap-space-3 sm:grid-cols-2">
+        <ul className="mt-space-3 grid grid-cols-2 gap-space-3">
           {BENEFITS.map((b) => (
-            <li key={b.slug} data-front-benefit={b.slug} className="rounded-panel border border-subtle bg-surface-1 p-space-3 shadow-card">
+            <li key={b.slug} data-front-benefit={b.slug} className="rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-card sm:p-space-3">
               <BenefitImage slug={b.slug} alt={t.screenOf.replace("{title}", t[b.title])} />
-              <p className="mt-space-3 text-t15 font-semibold text-fg">{t[b.title]}</p>
+              <p className="mt-space-2 text-t14 font-semibold text-fg sm:mt-space-3 sm:text-t15">{t[b.title]}</p>
               <p className="mt-space-1 text-t14 text-fg-muted">{t[b.text]}</p>
             </li>
           ))}

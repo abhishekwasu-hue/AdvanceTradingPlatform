@@ -36,7 +36,7 @@ const when = (iso: string | null) => (iso ? `${formatDateIST(iso)} ${formatTimeI
 /** One request: the address, the status, the note, when it came (and who handled it); the two marks while it is new. */
 export function InviteRequestRow({ r, busy, onMark }: { r: InviteRequestItem; busy: boolean; onMark: (status: "invited" | "dismissed") => void }) {
   return (
-    <li data-invite-request-row={r.id} className="flex flex-wrap items-start justify-between gap-space-2 py-space-2">
+    <li data-invite-request-row={r.id} className="flex flex-col gap-space-2 py-space-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-space-2">
           <span className="break-all font-medium text-fg">{r.email}</span>

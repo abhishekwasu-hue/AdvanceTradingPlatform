@@ -15,6 +15,7 @@ import { openAdmin, type Theme } from "./adminMocks";
  *   `admin-controls-<limits|flags>-v2-{1440,390}-{light,dark}.png` (Risk limits; Feature flags folded by category).
  *   M72 PR-1b (1 Nov): `admin-controls-limits-v2-*` updated - the "Platform AI key" card (budgets per plan, daily cap per user).
  *   M72 PR-2: `admin-controls-limits-v2-*` updated - the "Copilot AI planner" limits card; "What Not set means" folded.
+ *   M95 PR-3: `admin-users-v2-*` updated - the "Invite requests" card after People.
  * Every reply is made up (e2e/adminMocks.ts). After an intended change:
  * `npx playwright test --project=phone e2e/admin-console-v2.e2e.ts --update-snapshots`.
  */

@@ -80,6 +80,11 @@
 #                                                  trade rows, AI scan-read order words, risk limits at 0, members per
 #                                                  organisation, strategy ids, ai_one_key, news rows, six flags. Counts
 #                                                  only; nothing written, nothing restarted
+#   /opt/atp/deploy/atp.sh guest-demo --as-of 2026-07-31
+#                                                  M95 PR-5: builds and stores the public "Look inside" snapshot of one
+#                                                  past market day (at least 90 days old; NIFTY 50 and BANK NIFTY from the
+#                                                  stored NSE daily files; prices shown only as distances). --dry-run
+#                                                  stores nothing. Turns no flag on; restarts nothing; no order.
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -3081,6 +3086,22 @@ cmd_review_checks() {
   esac
 }
 
+# M95 PR-5: the guest snapshot (backend app/guest_demo/build.py) in the running backend; reads the shared daily files
+# only, writes one platform_controls row. Exit 2 = refused (date too recent, no stored close, a price check failed).
+cmd_guest_demo() {
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ $# -ge 2 ] && [ "$1" = "--as-of" ] || die "usage: atp.sh guest-demo --as-of YYYY-MM-DD [--dry-run]" 2
+  if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would build the guest snapshot for %s\n' "$2"; return 0; fi
+  check_tools
+  local rc=0
+  dc exec -T backend python -m app.guest_demo.build "$@" || rc=$?
+  case "$rc" in
+    0) ok "guest snapshot stored (the lines above); it shows once the guest_demo flag is on" ;;
+    2) die "refused (the line above says why) - nothing was stored" 2 ;;
+    *) die "the build did not answer (is the backend running? $ATP_DIR/deploy/atp.sh health)" 1 ;;
+  esac
+}
+
 # DATA-H DH2: during a deploy, the backfill runs only when a window is missing (a new host, a new index, a stopped
 # run) and for at most 120 s; nothing missing -> it exits at once. Never fails the deploy (the worker's daily pass and
 # `lake-backfill` finish the rest).
@@ -3132,6 +3153,7 @@ main() {
     journal-status) cmd_journal_status "$@" ;;
     journal-backfill) cmd_journal_backfill "$@" ;;
     review-checks)  cmd_review_checks "$@" ;;
+    guest-demo)     cmd_guest_demo "$@" ;;
     runner-settings) cmd_runner_settings "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;

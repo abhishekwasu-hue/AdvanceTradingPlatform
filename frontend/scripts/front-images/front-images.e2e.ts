@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { madeUpBars } from "../../e2e/chartsMocks";
 import { REPORT } from "../../src/dailyReport/fixture";
 import { DEMO_LIST, DEMO_STATS, DEMO_WEEK } from "../../src/journal/journal.fixture";
 import { api, mockDashboard } from "../../e2e/dashboardMocks";
@@ -12,65 +11,31 @@ import { mockApi, type MockOptions } from "../../e2e/mockApi";
  * production build on a mocked API, as the e2e specs do) at a phone size, 360 x 450 at 2x (720 x 900), light theme.
  * Public images: index data only (NIFTY 50 / BANK NIFTY), as of a date at least three months old, and EVERY price
  * figure and price axis hidden (CSS added to the capture page only; the app is unchanged). No stock names, no amounts.
- * - FRONT_BARS=<json from prepare_bars.py>: the real index daily bars (kept outside the repository). Left out: the
- *   e2e made-up bars (e2e/chartsMocks.ts).
+ * - FRONT_BARS=<json from prepare_bars.py> (required): the real index daily bars, kept outside the repository, and the
+ *   Daily / Weekly structure the app's own reader (the daily report's) gives on them. No structure word comes from here.
  * - Writes raw PNGs and each screen's visible words to FRONT_RAW (default /tmp/front-raw); shrink.py makes the
  *   committed files public/front/<slug>.png.
  */
 const RAW = process.env.FRONT_RAW ?? "/tmp/front-raw";
 mkdirSync(RAW, { recursive: true });
 type Bar = { timestamp: string; open: number; high: number; low: number; close: number; volume: number };
-const STORE = process.env.FRONT_BARS ? JSON.parse(readFileSync(process.env.FRONT_BARS, "utf8")) as { asof: string; symbols: Record<string, Bar[]> } : null;
-/** The as-of day every screen shows: the stored bars' last day, else a fixed day over three months before the run. */
-const ASOF = STORE?.asof ?? "2026-07-31";
+if (!process.env.FRONT_BARS) throw new Error("FRONT_BARS=<the file prepare_bars.py wrote> is required");
+const STORE = JSON.parse(readFileSync(process.env.FRONT_BARS, "utf8")) as {
+  asof: string; symbols: Record<string, Bar[]>; structure: Record<string, { d: string; w: string }> };
+/** The as-of day every screen shows: the stored bars' last day. */
+const ASOF = STORE.asof;
 const AT = `${ASOF}T15:45:00+05:30`;
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 
-function bars(symbol: string): Bar[] {
-  const key = /BANK/.test(symbol) ? "NIFTY BANK" : "NIFTY 50";
-  if (STORE?.symbols[key]) return STORE.symbols[key];
-  return madeUpBars("day").map((b) => ({ ...b, volume: 0 }));
-}
+const key = (symbol: string) => (/BANK/.test(symbol) ? "NIFTY BANK" : "NIFTY 50");
+const bars = (symbol: string): Bar[] => STORE.symbols[key(symbol)];
 const last = (symbol: string) => bars(symbol).at(-1)!;
 const prev = (symbol: string) => bars(symbol).at(-2)!;
 const changePct = (symbol: string) => (last(symbol).close / prev(symbol).close - 1) * 100;
-
-/** Weekly bars (Monday-based) from the daily ones. */
-function weekly(list: Bar[]): Bar[] {
-  const out: Bar[] = [];
-  let key = "";
-  for (const b of list) {
-    const d = new Date(b.timestamp);
-    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - ((d.getUTCDay() + 6) % 7))).toISOString().slice(0, 10);
-    if (monday !== key) { out.push({ ...b }); key = monday; continue; }
-    const w = out[out.length - 1];
-    w.high = Math.max(w.high, b.high); w.low = Math.min(w.low, b.low); w.close = b.close;
-  }
-  return out;
-}
-
-/** The structure words the screens show, from the bars by one mechanical rule (not anyone's read): the last two swing
- * highs and lows (a bar higher / lower than the `k` bars each side) - higher high and higher low "up", lower high and
- * lower low "down", else "range"; a close beyond the last swing high / low after it counts as that side's next swing. */
-function structure(list: Bar[], k = 3): "up" | "down" | "range" {
-  const highs: number[] = [];
-  const lows: number[] = [];
-  for (let i = k; i < list.length - k; i++) {
-    const near = [...list.slice(i - k, i), ...list.slice(i + 1, i + k + 1)];
-    if (near.every((b) => b.high < list[i].high)) highs.push(list[i].high);
-    if (near.every((b) => b.low > list[i].low)) lows.push(list[i].low);
-  }
-  const close = list[list.length - 1].close;
-  if (highs.length && close > highs[highs.length - 1]) highs.push(close);
-  if (lows.length && close < lows[lows.length - 1]) lows.push(close);
-  if (highs.length < 2 || lows.length < 2) return "range";
-  const hh = highs[highs.length - 1] > highs[highs.length - 2];
-  const hl = lows[lows.length - 1] > lows[lows.length - 2];
-  return hh && hl ? "up" : !hh && !hl ? "down" : "range";
-}
-const dailyWord = (symbol: string) => structure(bars(symbol));
-const weeklyWord = (symbol: string) => structure(weekly(bars(symbol)), 2);
+/** The app reader's direction ("up", "up (weak)", "down", "down (weak)", "range", "none"), from prepare_bars.py. */
+const dailyWord = (symbol: string) => STORE.structure[key(symbol)].d;
+const weeklyWord = (symbol: string) => STORE.structure[key(symbol)].w;
 
 /** The capture page's own CSS: one font, no caret, no scroll bars, no animation. */
 const BASE_CSS = [
@@ -138,10 +103,10 @@ async function capture(page: Page, slug: string, hideCss: string, place?: () => 
   const words = await visibleText(page);
   writeFileSync(join(RAW, `${slug}.txt`), words.join("\n") + "\n");
   // M95-Q1 checks on the words on screen (the chart canvases are checked by eye): no amount, no price-like figure
-  // (a thousands separator or two decimals; the chain's OI counts are the one allowed use), no other name.
+  // (a thousands separator or two decimals that is not a %), no other name.
   const text = words.join(" ");
   expect(text, "no rupee amount").not.toMatch(/₹|\bRs\.?\s?\d/);
-  if (slug !== "option-chain") expect(text, "no price-like figure").not.toMatch(/\d,\d{3}|\d\.\d{2}\b(?!%)/);
+  expect(text, "no price-like figure").not.toMatch(/\d,\d{3}|\d\.\d{2}\b(?!%)/);
   expect(text, "only the two indices").not.toMatch(/STOCK\d|DEMO[A-D]\b|TEST[A-D]{3}|RELIANCE|SENSEX|VIX|FINNIFTY/i);
   await page.screenshot({ path: join(RAW, `${slug}.png`), animations: "disabled" });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -186,7 +151,8 @@ test("copilot", async ({ page }) => {
   await mockIndexNumbers(page);
   const fixture = CHAT.answers["Read the NIFTY chart"];
   const stamp = `${ASOF}T10:00:00+00:00`;
-  const word = (w: string) => (w === "range" ? "sideways" : w);
+  // The Copilot's own words for the reader's direction (its trend chip knows up / down / sideways).
+  const word = (w: string) => (w.startsWith("up") ? "up" : w.startsWith("down") ? "down" : "sideways");
   const daily = word(dailyWord("NIFTY 50"));
   const wk = word(weeklyWord("NIFTY 50"));
   const read = `On the daily chart the structure reads ${daily}; the weekly reads ${wk}.`;
@@ -255,20 +221,18 @@ test("option-chain", async ({ page }) => {
   await page.goto("/option-chain");
   await expect(page.locator("tr[data-atm]")).toBeVisible({ timeout: 15_000 });
   await page.waitForLoadState("networkidle");
-  await page.locator("[data-summary-more]").click();
-  // Hidden: every price card (spot, ATM strike, max pain, futures, OI walls), the strike and premium columns. Shown:
-  // PCR, ATM IV and OI by side (its bars and the highest-OI marks).
+  // Hidden: the whole summary (prices, and the fixture's made-up PCR / IV), the strike and premium columns and every OI
+  // figure (the fixture's numbers). Shown: the chain's OI bars by side, the highest-OI marks and the ATM row.
   await capture(page, "option-chain", [
-    "[data-summary='spot'], [data-summary='atm'], [data-summary='max-pain'], [data-summary='futures'], [data-summary='oi-walls'], [data-summary-more] { display: none !important; }",
-    // Days to expiry too, so PCR and IV share one row and the chain has the room.
-    "[data-summary='dte'] { display: none !important; }",
+    "[data-block='chain-summary'] { display: none !important; }",
+    "[data-chain-scroll] td[data-col$='-oi'] > span.relative { visibility: hidden !important; }",
     "[data-chain-scroll] [data-col$='-ltp'], [data-chain-scroll] tr > th[scope='row'], [data-chain-scroll] th[data-front-hide] { display: none !important; }",
   ].join("\n"), async () => {
     // The header cells of the hidden columns (they carry no data attribute of their own): marked here, hidden above.
     await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.forEach((e) => {
       if (/LTP|Strike/.test(e.textContent ?? "")) e.setAttribute("data-front-hide", "");
     }));
-    await toTop(page, "[data-block='chain-summary']");
+    await toTop(page, "[data-chain-notes]");
     // The chain's own scroll box ends inside the crop (its rows scroll there, as on a phone), not cut by the crop's edge.
     await page.locator("[data-chain-scroll]").evaluate((el) => {
       const box = el as HTMLElement;
@@ -313,9 +277,9 @@ test("trading-bot", async ({ page }) => {
   const base = { exchange: "NSE", broker_name: null, last_signal_at: null, last_error: null, consecutive_failures: 0, created_by: 7,
     created_at: stamp("09:00"), updated_at: stamp("09:00"), strike_offset: 0, premium_stop_pct: null, contract_rules: "", mode: "PAPER",
     instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", max_lots: 1, holding: "INTRADAY", pause_reason: null };
-  // Two paper bots on the two indices: one running with a position open, one waiting for its next signal.
+  // Two running paper bots on the two indices: states and words only (no position count; the signal time is hidden).
   const bots = [
-    { ...base, id: 52, strategy_id: "orb_15m_5m", symbol: "NIFTY 50", timeframe: "1min", status: "ACTIVE", last_evaluated_at: stamp("11:19"), last_signal_at: stamp("10:05"), open_positions: 1 },
+    { ...base, id: 52, strategy_id: "orb_15m_5m", symbol: "NIFTY 50", timeframe: "1min", status: "ACTIVE", last_evaluated_at: stamp("11:19"), open_positions: 0 },
     { ...base, id: 51, strategy_id: "vwap_supertrend_5m", symbol: "NIFTY BANK", timeframe: "1min", status: "ACTIVE", last_evaluated_at: stamp("11:19"), open_positions: 0 },
   ];
   await page.route(api("/strategies$"), (route) => route.fulfill({ json: S.strategies }));
@@ -327,7 +291,7 @@ test("trading-bot", async ({ page }) => {
   await page.goto("/deployments");
   await page.waitForLoadState("networkidle");
   await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
-  await capture(page, "trading-bot", "", () => toTop(page, "[data-block='bots']"));
+  await capture(page, "trading-bot", "[data-bot-signal] { display: none !important; }", () => toTop(page, "[data-block='bots']"));
 });
 
 test("journal", async ({ page }) => {
@@ -353,8 +317,10 @@ test("journal", async ({ page }) => {
   await expect(page.locator("[data-block='journal-list']")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("tab", { name: "Week" }).click();
   await page.waitForLoadState("networkidle");
-  // On the Week tab: the discipline score card only (the cards after it would be cut by the crop).
-  await capture(page, "journal", "[data-front-score] ~ * { visibility: hidden !important; }", async () => {
+  // On the Week tab: the discipline score card only (the cards after it would be cut by the crop), with its made-up
+  // figures hidden - the score, the decision count and each part's points (the part names and the card stay).
+  await capture(page, "journal", ["[data-front-score] ~ * { visibility: hidden !important; }",
+    "div:has(> [data-score]) { display: none !important; } [data-component] .font-tabular { visibility: hidden !important; }"].join("\n"), async () => {
     await page.getByText("Discipline score").first().evaluate((el) => {
       const card = el.closest("section, [data-block], div.rounded-panel") ?? el;
       card.setAttribute("data-front-score", "");
@@ -366,7 +332,8 @@ test("journal", async ({ page }) => {
 test("daily-report", async ({ page }) => {
   await prepare(page, { ui_v2: true, ai_copilot: true, shared_daily_report: true });
   await mockIndexNumbers(page);
-  const words: Record<string, string> = { up: "up", down: "down", range: "in a range" };
+  const words: Record<string, string> = { up: "up", "up (weak)": "up, weakening", down: "down", "down (weak)": "down, weakening",
+    range: "in a range", none: "not formed yet" };
   const indexRow = (symbol: string) => ({ ...REPORT.index[0], symbol, name: symbol, close: last(symbol).close, change_pct: changePct(symbol), read: null,
     structure_d: { direction: dailyWord(symbol), words: "", swing_high: null, swing_low: null },
     structure_w: { direction: weeklyWord(symbol), words: "", swing_high: null, swing_low: null } });

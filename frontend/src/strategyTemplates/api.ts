@@ -15,7 +15,16 @@ export interface StrategyTemplate {
   params: TemplateSetting[]; rules: string[]; available: boolean;
   /** The sentence a signal of this template says, per side, from the template's own data (null: none for that side). Absent from an older server. */
   reads?: { long: string | null; short: string | null };
+  /** M94 (flag intraday_pack): the defaults are reference values from a study - shown as REFERENCE_LABEL. Absent from an older server. */
+  reference_values?: boolean;
 }
+
+/** M94: the label of a template whose defaults are reference values (a label only: every value stays the user's own). */
+export const REFERENCE_LABEL = "Reference values - edit before use";
+
+/** M94 (flag intraday_pack): whether a template shows the reference-values label. */
+export const showsReferenceLabel = (t: Pick<StrategyTemplate, "reference_values">, intradayPackOn: boolean): boolean =>
+  intradayPackOn && t.reference_values === true;
 export interface TemplateAdoption {
   template_id: string; name: string; strategy_id: string;
   /** What the trading bot form takes over: the strategy, the candle timeframe and the holding. Always PAPER. */

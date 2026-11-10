@@ -296,7 +296,7 @@ def test_the_whole_bars_constraint_is_checked_by_the_schema_and_leaves_the_other
         with pytest.raises(ValueError):
             Template.model_validate(broken)
     for template in library.templates():
-        assert template.id == "B10" or all(c.op != "whole_bars" for c in template.constraints)
+        assert template.id in ("B10", "H6") or all(c.op != "whole_bars" for c in template.constraints)   # M94: H6's range
 
 
 _STRUCTURE = re.compile(r"(== -?1\b)|(\[1\])|([<>] 0\b)")

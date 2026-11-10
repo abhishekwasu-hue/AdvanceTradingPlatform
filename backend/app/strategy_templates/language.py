@@ -128,6 +128,28 @@ TOKENS: Dict[str, str] = {
                           " {timeframe} chart"),
     "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
                             " {timeframe} chart"),
+    # M94 family H "Intraday" (H6-H10): structure words only - no price, no number, no instruction
+    "opening_range_broken_upward": "the close broke above the session's opening range on the {timeframe} chart",
+    "opening_range_broken_downward": "the close broke below the session's opening range on the {timeframe} chart",
+    "close_above_session_vwap": "the close is above the session VWAP",
+    "close_below_session_vwap": "the close is below the session VWAP",
+    "opening_range_small": "the opening range is small against the Daily average true range",
+    "vwap_false_break_down": ("the close came back below the session VWAP after holding above it in the same session on the"
+                              " {timeframe} chart"),
+    "vwap_false_break_up": ("the close came back above the session VWAP after holding below it in the same session on the"
+                            " {timeframe} chart"),
+    "vwap_stretch_turned_up": ("after a stretch below the session VWAP the lows stopped falling and the close turned up through the"
+                               " fast average and the bar before on the {timeframe} chart"),
+    "vwap_stretch_turned_down": ("after a stretch above the session VWAP the highs stopped rising and the close turned down through"
+                                 " the fast average and the bar before on the {timeframe} chart"),
+    "vwap_trend_pullback_held_up": ("the close holds above the session VWAP and a pullback to the trend average closed back above"
+                                    " it on the {timeframe} chart"),
+    "vwap_trend_pullback_held_down": ("the close holds below the session VWAP and a rally to the trend average closed back below"
+                                      " it on the {timeframe} chart"),
+    "previous_day_low_held_support": ("the previous day's low held as support and the close went above the bar before on the"
+                                      " {timeframe} chart"),
+    "previous_day_high_rejected": ("the market was turned away from the previous day's high and the close went below the"
+                                   " bar before on the {timeframe} chart"),
     # STRAT-X (owner decision 30 Oct): C6 previous-day high / low break and retest (a generic intraday template), B12
     # multi-week high breakout, D9 Weekly trend and Daily pullback - structure words only, no price, no number
     "previous_day_high_retest_held": ("the close broke above the previous day's high on the {timeframe} chart and the retest of that"

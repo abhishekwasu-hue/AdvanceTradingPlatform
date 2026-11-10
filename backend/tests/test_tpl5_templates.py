@@ -37,6 +37,7 @@ from tests.test_tpl1_recipe_core import bars as marks
 
 NEW = ("C2", "D3", "E1", "E3", "E5")
 LATER = ("C6", "B12", "D9")        # STRAT-X templates (after step 5) may use the step-5 pieces; they are not "earlier"
+LATER += ("H6", "H7", "H8", "H9", "H10")   # M94 family H (Intraday) came later too
 T = {tid: library.get(tid) for tid in NEW}
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0

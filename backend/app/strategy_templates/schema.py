@@ -27,6 +27,12 @@ Family G version 2 (the wave templates' companions), still `atp.template/1` and 
 * `confirmations`: optional confirmations of the trigger, each a switch on its own enum setting whose DEFAULT choice is
   "no confirmation" (null). A chosen confirmation is AND-ed to the chosen trigger at compile time; with every one left at
   its default the trigger compiles to exactly its own expression, so the signals are those of the template without them.
+
+Family H "Intraday" (M94, docs/design/M94_INTRADAY_PACK.md F2 / F8), still `atp.template/1` and without changing any
+existing template: the family letter H (ids `H<n>`), listed only while the flag `intraday_pack` is on (routes.py
+FAMILY_FLAGS), and `reference_values`: the template's defaults are reference values from a study, shown with the label
+"Reference values - edit before use" (a label only: nothing is enforced; every value stays the user's own setting). A
+template that leaves it out (every A-G template) reads exactly as before.
 """
 from __future__ import annotations
 
@@ -255,10 +261,10 @@ def leaves(part: object) -> List[object]:
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-G][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-H][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F", "G"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G", "H"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -276,6 +282,8 @@ class Template(_Strict):
     signal_text: Union[SignalText, SignalTextSwitch]
     timeframes_by: Optional[TimeframesBy] = None            # TPL-7: the signal timeframes per choice (family F version 2)
     confirmations: Tuple[Confirmation, ...] = ()            # family G version 2: optional confirmations of the trigger
+    # M94 (F8): the defaults are reference values from a study - the picker / form label "Reference values - edit before use"
+    reference_values: StrictBool = False
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, populate_by_name=True)
 
@@ -357,6 +365,8 @@ class Template(_Strict):
             raise ValueError("without a trigger the setup event is the signal: kind event with same_bar true")
         if len({e.name for e in self.evidence}) != len(self.evidence):
             raise ValueError("evidence names must be unique")
+        if (self.family == "H") != self.id.startswith("H"):
+            raise ValueError("an Intraday (family H) template has an H id, and only it")
         return self
 
     @classmethod

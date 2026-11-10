@@ -1,0 +1,49 @@
+{
+  "schema": "atp.template/1",
+  "id": "H9",
+  "version": 1,
+  "name": "VWAP and moving-average trend",
+  "family": "H",
+  "idea": "Within one session, the market holds one side of the session VWAP and your exponential average acts as support (resistance); the signal is a pullback to the average that closes back on the trend side after it has held. The idea is wrong a buffer beyond the average.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "ma_n", "label": "Trend average", "help": "The bars of your exponential average. Reference: 9 or 20 (20 holds the stronger trends).", "type": "int", "default": 20, "min": 1, "max": 500, "step": 1},
+    {"key": "held_n", "label": "Average held for (bars)", "help": "The closes of this many bars, the signal bar included, are on the trend side of the average (1 means only the signal bar).", "type": "int", "default": 1, "min": 1, "max": 200, "step": 1},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range the distances and buffers are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "buf", "label": "Average buffer", "help": "How many average true ranges beyond the average the idea is wrong (0 means not set: the average itself).", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "close > SessionVWAP() AND low <= EMA(close, $ma_n) AND close > EMA(close, $ma_n) AND Count($held_n, close > EMA(close, $ma_n)) >= $held_n",
+    "short": "close < SessionVWAP() AND high >= EMA(close, $ma_n) AND close < EMA(close, $ma_n) AND Count($held_n, close < EMA(close, $ma_n)) >= $held_n",
+    "same_bar": true,
+    "session_bound": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "EMA(close, $ma_n) - $buf * ATR($atr_n)[1]",
+    "short": "EMA(close, $ma_n) + $buf * ATR($atr_n)[1]"
+  },
+  "exit_signal": {
+    "long": "close < EMA(close, $ma_n)",
+    "short": "close > EMA(close, $ma_n)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "vwap_trend_pullback_held_up"
+      }
+    ],
+    "short": [
+      {
+        "token": "vwap_trend_pullback_held_down"
+      }
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "schema": "atp.template/1",
+  "id": "H6",
+  "version": 1,
+  "name": "Opening range breakout",
+  "family": "H",
+  "idea": "Within one session, a signal on the first close beyond the high (or low) of the session's first minutes, with volume against the same time of day and the close on the same side of the session VWAP. The idea is wrong back through the other side of the range, its middle or VWAP, as you choose.",
+  "difficulty": "Beginner",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "minutes", "label": "Opening range (minutes)", "help": "The high and low of this many minutes from the session's open form the range. Reference: 5, 15 or 30. It must be a whole number of the chart's bars.", "type": "int", "default": 15, "min": 1, "max": 240, "step": 1},
+    {"key": "vol_mult", "label": "Volume against the same time of day", "help": "The breaking bar's volume against the same time of day in the previous sessions, at least this many times (0 means no volume condition).", "type": "float", "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "vwap", "label": "Close on the side of the session VWAP", "help": "The breaking close is above the session VWAP (below for the downside).", "type": "bool", "default": true},
+    {"key": "skip", "label": "Quiet minutes after the open", "help": "No signal from a bar that starts in this many minutes from the session's open (0 means none).", "type": "int", "default": 0, "min": 0, "max": 240, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the range the breaking close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "use_range_filter", "label": "Only a small opening range", "help": "Only when the opening range is small against the Daily average true range.", "type": "bool", "default": false},
+    {"key": "max_or_atr", "label": "Largest range against the Daily ATR", "help": "For 'only a small opening range': the range is at most this many Daily average true ranges. Reference: 1.", "type": "float", "default": 1.0, "min": 0.05, "max": 10.0, "step": 0.05},
+    {"key": "daily_atr_n", "label": "Daily ATR period", "help": "For 'only a small opening range': the Daily bars of the average true range.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The other side of the opening range, its middle, or the session VWAP.", "type": "enum", "default": "other_side", "choices": ["other_side", "mid_range", "vwap"], "choice_labels": ["The other side of the range", "The middle of the range", "The session VWAP"]},
+    {"key": "exit_n", "label": "A new low against (bars)", "help": "For the template's exit signal: a close beyond the low (high for the downside) of this many bars before it.", "type": "int", "default": 1, "min": 1, "max": 100, "step": 1}
+  ],
+  "constraints": [
+    {"left": "minutes", "op": "whole_bars", "right": "signal_timeframe", "message": "The opening range must be a whole number of the chart's bars (for example 15 or 30 minutes on the 15-minute chart)."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "long": "(ORHigh($minutes) - ORLow($minutes)) <= $max_or_atr * ATR($daily_atr_n)@1d",
+    "short": "(ORHigh($minutes) - ORLow($minutes)) <= $max_or_atr * ATR($daily_atr_n)@1d",
+    "enabled_by": "use_range_filter"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "ORBreakout(\"up\", $minutes, $vol_mult, $vwap, $skip, $k)",
+    "short": "ORBreakout(\"down\", $minutes, $vol_mult, $vwap, $skip, $k)",
+    "same_bar": true,
+    "session_bound": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "other_side": {
+        "long": "ORLow($minutes)",
+        "short": "ORHigh($minutes)"
+      },
+      "mid_range": {
+        "long": "(ORHigh($minutes) + ORLow($minutes)) / 2",
+        "short": "(ORHigh($minutes) + ORLow($minutes)) / 2"
+      },
+      "vwap": {
+        "long": "SessionVWAP()",
+        "short": "SessionVWAP()"
+      }
+    }
+  },
+  "exit_signal": {
+    "long": "close < Min(low, $exit_n)[1]",
+    "short": "close > Max(high, $exit_n)[1]"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "opening_range_broken_upward"
+      },
+      {
+        "token": "close_above_session_vwap",
+        "when": "vwap"
+      },
+      {
+        "token": "opening_range_small",
+        "when": "use_range_filter"
+      }
+    ],
+    "short": [
+      {
+        "token": "opening_range_broken_downward"
+      },
+      {
+        "token": "close_below_session_vwap",
+        "when": "vwap"
+      },
+      {
+        "token": "opening_range_small",
+        "when": "use_range_filter"
+      }
+    ]
+  }
+}

@@ -8,7 +8,8 @@ import { Chip, FilterChip } from "../ui/Chip";
 import { formatNumber } from "../ui/format";
 import { LibraryFold, SettingList } from "../ui/LibraryChips";
 import type { SettingRow } from "../ui/strategyLabels";
-import { templatesApi, type StrategyTemplate } from "./api";
+import { useFeatures } from "../ui/useFeatures";
+import { REFERENCE_LABEL, showsReferenceLabel, templatesApi, type StrategyTemplate } from "./api";
 import { paperBotPathFor, testPathFor } from "./link";
 
 /**
@@ -23,12 +24,18 @@ export default function TemplateLibrarySection() {
   const [templates, setTemplates] = useState<StrategyTemplate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [family, setFamily] = useState<string>(ALL);
+  const intradayPackOn = useFeatures().on("intraday_pack");
 
   useEffect(() => {
     templatesApi.list().then((r) => setTemplates(r.templates)).catch((e) => { setTemplates([]); setError(errorSentence(e)); });
   }, []);
 
-  return <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} />;
+  return <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} intradayPackOn={intradayPackOn} />;
+}
+
+/** M94: the reference-values label (behind `intraday_pack`): the template's defaults come from a study; nothing is enforced. */
+export function ReferenceLabel() {
+  return <Chip name="template-reference" tone="warn" variant="meaning">{REFERENCE_LABEL}</Chip>;
 }
 
 const valueWords = (v: number | string | boolean, choices?: StrategyTemplate["params"][number]["choices"]): string => {
@@ -43,8 +50,10 @@ export function templateRows(t: Pick<StrategyTemplate, "params">): SettingRow[] 
   return t.params.map((p) => ({ key: p.key, label: p.label, value: valueWords(p.default, p.choices) }));
 }
 
-export function TemplateLibraryView({ templates, error, family, onFamily }: {
+export function TemplateLibraryView({ templates, error, family, onFamily, intradayPackOn = false }: {
   templates: StrategyTemplate[] | null; error: string | null; family: string; onFamily: (f: string) => void;
+  /** M94: the reference-values label shows only while the flag `intraday_pack` is on. */
+  intradayPackOn?: boolean;
 }) {
   const all = templates ?? [];
   const families = [...new Map(all.map((t) => [t.family, t.family_name])).entries()];
@@ -63,13 +72,13 @@ export function TemplateLibraryView({ templates, error, family, onFamily }: {
       )}
       <div className="grid gap-space-3 lg:grid-cols-2" aria-busy={templates === null}>
         {templates === null && <Skeleton className="h-40" panel label="Loading templates" />}
-        {shown.map((t) => <TemplateCard key={t.id} t={t} />)}
+        {shown.map((t) => <TemplateCard key={t.id} t={t} reference={showsReferenceLabel(t, intradayPackOn)} />)}
       </div>
     </section>
   );
 }
 
-function TemplateCard({ t }: { t: StrategyTemplate }) {
+function TemplateCard({ t, reference }: { t: StrategyTemplate; reference: boolean }) {
   const link = { template: t.id, timeframe: t.default_timeframe, params: {} };
   const reads = [t.reads?.long, t.reads?.short].filter((s): s is string => !!s);
   const rows = templateRows(t);
@@ -80,6 +89,7 @@ function TemplateCard({ t }: { t: StrategyTemplate }) {
         <h3 className="min-w-0 break-words text-t15 font-semibold text-fg">{t.name}</h3>
         <Chip name="template-family" className="mt-0.5">{t.family_name}</Chip>
       </div>
+      {reference && <div data-template-reference className="mt-space-1"><ReferenceLabel /></div>}
       <p className="mt-space-1 text-t14 text-fg-muted">{t.idea}</p>
       {reads.length > 0 && (
         <div data-template-reads className="mt-space-2">

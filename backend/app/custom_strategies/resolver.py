@@ -79,7 +79,9 @@ async def load_template_strategy(strategy_id: str, user: Optional[User], session
         strategy = TemplateStrategy(template, settings)
     except (TemplateError, ValueError) as exc:
         raise KeyError(f"This strategy template cannot run with these settings: {exc}") from exc
-    for flag in sorted(strategy.recipe.required_flags):
+    from app.strategy_templates.routes import FAMILY_FLAGS
+    family_flag = FAMILY_FLAGS.get(template.family)     # M94: a family listed only with its own flag (H: intraday_pack)
+    for flag in sorted(strategy.recipe.required_flags | ({family_flag} if family_flag else set())):
         if not await flag_enabled(session, flag, tenant_id):
             raise KeyError("This strategy template is not switched on for your account yet")
     return strategy

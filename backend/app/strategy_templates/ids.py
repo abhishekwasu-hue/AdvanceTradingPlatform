@@ -13,7 +13,7 @@ and the provenance rely on it).
 
 Family G (the wave templates) carries some twenty settings, so its choices are written as their POSITION in the setting's
 choices (`COMPACT_FAMILIES`; "aggressive" -> "0") to stay within the 80 characters; the template version pins the order.
-Every other family's id is written exactly as before.
+M94: family H (Intraday) is written the same way, for the same reason. Every other family's id is written exactly as before.
 
 A template with optional confirmations (family G version 2, the wave companions: some twenty-five settings) leaves out the
 trailing values that are the default (`template:G1:2:15m:both:,,,,,,0` instead of `...,0,,,,,,`), so its id stays within
@@ -40,7 +40,7 @@ PREFIX = "template:"
 MAX_LENGTH = 80                 # the shortest strategy_id column (execution_intents.strategy_id)
 FLOAT_DECIMALS = 6
 _SEPARATORS = (":", ",")
-COMPACT_FAMILIES = frozenset({"G"})   # choices written as their position (family G: many settings, see above)
+COMPACT_FAMILIES = frozenset({"G", "H"})   # choices written as their position (families G and H: many settings, see above)
 
 
 def is_template_id(strategy_id: str) -> bool:

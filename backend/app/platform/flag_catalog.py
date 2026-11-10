@@ -191,6 +191,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "alert_webhooks": FlagInfo("Send your own alerts to your own tools (signed webhooks)", "data", "Webhooks in Settings › Alerts: add an https address, copy the secret once, send a test", ("ui_v2",), "", "ready"),
     "learn": FlagInfo("Learn: short lessons, the glossary and video links (education only)", "platform", "a Learn page in the sidebar", ("ui_v2",), "video links in Admin › Users & business (optional)", "unfinished"),
     "marketing_site": FlagInfo("Public pages: Features, How it works, About (no claims, no prices)", "platform", "links under the sign-in screen and the public pages", (), "", "unfinished"),
+    "guest_demo": FlagInfo("Look inside without login: one past market day, read-only, no prices", "platform", "a Look inside link on the sign-in screen and the /look-inside page", (), "the snapshot built once on the server (atp.sh guest-demo)", "unfinished"),
     "onboarding_emails": FlagInfo("First-week e-mails: connect broker, first trading bot, first signal review", "platform", "nothing in the app; e-mails in the first week", (), "the platform mailer (PLATFORM_SMTP_*) and PUBLIC_BASE_URL", "unfinished"),
     "referrals": FlagInfo("Invite a friend: each person's own invite link", "platform", "an Invite a friend card in Settings › Account & plan", ("ui_v2",), "the reward wording in Admin › Users & business", "decision"),
     "plan_limits_v2": FlagInfo("Per-plan limits for watchlists, reports, Lab", "platform", "limits", (), "plans", "decision"),
@@ -373,6 +374,7 @@ FLAG_GROUP: dict[str, str] = {
     "plan_limits_v2": "accounts",
     "onboarding_emails": "accounts",
     "marketing_site": "accounts",
+    "guest_demo": "accounts",
     # Help, legal and status
     "help_centre": "help",
     "legal_pages": "help",
@@ -422,6 +424,7 @@ KEEP_OFF: Dict[str, str] = {
     "growth_v2": "plans come with payments (P5-2)",
     "learn": "education text needs the legal review (P3-5)",
     "marketing_site": "public launch only (P5-3)",
+    "guest_demo": "public launch only (M95 F3; build the snapshot first)",
     "onboarding_emails": "only with self-signup (P5-3) and the platform mailer",
 }
 REMOVED_FROM_VIEW: Dict[str, str] = {

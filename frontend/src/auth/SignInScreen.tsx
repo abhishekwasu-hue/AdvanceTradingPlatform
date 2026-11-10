@@ -16,6 +16,7 @@ import { takeSocialReturn } from "./social";
 import type { SocialPendingInfo } from "./socialTypes";
 import StatusLink from "../status/StatusLink";
 import SiteLinks from "../site/SiteLinks";
+import LookInsideLink from "../lookInside/LookInsideLink";
 
 /**
  * UX1 (audit P01, problem 2): the sign-in screen a signed-out visitor gets at any address (App.tsx SignInGate) - the
@@ -367,7 +368,7 @@ export default function SignInScreen() {
       {/* M94 / M95 F6: the one footer sentence (English, exactly); the visitor's language under it */}
       <p className="text-center text-t12 text-fg-muted" data-front-footer>Information and education only, not investment advice.</p>
       {frontDoor && lang !== "en" && <p lang={lang} className="-mt-space-4 text-center text-t12 text-fg-muted">{ft.footer}</p>}
-      <footer className="-mt-space-4 flex flex-col items-center gap-space-2 empty:hidden" data-sign-in-footer><StatusLink /><SiteLinks /></footer>
+      <footer className="-mt-space-4 flex flex-col items-center gap-space-2 empty:hidden" data-sign-in-footer><StatusLink /><SiteLinks /><LookInsideLink /></footer>
     </>
   );
 

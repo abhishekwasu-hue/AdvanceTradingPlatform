@@ -572,6 +572,20 @@ def test_band_distance_pct_reads_the_supplied_quote_m94():
         _ev('BandDistancePct("upper")', _sym([100.0] * 5))
 
 
+def test_m94_session_functions():
+    """M94 PR-1: the session's running values and the pre-open levels (the full fixtures: tests/test_m94_pr1_functions.py)."""
+    pre = _bars([100, 101], start="2026-03-02 03:35", vol=[500, 700])            # 09:05 / 09:10 IST
+    day = _bars([102, 104, 103], vol=[1000, 2000, 1500])                        # 09:15 / 09:20 / 09:25 IST
+    d = SymbolData("S", {"5m": pd.concat([pre, day])})
+    assert _ev("SessionHigh()", d).tolist()[2:] == [103.0, 105.0, 105.0] and np.isnan(_ev("SessionHigh()", d).iloc[1])
+    assert _ev("SessionLow()", d).tolist()[2:] == [101.0, 101.0, 101.0]
+    assert _ev("SessionVolume()", d).tolist()[2:] == [1000.0, 3000.0, 4500.0]
+    assert _ev("SessionCount(close > close[1])", d).tolist()[2:] == [1.0, 2.0, 2.0]
+    assert (_ev("PreOpenHigh()", d).tolist()[2:], _ev("PreOpenLow()", d).tolist()[2:]) == ([102.0] * 3, [99.0] * 3)
+    assert _ev("PreOpenVolume()", d).tolist()[2:] == [1200.0] * 3
+    assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

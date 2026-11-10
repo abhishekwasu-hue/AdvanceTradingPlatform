@@ -91,7 +91,7 @@ async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: 
         return
     why = None
     if await breakout_gate.blocked_calls(session, user.tenant_id, tree):
-        why = breakout_gate.refusal(names)
+        why = breakout_gate.refusal(names, tree)
     elif fire_on == "intrabar":
         why = f"{', '.join(n + '()' for n in names)}: breakout alerts fire on bar close only, not intrabar"
     else:

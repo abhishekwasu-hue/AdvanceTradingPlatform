@@ -205,7 +205,7 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
             for g in (breakout_gate, zone_gate, waves_gate):
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
-                    st = _refuse(st, g.refusal(blocked))
+                    st = _refuse(st, breakout_gate.refusal(blocked, st["ast"]) if g is breakout_gate else g.refusal(blocked))
             amw_blocked = await amw_gate.blocked_calls(session, tenant_id, st["ast"], {})   # studies take no $parameters
             if amw_blocked:
                 st = _refuse(st, amw_gate.refusal(amw_blocked))

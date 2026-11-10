@@ -55,7 +55,7 @@ FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
 BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using breakout functions pause (stay active) while it is off
 # U6 BK3 / BK4: rules using the VCP / indicator (bk3) or trendline / pattern / gap / retest (bk4) breakouts also pause while off
-BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4")
+BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4", "intraday_pack")   # M94: intraday_pack
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
 AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 function / v2 candle / confirmation status pause too
 WAVES_FLAG = "screener_waves"                  # Wave templates W1: rules using a wave count function pause too
@@ -364,7 +364,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         for extra_flag, names in extra_flags_needed(ast).items():
             if not (breakout_extra_flags or {}).get(extra_flag, False):
                 # U6 BK3 / BK4: the set flags on top of the family flag; the rule pauses the same way (unknown = off)
-                rule.last_problem = breakout_refusal(names)
+                rule.last_problem = breakout_refusal(names, ast)
                 return "unsupported", 0
         from app.screener import zones as zone_gate
         zone_calls = zone_gate.flagged_calls(ast)

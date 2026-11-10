@@ -563,6 +563,15 @@ def test_m55_t5_area_gate_and_its_invalidation():
     assert not evaluate(parse('AreaGate("up", min_rr=10)'), data, base_tf="15m").any()
 
 
+def test_band_distance_pct_reads_the_supplied_quote_m94():
+    from app.brokers.models import Quote
+    d = _sym([100.0] * 5, quote=Quote(symbol="S", ltp=108.0, upper_circuit_limit=110.0, lower_circuit_limit=90.0))
+    assert _ev('BandDistancePct("upper")', d) == pytest.approx(2.0 / 108.0 * 100.0)
+    assert _ev('BandDistancePct("lower")', d) == pytest.approx(18.0 / 108.0 * 100.0)
+    with pytest.raises(ScreenRuntimeError, match="price band not available"):          # no quote: not checked, never a value
+        _ev('BandDistancePct("upper")', _sym([100.0] * 5))
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

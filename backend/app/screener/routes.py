@@ -35,6 +35,7 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
+from app.screener import bands as band_gate
 from app.screener import chains as chain_gate
 from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
@@ -91,6 +92,9 @@ RUN_REFERENCE: frozenset = reference_gate.LOADED
 # FN2-e: and the stored option-chain snapshots of these "option_chain" functions (app/screener/chains), read at or before
 # each symbol's last bar close; a caller that runs through `load_universe` passes missing_data(..., chain=True).
 RUN_CHAIN: frozenset = chain_gate.LOADED
+# M94 PR-3: and the price band of the user's own broker quote (app/screener/bands), for BandDistancePct - known now only,
+# so only the run paths that read the last bar now pass missing_data(..., band=True); history / library / charts refuse it.
+RUN_BAND: frozenset = band_gate.LOADED
 BUILDER_LOADS = ("option_chain",)
 # M90 B3: no fixed run size. The size of a run comes from its source: the store reads the whole list in one request; the
 # broker reads what its budget allows per request (`broker_per_request`) and the rest comes back as `pending`, which the
@@ -1012,6 +1016,8 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
         from app.market_data import live_access
         await chain_gate.attach(session, universe, tenant_id=user.tenant_id, user_id=user.id,
                                 own=await live_access.byob_on(session, user.tenant_id), base_tf=base_tf, now=datetime.now(UTC))
+    if band_gate.calls(ast):                      # M94 PR-3: the day's price band from the user's own broker quote (now)
+        await band_gate.attach(session, universe, tenant_id=user.tenant_id, user_id=user.id, exchange=exchange)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -1032,19 +1038,21 @@ async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: 
     return systems
 
 
-def missing_data(ast: Any, *, reference: bool = False, chain: bool = False) -> List[str]:
+def missing_data(ast: Any, *, reference: bool = False, chain: bool = False, band: bool = False) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES). `reference`
     (FN2-d): the caller runs through `load_universe`, which loads the current reference data of RUN_REFERENCE's
     functions - they count as loaded. Off (history, chart studies, the library): refused as before, since those read past
     bars and the current classification would be look-ahead there. `chain` (FN2-e): the same for RUN_CHAIN's functions
-    (the stored chain snapshot of each symbol's last bar; a symbol without one is not evaluated, with the reason)."""
+    (the stored chain snapshot of each symbol's last bar; a symbol without one is not evaluated, with the reason). `band`
+    (M94 PR-3): the same for RUN_BAND's functions (the user's own broker quote, read now)."""
     out: List[str] = []
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(getattr(node, "name", "")) if isinstance(node, nodes.Call) else None
         if spec is None or spec.name in out:
             continue
         loaded = (RUN_PROVIDES | ({"reference"} if reference and spec.name in RUN_REFERENCE else set())
-                  | ({"option_chain"} if chain and spec.name in RUN_CHAIN else set()))
+                  | ({"option_chain"} if chain and spec.name in RUN_CHAIN else set())
+                  | ({"price_band"} if band and spec.name in RUN_BAND else set()))
         if any(need not in loaded for need in spec.needs):
             out.append(spec.name)
     return out
@@ -1096,7 +1104,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     # FN2-d: load_universe loads Sector / Industry / IndexMember / IsFnO; FN2-e: and the stored option-chain snapshots
-    missing = missing_data(ast, reference=True, chain=True)
+    missing = missing_data(ast, reference=True, chain=True, band=True)     # M94 PR-3: and the broker quote's price band
     if missing:
         raise HTTPException(status_code=422, detail={"message": f"{', '.join(m + '()' for m in missing)} need data the screener run does not load "
                                                                 "yet (market-cap buckets)",

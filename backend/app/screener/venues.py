@@ -15,6 +15,8 @@ What a venue lacks, by source (provisional, OPEN_QUESTIONS S8-7):
   index and F&O-stock symbols are the chains' underlyings (read from the stored chain snapshots; a symbol with none is
   not evaluated, with the reason);
 * market zones and ranking systems: computed from bars, so wherever bars are.
+* price bands (`price_band`, M94 PR-3): the day's exchange-set band in the user's broker quote, on the Indian exchange
+  venues; a broker or symbol whose quote carries none is not checked, with the reason.
 Crypto (H) is listed for completeness: the screener does not run on it yet (no crypto exchange on the run path), and
 funding, open interest and liquidations have no feed.
 """
@@ -42,13 +44,13 @@ class Venue:
 
 
 VENUES: Tuple[Venue, ...] = (
-    Venue("NSE", "NSE cash equities", ("NSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "ownership", "option_chain"}), "NSE"),
-    Venue("BSE", "BSE cash equities", ("BSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "option_chain"}), "NSE",
+    Venue("NSE", "NSE cash equities", ("NSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "ownership", "option_chain", "price_band"}), "NSE"),
+    Venue("BSE", "BSE cash equities", ("BSE",), BAR_FIELDS, frozenset({"zones", "rankings", "reference", "option_chain", "price_band"}), "NSE",
           note="ownership and events are keyed by NSE symbol"),
-    Venue("NFO", "NSE equity derivatives", ("NFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain"}), "NSE"),
-    Venue("BFO", "BSE equity derivatives", ("BFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain"}), "NSE"),
-    Venue("MCX", "MCX commodities", ("MCX",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain"}), "MCX"),
-    Venue("CDS", "Currency derivatives", ("CDS",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings"}), "CDS"),
+    Venue("NFO", "NSE equity derivatives", ("NFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain", "price_band"}), "NSE"),
+    Venue("BFO", "BSE equity derivatives", ("BFO",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain", "price_band"}), "NSE"),
+    Venue("MCX", "MCX commodities", ("MCX",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "option_chain", "price_band"}), "MCX"),
+    Venue("CDS", "Currency derivatives", ("CDS",), BAR_FIELDS | {"oi"}, frozenset({"zones", "rankings", "price_band"}), "CDS"),
     Venue("CRYPTO", "Crypto (spot)", ("CRYPTO", "COINDCX", "BINANCE", "WAZIRX"), BAR_FIELDS, frozenset({"zones", "rankings"}), "CRYPTO",
           runnable=False, note="not on the screener's run path yet; funding, open interest and liquidations have no feed"),
 )

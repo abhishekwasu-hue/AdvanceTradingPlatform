@@ -356,7 +356,7 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
     if not validated.ok or ast is None:
         return ToolResult(False, None, None, "screener", error="the screen did not pass validation: "
                           + "; ".join(p.message for p in validated.problems)[:300])
-    missing = missing_data(ast, reference=True, chain=True)   # FN2-d: load_universe below loads them
+    missing = missing_data(ast, reference=True, chain=True, band=True)   # FN2-d / M94 PR-3: load_universe below loads them
     if missing:
         return ToolResult(False, None, None, "screener", error=f"{', '.join(m + '()' for m in missing)} need data the screener does not load yet")
     symbols = list(dict.fromkeys(s.strip().upper() for s in args.symbols if s.strip()))

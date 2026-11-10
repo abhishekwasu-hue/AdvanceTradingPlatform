@@ -55,6 +55,8 @@ SCREENQL_EXEMPT: Dict[str, str] = {
     "MaxPainDistancePct": "the supplied option-chain snapshot, not bars",
     "FuturesOI": ("FN2-e: the near-month future's OI in the stored option-chain snapshot read at or before the bar's close, not "
                   "bars (tests/test_fn2e_chain_run.py: a snapshot read after the bar is never used)"),
+    "BandDistancePct": ("M94 PR-3: the day's price band in the user's broker quote, read now, not bars (last bar only; "
+                        "tests/test_m94_bands.py)"),
     "Sector": "reference data as of the run date, not bars",
     "Industry": "reference data as of the run date, not bars",
     "McapBucket": "reference data as of the run date, not bars",

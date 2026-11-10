@@ -1,0 +1,56 @@
+{
+  "schema": "atp.template/1",
+  "id": "H1",
+  "version": 1,
+  "name": "Fallen angel",
+  "family": "H",
+  "idea": "Within one session that opened above the previous close: a rise to a new session high, a sharp fall, then a tight base; the signal is the first close above the base, on volume against the base's bars. The idea is wrong below the base.",
+  "difficulty": "Advanced",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "gap_pct", "label": "Open above the previous close (%)", "help": "The session opened at least this many percent above the previous close (below it for the downside); 0 means not set: any open at or above it.", "type": "float", "default": 0.0, "min": 0.0, "max": 50.0, "step": 0.1},
+    {"key": "drop_atr", "label": "Fall from the session high", "help": "The fall from the session high to the base's low, at least this many average true ranges (the rise from the session low for the downside; 0 means not set).", "type": "float", "default": 0.0, "min": 0.0, "max": 50.0, "step": 0.1},
+    {"key": "base_n", "label": "Base (bars)", "help": "The bars of the base just before the signal bar, all in this session.", "type": "int", "default": 5, "min": 2, "max": 100, "step": 1},
+    {"key": "base_atr", "label": "Largest base range", "help": "The base's high to low, at most this many average true ranges (a tight base).", "type": "float", "default": 1.0, "min": 0.05, "max": 20.0, "step": 0.05},
+    {"key": "vol_x", "label": "Volume against the base", "help": "The signal bar's volume, at least this many times the largest volume of the base's bars (0 means no volume condition).", "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range the distances and buffers are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "buf", "label": "Buffer", "help": "How many average true ranges beyond the base's low (0 means not set: the base's low itself).", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "step": 0.1},
+    {"key": "exit_n", "label": "A new low against (bars)", "help": "For the template's exit signal: a close beyond the low (high for the downside) of this many bars before it.", "type": "int", "default": 1, "min": 1, "max": 100, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "long",
+  "setup": {
+    "kind": "state",
+    "long": "SessionCount(true) > $base_n AND (DayOpen() - PDC()) / PDC() * 100 >= $gap_pct AND (SessionHigh() - Min(low, $base_n)[1]) >= $drop_atr * ATR($atr_n)[1] AND (Max(high, $base_n)[1] - Min(low, $base_n)[1]) <= $base_atr * ATR($atr_n)[1]",
+    "short": "SessionCount(true) > $base_n AND (PDC() - DayOpen()) / PDC() * 100 >= $gap_pct AND (Max(high, $base_n)[1] - SessionLow()) >= $drop_atr * ATR($atr_n)[1] AND (Max(high, $base_n)[1] - Min(low, $base_n)[1]) <= $base_atr * ATR($atr_n)[1]",
+    "same_bar": true,
+    "session_bound": true
+  },
+  "trigger": {
+    "long": "close > Max(high, $base_n)[1] AND volume >= $vol_x * Max(volume, $base_n)[1]",
+    "short": "close < Min(low, $base_n)[1] AND volume >= $vol_x * Max(volume, $base_n)[1]"
+  },
+  "invalidation": {
+    "long": "Min(low, $base_n)[1] - $buf * ATR($atr_n)[1]",
+    "short": "Max(high, $base_n)[1] + $buf * ATR($atr_n)[1]"
+  },
+  "exit_signal": {
+    "long": "close < Min(low, $exit_n)[1]",
+    "short": "close > Max(high, $exit_n)[1]"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "fallen_angel_broken_upward"
+      }
+    ],
+    "short": [
+      {
+        "token": "fallen_angel_broken_downward"
+      }
+    ]
+  }
+}

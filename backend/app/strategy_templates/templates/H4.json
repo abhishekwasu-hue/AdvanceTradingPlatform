@@ -1,0 +1,56 @@
+{
+  "schema": "atp.template/1",
+  "id": "H4",
+  "version": 1,
+  "name": "Bull flag",
+  "family": "H",
+  "idea": "Within one session: a strong move up, then a tight, shallow consolidation; the signal is the first close above the consolidation that makes a new session high, on volume, for the session's first flags only. The idea is wrong below the consolidation's low.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "pole", "label": "The strong move (ATRs)", "help": "The move into the consolidation, at least this many average true ranges.", "type": "float", "default": 3.0, "min": 0.5, "max": 20.0, "step": 0.1},
+    {"key": "pole_bars", "label": "The strong move's most bars", "help": "The move takes at most this many bars.", "type": "int", "default": 10, "min": 2, "max": 50, "step": 1},
+    {"key": "flag_min", "label": "Consolidation: fewest bars", "help": "The tight consolidation lasts at least this many bars.", "type": "int", "default": 5, "min": 2, "max": 100, "step": 1},
+    {"key": "flag_max", "label": "Consolidation: most bars", "help": "The tight consolidation lasts at most this many bars.", "type": "int", "default": 15, "min": 3, "max": 200, "step": 1},
+    {"key": "retrace", "label": "Consolidation: most given back", "help": "The consolidation gives back at most this fraction of the move (shallow).", "type": "float", "default": 0.5, "min": 0.05, "max": 1.0, "step": 0.05},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breaking bar's volume, at least this many times the average (0 means no volume condition).", "type": "float", "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the consolidation the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "max_flags", "label": "Flags per session", "help": "Only the first this many flag breaks of a session. Reference: 2.", "type": "int", "default": 2, "min": 1, "max": 50, "step": 1},
+    {"key": "exit_n", "label": "A new low against (bars)", "help": "For the template's exit signal: a close beyond the low (high for the downside) of this many bars before it.", "type": "int", "default": 1, "min": 1, "max": 100, "step": 1}
+  ],
+  "constraints": [
+    {"left": "flag_min", "op": "<=", "right": "flag_max", "message": "The consolidation's fewest bars cannot be more than its most bars."}
+  ],
+  "sides_default": "long",
+  "setup": {
+    "kind": "event",
+    "long": "PatternBreakout(\"up\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace) AND high >= SessionHigh() AND SessionCount(PatternBreakout(\"up\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace)) <= $max_flags",
+    "short": "PatternBreakout(\"down\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace) AND low <= SessionLow() AND SessionCount(PatternBreakout(\"down\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace)) <= $max_flags",
+    "same_bar": true,
+    "session_bound": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PatternBreakoutRef(\"base_low\", \"up\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace)",
+    "short": "PatternBreakoutRef(\"base_high\", \"down\", \"flag\", $vol_mult, $k, pole=$pole, pole_bars=$pole_bars, flag_min=$flag_min, flag_max=$flag_max, retrace=$retrace)"
+  },
+  "exit_signal": {
+    "long": "close < Min(low, $exit_n)[1]",
+    "short": "close > Max(high, $exit_n)[1]"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "session_flag_broken_upward"
+      }
+    ],
+    "short": [
+      {
+        "token": "session_flag_broken_downward"
+      }
+    ]
+  }
+}

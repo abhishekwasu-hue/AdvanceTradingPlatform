@@ -116,7 +116,8 @@ def test_the_allow_list_is_narrow():
         "backend/app/ai/interview.py", "backend/app/ai/advisor.py",
         "backend/app/ai/indic_safety.py",                 # M72 PR-1a owner order: the Copilot's MR / HI safety filter phrases
         "backend/tests/test_phase_ap_interview.py", "backend/tests/test_phase_aq_advisor.py",
-        "frontend/e2e/fixtures/interview_plan.json"}
+        "frontend/e2e/fixtures/interview_plan.json",
+        "frontend/index.html"}                            # M95-Q5 owner approval: the link preview's Marathi line
     assert check_english_only.NAMESPACE_FILE == "frontend/src/i18n/interviewSecondary.ts"
     assert check_english_only.NAMESPACE_OBJECTS == ("INTERVIEW_MR", "INTERVIEW_HI")
 

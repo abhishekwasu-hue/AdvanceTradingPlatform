@@ -47,6 +47,8 @@ import { PageFootnote } from "../ui/PageFootnote";
 import { COMING_SOON_MESSAGE } from "../api/errors";
 import { ideasApi } from "../ideas/api";
 import { ideaScanFromSearch, scanName } from "../ideas/model";
+import { templatesApi } from "../strategyTemplates/api";
+import { templateScanFromSearch } from "../strategyTemplates/link";
 import { builderOf, clearStore, readStore, readsOf, snapshot, syncDeviceHistory, writeStore } from "../screener/versions";
 import { UniversePicker } from "../screener/UniversePicker";
 import { CUSTOM, DEFAULT_CHOICE, DEFAULT_KEY, FALLBACK_PLAN, NIFTY50_FALLBACK, NIFTY50_FALLBACK_NOTE, RUN_MAX, effectiveUniverse, heldBack, isUniverses, listLabel,
@@ -311,6 +313,33 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     })();
     return () => { alive = false; };
   }, [registry, ideaAsk, navigate, toast, universeV2]);
+
+  // M94 F15 (flag intraday_pack): a strategy template's "Setup scanner" opens `/screener?template=H6&side=long` - the
+  // template's own setup with its default settings as builder blocks, validated and gated by the server as any screen.
+  const templateAsk = useMemo(() => (features.on("intraday_pack") ? templateScanFromSearch(location.search) : null), [features, location.search]);
+  useEffect(() => {
+    if (!registry || !templateAsk) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const how = await templatesApi.howItWorks(templateAsk.template);
+        const source = how.scanner[templateAsk.side];
+        if (!source) throw new Error("This template's setup scanner is not switched on for your account yet.");
+        const res = await screenerApi.stages({ source: source.text, base_tf: source.base_tf, params: source.params });
+        if (!alive) return;
+        setStages(stagesFromServer(registry, res.stages));
+        setScanTf(res.base_tf);
+        setName(`${how.template.name} - setup (${templateAsk.side === "long" ? "upward" : "downward"})`);
+        setSavedId(undefined);
+        if (universeV2) setPendingRun(true);
+      } catch (e) {
+        if (alive) toast.error(errorText(e));
+      } finally {
+        if (alive) navigate({ search: "" }, { replace: true });
+      }
+    })();
+    return () => { alive = false; };
+  }, [registry, templateAsk, navigate, toast, universeV2]);
 
   const plan = universes?.batch ?? FALLBACK_PLAN;
   const universe = useMemo(() => {

@@ -720,6 +720,9 @@ class StrategyDeploymentRecord(Base):
     target_r: Mapped[float | None] = mapped_column(Float, nullable=True)
     target_base_wave: Mapped[str | None] = mapped_column(String(16), nullable=True)
     target_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # M94 F10 (alembic f2b4d6e8a0c1): TEMPLATE_LEVEL's level - VWAP / SESSION_EXTREME / PREV_CLOSE / OR_FAR_SIDE
+    # (app/strategy_templates/exits.py LEVELS). NULL = no level target (every existing row).
+    target_level: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

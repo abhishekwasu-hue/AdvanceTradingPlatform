@@ -11,7 +11,9 @@ stored on the deployment row (migration d7f9b1c3e5a8):
   invalidation) / TEMPLATE_EXIT (exit on the template's exit signal at the next price, reason "Template exit") /
   CREDIT_PCT (a structure: `target_credit_pct`, as today) / WAVE_PROJECTION (family G: the running wave's start plus
   `target_ratio` x the finished `target_base_wave`, read on the signal bar; no projection there = no target, never a
-  refusal).
+  refusal) / TEMPLATE_LEVEL (M94 F10: at one level the template offers - `target_level`: the session VWAP, the session
+  high / low, the previous close, the opening range's far side - read on the signal bar; a level that is not beyond the
+  entry on the winning side = no target, never a refusal).
 
 NULL in every column is exactly the behaviour before this module (every existing deployment): the template's invalidation
 as the stop and no target; a structure keeps its credit levels. The premium stop and the credit levels are independent
@@ -22,14 +24,16 @@ The precedence per instrument (R4; docs/design/STRATEGY_TEMPLATES_IMPL.md, "Exit
 
 | instrument            | stop_source (first = default)          | target_rule (first = default)                          |
 |-----------------------|-----------------------------------------|--------------------------------------------------------|
-| UNDERLYING / FUTURE   | TEMPLATE_INVALIDATION only (RiskManager | NONE, R_MULTIPLE, TEMPLATE_EXIT, WAVE_PROJECTION        |
-|                       | sizes from entry - stop)                |                                                        |
-| OPTION, single        | TEMPLATE_INVALIDATION, PREMIUM_PCT      | NONE, R_MULTIPLE, TEMPLATE_EXIT, WAVE_PROJECTION        |
-|                       | (the premium stop always stays)         | (levels on the underlying, as the strategy's targets)  |
+| UNDERLYING / FUTURE   | TEMPLATE_INVALIDATION only (RiskManager | NONE, R_MULTIPLE, TEMPLATE_EXIT, WAVE_PROJECTION,       |
+|                       | sizes from entry - stop)                | TEMPLATE_LEVEL                                         |
+| OPTION, single        | TEMPLATE_INVALIDATION, PREMIUM_PCT      | NONE, R_MULTIPLE, TEMPLATE_EXIT, WAVE_PROJECTION,       |
+|                       | (the premium stop always stays)         | TEMPLATE_LEVEL (levels on the underlying, as the       |
+|                       |                                         | strategy's targets)                                    |
 | OPTION, structure     | CREDIT_PCT                              | CREDIT_PCT, TEMPLATE_EXIT (the credit levels stay)      |
 
 TEMPLATE_EXIT needs a template (with the user's settings) that has an exit signal; WAVE_PROJECTION a wave template (it
-counts waves on its wave timeframe). Not built here (OPEN_QUESTIONS TPL-X1..X3): stop_source NONE (on an option the
+counts waves on its wave timeframe); TEMPLATE_LEVEL a template that offers levels (`LEVELS`: family H, the intraday
+templates - each level whose expression compiles with the user's settings). Not built here (OPEN_QUESTIONS TPL-X1..X3): stop_source NONE (on an option the
 premium / credit safety net always stays, so "none" would still have a stop), target_rule NEXT_AREA (market zones are
 stored snapshots behind their own flag, R10), and the template's invalidation as an exit of a structure.
 
@@ -49,14 +53,14 @@ from app.strategy_templates.language import _WAVE_NAME_WORDS
 
 # The spec's full lists (section 5 + WAVE section 4) and what this build offers
 STOP_SOURCES: Tuple[str, ...] = ("TEMPLATE_INVALIDATION", "PREMIUM_PCT", "CREDIT_PCT", "NONE")
-TARGET_RULES: Tuple[str, ...] = ("NONE", "R_MULTIPLE", "NEXT_AREA", "TEMPLATE_EXIT", "CREDIT_PCT", "WAVE_PROJECTION")
+TARGET_RULES: Tuple[str, ...] = ("NONE", "R_MULTIPLE", "NEXT_AREA", "TEMPLATE_EXIT", "CREDIT_PCT", "WAVE_PROJECTION", "TEMPLATE_LEVEL")
 NOT_BUILT: Dict[str, str] = {
     "stop:NONE": "Trading without any stop is not offered: the template's level, the premium stop or the spread's loss limit always applies",
     "target:NEXT_AREA": "Taking profit at the next area is not available yet",
 }
 
 UNDERLYING, FUTURE, OPTION_SINGLE, OPTION_STRUCTURE = "UNDERLYING", "FUTURE", "OPTION_SINGLE", "OPTION_STRUCTURE"
-_LEVEL_TARGETS: Tuple[str, ...] = ("NONE", "R_MULTIPLE", "TEMPLATE_EXIT", "WAVE_PROJECTION")
+_LEVEL_TARGETS: Tuple[str, ...] = ("NONE", "R_MULTIPLE", "TEMPLATE_EXIT", "WAVE_PROJECTION", "TEMPLATE_LEVEL")
 # instrument class -> (the stop sources, the target rules); the first of each is what NULL means there (today's behaviour)
 PRECEDENCE: Dict[str, Tuple[Tuple[str, ...], Tuple[str, ...]]] = {
     UNDERLYING: (("TEMPLATE_INVALIDATION",), _LEVEL_TARGETS),
@@ -69,6 +73,27 @@ PRECEDENCE: Dict[str, Tuple[Tuple[str, ...], Tuple[str, ...]]] = {
 TARGET_R_BOUNDS = (0.1, 20.0)
 RATIO_BOUNDS = (0.0, 10.0)
 EXIT_REASON = "Template exit"
+
+# M94 F10 (OPEN_QUESTIONS M94-Q6): the levels a TEMPLATE_LEVEL target may sit at - one per deployment, read on the signal
+# bar, as (the expression for an upward idea, for a downward one). A level beyond the entry on the losing side, or with no
+# value on the signal bar, gives no target (never a refusal). The opening range's far side reads the template's own
+# opening-range setting (`$minutes`), so it is offered only by a template that has one.
+LEVELS: dict[str, tuple[str, str]] = {
+    "VWAP": ("SessionVWAP()", "SessionVWAP()"),
+    "SESSION_EXTREME": ("SessionHigh()", "SessionLow()"),
+    "PREV_CLOSE": ("PDC()", "PDC()"),
+    "OR_FAR_SIDE": ("ORHigh($minutes)", "ORLow($minutes)"),
+}
+LEVEL_WORDS: dict[str, str] = {
+    "VWAP": "The session VWAP",
+    "SESSION_EXTREME": "The session high (its low for a downward idea)",
+    "PREV_CLOSE": "The previous close",
+    "OR_FAR_SIDE": "The far side of the opening range (its high for an upward idea, its low for a downward one)",
+}
+# The same levels in a sentence ("target at the session VWAP"; the "how it works" exit options line)
+LEVEL_SHORT_WORDS: dict[str, str] = {"VWAP": "the session VWAP", "SESSION_EXTREME": "the session high / low",
+                                     "PREV_CLOSE": "the previous close", "OR_FAR_SIDE": "the far side of the opening range"}
+LEVEL_FAMILIES = frozenset({"H"})         # the intraday templates (their functions are session functions)
 
 
 def base_waves() -> Tuple[str, ...]:
@@ -93,6 +118,36 @@ class Capabilities:
     """What the template (with the user's settings) can offer: an exit signal; a wave projection (family G)."""
     exit_signal: bool = False
     wave_projection: bool = False
+    levels: tuple[str, ...] = ()               # M94 F10: the TEMPLATE_LEVEL levels this template offers (LEVELS keys)
+
+
+def level_parts(template: Any, settings: Any, level: str) -> dict[str, Any]:
+    """The compiled expressions of one level, per side the settings trade (`level:long` / `level:short`); raises
+    TemplateError when the level does not compile for this template and these settings."""
+    from app.strategy_templates.compile import TemplateError, compile_part
+    if template.family not in LEVEL_FAMILIES or level not in LEVELS:
+        raise TemplateError(["This template offers no such level"])
+    out: dict[str, Any] = {}
+    for side in settings.side_list():
+        text = LEVELS[level][0 if side == "long" else 1]
+        out[f"level:{side}"] = compile_part(text, what="level target", want="num", template=template, settings=settings)
+    return out
+
+
+def offered_levels(template: Any, settings: Any) -> tuple[str, ...]:
+    """M94 F10: the levels this template offers with these settings - each one whose expressions compile (the opening
+    range's far side needs the template's own opening-range setting)."""
+    from app.strategy_templates.compile import TemplateError
+    if template.family not in LEVEL_FAMILIES:
+        return ()
+    out = []
+    for level in LEVELS:
+        try:
+            level_parts(template, settings, level)
+        except TemplateError:
+            continue
+        out.append(level)
+    return tuple(out)
 
 
 def capabilities(recipe: Any) -> Capabilities:
@@ -100,7 +155,7 @@ def capabilities(recipe: Any) -> Capabilities:
     has_exit = any(recipe.part("exit_signal", side) is not None for side in sides)
     types = {p.key: p.type for p in recipe.template.params}
     waves = types.get("wave_degree") == "int" and types.get("wave_tf") == "timeframe"
-    return Capabilities(exit_signal=has_exit, wave_projection=waves)
+    return Capabilities(exit_signal=has_exit, wave_projection=waves, levels=offered_levels(recipe.template, recipe.settings))
 
 
 @dataclass(frozen=True)
@@ -111,6 +166,7 @@ class TemplateExits:
     target_r: Optional[float] = None
     target_base_wave: Optional[str] = None
     target_ratio: Optional[float] = None
+    target_level: str | None = None          # M94 F10: the TEMPLATE_LEVEL level (LEVELS key)
 
     @property
     def is_default(self) -> bool:
@@ -154,6 +210,8 @@ class TemplateExits:
                 out.append("This template has no exit signal with these settings")
             elif self.target_rule == "WAVE_PROJECTION" and not caps.wave_projection:
                 out.append("The wave projection is for the wave templates only")
+            elif self.target_rule == "TEMPLATE_LEVEL" and not caps.levels:
+                out.append("This template offers no level to take profit at")
         rule = self.target_rule
         if rule == "R_MULTIPLE":
             lo, hi = TARGET_R_BOUNDS
@@ -169,6 +227,11 @@ class TemplateExits:
                 out.append(f"Type the projection's size as a share of that wave (above {lo:g}, up to {hi:g})")
         elif self.target_base_wave is not None or self.target_ratio is not None:
             out.append("The wave and its share are for the wave projection target only")
+        if rule == "TEMPLATE_LEVEL":
+            if caps.levels and self.target_level not in caps.levels:
+                out.append("Pick the level to take profit at from the list")
+        elif self.target_level is not None:
+            out.append("The level is for the level target only")
         return out
 
     def describe(self) -> str:
@@ -184,12 +247,19 @@ class TemplateExits:
             parts.append("exit on the template's exit signal")
         elif self.target_rule == "WAVE_PROJECTION" and self.target_ratio is not None and self.target_base_wave:
             parts.append(f"target at the wave projection ({self.target_ratio:g} of {base_wave_words(self.target_base_wave)})")
+        elif self.target_rule == "TEMPLATE_LEVEL" and self.target_level in LEVEL_WORDS:
+            parts.append(f"target at {level_words(self.target_level)}")
         elif self.target_rule == "NONE":
             parts.append("no fixed target")
         return ", ".join(parts)
 
 
 DEFAULT = TemplateExits()
+
+
+def level_words(level: str) -> str:
+    """The level in a sentence: "the session VWAP" (the form shows LEVEL_WORDS)."""
+    return LEVEL_SHORT_WORDS.get(level, level)
 
 
 class TemplateExitsBody(BaseModel):
@@ -201,6 +271,7 @@ class TemplateExitsBody(BaseModel):
     target_r: Optional[float] = None
     target_base_wave: Optional[str] = Field(default=None, max_length=16)
     target_ratio: Optional[float] = None
+    target_level: str | None = Field(default=None, max_length=24)
 
     def to_exits(self) -> TemplateExits:
         return TemplateExits(**self.model_dump())
@@ -213,10 +284,10 @@ def projection_text(exits: TemplateExits) -> str:
 
 
 def target_level(rule: Optional[str], direction: int, entry: float, invalidation: float, *, target_r: Optional[float] = None,
-                 projection: Optional[float] = None) -> Tuple[Optional[float], Optional[float]]:
+                 projection: Optional[float] = None, level: float | None = None) -> Tuple[Optional[float], Optional[float]]:
     """(target1, risk_reward) for a signal of `direction` (+1 long / -1 short) - one function for the scan side, both
-    backtest engines and the worker (S11). No target rule, or a projection that is missing or not beyond the entry on
-    the winning side: (None, None) - no target, never a refusal."""
+    backtest engines and the worker (S11). No target rule, or a projection / level (M94 F10, TEMPLATE_LEVEL) that is
+    missing or not beyond the entry on the winning side: (None, None) - no target, never a refusal."""
     risk = abs(entry - invalidation)
     if not (math.isfinite(entry) and math.isfinite(invalidation)) or risk <= 0 or direction == 0:
         return None, None
@@ -225,6 +296,9 @@ def target_level(rule: Optional[str], direction: int, entry: float, invalidation
     if rule == "WAVE_PROJECTION" and projection is not None and math.isfinite(projection):
         if (direction > 0 and projection > entry) or (direction < 0 and projection < entry):
             return round(float(projection), 2), round(abs(projection - entry) / risk, 2)
+    if rule == "TEMPLATE_LEVEL" and level is not None and math.isfinite(level):
+        if (direction > 0 and level > entry) or (direction < 0 and level < entry):
+            return round(float(level), 2), round(abs(level - entry) / risk, 2)
     return None, None
 
 
@@ -253,4 +327,5 @@ def underlying_stop_on(exits: TemplateExits, instrument_kind: Optional[str], opt
 
 __all__ = ["TemplateExitsBody", "checked", "STOP_SOURCES", "TARGET_RULES", "NOT_BUILT", "PRECEDENCE", "TemplateExits", "Capabilities", "capabilities",
            "instrument_class", "target_level", "projection_text", "underlying_stop_on", "base_waves", "base_wave_words",
-           "EXIT_REASON", "DEFAULT", "TARGET_R_BOUNDS", "RATIO_BOUNDS"]
+           "EXIT_REASON", "DEFAULT", "TARGET_R_BOUNDS", "RATIO_BOUNDS", "LEVELS", "LEVEL_WORDS", "LEVEL_SHORT_WORDS", "LEVEL_FAMILIES", "level_parts",
+           "offered_levels", "level_words"]

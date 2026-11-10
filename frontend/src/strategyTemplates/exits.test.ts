@@ -99,3 +99,32 @@ describe("the trading bot form", () => {
     expect(pageSource).toContain("useEffect(() => { setExitPick(EMPTY_PICK); }, [pickedId]);");    // a new template starts at its defaults
   });
 });
+
+describe("M94 F10: the level exit", () => {
+  const LEVELS = [{ value: "VWAP", label: "The session VWAP" }, { value: "SESSION_EXTREME", label: "The session high (its low for a downward idea)" }];
+  const H9: TemplateExitChoices = {
+    ...D1, levels: LEVELS,
+    precedence: { ...D1.precedence, UNDERLYING: { stops: ["TEMPLATE_INVALIDATION"], targets: ["NONE", "R_MULTIPLE", "TEMPLATE_EXIT", "TEMPLATE_LEVEL"] } },
+  };
+  it("is offered in words where the server offers it, and is not set by default", () => {
+    expect(targetOptions(H9, "UNDERLYING").slice(-1)[0]).toEqual({ value: "TEMPLATE_LEVEL", label: "At a level" });
+    expect(targetOptions(D1, "UNDERLYING").map((o) => o.value)).not.toContain("TEMPLATE_LEVEL");
+    expect(effectivePick(EMPTY_PICK, H9, "UNDERLYING")).toMatchObject({ target: "NONE", level: "" });
+    expect(templateExitsBody(EMPTY_PICK, H9, "UNDERLYING")).toBeNull();
+  });
+
+  it("asks for the level, sends only the one chosen and says how it reads", () => {
+    expect(exitProblem({ ...EMPTY_PICK, target: "TEMPLATE_LEVEL" }, H9)).toBe("Pick the level to take profit at.");
+    expect(exitProblem({ ...EMPTY_PICK, target: "TEMPLATE_LEVEL", level: "OR_FAR_SIDE" }, H9)).not.toBeNull();   // not offered here
+    expect(exitProblem({ ...EMPTY_PICK, target: "TEMPLATE_LEVEL", level: "VWAP" }, H9)).toBeNull();
+    expect(templateExitsBody({ ...EMPTY_PICK, target: "TEMPLATE_LEVEL", level: "VWAP", targetR: "3" }, H9, "UNDERLYING"))
+      .toEqual({ target_rule: "TEMPLATE_LEVEL", target_level: "VWAP" });
+    expect(templateExitsBody({ ...EMPTY_PICK, target: "R_MULTIPLE", targetR: "2", level: "VWAP" }, H9, "UNDERLYING"))
+      .toEqual({ target_rule: "R_MULTIPLE", target_r: 2 });
+    const notes = exitNotes({ ...EMPTY_PICK, target: "TEMPLATE_LEVEL" }, "UNDERLYING");
+    expect(notes).toContain("The level is read on the signal bar; when it is not beyond the entry, the trade has no fixed target.");
+    expect(notes).toContain("Your minimum reward to risk in your risk settings still applies.");
+    expect(pageSource).toContain('exitsNow.target === "TEMPLATE_LEVEL"');
+    expect(pageSource).toContain("options={exitChoices.levels ?? []}");
+  });
+});

@@ -357,7 +357,9 @@ class BacktestRunner:
             **({} if self.charges == STATUTORY_ONLY else {"paper_charges": {"brokerage_per_order": self.charges.brokerage_per_order,
                                                                              "slippage_pct": self.charges.slippage_pct}}),
             # section 5: likewise only a chosen template exit enters it
-            **({"template_exits": self.body.template_exits.model_dump()} if self.body.template_exits is not None
+            # (M94: the level enters it only when one is chosen, so a run without one keeps its hash)
+            **({"template_exits": self.body.template_exits.model_dump(exclude={"target_level"} if self.body.template_exits.target_level is None
+                                                                      else None)} if self.body.template_exits is not None
                and not self.body.template_exits.to_exits().is_default else {}),
             # the user's own entry / square-off times enter it only when one is set, so runs without them keep their hash
             **({"cutoffs": [t.isoformat() if t else None for t in self.cutoffs]} if any(self.cutoffs) else {}))

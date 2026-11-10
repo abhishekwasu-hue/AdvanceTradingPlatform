@@ -966,6 +966,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # strategy templates step 2 (flag strategy_templates): the built-in template cards, and the trading bot form's pre-fill
     ("GET", "/api/strategy-templates"): "member",
     ("POST", "/api/strategy-templates/{template_id}/adopt"): S_COMPUTE,
+    ("GET", "/api/strategy-templates/{template_id}/how-it-works"): "member",
+    ("POST", "/api/strategy-templates/{template_id}/overlay"): "trader",
     # idea library slice 1 (flag idea_library): read-only method cards, the same content for every organisation
     ("GET", "/api/ideas"): "member",
     ("GET", "/api/ideas/{idea_id}"): "member",

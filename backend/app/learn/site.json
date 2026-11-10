@@ -3,60 +3,130 @@
     {
       "slug": "features",
       "title": "What AiAlgoDesk does",
-      "description": "Charts, an option chain, alerts and paper trading for Indian markets, explained in plain words.",
-      "intro": "One place to read the market, practise your own ideas on paper and keep a record of how you trade.",
+      "description": "An AI Copilot, an option chain with OI, setups, a paper trading bot, a journal and a daily report for Indian markets.",
+      "intro": "AiAlgoDesk is one place to read the market, practise your own ideas on paper and keep a record of how you trade.",
       "sections": [
-        {"heading": "Read the market", "lines": [
-          "Charts with price structure drawn for you: swings, trend and the areas where price turned before.",
-          "An option chain with open interest and the key numbers explained in plain words.",
-          "Sector and index views so you see the whole market at a glance."
-        ]},
-        {"heading": "Practise your own ideas", "lines": [
-          "An idea library that explains each method in plain words, with a scan you can try.",
-          "Trading bots that follow the idea and settings you chose, at real prices with pretend money.",
-          "Signals described in structure words, never as advice."
-        ]},
-        {"heading": "Stay in control", "lines": [
-          "Your own risk settings: the most one trade may lose and a daily loss limit.",
-          "A journal that records every paper trade so you can review it.",
-          "Alerts in the app and on your own Telegram."
-        ]}
+        {
+          "heading": "AI Copilot",
+          "image": "copilot",
+          "lines": [
+            "Ask in plain words about a chart, an idea or a setting, and get an answer in plain words.",
+            "It explains. It never places, blocks or changes an order."
+          ]
+        },
+        {
+          "heading": "Option chain with OI",
+          "image": "option-chain",
+          "lines": [
+            "Open interest shown in lakhs, with the key numbers explained in plain words."
+          ]
+        },
+        {
+          "heading": "Find setups",
+          "image": "find-setups",
+          "lines": [
+            "Scan the market for the structure you chose and see what matches in one list."
+          ]
+        },
+        {
+          "heading": "AI Trading Bot on paper",
+          "image": "trading-bot",
+          "lines": [
+            "A bot follows the idea and the settings you chose, with pretend money.",
+            "No order reaches your broker."
+          ]
+        },
+        {
+          "heading": "Journal",
+          "image": "journal",
+          "lines": [
+            "Every paper trade is recorded, so you can review it and practise again."
+          ]
+        },
+        {
+          "heading": "Daily report on Telegram",
+          "image": "daily-report",
+          "lines": [
+            "A short daily market report in the app, and on your own Telegram when you turn it on."
+          ]
+        }
       ]
     },
     {
       "slug": "how-it-works",
       "title": "How it works",
-      "description": "Connect your broker for prices, pick an idea, set your own settings and practise on paper.",
-      "intro": "Four steps from your first visit to your first reviewed paper trade.",
+      "description": "Start in three steps: continue with Google, connect your broker if you want live prices, and practise on paper.",
+      "intro": "Start in three steps.",
       "sections": [
-        {"heading": "Connect your broker", "lines": [
-          "ATP reads prices through your own broker account. Your broker login stays with your broker."
-        ]},
-        {"heading": "Pick an idea", "lines": [
-          "Choose a method from the idea library, or describe your own, and set it up with your own settings."
-        ]},
-        {"heading": "Practise on paper", "lines": [
-          "A trading bot watches the market for the structure you chose. No order reaches your broker."
-        ]},
-        {"heading": "Review and learn", "lines": [
-          "Every paper trade lands in your journal. Review it, change one setting at a time and practise again."
-        ]}
+        {
+          "heading": "Continue with Google",
+          "lines": [
+            "Sign in with your Google account, or with your email."
+          ]
+        },
+        {
+          "heading": "Connect your broker if you want live prices",
+          "lines": [
+            "This step is optional. ATP reads prices through your own broker account. Your broker login stays with your broker."
+          ]
+        },
+        {
+          "heading": "Practise on paper",
+          "lines": [
+            "Pick an idea, set your own settings and practise with pretend money. Every paper trade lands in your journal."
+          ]
+        }
       ]
     },
     {
       "slug": "about",
       "title": "About AiAlgoDesk",
-      "description": "A trading workspace for retail traders in India: education, analysis and paper practice.",
+      "description": "A trading workspace for retail traders in India: education, analysis and paper practice. Questions and answers.",
       "intro": "AiAlgoDesk is built for traders who want to learn to read the market by its structure and practise with discipline.",
       "sections": [
-        {"heading": "What we believe", "lines": [
-          "Learning comes before real money. Every idea should be practised on paper first.",
-          "The decisions stay with you: the idea, the settings, the trade and the exit."
-        ]},
-        {"heading": "What we do not do", "lines": [
-          "We do not tell anyone what to trade and we make no promise about results.",
-          "Most individual traders in futures and options lose money. Please read the risk disclosure before you trade."
-        ]}
+        {
+          "heading": "No order is placed without you",
+          "lines": [
+            "The AI explains. It never places, blocks or changes an order."
+          ]
+        },
+        {
+          "heading": "Your broker data stays yours",
+          "lines": [
+            "Data from your broker account is kept in your own account, not shared with other accounts."
+          ]
+        },
+        {
+          "heading": "Paper by default",
+          "lines": [
+            "You practise with pretend money. No order reaches your broker."
+          ]
+        },
+        {
+          "heading": "What we do not do",
+          "lines": [
+            "We do not tell anyone what to trade and we make no promise about results.",
+            "Most individual traders in futures and options lose money. Please read the risk disclosure before you trade."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "question": "What does it cost?",
+          "answer": "Free during the beta."
+        },
+        {
+          "question": "Which brokers can I connect?",
+          "answer": "Zerodha, Upstox, Angel One, Dhan, Fyers, Groww, Shoonya and more. A broker is needed only for live prices."
+        },
+        {
+          "question": "Is my money safe?",
+          "answer": "ATP never holds your money. Practice runs on paper with pretend money, and no order reaches your broker without you."
+        },
+        {
+          "question": "What is paper trading?",
+          "answer": "Practice with pretend money: you follow the market and see how your idea would do, and no order goes to your broker."
+        }
       ]
     }
   ]

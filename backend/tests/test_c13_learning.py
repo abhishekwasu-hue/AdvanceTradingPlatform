@@ -115,8 +115,20 @@ def test_learn_is_404_naming_the_flag_until_both_are_on():
 
 def test_every_lesson_page_and_email_line_passes_the_content_guard():
     assert content.problems(content.readable_lines(content.load())) == []
-    assert content.problems(content.site_lines(content.load_site())) == []
+    assert content.site_problems(content.load_site()) == []
     assert content.problems(onboarding.readable_lines()) == []
+
+
+def test_the_site_pages_allow_only_the_products_own_two_letter_words():
+    """M95 F7: "AI" and "OI" pass on the public pages; every other guard rule still holds there."""
+    page = {"slug": "features", "title": "What it does", "description": "A page description long enough for the model.",
+            "intro": "Intro.", "sections": [{"heading": "AI Copilot", "lines": ["Option chain with OI."]}]}
+    assert content.site_problems(content.Site.model_validate({"pages": [page]})) == []
+    for bad in ("NIFTY at its area", "Buy above the high", "AI with a high win rate", "Price reached 23,450", "SBI chart"):
+        broken = {**page, "sections": [{"heading": "AI Copilot", "lines": [bad]}]}
+        assert content.site_problems(content.Site.model_validate({"pages": [broken]})), bad
+    faq = {**page, "faq": [{"question": "Is it a tip?", "answer": "No."}]}
+    assert content.site_problems(content.Site.model_validate({"pages": [faq]}))
 
 
 def test_the_guard_catches_what_an_education_surface_must_never_say():
@@ -171,6 +183,16 @@ def test_site_pages_are_public_and_follow_the_global_flag():
         assert slugs == ["features", "how-it-works", "about"]
         for page in got.json()["pages"]:
             assert 20 <= len(page["description"]) <= 160
+        # M95 F7: the front door's content - six benefits with a picture each, three steps, the trust lines and the FAQ.
+        pages = {p["slug"]: p for p in got.json()["pages"]}
+        assert [s["heading"] for s in pages["features"]["sections"]] == [
+            "AI Copilot", "Option chain with OI", "Find setups", "AI Trading Bot on paper", "Journal", "Daily report on Telegram"]
+        assert all(s["image"] for s in pages["features"]["sections"])
+        assert len(pages["how-it-works"]["sections"]) == 3
+        assert {"No order is placed without you", "Your broker data stays yours", "Paper by default"} <= {
+            s["heading"] for s in pages["about"]["sections"]}
+        faq = {q["question"]: q["answer"] for q in pages["about"]["faq"]}
+        assert faq["What does it cost?"] == "Free during the beta."
     finally:
         _global("marketing_site", False)
     assert client.get("/api/site/pages").status_code == 404

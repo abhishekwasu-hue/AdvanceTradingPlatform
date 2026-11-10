@@ -1,10 +1,10 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ThemeToggle } from "../components/AppearanceCard";
 import { LogoMark } from "../components/Logo";
 import { LEGAL_SLUGS, LEGAL_TITLES, legalPath } from "../legal/legal";
-import { SITE_LABELS as NAV_LABEL, SITE_SLUGS, applySeo, sitePages, sitePath, siteSlugFromPath, type SitePageData } from "./site";
+import { SITE_FOOTER, SITE_LABELS as NAV_LABEL, SITE_SLUGS, applySeo, frontImagePath, sitePages, sitePath, siteSlugFromPath, type SitePageData } from "./site";
 import { Skeleton } from "../components/primitives";
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
@@ -30,6 +30,23 @@ export default function SitePage() {
     window.scrollTo(0, 0);
   }, [page]);
   return <SiteView page={page} loading={pages === undefined} current={slug} />;
+}
+
+/**
+ * M95 F7: a section's picture - a fixed 16:10 box (so nothing moves while it loads), lazy-loaded, and a plain tinted
+ * box when the file is not there yet (the operator adds the pictures; the page never shows a broken image).
+ */
+export function SiteImage({ slug, alt }: { slug: string; alt: string }) {
+  const [missing, setMissing] = useState(false);
+  return (
+    <div className="mb-space-3 aspect-[16/10] w-full overflow-hidden rounded-control border border-subtle bg-surface-2" data-site-image={slug}
+      data-missing={missing ? "" : undefined}>
+      {!missing && (
+        <img src={frontImagePath(slug)} alt={alt} width={640} height={400} loading="lazy" decoding="async"
+          className="h-full w-full object-cover" onError={() => setMissing(true)} />
+      )}
+    </div>
+  );
 }
 
 /** The page once read (`page` null = not published). A prop-only view, so the render tests can show every state. */
@@ -72,6 +89,7 @@ export function SiteView({ page, loading = false, current }: { page: SitePageDat
             <div className="mt-space-6 grid grid-cols-1 gap-space-4 md:grid-cols-3" data-block="site-sections">
               {page.sections.map((section, i) => (
                 <section key={section.heading} aria-label={section.heading} className="rounded-panel border border-subtle bg-surface-1 p-space-5 shadow-card">
+                  {section.image && <SiteImage slug={section.image} alt={section.heading} />}
                   {page.slug === "how-it-works" && (
                     <span className="mb-space-2 inline-flex h-7 w-7 items-center justify-center rounded-pill bg-brand/10 text-t14 font-semibold text-brand">{i + 1}</span>
                   )}
@@ -80,6 +98,21 @@ export function SiteView({ page, loading = false, current }: { page: SitePageDat
                 </section>
               ))}
             </div>
+            {page.faq && page.faq.length > 0 && (
+              <section aria-labelledby="site-faq" className="mt-space-8" data-block="site-faq">
+                <h2 id="site-faq" className="text-t18 font-semibold text-fg">Questions and answers</h2>
+                <div className="mt-space-3 divide-y divide-subtle rounded-panel border border-subtle bg-surface-1">
+                  {page.faq.map((q) => (
+                    <details key={q.question} className="group px-space-5">
+                      <summary className={`flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-3 py-space-3 text-t15 font-medium text-fg ${FOCUS}`}>
+                        {q.question}<ChevronDown size={16} aria-hidden className="shrink-0 text-fg-muted transition-transform group-open:rotate-180" />
+                      </summary>
+                      <p className="pb-space-4 text-t14 text-fg-muted">{q.answer}</p>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="mt-space-8 flex flex-col items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-5 md:flex-row md:items-center md:justify-between">
               <p className="text-t15 font-semibold text-fg">Practise your own ideas on paper first.</p>
               <Link to="/" className={`inline-flex h-11 items-center gap-space-2 rounded-control bg-brand px-space-4 text-t14 font-semibold text-on-brand hover:bg-brand-strong md:h-9 ${FOCUS}`}>
@@ -91,7 +124,7 @@ export function SiteView({ page, loading = false, current }: { page: SitePageDat
       </main>
       <footer className="border-t border-subtle px-space-4 py-space-5 text-t12 text-fg-muted">
         <div className="mx-auto flex max-w-5xl flex-col gap-space-2 md:flex-row md:items-center md:justify-between">
-          <p>Information and education, not investment advice.</p>
+          <p data-site-footer>{SITE_FOOTER}</p>
           <nav aria-label="Legal pages" className="flex flex-wrap gap-space-3">
             {LEGAL_SLUGS.map((s) => <Link key={s} to={legalPath(s)} className={`inline-flex min-h-11 items-center rounded-control hover:text-fg md:min-h-0 ${FOCUS}`}>{LEGAL_TITLES[s]}</Link>)}
           </nav>

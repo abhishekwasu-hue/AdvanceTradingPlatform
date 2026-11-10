@@ -85,6 +85,14 @@ class Library(_Strict):
 class SiteSection(_Strict):
     heading: str = Field(min_length=1, max_length=60)
     lines: List[str] = Field(min_length=1, max_length=6)
+    # M95 F7: the slug of the section's picture, `/front/<image>.png` - the same file the front door shows (optional).
+    image: Optional[str] = Field(default=None, pattern=ID)
+
+
+class SiteQuestion(_Strict):
+    """M95 F7: one question of a page's FAQ and its short answer."""
+    question: str = Field(min_length=1, max_length=80)
+    answer: str = Field(min_length=1, max_length=240)
 
 
 class SitePage(_Strict):
@@ -93,6 +101,7 @@ class SitePage(_Strict):
     description: str = Field(min_length=20, max_length=160)      # the meta description: search engines show about 155
     intro: str = Field(min_length=1, max_length=240)
     sections: List[SiteSection] = Field(min_length=1)
+    faq: List[SiteQuestion] = Field(default_factory=list, max_length=8)
 
 
 class Site(_Strict):
@@ -142,7 +151,21 @@ def site_lines(site: Site) -> List[Tuple[str, str]]:
         for i, section in enumerate(page.sections):
             out.append((f"{p}.sections[{i}].heading", section.heading))
             out += [(f"{p}.sections[{i}].lines[{j}]", t) for j, t in enumerate(section.lines)]
+        for i, item in enumerate(page.faq):
+            out += [(f"{p}.faq[{i}].question", item.question), (f"{p}.faq[{i}].answer", item.answer)]
     return out
+
+
+# M95 F7: the product's own two-letter words the public pages name ("AI Copilot", "option chain with OI"). The guard's
+# all-capitals rule exists to catch security names; these two are not one, so only that rule lets them pass here, and
+# only on the site pages - every other guard rule (security names, numbers, buy / sell / target / stop, claims) holds.
+SITE_CAPITALS: Tuple[str, ...] = ("AI", "OI")
+
+
+def site_problems(site: Site) -> List[str]:
+    """Every guard problem of the public pages ("where: problem"); empty = clean."""
+    allowed = {f"an all-capitals name {word!r}" for word in SITE_CAPITALS}
+    return [f"{where}: {p}" for where, text in site_lines(site) for p in guard(text) if p not in allowed]
 
 
 def problems(lines: List[Tuple[str, str]]) -> List[str]:
@@ -163,5 +186,5 @@ def site_payload(site: Site) -> Dict[str, Any]:
     return {"pages": [p.model_dump() for p in site.pages]}
 
 
-__all__ = ["Library", "Lesson", "Site", "SitePage", "load", "load_site", "readable_lines", "site_lines", "problems",
+__all__ = ["Library", "Lesson", "Site", "SitePage", "load", "load_site", "readable_lines", "site_lines", "problems", "site_problems",
            "lessons_payload", "site_payload"]

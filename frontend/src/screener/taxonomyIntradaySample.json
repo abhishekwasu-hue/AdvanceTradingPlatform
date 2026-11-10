@@ -662,6 +662,27 @@
    "fitness_available": false
   },
   {
+   "id": "intraday.circuit_watch",
+   "source": "intraday",
+   "name": "Circuit Watch",
+   "definition": "The last price is within a set percent of the day's upper or lower price band, as your broker's quote reports it.",
+   "method": "price_action",
+   "setup": "mean_reversion",
+   "tags": {
+    "timeframe_family": [
+     "intraday"
+    ],
+    "direction": "both",
+    "data_tier": [
+     "live_per_user"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "fo_stocks"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
    "id": "intraday.rsi_extreme",
    "source": "intraday",
    "name": "RSI Extreme",
@@ -730,7 +751,7 @@
    "breakout": 12,
    "pullback": 0,
    "reversal": 2,
-   "mean_reversion": 1,
+   "mean_reversion": 2,
    "momentum": 0,
    "options_volatility": 0,
    "events_flow": 1,
@@ -787,7 +808,7 @@
    "internals": 0
   }
  },
- "total": 26,
+ "total": 27,
  "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice.",
  "source_notes": {
   "intraday": "Information and education only, not investment advice."

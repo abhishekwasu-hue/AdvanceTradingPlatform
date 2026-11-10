@@ -11,7 +11,7 @@ import asyncio
 import json
 import random
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlalchemy import select
@@ -22,7 +22,6 @@ from app.core.enums import OrderSide, SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import InstrumentRecord, OrderRecord, TradeRecord, User
 from app.execution.signal_execution import execute_signal_for_user
-from app.market_data.calendar import IST
 from app.paper import fno_ticket
 from app.platform import phase0_lock
 from tests.test_auth_api import _session_factory, client
@@ -31,6 +30,7 @@ from tests.test_z3_approval_entries import _price
 from tests.test_z3b_paper_account import _member, _paper_flag
 from tests.test_z5_p1d_risk_by_default import _flag, _org
 from tests.test_z10c_phase0_lock import _store_lock
+from tests.unique_expiry import unique_expiry
 
 LOT = 75
 
@@ -41,7 +41,7 @@ def _run(coro):
 
 def _expiry() -> date:
     """A future expiry no other test uses (the instrument table is shared)."""
-    return datetime.now(IST).date() + timedelta(days=60 + random.randint(0, 2000))
+    return unique_expiry()
 
 
 def _contract(expiry: date, strike: float, right: str = "CE") -> str:

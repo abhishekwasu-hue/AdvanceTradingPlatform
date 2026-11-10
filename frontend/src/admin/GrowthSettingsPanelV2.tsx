@@ -56,20 +56,26 @@ function LearnVideosCard() {
   const [error, setError] = useState<string | null>(null);
   const [videos, setVideos] = useState<Record<string, string>>({});
   const [course, setCourse] = useState("");
+  const [intro, setIntro] = useState("");
   const courseId = useId();
+  const introId = useId();
   useEffect(() => {
     let live = true;
-    growthSettingsApi.learn().then((d) => { if (live) { setData(d); setVideos(d.videos); setCourse(d.course_url); } },
+    growthSettingsApi.learn().then((d) => { if (live) { setData(d); setVideos(d.videos); setCourse(d.course_url); setIntro(d.intro_video_url ?? ""); } },
       (e) => { if (live) setError(friendlyError(e)); });
     return () => { live = false; };
   }, []);
-  const save = useSave(() => growthSettingsApi.saveLearn(learnBody(videos, course)), (d) => { setVideos(d.videos); setCourse(d.course_url); });
+  const save = useSave(() => growthSettingsApi.saveLearn(learnBody(videos, course, intro)),
+    (d) => { setVideos(d.videos); setCourse(d.course_url); setIntro(d.intro_video_url ?? ""); });
   return (
     <section data-console-card="learn-videos" aria-label="Learn videos" className={`${CARD} p-space-4 md:p-space-5`}>
       <h2 className="text-t15 font-semibold text-fg">Learn videos</h2>
-      <Details id="console.learn-videos" className="mt-space-1">A video link per lesson and one link to the full course. Empty fields show no video. Full https links only. They appear on the Learn page once it is turned on.</Details>
+      <Details id="console.learn-videos" className="mt-space-1">A video link per lesson and one link to the full course. Empty fields show no video. Full https links only. They appear on the Learn page once it is turned on. The intro video shows as a "Watch the 60-second intro" link on the sign-in page while it is set.</Details>
       {!data ? (error ? <p className="mt-space-3 text-t12 text-fg-muted">Could not load: {error}</p> : <SkeletonRows rows={2} label="Loading" />) : (
         <form className="mt-space-3 flex flex-col gap-space-3" onSubmit={(e) => { e.preventDefault(); void save.run(); }}>
+          <label htmlFor={introId} className="flex flex-col gap-space-1 text-t14 font-medium text-fg">Sign-in page intro video (60 seconds)
+            <input id={introId} type="url" inputMode="url" placeholder="https://" value={intro} onChange={(e) => setIntro(e.target.value)} className={INPUT} data-intro-video-input />
+          </label>
           <label htmlFor={courseId} className="flex flex-col gap-space-1 text-t14 font-medium text-fg">Full course
             <input id={courseId} type="url" inputMode="url" placeholder="https://" value={course} onChange={(e) => setCourse(e.target.value)} className={INPUT} />
           </label>

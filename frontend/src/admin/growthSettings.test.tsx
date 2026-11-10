@@ -93,6 +93,11 @@ describe("the settings", () => {
     });
   });
 
+  it("M95 F4: the front door's intro video is sent when given (an empty field removes it)", () => {
+    expect(learnBody({}, "", " https://intro.example/v ")).toEqual({ videos: {}, course_url: "", intro_video_url: "https://intro.example/v" });
+    expect(learnBody({}, "", "")).toEqual({ videos: {}, course_url: "", intro_video_url: "" });
+  });
+
   it("the writes live in their own module; the console stays free of write calls", () => {
     expect(apiSource).toContain('method: "PUT"');
     expect(consoleSource).not.toMatch(/method:/);

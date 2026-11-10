@@ -24,9 +24,10 @@ describe("Google sign-in button (GS-1)", () => {
     expect(googleEnabled({ google: true }, true)).toBe(false);
   });
 
-  it("shows on the login form only (without ui_v2: GS-1's place, under the button)", () => {
-    // M73: with ui_v2 the provider list sits at the top instead (social.test.tsx).
-    expect(accountSource).toContain('{mode === "signin" && !v2 && <GoogleButton show={providers.some((p) => p.id === "google")} />}');
+  it("M95 F2: on the login form the provider list (the large Google button) is on top with or without ui_v2", () => {
+    // GS-1's small button under the form gave way to the front door's large one at the top (social.test.tsx).
+    expect(accountSource).not.toContain("<GoogleButton");
+    expect(accountSource).toContain('const showProviders = providers.length > 0 && (mode === "signin" || (v2 && (mode === "register" || (mode === "invite" && !!invite?.valid))));');
   });
 });
 

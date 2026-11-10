@@ -563,6 +563,15 @@ def test_m55_t5_area_gate_and_its_invalidation():
     assert not evaluate(parse('AreaGate("up", min_rr=10)'), data, base_tf="15m").any()
 
 
+def test_band_distance_pct_reads_the_supplied_quote_m94():
+    from app.brokers.models import Quote
+    d = _sym([100.0] * 5, quote=Quote(symbol="S", ltp=108.0, upper_circuit_limit=110.0, lower_circuit_limit=90.0))
+    assert _ev('BandDistancePct("upper")', d) == pytest.approx(2.0 / 108.0 * 100.0)
+    assert _ev('BandDistancePct("lower")', d) == pytest.approx(18.0 / 108.0 * 100.0)
+    with pytest.raises(ScreenRuntimeError, match="price band not available"):          # no quote: not checked, never a value
+        _ev('BandDistancePct("upper")', _sym([100.0] * 5))
+
+
 def test_m94_session_functions():
     """M94 PR-1: the session's running values and the pre-open levels (the full fixtures: tests/test_m94_pr1_functions.py)."""
     pre = _bars([100, 101], start="2026-03-02 03:35", vol=[500, 700])            # 09:05 / 09:10 IST

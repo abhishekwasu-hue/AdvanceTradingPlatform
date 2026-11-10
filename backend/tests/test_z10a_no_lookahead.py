@@ -144,7 +144,7 @@ def test_last_bar_only_functions_cannot_be_read_back_in_time():
              "MaxPainDistancePct": "MaxPainDistancePct() < 2", "FuturesOI": "FuturesOI() > 0", "Sector": 'Sector() == "IT"',
              "Industry": 'Industry() == "x"',
              "McapBucket": 'McapBucket() == "large"', "IndexMember": 'IndexMember("NIFTY 50")', "IsFnO": "IsFnO()",
-             "RankScore": 'RankScore("platform:Momentum") > 50'}
+             "RankScore": 'RankScore("platform:Momentum") > 50', "BandDistancePct": 'BandDistancePct("upper") <= 2'}
     assert set(inner) == set(LAST_BAR_ONLY)
     for name, cond in inner.items():
         tf = "1d" if name == "RankScore" else "5m"                           # N3 S7a: RankScore runs on daily bars only

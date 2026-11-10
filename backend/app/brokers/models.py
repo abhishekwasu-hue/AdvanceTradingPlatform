@@ -86,6 +86,26 @@ class Quote(BaseModel):
     timestamp: Optional[datetime] = None
     # UI2-4a2-pre: the previous session's close, where the broker's quote says it (for a watchlist's change); None = unknown.
     prev_close: Optional[float] = None
+    # M94 PR-3: the day's price band (upper / lower circuit limit) the exchange set, as the broker's quote reports it
+    # (Upstox and Kite `upper_circuit_limit` / `lower_circuit_limit`); None = the broker did not give it - never computed.
+    upper_circuit_limit: float | None = None
+    lower_circuit_limit: float | None = None
+
+
+def circuit_limits(entry: Any) -> dict[str, float | None]:
+    """M94 PR-3: the price band fields of one broker quote entry, for `Quote(**circuit_limits(entry))`. Upstox (v2 Full
+    Market Quotes, `GET /market-quote/quotes`) and Kite Connect (`GET /quote`) both document `upper_circuit_limit` and
+    `lower_circuit_limit`. A field that is absent, not a number, or not above zero (an index has no band) is None: a band
+    is never invented."""
+    out: dict[str, float | None] = {}
+    for key in ("upper_circuit_limit", "lower_circuit_limit"):
+        raw = entry.get(key) if isinstance(entry, dict) else None
+        try:
+            value = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            value = None
+        out[key] = value if value is not None and math.isfinite(value) and value > 0 else None
+    return out
 
 
 class OptionChainRow(BaseModel):

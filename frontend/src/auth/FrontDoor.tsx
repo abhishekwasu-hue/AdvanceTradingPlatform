@@ -24,7 +24,7 @@ export const BENEFITS = [
   { slug: "copilot", title: "copilotTitle", text: "copilotText" },
   { slug: "option-chain", title: "chainTitle", text: "chainText" },
   { slug: "find-setups", title: "setupsTitle", text: "setupsText" },
-  { slug: "paper-bot", title: "botTitle", text: "botText" },
+  { slug: "trading-bot", title: "botTitle", text: "botText" },
   { slug: "journal", title: "journalTitle", text: "journalText" },
   { slug: "daily-report", title: "reportTitle", text: "reportText" },
 ] as const satisfies readonly { slug: string; title: keyof FrontStrings; text: keyof FrontStrings }[];

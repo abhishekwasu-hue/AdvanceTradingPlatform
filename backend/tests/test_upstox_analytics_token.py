@@ -317,6 +317,12 @@ def test_reprobe_marks_the_class_refused_on_the_stored_row(monkeypatch):
     assert ua.QUOTES not in ua.working_classes(stored)
 
 
+async def _own_warnings(session, tenant_id, user_id):
+    return len(list(await session.scalars(select(NotificationRecord.id).where(
+        NotificationRecord.tenant_id == tenant_id, NotificationRecord.user_id == user_id,
+        NotificationRecord.title.startswith(ua.TITLE_PREFIX)))))
+
+
 def test_expiry_warning_once_a_week_before_and_once_on_the_last_day():
     bearer = _register("at-warn@example.com")
     tenant_id = _tenant_of(bearer)
@@ -329,14 +335,17 @@ def test_expiry_warning_once_a_week_before_and_once_on_the_last_day():
             session.add(BrokerCredentialRecord(tenant_id=tenant_id, user_id=user_id, broker_name="upstox", account_label="warn",
                                                encrypted_payload=encrypt_text(creds.model_dump_json(), tenant_id, PURPOSE_BROKER_CREDENTIAL)))
             await session.commit()
-        counts = []
+        counts = []      # warnings sent for THIS credential only: send_expiry_warnings walks every Upstox row in the shared DB
         for day in (10, 13, 13, 16, 20, 20, 21):
             at = datetime(2026, 11, day, 9, 0, tzinfo=IST)
             async with _session_factory() as session:
-                counts.append(await ua.send_expiry_warnings(session, at))
+                before = await _own_warnings(session, tenant_id, user_id)
+                await ua.send_expiry_warnings(session, at)
+                counts.append(await _own_warnings(session, tenant_id, user_id) - before)
         async with _session_factory() as session:
             notes = list(await session.scalars(select(NotificationRecord).where(
-                NotificationRecord.tenant_id == tenant_id, NotificationRecord.title.startswith(ua.TITLE_PREFIX))))
+                NotificationRecord.tenant_id == tenant_id, NotificationRecord.user_id == user_id,
+                NotificationRecord.title.startswith(ua.TITLE_PREFIX)).order_by(NotificationRecord.id)))
         return counts, notes
     counts, notes = asyncio.run(go())
     assert counts == [0, 1, 0, 0, 1, 0, 0]

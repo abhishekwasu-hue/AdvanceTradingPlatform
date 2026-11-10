@@ -5,7 +5,7 @@ date (at least three months old, rule M95-Q1) and writes one JSON file OUTSIDE t
 (FRONT_BARS=<that file>). The raw bars are never committed; the images hide every price figure and price axis.
 
   python3 scripts/front-images/prepare_bars.py --asof 2026-07-31 --out /tmp/front-bars.json \
-      --bars "NIFTY 50=<dir>/engine_NIFTY_<day>_daily.csv.gz" --bars "NIFTY BANK=<dir>/engine_BANKNIFTY_<day>_daily.csv.gz"
+      --bars "NIFTY 50=<daily CSV>" --bars "NIFTY BANK=<daily CSV>"
 """
 import argparse
 import csv

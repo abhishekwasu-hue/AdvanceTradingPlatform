@@ -12,6 +12,7 @@ import { Details } from "../ui/Details";
 import { useFeatures } from "../ui/useFeatures";
 import AlertsPanelV2 from "./AlertsPanelV2";
 import GrowthSettingsPanelV2 from "./GrowthSettingsPanelV2";
+import InviteRequestsPanel from "./InviteRequestsPanel";
 import ChainHistoryCard from "./ChainHistoryCard";
 import DailyReportAdminCard from "../dailyReport/DailyReportAdminCard";
 import CompliancePanelV2 from "./CompliancePanelV2";
@@ -73,7 +74,7 @@ export default function AdminConsoleV2(_props: PageProps) {
           {group === "safety" && <Phase0Notice />}
         </>
       )}
-      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<GrowthSettingsPanelV2 /><AiCostPanel /></>}
+      {section === "users" && <><UsersPanel /><InviteRequestsPanel />{growth && <ActivationPanel />}<GrowthSettingsPanelV2 /><AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}
       {section === "support" && (
         <>

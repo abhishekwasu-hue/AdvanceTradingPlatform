@@ -35,6 +35,8 @@ P_SOCIAL_PENDING = ("public: a pending provider step (M73) - the signed, single-
                     "two-factor code (rate limited and locked out as /login)")
 S_OWN_SIGN_IN_WAYS = ("self: the caller's own linked sign-in providers (M73 Settings › Account): start a link for the caller's own "
                       "account, or unlink one (refused when it is the last way to sign in)")
+P_INVITE_REQUEST = ("public: \"Ask for an invite\" (M95-Q3) - an e-mail and an optional note stored for the admin, only while "
+                    "self_signup is OFF; per-IP limited; the same 202 for every accepted call; no data returned")
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
@@ -147,6 +149,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/alerts/outbox"): "admin",
     ("GET", "/api/admin/audit-logs"): "admin",
     ("GET", "/api/admin/beta/cohort"): "admin",
+    ("GET", "/api/admin/invite-requests"): "admin",
+    ("PATCH", "/api/admin/invite-requests/{request_id}"): "admin",
     ("PUT", "/api/admin/beta/cohort/stage"): "admin",
     ("GET", "/api/admin/beta/feedback"): "admin",
     ("GET", "/api/admin/support/tickets"): "admin",
@@ -406,6 +410,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,
+    ("POST", "/api/auth/invite-request"): P_INVITE_REQUEST,
     ("GET", "/api/auth/scopes"): "member",
     ("GET", "/api/auth/sessions"): "member",
     ("DELETE", "/api/auth/sessions/{target_id}"): S_OWN_ACCOUNT,

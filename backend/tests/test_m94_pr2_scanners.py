@@ -1,4 +1,4 @@
-"""M94 PR-2 (docs/design/M94_INTRADAY_PACK.md section 3): the intraday scanners S1-S8 and S10-S12 as the library source
+"""M94 PR-2 (docs/design/M94_INTRADAY_PACK.md section 3): the intraday scanners S1-S12 as the library source
 `intraday` (app/screener/intraday.py), behind `intraday_pack` and `screener_breakouts` (both off by default).
 
 * Each scanner runs through the production runtime (`run_screen`) on fixture sessions: a positive and a negative case.
@@ -29,8 +29,8 @@ from tests.test_auth_api import _session_factory, client
 from tests.test_phase_l_ai import _owner
 
 IDS = ["intraday.gappers", "intraday.new_day_high", "intraday.new_day_low", "intraday.top_reversal", "intraday.bottom_reversal",
-       "intraday.vwap_break", "intraday.turbo_breakup", "intraday.turbo_breakdown", "intraday.rsi_extreme", "intraday.volume_surge",
-       "intraday.key_levels"]
+       "intraday.vwap_break", "intraday.turbo_breakup", "intraday.turbo_breakdown", "intraday.circuit_watch", "intraday.rsi_extreme",
+       "intraday.volume_surge", "intraday.key_levels"]
 GALLERY = ("screener_v2", "screener_gallery")
 PACK = ("intraday_pack", "screener_breakouts")
 
@@ -63,9 +63,10 @@ def _match(sc, frame, **values):
     params = {**sc.defaults(), **values}
     ast, validated = compile_screen(sc.text, base_tf=sc.base_tf, params=params)
     assert validated.ok, [p.message for p in validated.problems]
+    data = frame if isinstance(frame, SymbolData) else SymbolData("S", {sc.base_tf: frame})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        got = run_screen(ast, validated, [SymbolData("S", {sc.base_tf: frame})], base_tf=sc.base_tf, params=params, check_history=False)
+        got = run_screen(ast, validated, [data], base_tf=sc.base_tf, params=params, check_history=False)
     return got[0]
 
 
@@ -130,6 +131,17 @@ def _reflected(frame):
     return mr.reflect_bars(frame, float(frame["high"].max() + frame["low"].min()))
 
 
+def _band_day(ltp: float, quote: bool = True):
+    """S9: quiet 5-minute bars and the broker quote of the last price with the day's band 90-110 (made-up numbers)."""
+    from app.brokers.models import Quote
+    d = SymbolData("S", {"5m": _day5(quiet_day(10))})
+    if quote:
+        d.quote = Quote(symbol="S", ltp=ltp, upper_circuit_limit=110.0, lower_circuit_limit=90.0)
+    else:
+        d.quote, d.quote_reason = None, "not available from your broker"
+    return d
+
+
 # (scanner, positive frame, negative frame, the values he sets for the run - the Not set ones and any he changes)
 CASES = {
     "intraday.gappers": (itd.S1, lambda: _gap_day(103.0), lambda: _gap_day(100.5), dict(pre_vol=0, min_turnover=1, min_atr_pct=0.1)),
@@ -140,6 +152,7 @@ CASES = {
     "intraday.vwap_break": (itd.S6, lambda: _vwap_day(2), lambda: _vwap_day(1), {}),
     "intraday.turbo_breakup": (itd.S7, lambda: _turbo_day(3), lambda: _turbo_day(1), {}),
     "intraday.turbo_breakdown": (itd.S8, lambda: _reflected(_turbo_day(3)), lambda: _reflected(_turbo_day(1)), {}),
+    "intraday.circuit_watch": (itd.S9, lambda: _band_day(109.0), lambda: _band_day(100.0), dict(near_pct=1.5)),
     "intraday.rsi_extreme": (itd.S10, lambda: _rsi_day(True), lambda: _rsi_day(False), dict(pmin=50, pmax=500, min_vol=0)),
     "intraday.volume_surge": (itd.S11, lambda: _surge_day(4), lambda: _surge_day(1), dict(v=3)),
     "intraday.key_levels": (itd.S12, lambda: _day5(quiet_day(10)),
@@ -147,10 +160,10 @@ CASES = {
 }
 
 
-# ------------------------------------------------------------------------------------------------- the eleven scanners
-def test_the_eleven_scanners_and_no_circuit_watch():
+# ------------------------------------------------------------------------------------------------- the twelve scanners
+def test_the_twelve_scanners_and_only_circuit_watch_reads_the_band():
     assert [s.id for s in itd.SCANNERS] == IDS and set(CASES) == set(IDS)
-    assert not any("circuit" in s.id or "Band" in s.text for s in itd.SCANNERS)            # S9 comes with PR-3
+    assert [s.id for s in itd.SCANNERS if "Band" in s.text] == ["intraday.circuit_watch"]
     assert {s.base_tf for s in itd.SCANNERS} <= set(itd.INTRADAY_TFS)
     assert itd.S7.base_tf == itd.S8.base_tf == itd.S10.base_tf == "1m"
 
@@ -174,6 +187,26 @@ def test_a_not_set_parameter_is_asked_for_before_the_run(ident):
     assert filled.ok, (ident, [p.message for p in filled.problems])
 
 
+def test_circuit_watch_reads_both_bands_and_says_not_checked_without_one():
+    """S9: near the upper band and near the lower band both match; no band in the quote is "not checked" with the reason,
+    never a value and never a silent no-match; `near_pct` is Not set (S9 (e))."""
+    assert [(p.name, p.value) for p in itd.S9.params] == [("near_pct", None)]
+    assert _match(itd.S9, _band_day(109.0), near_pct=1.5).matched                # (110 - 109) / 109 = 0.92 %
+    assert _match(itd.S9, _band_day(90.5), near_pct=1.5).matched                 # (90.5 - 90) / 90.5 = 0.55 %
+    assert not _match(itd.S9, _band_day(100.0), near_pct=1.5).matched
+    got = _match(itd.S9, _band_day(109.0, quote=False), near_pct=1.5)
+    assert not got.matched and "price band not available" in " ".join(str(v) for v in vars(got).values())
+
+
+def test_circuit_watch_is_refused_where_bars_are_read_back_in_time():
+    """BandDistancePct is last bar only (PR-3): history, the library's studies and template compile refuse it; the run
+    path (band=True) accepts it."""
+    from app.screener.routes import missing_data
+    ast = parse(itd.S9.text)
+    assert missing_data(ast, band=True) == []
+    assert missing_data(ast) != []
+
+
 def test_reference_values_carry_over_and_other_market_units_are_not_set():
     """M94-Q2 / Q3: the study's unit-free values are reference values; share counts, rupee amounts and prices are Not set;
     a value the study gives no number for is the ATP default (the breakout parameters') or Not set."""
@@ -185,7 +218,7 @@ def test_reference_values_carry_over_and_other_market_units_are_not_set():
     assert (s2["vwap"].value, s2["skip"].value, s2["k"].value) == (True, 15, 0.2) and not s2["skip"].ref
     assert all(p.value is None for p in itd.S4.params) and by(itd.S6)["v"].value == 1.5 and by(itd.S7)["v"].value == 1.5
     assert (s10["hi"].value, s10["lo"].value, s10["n"].value) == (90, 10, 14) and all(s10[n].value is None for n in ("pmin", "pmax", "min_vol"))
-    assert by(itd.S11)["v"].value is None and s12["tol_pct"].value is None
+    assert by(itd.S11)["v"].value is None and s12["tol_pct"].value is None and by(itd.S9)["near_pct"].value is None
     assert [s12[n].value for n in ("sma_a", "sma_b", "ema_a", "ema_b")] == [50, 200, 9, 20]
     for sc in itd.SCANNERS:
         for p in sc.params:

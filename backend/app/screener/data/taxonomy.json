@@ -888,6 +888,21 @@
    "fitness_available": false
   },
   {
+   "id": "intraday.circuit_watch",
+   "source": "intraday",
+   "name": "Circuit Watch",
+   "definition": "The last price is within a set percent of the day's upper or lower price band, as your broker's quote reports it.",
+   "method": "price_action",
+   "setup": "mean_reversion",
+   "timeframe_family": ["intraday"],
+   "direction": "both",
+   "data_tier": ["live_per_user"],
+   "difficulty": "beginner",
+   "universe_default": "fo_stocks",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
    "id": "intraday.rsi_extreme",
    "source": "intraday",
    "name": "RSI Extreme",

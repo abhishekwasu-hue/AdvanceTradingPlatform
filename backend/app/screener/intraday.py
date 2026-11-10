@@ -1,6 +1,7 @@
-"""M94 PR-2 (docs/design/M94_INTRADAY_PACK.md section 3, S1-S8 and S10-S12): the intraday scanners - a screen library
-source of its own, `intraday`, behind the `intraday_pack` flag (off by default) and `screener_breakouts` (their session
-functions are that family's). S9 Circuit Watch comes with PR-3.
+"""M94 PR-2 (docs/design/M94_INTRADAY_PACK.md section 3, S1-S12): the intraday scanners - a screen library source of its
+own, `intraday`, behind the `intraday_pack` flag (off by default) and `screener_breakouts` (their session functions are
+that family's). S9 Circuit Watch reads the price band of the user's own broker quote (PR-3, `BandDistancePct`): the run
+path only, last bar only - a symbol without a band in its quote is "not checked" with the reason, never a no-match.
 
 * Each scanner is a ScreenQL text on a 1m or 5m base with editable `$parameters`. A parameter carries a reference value
   only where the value carries over to NSE (`ref`: "Reference value - edit before use"); a value in another market's
@@ -134,6 +135,14 @@ S7 = Scanner(
     "1m",
     _extreme_params(1.5, False, "This 1-minute bar's volume against the same minute in the last 20 sessions." + _VOLUME_ZERO))
 
+S9 = Scanner(
+    "intraday.circuit_watch", "Circuit Watch",
+    "The last price is within a set percent of the day's upper or lower price band, as your broker's quote reports it.",
+    'BandDistancePct("upper") <= $near_pct OR BandDistancePct("lower") <= $near_pct',
+    "5m",
+    (Param("near_pct", None, "Distance from the price band, in percent of the last price. Needs a broker whose quote "
+                             "reports the band, else not available."),))
+
 S10 = Scanner(
     "intraday.rsi_extreme", "RSI Extreme",
     "5-minute RSI above a high level or below a low level, with the session's volume so far and the price inside a set range.",
@@ -194,7 +203,7 @@ S5 = _mirrored(S4, "intraday.bottom_reversal", "Bottom Reversal",
 S8 = _mirrored(S7, "intraday.turbo_breakdown", "Turbo Breakdown",
                "A new session low on 1-minute bars with unusual 1-minute volume for the time of day.")
 
-SCANNERS: tuple[Scanner, ...] = (S1, S2, S3, S4, S5, S6, S7, S8, S10, S11, S12)
+SCANNERS: tuple[Scanner, ...] = (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12)
 BY_ID: dict[str, Scanner] = {s.id: s for s in SCANNERS}
 
 

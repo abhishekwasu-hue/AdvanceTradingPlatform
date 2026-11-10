@@ -272,6 +272,56 @@ def premarket_levels(h: np.ndarray, low: np.ndarray, sm: SessionMap) -> Tuple[np
     return hi, lo
 
 
+def session_extremes_so_far(h: np.ndarray, low: np.ndarray, sm: SessionMap) -> tuple[np.ndarray, np.ndarray]:
+    """M94: (highest high, lowest low) of the session's bars UP TO AND INCLUDING each bar (NaN on pre-open bars and
+    outside every session). Each value reads only its own session's bars before it and the bar itself."""
+    key = pd.Series(sm.session)
+    hs = pd.Series(np.where(sm.in_session, h, np.nan))
+    ls = pd.Series(np.where(sm.in_session, low, np.nan))
+    hi = hs.groupby(key).cummax().to_numpy(float)
+    lo = ls.groupby(key).cummin().to_numpy(float)
+    hi[~sm.in_session] = np.nan
+    lo[~sm.in_session] = np.nan
+    return hi, lo
+
+
+def session_volume(v: np.ndarray, sm: SessionMap) -> np.ndarray:
+    """M94: the volume of the session's bars up to and including each bar (NaN on pre-open bars, outside every session
+    and while the session has no volume data so far)."""
+    vv = pd.Series(np.where(sm.in_session, v, np.nan))
+    key = pd.Series(sm.session)
+    total = vv.groupby(key).cumsum().to_numpy(float)
+    seen = pd.Series(np.isfinite(vv.to_numpy(float)).astype(float)).groupby(key).cumsum().to_numpy(float)
+    out = np.where(sm.in_session & (seen > 0), total, np.nan)
+    return np.asarray(out, dtype=float)
+
+
+def session_count(cond: np.ndarray, sm: SessionMap) -> np.ndarray:
+    """M94: how many of the session's bars up to and including each bar had `cond` true (NaN on pre-open bars and
+    outside every session); the count starts again at each session's first bar."""
+    c = pd.Series(np.where(sm.in_session, np.asarray(cond, dtype=bool).astype(float), np.nan))
+    out = c.groupby(pd.Series(sm.session)).cumsum().to_numpy(float)
+    out[~sm.in_session] = np.nan
+    return out
+
+
+def premarket_volume(v: np.ndarray, sm: SessionMap) -> np.ndarray:
+    """M94: per in-session bar, the volume of its date's pre-open bars - NaN (never 0) when the data has no pre-open bars
+    for that date or none of them carries volume data. The pre-open bars all start before the session's first bar, so
+    the value is known from that bar on."""
+    n_sessions = len(sm.dates)
+    out = np.full(len(v), np.nan)
+    if not n_sessions:
+        return out
+    pre = sm.pre & np.isfinite(v)
+    sums = np.bincount(sm.pre_session[pre], weights=v[pre], minlength=n_sessions)
+    counts = np.bincount(sm.pre_session[pre], minlength=n_sessions)
+    total = np.where(counts > 0, sums, np.nan)
+    ins = sm.in_session
+    out[ins] = total[sm.session[ins]]
+    return out
+
+
 def eligible(sm: SessionMap, skip_min: float, window: str) -> np.ndarray:
     """Bars a signal may come from: in the session, starting at or after `skip_min` minutes from the open and, with
     window `calendar`, closing by the exchange's no-new-entries time (a special session: by its close)."""
@@ -292,4 +342,4 @@ def clock(dt: datetime, cal: SessionCalendar = DEFAULT_CALENDAR) -> str:
 
 
 __all__ = ["SessionCalendar", "SessionMap", "calendar_for", "DEFAULT_CALENDAR", "map_sessions", "session_vwap", "time_of_day_rvol",
-           "session_extremes_before", "window_levels", "previous_session_levels", "premarket_levels", "eligible", "clock"]
+           "session_extremes_before", "session_extremes_so_far", "session_volume", "session_count", "premarket_volume", "window_levels", "previous_session_levels", "premarket_levels", "eligible", "clock"]

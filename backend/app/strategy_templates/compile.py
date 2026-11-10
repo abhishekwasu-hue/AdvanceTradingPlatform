@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from app.screener import nodes as n
+from app.screener.breakouts import gate as breakout_gate
 from app.screener.parser import ScreenQLSyntaxError, parse
 from app.screener.registry import BOOL, FUNCTIONS, LAST_BAR_ONLY, NUM
 from app.screener.validator import validate_study
@@ -364,6 +365,7 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
         for call in _calls(compiled_part.ast):
             spec = FUNCTIONS[call.name]
             flags.update(f for f in (spec.flag, *spec.also_flags) if f)
+            flags.update(breakout_gate.call_extra_flags(call))       # M94: a PatternBreakout with a named flag / pennant argument
     recipe = Recipe(template, settings, context_tf if context_on else None, context_on, parts, expiry, lookback, flags,
                     setup=setup, has_trigger=trigger is not None, invalidation_since_setup=since_setup, fetch_lookback=fetch)
     recipe.params_hash = params_hash(template, settings)

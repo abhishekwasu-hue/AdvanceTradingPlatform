@@ -7,6 +7,8 @@ import { LogoMark } from "../components/Logo";
 import { Skeleton } from "../components/primitives";
 import { LEGAL_SLUGS, LEGAL_TITLES, legalPath } from "../legal/legal";
 import { applySeo } from "../site/site";
+import { formatNumber } from "../ui/format";
+import { SubTabs } from "../ui/SubTabs";
 import { ChainBars, GuestChartSvg } from "./GuestChart";
 import {
   FOOTER_LINE, LOOK_INSIDE_PATH, dayText, guestSnapshot, pctText, signUpLabel, type GuestIndex, type GuestSnapshot,
@@ -72,14 +74,9 @@ export function LookInsideView({ snap, signUpOpen }: { snap: GuestSnapshot | nul
               </p>
             </div>
             {snap.indices.length > 1 && (
-              <div role="tablist" aria-label="Index" className="flex gap-space-2">
-                {snap.indices.map((ix, i) => (
-                  <button key={ix.name} type="button" role="tab" aria-selected={ix === index} onClick={() => setPick(i)}
-                    className={`h-11 rounded-pill px-space-4 text-t14 font-semibold md:h-9 ${ix === index ? "bg-brand text-on-brand" : "border border-subtle text-fg-muted hover:text-fg"} ${FOCUS}`}>
-                    {ix.name}
-                  </button>
-                ))}
-              </div>
+              <SubTabs kind="toggle" label="Index" value={String(snap.indices.indexOf(index))}
+                items={snap.indices.map((ix, i) => ({ key: String(i), label: ix.name }))}
+                onChange={(key) => setPick(Number(key))} className="max-w-sm" />
             )}
             <TodayCard index={index} asOf={snap.as_of} />
             <Card title="Chart with areas" sub={`Daily · ${dayText(index.chart.first_date)} to ${dayText(index.chart.last_date)}`} id="chart">
@@ -102,7 +99,7 @@ export function LookInsideView({ snap, signUpOpen }: { snap: GuestSnapshot | nul
                 <>
                   <ChainBars rows={index.chain.rows} />
                   {index.chain.pcr !== null && (
-                    <p className="mt-space-3 text-t13 text-fg-muted">Put-call ratio by open interest: <span className="font-semibold text-fg tabular-nums">{index.chain.pcr.toFixed(2)}</span></p>
+                    <p className="mt-space-3 text-t13 text-fg-muted">Put-call ratio by open interest: <span className="font-semibold text-fg tabular-nums">{formatNumber(index.chain.pcr, 2)}</span></p>
                   )}
                 </>
               ) : (
@@ -186,7 +183,7 @@ function TodayCard({ index, asOf }: { index: GuestIndex; asOf: string }) {
         </div>
       </div>
       {t.range_position_pct !== null && (
-        <div className="mt-space-3" aria-label={`The close sat ${t.range_position_pct.toFixed(0)}% of the way up its recent range`}>
+        <div className="mt-space-3" aria-label={`The close sat ${formatNumber(t.range_position_pct, 0)}% of the way up its recent range`}>
           <div className="flex justify-between text-t12 text-fg-muted"><span>Recent low</span><span>Recent high</span></div>
           <div className="relative mt-space-1 h-2 rounded-pill bg-surface-2">
             <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-pill bg-brand"

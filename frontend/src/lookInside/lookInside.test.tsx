@@ -61,6 +61,7 @@ describe("the guest view", () => {
     for (const card of ["today", "chart", "chain", "screens", "report"]) expect(out).toContain(`data-card="${card}"`);
     expect(text).toContain("As of 31 Jul 2026");
     expect(text).toContain("+0.82%");
+    expect(text).toContain("BANK NIFTY");
     expect(text).toContain("NIFTY 50: matched");
     expect(text).toContain("BANK NIFTY: no match");
     expect(text).toContain("Nearest buyer area below: 1.90% away.");
@@ -110,7 +111,7 @@ describe("the helpers", () => {
   it("format dates, %, steps and lakhs", () => {
     expect(dayText("2026-07-31")).toBe("31 Jul 2026");
     expect(dayText("nope")).toBe("");
-    expect(pctText(-1.2)).toBe("-1.20%");
+    expect(pctText(-1.2)).toBe("−1.20%");
     expect(pctText(null)).toBe("-");
     expect(stepLabel(0)).toBe("ATM");
     expect(stepLabel(3)).toBe("+3");

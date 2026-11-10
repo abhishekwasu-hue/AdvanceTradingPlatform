@@ -70,7 +70,7 @@ export function GuestChartSvg({ bars, areas, name }: { bars: [number, number, nu
 /** The chain as open interest bars by strike distance: calls and puts per row, in lakhs. */
 export function ChainBars({ rows }: { rows: GuestChainRow[] }) {
   const max = Math.max(1, ...rows.flatMap((r) => [r.call_oi_lakh ?? 0, r.put_oi_lakh ?? 0]));
-  const width = (v: number | null) => `${Math.max(0, ((v ?? 0) / max) * 100).toFixed(1)}%`;
+  const width = (v: number | null) => `${Math.max(0, ((v ?? 0) / max) * 100)}%`;
   return (
     <div data-guest-chain>
       <div className="mb-space-2 flex gap-space-4 text-t12 text-fg-muted">

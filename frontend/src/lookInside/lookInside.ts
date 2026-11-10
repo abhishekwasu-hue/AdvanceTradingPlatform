@@ -5,6 +5,7 @@
  * open interest in lakhs.
  */
 import { request } from "../api/client";
+import { formatNumber, formatPct } from "../ui/format";
 
 export const LOOK_INSIDE_PATH = "/look-inside";
 
@@ -54,7 +55,7 @@ export function dayText(iso: string | null | undefined): string {
 /** +0.82% / -1.20% / 0.00% */
 export function pctText(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "-";
-  return `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+  return formatPct(v, 2);
 }
 
 /** The strike row's label: "ATM", "+3", "-2" (steps from the at-the-money strike). */
@@ -63,7 +64,7 @@ export function stepLabel(steps: number): string {
 }
 
 export function lakhText(v: number | null | undefined): string {
-  return v === null || v === undefined ? "-" : `${v.toFixed(1)} L`;
+  return v === null || v === undefined ? "-" : `${formatNumber(v, 1)} L`;
 }
 
 /** The sticky bar's call to action: sign-up open or invite-only. */

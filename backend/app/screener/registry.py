@@ -475,6 +475,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("FuturesOI", "factor", NUM, "contracts", (), cost=2.0, timeframed=False, needs=("option_chain",),
          doc="open interest of the underlying's near-month future, from the stored option-chain snapshot read at or before"
              " the bar's close (not evaluated when that snapshot has none)"),
+    # M94 PR-3 (S9 Circuit Watch): the day's price band from the user's own broker quote - known now only (no band history
+    # is stored), so the last bar only (LAST_BAR_ONLY: never read back in time, never a template or backtest input)
+    Spec("BandDistancePct", "factor", NUM, "pct", (Arg("side", STR, choices=("upper", "lower")),), cost=2.0, timeframed=False,
+         needs=("price_band",),
+         doc="% distance of the last price to the day's upper (or lower) price band in your broker's quote: (upper band -"
+             " last price) / last price x 100, or (last price - lower band) / last price x 100; the last bar only; not"
+             " checked when the quote has no band"),
     Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)", needs=("reference",)),
     Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)", needs=("reference",)),
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),

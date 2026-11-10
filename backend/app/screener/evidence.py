@@ -666,7 +666,9 @@ def _trim(data: SymbolData, base_tf: str, as_of: Optional[datetime]) -> SymbolDa
     # every other field (zones, the BK2 session exchange, reference data) carried over as is - only the frames are cut;
     # EV3: an option chain is a snapshot of the newest bar's time, so a pack as of an earlier bar never reads it
     cut = any(df is not None and frames.get(tf) is not None and len(frames[tf]) < len(df) for tf, df in data.frames.items())
-    return dataclasses.replace(data, frames=frames, indices=set(data.indices), option_chain=None if cut else data.option_chain)
+    # M94 PR-3: a broker quote (the price band) is known now only - likewise never read by an earlier bar's pack
+    return dataclasses.replace(data, frames=frames, indices=set(data.indices), option_chain=None if cut else data.option_chain,
+                               quote=None if cut else data.quote)
 
 
 def ast_sha256(ast: Any) -> str:

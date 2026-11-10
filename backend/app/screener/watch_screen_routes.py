@@ -103,7 +103,7 @@ async def _compiled_own(session: AsyncSession, user: User, row: ScreenRecord, ex
                                                      "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail=RANKS)
-    missing = R.missing_data(ast, reference=True, chain=True)
+    missing = R.missing_data(ast, reference=True, chain=True, band=True)
     if missing:
         raise HTTPException(status_code=422, detail=f"{', '.join(m + '()' for m in missing)} need data the screener does not load yet")
     return ast, validated, params
@@ -118,7 +118,7 @@ def _usable(row: ScreenRecord) -> tuple[bool, str | None]:
         return False, "This screen needs to be opened and saved again in the Screener."
     if validated.cross_sectional:
         return False, RANKS
-    if R.missing_data(ast, reference=True, chain=True):
+    if R.missing_data(ast, reference=True, chain=True, band=True):
         return False, "This screen needs data the screener does not load yet."
     return True, None
 

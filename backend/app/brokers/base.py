@@ -235,6 +235,9 @@ class BrokerInterface(ABC):
 
     # UI2-4a2-pre: True when `get_quotes_batch` is the broker's multi-quote call (one call for a whole watchlist).
     multi_quote: bool = False
+    # M94 PR-3: True when this adapter's quotes carry the day's price band (Quote.upper / lower_circuit_limit) - Upstox
+    # and Kite (OPEN_QUESTIONS M94-Q5); elsewhere the band is "not available from your broker" and no call is made for it.
+    price_bands: bool = False
     # UI2-4a2-pre review: set by a caller that budgets broker calls - awaited before a lookup call the adapter makes on
     # its own (Shoonya's /SearchScrip); False = no token, the adapter raises BrokerBudgetUsed. None = not budgeted.
     budget_hook: Optional[Callable[[], Awaitable[bool]]] = None

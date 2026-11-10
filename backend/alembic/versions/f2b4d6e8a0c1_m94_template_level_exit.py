@@ -7,7 +7,7 @@ exactly as before, on every existing row. No row is written and no stored value 
 Run after 15:30 IST (owner, DECISIONS 25 Oct).
 
 Revision ID: f2b4d6e8a0c1
-Revises: d6f8a0c2e4b3
+Revises: e1a3c5e7f9b2
 Create Date: 2026-11-10 16:00:00
 """
 from typing import Sequence, Union
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f2b4d6e8a0c1'
-down_revision: Union[str, Sequence[str], None] = 'd6f8a0c2e4b3'
+down_revision: Union[str, Sequence[str], None] = 'e1a3c5e7f9b2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one nullable column with no default; the previous release never reads or writes it (its

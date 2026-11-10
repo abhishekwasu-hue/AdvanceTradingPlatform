@@ -13,15 +13,20 @@
  *
  * U9 TX2: with the library tools (flag `screener_tx2`), a long screen's card also shows its generated mirror (the same
  * rules on reflected prices) or why it has none.
+ *
+ * M94 PR-2: with the intraday pack (flag `intraday_pack`), an "Intraday" chip shows only the pack's scanners (every count
+ * and the matrix follow it); each of their cards carries its settings (a reference value, the ATP default or Not set) and
+ * the pack's footer. While the flag is off the server sends no such screen and the chip is not drawn.
  */
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
 import { LegendCard } from "./LegendCard";
 import type { MirrorEntry } from "./library";
+import { paramValueText, unsetText, type IntradayScanner } from "./intraday";
 import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
-  cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
+  cellCount, chipCount, emptyText, filterScreens, inPack, NO_FILTER, packsShown, placeText, railCount, tagLabel,
   type GalleryFilter, type TaxAxis, type Taxonomy, type TaxScreen,
 } from "./taxonomy";
 
@@ -39,12 +44,18 @@ export interface ScreenGalleryProps {
   mirrors?: Record<string, MirrorEntry>;
   /** Owner order 23 Oct (ui_v2): "Try as a scan" - open the screen and run it on the chosen universe in one tap. */
   onTry?: (screen: TaxScreen) => void;
+  /** M94 PR-2: the intraday scanners' settings, by screen id (empty while `intraday_pack` is off). */
+  intraday?: Record<string, IntradayScanner>;
 }
 
-export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, onTry }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, onTry,
+  intraday = {} }: ScreenGalleryProps) {
   // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
-  const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
+  const all = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
+  // M94: a picked pack narrows everything below it (rail, chips, cards, matrix) to that source's screens
+  const packs = useMemo(() => packsShown(all), [all]);
+  const taxonomy = useMemo(() => inPack(all, packs.some((p) => p.id === filter.pack) ? filter.pack : null), [all, packs, filter.pack]);
   const [detail, setDetail] = useState<{ id: string; focus: boolean } | null>(initialDetail ? { id: initialDetail, focus: false } : null);
   const shown = useMemo(() => filterScreens(taxonomy, filter), [taxonomy, filter]);
   const detailCard = detail ? cardFor(legends, detail.id) : null;
@@ -71,6 +82,14 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
       </nav>
 
       <div className="min-w-0">
+        {packs.length > 0 && (
+          <div role="group" aria-label="Pack" className="mb-2 flex flex-wrap gap-1.5" data-testid="gallery-packs">
+            <Chip label="All screens" count={all.total} active={!filter.pack} onClick={() => pick({ pack: null })} />
+            {packs.map((p) => (
+              <Chip key={p.id} label={p.label} count={p.count} active={filter.pack === p.id} onClick={() => pick({ pack: filter.pack === p.id ? null : p.id })} />
+            ))}
+          </div>
+        )}
         <div role="group" aria-label="Setup type" className="flex flex-wrap gap-1.5">
           <Chip label="All setups" count={chipCount(taxonomy, null, filter)} active={filter.setup === null} onClick={() => pick({ setup: null })} />
           {setups.map((s) => (
@@ -110,7 +129,8 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
             {shown.map((s) => (
               <li key={s.id}>
                 <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)} onTry={onTry ? () => onTry(s) : undefined}
-                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null} />
+                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null}
+                            scanner={intraday[s.id] ?? null} sourceNote={taxonomy.source_notes?.[s.source] ?? null} />
               </li>
             ))}
           </ul>
@@ -159,9 +179,9 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout, mirror }: {
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout, mirror, scanner, sourceNote }: {
   taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; onTry?: () => void; legend: LegendCardData | null; onAbout: () => void;
-  mirror: MirrorEntry | null;
+  mirror: MirrorEntry | null; scanner: IntradayScanner | null; sourceNote: string | null;
 }) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
   const setup = taxonomy.setups.find((s) => s.id === screen.setup);
@@ -177,6 +197,7 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout,
           {mirror.text ? <>Mirror (down side): <code className="break-words font-mono text-fg">{mirror.text}</code></> : mirror.reason}
         </p>
       )}
+      {scanner && <ScannerSettings scanner={scanner} />}
       <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1">
         {t.timeframe_family.map((tf) => <Tag key={tf}>{tagLabel(taxonomy, "timeframe_family", tf)}</Tag>)}
         <Tag>{tagLabel(taxonomy, "direction", t.direction)}</Tag>
@@ -196,7 +217,34 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, onTry, legend, onAbout,
           )}
         </div>
       </div>
+      {sourceNote && <p className="mt-2 border-t border-border pt-2 text-t12 text-fg-muted" data-testid="screen-source-note">{sourceNote}</p>}
     </article>
+  );
+}
+
+/** M94: an intraday scanner's settings, folded: each one's value (a reference value, the ATP default or Not set). */
+function ScannerSettings({ scanner }: { scanner: IntradayScanner }) {
+  const unset = unsetText(scanner);
+  return (
+    <details className="mt-2 rounded-control border border-border" data-testid="scanner-settings">
+      <summary className="cursor-pointer px-2 py-1 text-t12 text-fg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+        Settings ({scanner.params.length}){unset && <span className="ml-1 text-warn">· {unset}</span>}
+      </summary>
+      <table className="w-full border-collapse text-t12">
+        <caption className="sr-only">Settings of {scanner.name}: value and what it means</caption>
+        <tbody>
+          {scanner.params.map((p) => (
+            <tr key={p.name} className="border-t border-border align-top" data-param={p.name}>
+              <td className={cx("whitespace-nowrap px-2 py-1 font-mono font-tabular", p.value === null ? "text-warn" : "text-fg")}>{paramValueText(p)}</td>
+              <td className="px-2 py-1 text-fg-muted">
+                {p.doc}
+                {p.ref && p.value !== null && <span className="block text-fg-muted/80">{p.note}</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
   );
 }
 

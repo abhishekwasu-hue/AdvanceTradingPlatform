@@ -101,6 +101,13 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         text, base_tf, why = _breakout_text(screen.id)
         if text is None:
             return None, why
+    elif screen.source == "intraday":
+        from app.screener import intraday as itd
+        scanner = itd.scanner(screen.id)
+        if scanner is None:
+            return None, "no such intraday scanner"
+        # M94: the set values only - a Not set parameter stays a $parameter, so a run asks for it (M94-Q2)
+        text, base_tf, params = scanner.text, scanner.base_tf, scanner.defaults()
     else:
         return None, f"the {screen.source!r} source has no ScreenQL text"
     return Resolved(screen.id, screen.name, screen.method, screen.setup, str(screen.tags.get("direction", "long")), screen.source,

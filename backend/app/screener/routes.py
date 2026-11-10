@@ -38,6 +38,7 @@ from app.screener import amw_functions as amw_gate
 from app.screener import chains as chain_gate
 from app.screener import compile_screen, nodes, reasons
 from app.screener import fundamentals as fundamentals_gate
+from app.screener import intraday as itd  # registers the `intraday` template source (M94 PR-2)
 from app.screener import legends as lg
 from app.screener import ownership as ownership_gate
 from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
@@ -314,10 +315,30 @@ async def screen_stages(body: StagesBody, user: User = Depends(get_current_user)
         raise HTTPException(status_code=422, detail="give a source or a library_id")
     ast, validated = _compiled(source, base_tf, params)
     await _gate(session, user, ast, validated, params)        # main: params resolve RankScore($name) (N3 S7a)
-    if ast is None or not validated.ok:
+    # M94-Q2: an intraday scanner opens with its Not set parameters still as $parameters - the builder shows them and the
+    # run asks for their values (validation refuses "parameter $name has no value" until he sets them)
+    scanner = itd.scanner(body.library_id) if body.library_id else None
+    unset = scanner.unset() if scanner is not None else []
+    blocking = [p for p in validated.problems if not (p.kind == "parameter" and any(f"${u} " in p.message for u in unset))]
+    if ast is None or blocking:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     flat = st.inline(ast, params)
-    return {"name": name, "base_tf": base_tf, "text": nodes.to_text(flat), "stages": st.split(flat), "version": nodes.VERSION}
+    out: dict[str, Any] = {"name": name, "base_tf": base_tf, "text": nodes.to_text(flat), "stages": st.split(flat), "version": nodes.VERSION}
+    if unset:
+        out["unset"] = unset
+    return out
+
+
+@router.get("/intraday")
+async def intraday_scanners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M94 PR-2: the intraday scanners - each one's text, base timeframe, editable parameters (a reference value, the ATP
+    default or Not set) and the footer. Behind `screener_gallery`, `intraday_pack` and `screener_breakouts` (404 / 503
+    while off, as the gallery hides them). Nothing runs here."""
+    await _flag(session, user)
+    await require_flag(session, GALLERY_FLAG, user.tenant_id)
+    for f in (itd.FLAG, *itd.ALSO):
+        await require_flag(session, f, user.tenant_id)
+    return itd.payload()
 
 
 @router.post("/validate")

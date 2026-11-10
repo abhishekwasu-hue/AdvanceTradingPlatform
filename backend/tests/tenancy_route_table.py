@@ -921,6 +921,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/library/watch-lists"): "member",
     ("POST", "/api/screener/library/confluence"): "trader",
     ("POST", "/api/screener/library/watch-trigger"): "trader",
+    ("GET", "/api/screener/intraday"): "member",
     ("GET", "/api/screener/legends"): "member",
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",

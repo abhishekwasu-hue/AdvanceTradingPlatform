@@ -39,6 +39,7 @@ NOTHING_READ = "nothing_read"          # the run-level error: not one symbol cou
 NO_VOLUME = "no_volume"                # M93-Q3: the screen reads volume and the symbol's bars have none (an index)
 NO_FIGURES = "no_figures"              # M93-Q3: a fundamentals screen and no figures stored for the company
 NO_FIGURES_NOW = "no_figures_now"      # M93-Q3: figures stored, but none the screen can use on the last bar
+NO_PREOPEN = "no_preopen"              # M94-Q4: the screen reads the pre-open bars and the data has none for the session
 
 _SENTENCE = {
     LOGIN_ENDED: "Your broker login has ended. Log in again to read the bars.",
@@ -53,11 +54,12 @@ _SENTENCE = {
     NO_VOLUME: "Not checked: volume not available for this symbol.",
     NO_FIGURES: "Not checked: no figures stored for this company.",
     NO_FIGURES_NOW: "Not checked: this company's figures for this screen are not available (not reported, too old or not computable).",
+    NO_PREOPEN: "Not checked: pre-open data not available for this symbol.",
 }
 _ACTION = {
     LOGIN_ENDED: LOGIN, BROKER_REFUSED: RETRY, TIMEFRAME_REFUSED: TIMEFRAME, RATE_LIMITED: RETRY, UNREACHABLE: RETRY,
     NO_BARS: TIMEFRAME, NOT_STORED: LOGIN, SESSION_BUDGET: RETRY, SHORT_HISTORY: TIMEFRAME, NO_VALUE: TIMEFRAME, NOT_CHECKED: RETRY, NOT_READ: RETRY,
-    NO_VOLUME: TIMEFRAME, NO_FIGURES: RETRY, NO_FIGURES_NOW: RETRY,
+    NO_VOLUME: TIMEFRAME, NO_FIGURES: RETRY, NO_FIGURES_NOW: RETRY, NO_PREOPEN: TIMEFRAME,
 }
 # a tie between two groups of the same size: the action that fixes most first
 _PRIORITY = {LOGIN: 0, CONNECT: 1, TIMEFRAME: 2, RETRY: 3}

@@ -201,6 +201,8 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
             entries = amw_gate.hide(entries)
         if waves_gate.FLAG in off:                # wave templates R7: RetestEntry without its wave choices
             entries = waves_gate.hide(entries)
+        if breakout_gate.INTRADAY_FLAG in off:    # M94: PatternBreakout(Ref) without the named flag / pennant arguments
+            entries = breakout_gate.hide(entries)
     # FN2-e: the data families (`needs`) the run loads that the builder may offer - the option chain, from the stored
     # snapshots (the other families stay off the builder as before)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries, "loads": list(BUILDER_LOADS)}
@@ -345,7 +347,8 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
                          else gate.blocked_calls(session, user.tenant_id, ast))
         if blocked:
             validated.ok = False
-            validated.problems.append(Problem(gate.refusal(blocked), kind="flag_off", names={"functions": ",".join(blocked)}))
+            why = breakout_gate.refusal(blocked, ast) if gate is breakout_gate else gate.refusal(blocked)   # M94: the call's own flags
+            validated.problems.append(Problem(why, kind="flag_off", names={"functions": ",".join(blocked)}))
     amw_blocked = await amw_gate.blocked_calls(session, user.tenant_id, ast, params or {})
     if amw_blocked:
         validated.ok = False

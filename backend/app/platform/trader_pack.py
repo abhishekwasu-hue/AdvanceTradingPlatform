@@ -95,6 +95,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "ai_research": "Unfinished: the research loop is not complete",
     "vision_byok_v3": "Unfinished: alert reviews and the daily chart review are not complete",
     "screener_waves": "Unfinished: the wave-count work is still open",
+    "intraday_pack": "Unfinished: the intraday scanners, templates and risk tools are still being built (M94)",
     "chart_analyze": "Unfinished: beta, needs an AI key with image support",
     "chart_analyze_strikes": "Unfinished (needs Analyze a chart)",
     "chart_analyze_share": "Unfinished (needs Analyze a chart)",

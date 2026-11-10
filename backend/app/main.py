@@ -27,6 +27,8 @@ from app.alerts.routes import router as alerts_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.webhook_routes import router as alert_webhooks_router
 from app.auth.google_routes import router as google_auth_router
+from app.auth.invite_requests import admin_router as invite_requests_admin_router
+from app.auth.invite_requests import router as invite_requests_router
 from app.auth.routes import router as auth_router
 from app.auth.view_as_middleware import ViewSessionReadOnly
 from app.backtest.console_routes import router as backtest_console_router
@@ -368,6 +370,8 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(invite_requests_router)        # M95 PR-3: "Ask for an invite" while self_signup is OFF (public, per-IP limited)
+app.include_router(invite_requests_admin_router)  # M95 PR-3: the admin list of invite requests (SUPER_ADMIN + two-factor)
 app.include_router(google_auth_router)   # GS-1 / M73: sign-in providers (Google, Facebook; 404 until credentials are set)
 app.include_router(broker_router)
 app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)

@@ -208,6 +208,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "alert_webhooks": _ready(),
     "learn": _decision("The lesson text needs the legal review", LEGAL),
     "marketing_site": _decision("Public pages: for the public launch only"),
+    "guest_demo": _decision("Public guest view: build the snapshot first (atp.sh guest-demo), then you decide when visitors may look inside", HOST),
     "onboarding_emails": _setup("Platform mailer and the public address", HOST),
     "referrals": _decision("Prices and rewards: you set them before launch", BUSINESS),
     "plan_limits_v2": _decision("Pricing: the limits per plan"),

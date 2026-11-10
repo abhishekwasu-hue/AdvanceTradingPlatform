@@ -159,6 +159,26 @@ def test_video_links_are_admin_only_https_only_and_audited_without_the_address()
     client.put("/api/admin/learn/settings", headers=admin, json={"videos": {}, "course_url": ""})
 
 
+def test_the_front_door_intro_video_is_public_admin_set_https_only_and_kept_when_left_out():
+    """M95 F4: the sign-in page's 60-second intro video - null until the operator sets it; read without a login."""
+    assert client.get("/api/site/intro-video").json() == {"url": None}
+    admin, _ = _admin("m95-intro-admin@example.com")
+    for bad in ("http://example.com/v", "javascript:alert(1)", "https://user@example.com/v"):
+        assert client.put("/api/admin/learn/settings", headers=admin, json={"videos": {}, "intro_video_url": bad}).status_code == 422, bad
+    secret_url = "https://videos.example.com/watch/m95-intro"
+    saved = client.put("/api/admin/learn/settings", headers=admin, json={"videos": {}, "intro_video_url": secret_url})
+    assert saved.status_code == 200 and saved.json()["intro_video_url"] == secret_url
+    assert client.get("/api/site/intro-video").json() == {"url": secret_url}
+    assert client.get("/api/admin/learn/settings", headers=admin).json()["intro_video_url"] == secret_url
+    # an older admin page that does not send the field keeps the stored link
+    client.put("/api/admin/learn/settings", headers=admin, json={"videos": {}, "course_url": ""})
+    assert client.get("/api/site/intro-video").json() == {"url": secret_url}
+    details = _audit("learn_settings_changed")
+    assert any("intro video changed" in d for d in details) and all("m95-intro" not in d for d in details)
+    client.put("/api/admin/learn/settings", headers=admin, json={"videos": {}, "intro_video_url": ""})
+    assert client.get("/api/site/intro-video").json() == {"url": None}
+
+
 # --- the public marketing pages ----------------------------------------------------------------------------------------------
 
 def test_site_pages_are_public_and_follow_the_global_flag():

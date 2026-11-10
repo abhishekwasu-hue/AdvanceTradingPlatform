@@ -11,6 +11,7 @@ import { acceptanceFor, type LegalSummary } from "../legal/legal";
 import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
 import { GoogleButton } from "./GoogleSignInButton";
+import { InviteRequestSlot } from "./InviteRequest";
 import { OrUseEmail, SignInOptionsList, brokerOptions, useSignInProviders } from "./SocialButtons";
 import { takeSocialReturn } from "./social";
 import type { SocialPendingInfo } from "./socialTypes";
@@ -342,7 +343,7 @@ export default function SignInScreen() {
                 signUpOpen ? (
                   <span>New here? <button type="button" onClick={() => switchTo("register")} className={linkClass}>Create an account</button></span>
                 ) : (
-                  <span>New here? Ask your team owner for an invite link.</span>
+                  <InviteRequestSlot signUpOpen={signUpOpen} />
                 )
               ) : (
                 <button type="button" onClick={() => { setMfaToken(null); setMfaCode(""); setPendingToken(null); setPendingInfo(null); switchTo("signin"); }} className={linkClass}>

@@ -23,6 +23,11 @@ describe("the invite request slot", () => {
     expect(html).not.toContain("<form");
   });
 
+  it("without ui_v2: the old invite-link line only, exactly as before", () => {
+    expect(renderToStaticMarkup(<InviteRequestSlot signUpOpen={false} v2={false} />)).toBe("<span>New here? Ask your team owner for an invite link.</span>");
+    expect(renderToStaticMarkup(<InviteRequestSlot signUpOpen v2={false} />)).toBe("");
+  });
+
   it("the open form: e-mail, an optional note capped at 500, one send button - phone-sized controls", () => {
     const html = renderToStaticMarkup(<InviteRequest startOpen />);
     expect(html).toMatch(/<label[^>]*for="[^"]+"[^>]*>Your e-mail<\/label>/);
@@ -36,7 +41,7 @@ describe("the invite request slot", () => {
   });
 
   it("is mounted where the old invite line was, with the smallest change", () => {
-    expect(signInSource).toContain("<InviteRequestSlot signUpOpen={signUpOpen} />");
+    expect(signInSource).toContain("<InviteRequestSlot signUpOpen={signUpOpen} v2={v2} />");
     expect(signInSource).not.toContain("<span>New here? Ask your team owner for an invite link.</span>");
   });
 

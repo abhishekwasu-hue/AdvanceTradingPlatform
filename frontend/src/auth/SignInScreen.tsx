@@ -343,7 +343,7 @@ export default function SignInScreen() {
                 signUpOpen ? (
                   <span>New here? <button type="button" onClick={() => switchTo("register")} className={linkClass}>Create an account</button></span>
                 ) : (
-                  <InviteRequestSlot signUpOpen={signUpOpen} />
+                  <InviteRequestSlot signUpOpen={signUpOpen} v2={v2} />
                 )
               ) : (
                 <button type="button" onClick={() => { setMfaToken(null); setMfaCode(""); setPendingToken(null); setPendingInfo(null); switchTo("signin"); }} className={linkClass}>

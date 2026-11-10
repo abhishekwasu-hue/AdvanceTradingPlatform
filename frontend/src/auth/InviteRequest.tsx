@@ -77,7 +77,11 @@ export default function InviteRequest({ startOpen = false }: { startOpen?: boole
   );
 }
 
-/** The sign-in screen's slot: the "Ask for an invite" form only while sign-up is closed; nothing while it is open. */
-export function InviteRequestSlot({ signUpOpen }: { signUpOpen: boolean }) {
-  return signUpOpen ? null : <InviteRequest />;
+/**
+ * The sign-in screen's slot: the "Ask for an invite" form only while sign-up is closed; nothing while it is open. New
+ * user-facing work goes behind `ui_v2` (CLAUDE.md section 7): without it the slot is the old invite-link line, unchanged.
+ */
+export function InviteRequestSlot({ signUpOpen, v2 = true }: { signUpOpen: boolean; v2?: boolean }) {
+  if (signUpOpen) return null;
+  return v2 ? <InviteRequest /> : <span>New here? Ask your team owner for an invite link.</span>;
 }

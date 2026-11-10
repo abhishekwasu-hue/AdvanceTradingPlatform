@@ -28,6 +28,7 @@ import type { ReadAction } from "../screener/api";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
+import { INTRADAY_SOURCE, isIntradayLibrary, scannersById, type IntradayLibrary } from "../screener/intraday";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
 import { stagesFromServer, type ServerStage } from "../screener/importStages";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
@@ -121,6 +122,9 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
+  // M94 PR-2 (flag `intraday_pack`): the intraday scanners' settings, read only when the taxonomy serves one of them -
+  // while the flag is off it serves none, nothing is asked and nothing changes.
+  const [intraday, setIntraday] = useState<IntradayLibrary | null>(null);
   // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
   // UI2-0: this page's flags come from the app's single /system/features read.
   const features = useFeatures();
@@ -189,6 +193,12 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
   }, []);
+  const hasIntraday = !!taxonomy?.screens.some((s) => s.source === INTRADAY_SOURCE);
+  useEffect(() => {
+    if (!hasIntraday) { setIntraday(null); return; }
+    screenerApi.intraday().then((l) => setIntraday(isIntradayLibrary(l) ? l : null)).catch(() => setIntraday(null));
+  }, [hasIntraday]);
+  const intradayMap = useMemo(() => scannersById(intraday), [intraday]);
 
   useEffect(() => {
     if (!universeV2) return undefined;
@@ -243,7 +253,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
-    || (builderU2 && (s.source === "legends" || s.source === "breakouts"))), [registry, builderU2]);
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE))), [registry, builderU2]);
   // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
   const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
   // M49 U6: "Ready scan" leads with the library's other screens this page can open (the templates are the starters, so
@@ -616,7 +626,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
-          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={(s) => openScreen(s)} legends={legends} mirrors={mirrorMap}
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={(s) => openScreen(s)} legends={legends} mirrors={mirrorMap} intraday={intradayMap}
                          onTry={universeV2 ? (s) => openScreen(s, true) : undefined} />
         </Dialog>
       )}

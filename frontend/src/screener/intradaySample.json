@@ -1,0 +1,490 @@
+{
+ "scanners": [
+  {
+   "id": "intraday.gappers",
+   "name": "Intraday Gappers",
+   "definition": "The session opened away from the previous close by at least a set percent; optional pre-open volume, daily turnover and daily range checks.",
+   "text": "Abs(DayOpen() - PDC()) / PDC() * 100 >= $gap_pct AND ($pre_vol <= 0 OR PreOpenVolume() >= $pre_vol) AND SMA(close * volume, 20)@1d >= $min_turnover AND ATR(14)@1d / close * 100 >= $min_atr_pct",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "gap_pct",
+     "value": 2,
+     "doc": "Gap from the previous close to the session's open, in percent (up or down).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "pre_vol",
+     "value": null,
+     "doc": "Volume of the pre-open bars (shares). Needs pre-open bars in your data, else not available. 0 = no volume condition.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "min_turnover",
+     "value": null,
+     "doc": "Average daily turnover (close x volume) over 20 sessions, in rupees. 0 = no volume condition.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "min_atr_pct",
+     "value": null,
+     "doc": "Daily ATR(14) as a percent of the price: the stock's normal daily range.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "pre_vol",
+    "min_turnover",
+    "min_atr_pct"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.new_day_high",
+   "name": "New Day High",
+   "definition": "A close above the session's high so far, on high volume for the time of day, the session's volume above normal and a recent range wide enough to move.",
+   "text": "DayExtremeBreak(\"up\", $v, $vwap, $skip, $k) AND RelVolumeTOD(20, \"bar\") <= $v_max AND RelVolumeTOD(20, \"cumulative\") >= $cum_v AND Max(high, $range_bars) - Min(low, $range_bars) >= $range_atr * ATR(14)[1]",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "v",
+     "value": 4,
+     "doc": "This bar's volume against the same time of day in the last 20 sessions (4 = 400 %). 0 = no volume condition.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "vwap",
+     "value": true,
+     "doc": "The close is on the side of the session VWAP the move goes to.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "skip",
+     "value": 15,
+     "doc": "No signal from a bar that starts in the first N minutes of the session.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "k",
+     "value": 0.2,
+     "doc": "The close must be beyond the session's high or low so far by at least this many ATRs.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "v_max",
+     "value": 20,
+     "doc": "At most this multiple of the same time of day's volume on this bar (20 = 2,000 %).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "cum_v",
+     "value": 2,
+     "doc": "The session's volume so far against the average by the same time.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "range_bars",
+     "value": 3,
+     "doc": "Bars of the recent range (3 bars of 5 minutes = 15 minutes).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "range_atr",
+     "value": null,
+     "doc": "The recent range is at least this many ATRs.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "range_atr"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.new_day_low",
+   "name": "New Day Low",
+   "definition": "A close below the session's low so far, on high volume for the time of day, the session's volume above normal and a recent range wide enough to move.",
+   "text": "DayExtremeBreak(\"down\", $v, $vwap, $skip, $k) AND RelVolumeTOD(20, \"bar\") <= $v_max AND RelVolumeTOD(20, \"cumulative\") >= $cum_v AND Max(high, $range_bars) - Min(low, $range_bars) >= $range_atr * ATR(14)[1]",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "v",
+     "value": 4,
+     "doc": "This bar's volume against the same time of day in the last 20 sessions (4 = 400 %). 0 = no volume condition.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "vwap",
+     "value": true,
+     "doc": "The close is on the side of the session VWAP the move goes to.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "skip",
+     "value": 15,
+     "doc": "No signal from a bar that starts in the first N minutes of the session.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "k",
+     "value": 0.2,
+     "doc": "The close must be beyond the session's high or low so far by at least this many ATRs.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "v_max",
+     "value": 20,
+     "doc": "At most this multiple of the same time of day's volume on this bar (20 = 2,000 %).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "cum_v",
+     "value": 2,
+     "doc": "The session's volume so far against the average by the same time.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "range_bars",
+     "value": 3,
+     "doc": "Bars of the recent range (3 bars of 5 minutes = 15 minutes).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "range_atr",
+     "value": null,
+     "doc": "The recent range is at least this many ATRs.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "range_atr"
+   ],
+   "mirror_of": "intraday.new_day_high",
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.top_reversal",
+   "name": "Top Reversal",
+   "definition": "A large rise from the session's open, then a bearish reversal candle at or near the session's high.",
+   "text": "SessionHigh() - DayOpen() >= $move_atr * ATR(14)[1] AND SessionHigh() - high <= $near_atr * ATR(14)[1] AND (Pattern(\"shooting_star\") OR Pattern(\"bearish_engulfing\") OR Pattern(\"evening_star\"))",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "move_atr",
+     "value": null,
+     "doc": "The rise from the session's open to its high so far, in ATRs.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "near_atr",
+     "value": null,
+     "doc": "The bar's high is at most this many ATRs below the session's high.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "move_atr",
+    "near_atr"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.bottom_reversal",
+   "name": "Bottom Reversal",
+   "definition": "A large fall from the session's open, then a bullish reversal candle at or near the session's low.",
+   "text": "DayOpen() - SessionLow() >= $move_atr * ATR(14)[1] AND low - SessionLow() <= $near_atr * ATR(14)[1] AND (Pattern(\"hammer\") OR Pattern(\"bullish_engulfing\") OR Pattern(\"morning_star\"))",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "move_atr",
+     "value": null,
+     "doc": "The rise from the session's open to its high so far, in ATRs.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "near_atr",
+     "value": null,
+     "doc": "The bar's high is at most this many ATRs below the session's high.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "move_atr",
+    "near_atr"
+   ],
+   "mirror_of": "intraday.top_reversal",
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.vwap_break",
+   "name": "VWAP Break",
+   "definition": "The close crosses above the session VWAP on high volume for the time of day; the mirror reads the cross below.",
+   "text": "CrossAbove(close, SessionVWAP()) AND RelVolumeTOD(20, \"bar\") >= $v",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "v",
+     "value": 1.5,
+     "doc": "This bar's volume against the same time of day in the last 20 sessions. 0 = no volume condition.",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.turbo_breakup",
+   "name": "Turbo Breakup",
+   "definition": "A new session high on 1-minute bars with unusual 1-minute volume for the time of day.",
+   "text": "DayExtremeBreak(\"up\", $v, $vwap, $skip, $k)",
+   "base_tf": "1m",
+   "params": [
+    {
+     "name": "v",
+     "value": 1.5,
+     "doc": "This 1-minute bar's volume against the same minute in the last 20 sessions. 0 = no volume condition.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "vwap",
+     "value": true,
+     "doc": "The close is on the side of the session VWAP the move goes to.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "skip",
+     "value": 15,
+     "doc": "No signal from a bar that starts in the first N minutes of the session.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "k",
+     "value": 0.2,
+     "doc": "The close must be beyond the session's high or low so far by at least this many ATRs.",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.turbo_breakdown",
+   "name": "Turbo Breakdown",
+   "definition": "A new session low on 1-minute bars with unusual 1-minute volume for the time of day.",
+   "text": "DayExtremeBreak(\"down\", $v, $vwap, $skip, $k)",
+   "base_tf": "1m",
+   "params": [
+    {
+     "name": "v",
+     "value": 1.5,
+     "doc": "This 1-minute bar's volume against the same minute in the last 20 sessions. 0 = no volume condition.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "vwap",
+     "value": true,
+     "doc": "The close is on the side of the session VWAP the move goes to.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "skip",
+     "value": 15,
+     "doc": "No signal from a bar that starts in the first N minutes of the session.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "k",
+     "value": 0.2,
+     "doc": "The close must be beyond the session's high or low so far by at least this many ATRs.",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": "intraday.turbo_breakup",
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.rsi_extreme",
+   "name": "RSI Extreme",
+   "definition": "5-minute RSI above a high level or below a low level, with the session's volume so far and the price inside a set range.",
+   "text": "(RSI($n)@5m >= $hi OR RSI($n)@5m <= $lo) AND close >= $pmin AND close <= $pmax AND ($min_vol <= 0 OR SessionVolume() >= $min_vol)",
+   "base_tf": "1m",
+   "params": [
+    {
+     "name": "n",
+     "value": 14,
+     "doc": "RSI period on 5-minute bars.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "hi",
+     "value": 90,
+     "doc": "RSI at or above this level.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "lo",
+     "value": 10,
+     "doc": "RSI at or below this level.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "pmin",
+     "value": null,
+     "doc": "Lowest price, in rupees.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "pmax",
+     "value": null,
+     "doc": "Highest price, in rupees.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "min_vol",
+     "value": null,
+     "doc": "The session's volume so far (shares). 0 = no volume condition.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "pmin",
+    "pmax",
+    "min_vol"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.volume_surge",
+   "name": "Volume Surge",
+   "definition": "Volume against the average of the same time of day in previous sessions: this bar, or the session so far.",
+   "text": "RelVolumeTOD($sessions, $mode) >= $v",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "sessions",
+     "value": 20,
+     "doc": "Previous sessions in the time-of-day average.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "mode",
+     "value": "bar",
+     "doc": "bar: this bar's volume; cumulative: the session's volume so far.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "v",
+     "value": null,
+     "doc": "At least this multiple of the time-of-day average.",
+     "ref": false,
+     "note": "Not set"
+    }
+   ],
+   "unset": [
+    "v"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.key_levels",
+   "name": "Key Levels",
+   "definition": "The close is within a set distance of a key level: previous close, high or low, pre-open high or low, moving averages or the 52-week high or low.",
+   "text": "Abs(close - PDC()) / close * 100 <= $tol_pct OR Abs(close - PDH()) / close * 100 <= $tol_pct OR Abs(close - PDL()) / close * 100 <= $tol_pct OR Abs(close - Lag(high, 1)@1d) / close * 100 <= $tol_pct OR Abs(close - Lag(low, 1)@1d) / close * 100 <= $tol_pct OR Abs(close - PreOpenHigh()) / close * 100 <= $tol_pct OR Abs(close - PreOpenLow()) / close * 100 <= $tol_pct OR Abs(close - SMA(close, $sma_a)@1d) / close * 100 <= $tol_pct OR Abs(close - SMA(close, $sma_b)@1d) / close * 100 <= $tol_pct OR Abs(close - EMA(close, $ema_a)) / close * 100 <= $tol_pct OR Abs(close - EMA(close, $ema_b)) / close * 100 <= $tol_pct OR Abs(close - Max(high, 250)@1d) / close * 100 <= $tol_pct OR Abs(close - Min(low, 250)@1d) / close * 100 <= $tol_pct",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "tol_pct",
+     "value": null,
+     "doc": "Distance from the level, in percent of the price.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "sma_a",
+     "value": 50,
+     "doc": "Daily simple moving average.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "sma_b",
+     "value": 200,
+     "doc": "Daily simple moving average.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "ema_a",
+     "value": 9,
+     "doc": "Exponential moving average on the scan's own bars.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "ema_b",
+     "value": 20,
+     "doc": "Exponential moving average on the scan's own bars.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [
+    "tol_pct"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  }
+ ],
+ "footer": "Information and education only, not investment advice.",
+ "ref_label": "Reference value - edit before use",
+ "not_set": "Not set"
+}

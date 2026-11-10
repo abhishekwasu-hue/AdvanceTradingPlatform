@@ -15,6 +15,7 @@ import pytest
 
 from app.core.models import OHLCVBar
 from app.platform import controls
+from app.quality.causal_cases import with_preopen
 from app.quality.lookahead import synthetic_bars
 from app.screener import library as lib
 from app.screener import mirror as mr
@@ -97,6 +98,8 @@ def _same_on_reflection(text, tf="5m", bars=600):
 
 def _same_on_reflection_seed(text, tf, bars, seed):
     frame = _ticks(synthetic_bars(bars, tf=tf, seed=seed))
+    if "PreOpen" in text:                       # M94: the pre-open levels need bars that have pre-open bars
+        frame = with_preopen(frame)
     level = float(frame["high"].max() + frame["low"].min())
     reflected = mr.reflect_bars(frame, level)
     ast = parse(text)
@@ -153,6 +156,11 @@ CASES_5M = [
     # FN2-a: CCI and OBV change sign, Williams %R reads -100 minus itself, the Aroon lines swap
     "CCI(20)", "CCI(5) > 100", "OBV()", "OBV() > SMA(OBV(), 20)", "WilliamsR(14)", "WilliamsR(14) < -80", "AroonUp(25)",
     "AroonDown(14)", "AroonUp(14) > AroonDown(14)",
+    # M94 PR-2: the session's high / low so far swap, the pre-open bars' high / low swap, volumes and counts read the same;
+    # hammer and shooting star are reflections of each other
+    "SessionHigh()", "SessionLow()", "SessionVolume()", "SessionCount(close > open)", "SessionHigh() - high",
+    "DayOpen() - SessionLow() >= 2 * ATR(14)[1]", "PreOpenHigh()", "PreOpenLow()", "PreOpenVolume()", "close > PreOpenHigh()",
+    'Pattern("hammer")', 'Pattern("shooting_star")',
     # FN2-a (part 2): Keltner bands swap, Ichimoku lines are their own mirror, StochRSI is 100 minus, TMA passes through
     "KeltnerUpper(20, 2)", "KeltnerMid(20, 2)", "KeltnerLower(10, 1.5)", "close > KeltnerUpper(20, 2)", "StochRSI(14)",
     "StochRSI(14) < 20", "TMA(close, 10)", "TMA(high, 5)", "IchimokuTenkan(9)", "IchimokuKijun(26)", "IchimokuSpanA(9, 26, 26)",
@@ -178,7 +186,7 @@ def test_each_daily_mirror_rule_is_exact_on_reflected_bars(text):
 def test_every_mirror_rule_has_an_exactness_case():
     named = set(mr.FIELD_RULES) | set(mr.LEVELS) | set(mr.LINEAR) | set(mr.EXTREMES) | set(mr.SIDED_FILTERS) | set(mr.CATEGORIES)
     named |= mr.SIDED_LEVELS
-    named |= {"Count", "CountStreak", "CrossAbove", "CrossBelow", "ZScore", "PctChange", "RealBreak", "ReversalAt", "SwingZoneStrength",
+    named |= {"Count", "CountStreak", "SessionCount", "CrossAbove", "CrossBelow", "ZScore", "PctChange", "RealBreak", "ReversalAt", "SwingZoneStrength",
               "SwingZoneDistance", "Pattern"} | set(mr.OFFSET_NEG)
     covered = {getattr(node, "name", None) for text in CASES_5M + CASES_1D for node in n.walk(parse(text))}
     assert named - REFERENCE - NOT_IN_SYNTHETIC_BARS - covered == set()
@@ -192,7 +200,7 @@ def test_every_mirror_rule_has_an_exactness_case():
     ("PctChange(close, 5) > 2", "percentage change of a price"),
     ("ATRPercentile(14, 50) < 20", "price level"),
     ("Supertrend(10, 3) < close", "not checked"),
-    ('Pattern("hammer")', "no mirrored twin"),
+    ('Pattern("bullish_outside_bar")', "no mirrored twin"),
     ("PCR() > 1", "no mirror rule"),
     ("MFI(14) < 20", "price level"),                                         # FN2-a
     ("close + close > open", "not symmetric"),
@@ -221,10 +229,13 @@ def test_fn2a_mirror_texts():
 def test_every_pre_built_screen_resolves_to_valid_screenql():
     import app.main  # noqa: F401 - registers the breakouts and Legends sources
     from app.screener import compile_screen
+    from app.screener import intraday as itd
     for screen in tx.load().screens:
         resolved, why = lib.resolve(screen)
         assert resolved is not None, f"{screen.id}: {why}"
-        _, validated = compile_screen(resolved.text, base_tf=resolved.base_tf, params=resolved.params)
+        # M94-Q2: an intraday scanner's Not set values are his to give (here 1 each) - the run asks for them
+        unset = {u: 1 for u in itd.scanner(screen.id).unset()} if screen.source == "intraday" else {}
+        _, validated = compile_screen(resolved.text, base_tf=resolved.base_tf, params={**resolved.params, **unset})
         assert validated.ok, (screen.id, [p.message for p in validated.problems])
 
 
@@ -246,6 +257,9 @@ def test_every_long_screen_has_a_checked_mirror_or_a_reason():
         if screen.id not in entries:
             continue
         m = entries[screen.id]
+        if screen.source == "intraday":       # M94: checked on intraday sessions (tests/test_m94_pr2_scanners.py) and above
+            assert m["text"] is not None and m["how"] == "reflected", m["id"]
+            continue
         assert m["id"] == screen.id + ".short" and m["direction"] == "short" and (m["text"] is None) != (m["reason"] is None)
         assert tx.advice_words(m["name"]) == []
         if m["text"] is None:

@@ -35,6 +35,7 @@ from app.strategy_templates.schema import Template
 from tests.breakout_fixtures import history, orb_day, quiet_day, sessions_frame
 
 H_IDS = ("H6", "H7", "H8", "H9", "H10")
+FAMILY_H = ("H1", "H2", "H3", "H4", "H5") + H_IDS          # M94 PR-5 (tests/test_m94_pr5_templates.py) added H1-H5
 T = {tid: library.get(tid) for tid in H_IDS}
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0                                                     # mirror axis: price -> K - price
@@ -93,7 +94,7 @@ def slot(df, day, k, minutes=5):
 def test_family_h_is_a_schema_change_and_families_a_to_g_are_unchanged():
     for t in library.templates():
         if t.family == "H":
-            assert t.id in H_IDS and t.reference_values and t.style == "Intraday (session-based)"
+            assert t.id in FAMILY_H and t.reference_values and t.style == "Intraday (session-based)"
         else:
             assert t.family in "ABCDEFG" and t.id[0] in "ABCDEFG" and t.reference_values is False, t.id
     assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack"}
@@ -452,8 +453,8 @@ def test_family_h_is_hidden_with_the_flag_off_and_listed_with_its_label_with_it_
     assert client.post("/api/strategy-templates/H6/adopt", headers=off["headers"], json={}).status_code == 404
     on = _org("h-on", FLAG, "screener_breakouts", "intraday_pack")
     listed = {c["id"]: c for c in client.get("/api/strategy-templates", headers=on["headers"]).json()["templates"]}
-    assert {tid for tid, c in listed.items() if c["family"] == "H"} == set(H_IDS)
-    assert set(listed) - set(H_IDS) == {c["id"] for c in cards}                       # A-G are the same cards either way
+    assert {tid for tid, c in listed.items() if c["family"] == "H"} == set(FAMILY_H)
+    assert set(listed) - set(FAMILY_H) == {c["id"] for c in cards}                    # A-G are the same cards either way
     for tid in H_IDS:
         card = listed[tid]
         assert card["family_name"] == "Intraday" and card["reference_values"] is True and card["available"], tid

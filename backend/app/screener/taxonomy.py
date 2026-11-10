@@ -97,17 +97,19 @@ class Source:
     ids: Callable[[], Iterable[str]]
     flag: Optional[str] = None
     also: Tuple[str, ...] = ()          # U6 BK3: further flags that must be on too (hidden while any is off)
+    note: str | None = None             # M94: a line every card of this source carries (the intraday footer)
 
 
 _SOURCES: Dict[str, Source] = {}
 
 
-def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None, also: Tuple[str, ...] = ()) -> None:
+def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None, also: Tuple[str, ...] = (),
+                    note: str | None = None) -> None:
     """A backend template module calls this at import (re-registering replaces). `ids` is called lazily, so the module's
-    own template list stays its single source of truth."""
+    own template list stays its single source of truth. `note` (M94): a line shown on every card of the source."""
     if not _ID.match(name) or name in FRONTEND_SOURCES:
         raise ValueError(f"template source name {name!r} is not allowed")
-    _SOURCES[name] = Source(name, ids, flag, tuple(also))
+    _SOURCES[name] = Source(name, ids, flag, tuple(also), note)
 
 
 def unregister_source(name: str) -> None:
@@ -333,10 +335,16 @@ def payload(taxonomy: Taxonomy, *, hidden_sources: Iterable[str] = (), method: O
     matrix of counts (always over every visible screen, so the rail and chips can show what each cell holds)."""
     shown = visible(taxonomy, hidden_sources, hidden_ids)
     picked = [s for s in shown if (method is None or s.method == method) and (setup is None or s.setup == setup)]
-    return {"version": taxonomy.version, "methods": [m.as_dict() for m in taxonomy.methods],
-            "setups": [s.as_dict() for s in taxonomy.setups],
-            "tags": {k: [dict(v) for v in values] for k, values in taxonomy.tags.items()},
-            "screens": [s.as_dict() for s in picked], "matrix": matrix(taxonomy, shown), "total": len(shown), "note": NOTE}
+    out: dict[str, Any] = {"version": taxonomy.version, "methods": [m.as_dict() for m in taxonomy.methods],
+                           "setups": [s.as_dict() for s in taxonomy.setups],
+                           "tags": {k: [dict(v) for v in values] for k, values in taxonomy.tags.items()},
+                           "screens": [s.as_dict() for s in picked], "matrix": matrix(taxonomy, shown), "total": len(shown), "note": NOTE}
+    # M94: a source's own card line (the intraday footer), only for a source with a visible screen - so a payload without
+    # one (every source's flag off) is byte-identical to before
+    notes = {name: src.note for name, src in _SOURCES.items() if src.note and any(s.source == name for s in shown)}
+    if notes:
+        out["source_notes"] = notes
+    return out
 
 
 __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen", "Source", "Taxonomy", "TaxonomyError", "advice_words",

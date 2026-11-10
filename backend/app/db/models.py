@@ -1116,6 +1116,14 @@ class RiskSettingsRecord(Base):
     # (app/workers/trading_worker.py::_opposite_position - new automated entries only, never an exit). M68 PR-5 (TS1-052,
     # D3): NULL = Not set = allowed; an organisation's saved "deny" is kept.
     opposite_positions: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # M94 R3 (app/risk_engine/giveback.py): the profit give-back stop - his own % of today's peak profit (NULL = not set)
+    # and today's peak itself: the highest closed + open P&L ATP saw on `day_peak_on` (the Indian trading day it belongs
+    # to; another day reads as no peak), and when that day's give-back was reached (new entries stay refused for the rest
+    # of it). Written by the worker cycle only (an entry check reads it); never read by an exit.
+    giveback_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    day_peak_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    day_peak_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    giveback_hit_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

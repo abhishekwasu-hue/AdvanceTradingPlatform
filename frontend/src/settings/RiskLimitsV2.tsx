@@ -7,6 +7,7 @@ import { Details } from "../ui/Details";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { SWITCHES_OFF, SWITCH_FIELDS, loadSwitches, saveSwitches, type MyLimitSwitches } from "./myLimits";
+import SizeCalculatorV2 from "./SizeCalculatorV2";
 import {
   bodyOf, draftOf, loadRiskLimits, onCount, saveRiskLimits, valueWords, type OppositePick, type PausePick, type RiskLimitCheck,
   type RiskLimitsDraft, type RiskLimitsView,
@@ -89,6 +90,8 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
             pause={draft.pause} onPause={(pause) => { setDraft({ ...draft, pause }); setNote(null); }} />)}
         </ul>
       </CardV2>
+      {/* M94 R1: information only - it places and saves nothing */}
+      <SizeCalculatorV2 />
       <CardV2 title="More checks">
         <ul className="divide-y divide-subtle" data-testid="risk-limits-more">
           {more.map((c) => <CheckRow key={c.id} check={c} draft={draft} onChange={setCheck} />)}

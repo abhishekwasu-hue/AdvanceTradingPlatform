@@ -142,3 +142,126 @@ test.describe("Settings › Risk limits 390", () => {
     await expectPhoneLayout(page);
   });
 });
+
+// --- M94 PR-7 (owner order M94, R1 / R3) ----------------------------------------------------------------------------
+// The "Profit give-back stop" row (off and Not set until the trader turns it on with his own %; only it is sent) and the
+// position-size calculator (closed until opened, every field empty, the reference only as a hint, zero refused before
+// anything is sent, the size from the server's own risk-based sizing, places and saves nothing). M94_CAPTURE=<dir> also
+// writes the PR's light screenshots (390 and 1440) with page.screenshot - never in CI, never a baseline.
+
+const GIVEBACK = { id: "profit_giveback", label: "Profit give-back stop", group: "main", enabled: false, saved: false,
+  help: "Once today's profit falls back this share from its peak, no new entry for the rest of today. Exits always work.",
+  fields: [{ key: "giveback_pct", label: "Of today's peak profit", unit: "%", min: 0, max: 100, whole: false, optional: false, value: null,
+    ceiling: null, min_open: true }] };
+const at = LIMITS.checks.findIndex((c) => c.id === "risk_sizing") + 1;
+const M94_LIMITS = { ...LIMITS, checks: [...LIMITS.checks.slice(0, at), GIVEBACK, ...LIMITS.checks.slice(at)] };
+const RESULT = { ok: true, unit: "LOTS", lot_size: 75, quantity: 225, lots: 3, risk_amount: 10000, per_share: 40, per_lot: 3000, at_risk: 9000, note: null };
+
+interface Calls { puts: Record<string, unknown>[]; sizes: Record<string, unknown>[] }
+
+async function openM94(page: Page): Promise<Calls> {
+  const calls: Calls = { puts: [], sizes: [] };
+  await openSettings(page, "/settings/risk-limits", { routes: async (p) => {
+    await p.route(/\/api(?:\/v1)?\/risk-settings\/limits$/, async (route: Route) => {
+      if (route.request().method() === "PUT") {
+        calls.puts.push(route.request().postDataJSON() as Record<string, unknown>);
+        const on = { ...GIVEBACK, enabled: true, saved: true, fields: [{ ...GIVEBACK.fields[0], value: 30 }] };
+        return route.fulfill({ json: { ...M94_LIMITS, on: 2, note: null, checks: M94_LIMITS.checks.map((c) => (c.id === GIVEBACK.id ? on : c)) } });
+      }
+      return route.fulfill({ json: M94_LIMITS });
+    });
+    await p.route(/\/api(?:\/v1)?\/risk-settings\/size-calculator$/, async (route: Route) => {
+      calls.sizes.push(route.request().postDataJSON() as Record<string, unknown>);
+      return route.fulfill({ json: RESULT });
+    });
+  } });
+  await expect(page.locator("[data-testid='risk-limits-main']")).toBeVisible();
+  return calls;
+}
+
+const givebackRow = (page: Page) => page.locator("[data-check='profit_giveback']");
+const calc = (page: Page) => page.locator("[data-block='size-calculator']");
+
+async function fillCalculator(page: Page) {
+  await calc(page).getByTestId("size-calculator-open").click();
+  const form = calc(page).locator("[data-testid='size-calculator-form']");
+  await form.locator("[data-field='account']").fill("10,00,000");
+  await form.locator("[data-field='riskPct']").fill("1");
+  await form.locator("[data-field='entry']").fill("24000");
+  await form.locator("[data-field='stop']").fill("23960");
+  await choose(page, form.locator("[data-combobox]"), "LOTS");
+  await form.locator("[data-field='lotSize']").fill("75");
+  return form;
+}
+
+test.describe("M94 risk tools 1440", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the give-back stop is off and Not set; switched on with his own % only it is sent", async ({ page }) => {
+    const calls = await openM94(page);
+    await expect(givebackRow(page).getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    await expect(givebackRow(page).locator("input")).toHaveCount(0);
+    await givebackRow(page).getByRole("switch").click();
+    const field = givebackRow(page).locator("[data-field='giveback_pct']");
+    await expect(field).toHaveValue("");
+    await page.getByRole("button", { name: "Save risk limits" }).click();
+    await expect(page.locator("[data-note='risk-limits-note']")).toHaveText("Profit give-back stop: enter a value to switch it on.");
+    expect(calls.puts).toHaveLength(0);
+    await field.fill("30");
+    await page.getByRole("button", { name: "Save risk limits" }).click();
+    await expect(page.locator("[data-note='risk-limits-note']")).toContainText("Saved.");
+    expect(calls.puts[0].checks).toEqual({ profit_giveback: { enabled: true, values: { giveback_pct: 30 } } });
+  });
+
+  test("the calculator is closed until opened, empty, refuses zero before sending and shows the server's size", async ({ page }) => {
+    const calls = await openM94(page);
+    await expect(calc(page).locator("[data-testid='size-calculator-form']")).toHaveCount(0);
+    const form = await fillCalculator(page);
+    await expect(form.getByTestId("size-calculator-hint")).toHaveText("Hint: reference 1% (study: at most 2%)");
+    await form.locator("[data-field='stop']").fill("0");
+    await form.getByTestId("size-calculator-run").click();
+    await expect(form.locator("[data-note='size-calculator-problem']")).toHaveText("Stop price: enter a price above 0.");
+    expect(calls.sizes).toHaveLength(0);
+    await form.locator("[data-field='stop']").fill("23960");
+    await form.getByTestId("size-calculator-run").click();
+    await expect(form.getByTestId("size-calculator-result")).toContainText("3 lots (225 qty)");
+    expect(calls.sizes).toEqual([{ account: 1000000, risk_pct: 1, risk_rupees: null, entry: 24000, stop: 23960, unit: "LOTS", lot_size: 75 }]);
+    expect(calls.puts).toHaveLength(0);                                       // places and saves nothing
+    await expect(page.locator("main .bg-brand:is(a, button):not([data-subtab])")).toHaveCount(1);   // one primary action
+  });
+});
+
+test.describe("M94 risk tools 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  test("no sideways scroll and 44 px targets with the calculator open", async ({ page }) => {
+    await openM94(page);
+    await fillCalculator(page);
+    await calc(page).getByTestId("size-calculator-run").click();
+    await expect(calc(page).getByTestId("size-calculator-result")).toBeVisible();
+    await expectPhoneLayout(page);
+  });
+});
+
+test.describe("M94 risk tools capture", () => {
+  test.skip(!!process.env.CI, "capture-only: the PR's screenshots, never in CI");
+  test.skip(!process.env.M94_CAPTURE, "set M94_CAPTURE=<dir> to write the PR's screenshots");
+  for (const [label, width, height] of [["390", 390, 844], ["1440", 1440, 900]] as const) {
+    test(`settings rows and calculator ${label} light`, async ({ page }) => {
+      await page.setViewportSize({ width, height });
+      await openM94(page);
+      await givebackRow(page).getByRole("switch").click();
+      await givebackRow(page).locator("[data-field='giveback_pct']").fill("30");
+      const dir = process.env.M94_CAPTURE as string;
+      await givebackRow(page).locator("summary").click();                      // its "What it does" open
+      await givebackRow(page).evaluate((e) => e.scrollIntoView({ block: "center" }));
+      await page.screenshot({ path: `${dir}/pr7-risk-limits-rows-${label}-light.png`, animations: "disabled" });
+      await fillCalculator(page);
+      await calc(page).getByTestId("size-calculator-run").click();
+      const result = calc(page).getByTestId("size-calculator-result");
+      await expect(result).toBeVisible();
+      await result.evaluate((e, block) => e.scrollIntoView({ block }), label === "390" ? "end" as const : "center" as const);
+      await page.evaluate(() => window.scrollBy(0, window.innerWidth < 768 ? 90 : 0));   // clear of the phone's bottom bar
+      await page.screenshot({ path: `${dir}/pr7-size-calculator-${label}-light.png`, animations: "disabled" });
+    });
+  }
+});

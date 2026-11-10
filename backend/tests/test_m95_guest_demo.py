@@ -76,11 +76,10 @@ LATER = [d for d in _weekdays(60, AS_OF + timedelta(days=70)) if d > AS_OF]
 
 
 def _seed(with_later: bool = True) -> None:
+    _clear_lake()
+
     async def go():
         async with _session_factory() as session:
-            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_(KEYS)))
-            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.startswith(OPTION_PREFIX)))
-            await session.commit()
             days = DAYS + (LATER if with_later else [])
             await ingest.write_candles_bulk(session, _series(NIFTY, 24137.0, days), "nse_bhav:index")
             await ingest.write_candles_bulk(session, _series(BANK, 51873.0, days), "nse_bhav:index")
@@ -123,6 +122,25 @@ def _fresh_limit():
     for key in [k for k in rate_limit._WINDOWS if k[0] == "guest_demo"]:
         del rate_limit._WINDOWS[key]
     yield
+    _global(False)
+    _unstore()
+
+
+def _clear_lake() -> None:
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_(KEYS)))
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.startswith(OPTION_PREFIX)))
+            await session.commit()
+    run(go())
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _leave_nothing_behind():
+    """The suite shares one database: the made-up index rows must not reach a later module (the market strip's EOD
+    fallback reads NIFTY 50 / BANK NIFTY from the same lake)."""
+    yield
+    _clear_lake()
     _global(False)
     _unstore()
 

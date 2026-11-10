@@ -66,6 +66,12 @@ def _strategy(tid, tf="5m", choice=None, **params):
 
 
 # ======================================================================================================== how it works
+
+def _needs(tid: str) -> tuple[str, ...]:
+    """The flags a family H template needs on top of the pack: H4 / H5 read PatternBreakout, a BK4 function (as in
+    tests/test_m94_pr5_templates.py); without it the template is not available and its page has no scanner."""
+    return ("screener_breakouts", "intraday_pack") + (("screener_breakouts_bk4",) if tid in ("H4", "H5") else ())
+
 def test_how_it_works_is_behind_the_intraday_pack_and_only_for_family_h():
     FLAG, _org, client = _api()
     off = _org("hiw-off", FLAG, "screener_breakouts")
@@ -80,7 +86,7 @@ def test_how_it_works_is_behind_the_intraday_pack_and_only_for_family_h():
 @pytest.mark.parametrize("tid", H_IDS)
 def test_how_it_works_is_the_templates_own_data_with_the_footer(tid):
     FLAG, _org, client = _api()
-    org = _org(f"hiw-{tid}", FLAG, "screener_breakouts", "intraday_pack")
+    org = _org(f"hiw-{tid}", FLAG, *_needs(tid))
     r = client.get(f"/api/strategy-templates/{tid}/how-it-works", headers=org["headers"])
     assert r.status_code == 200, r.text
     body = r.json()
@@ -100,8 +106,11 @@ def test_how_it_works_is_the_templates_own_data_with_the_footer(tid):
         assert not words & set(ADVICE), x
         assert not any(ch.isdigit() for ch in re.sub(r"\b\d+-minute\b", "", x["text"])), x
     # the setup scanner: the compiled setup itself on the first timeframe, with the default settings
+    # (per side the template's default settings run: H6-H10 both, the one-direction H1-H5 (M94 PR-5) one; the other is None)
     recipe = C.compile_recipe(t, C.resolve_settings(t, t.allowed_timeframes[0]))
-    for side in ("long", "short"):
+    sides = recipe.settings.side_list()
+    assert sides and all(body["scanner"][side] is None for side in ("long", "short") if side not in sides)
+    for side in sides:
         part = recipe.part("setup", side)
         assert body["scanner"][side] == {"text": part.text, "params": part.params, "base_tf": t.allowed_timeframes[0]}
         check = validate_study(parse(part.text), base_tf=t.allowed_timeframes[0], params=part.params)
@@ -464,7 +473,7 @@ FRONTEND = ROOT.parent / "frontend" / "src" / "strategyTemplates"
 def test_the_frontends_samples_are_what_the_route_serves(tid, name):
     import json
     FLAG, _org, client = _api()
-    org = _org(f"hiw-sample-{tid}", FLAG, "screener_breakouts", "intraday_pack")
+    org = _org(f"hiw-sample-{tid}", FLAG, *_needs(tid))
     body = client.get(f"/api/strategy-templates/{tid}/how-it-works", headers=org["headers"]).json()
     assert json.loads((FRONTEND / name).read_text(encoding="utf-8")) == json.loads(json.dumps(body))
 
@@ -474,15 +483,26 @@ def test_the_setup_scanner_opens_as_builder_stages(tid):
     from tests.test_s1d_screener_api import _flag as _screener_flag
     from tests.test_tpl2_routes import _set_flag
     FLAG, _org, client = _api()
-    org = _org(f"hiw-stages-{tid}", FLAG, "screener_breakouts", "intraday_pack")
+    org = _org(f"hiw-stages-{tid}", FLAG, *_needs(tid))
     _screener_flag(True)
     _set_flag("screener_builder_u2", org["tenant_id"])
     try:
         how = client.get(f"/api/strategy-templates/{tid}/how-it-works", headers=org["headers"]).json()
-        for side in ("long", "short"):
+        sides = [side for side in ("long", "short") if how["scanner"][side] is not None]
+        assert sides                                                     # every family H template has at least one side
+        for side in sides:
             src = how["scanner"][side]
             r = client.post("/api/screener/stages", headers=org["headers"], json={"source": src["text"], "base_tf": src["base_tf"], "params": src["params"]})
             assert r.status_code == 200, r.text
             assert r.json()["stages"] and r.json()["base_tf"] == src["base_tf"]
     finally:
         _screener_flag(False)
+
+
+def test_a_template_whose_function_flag_is_off_has_no_scanner_on_its_page():
+    """H4 reads PatternBreakout (BK4): with the pack on but BK4 off the page is served, the template is not available and
+    no setup scanner is offered (the same gate as the library, never a scanner the Screener would refuse)."""
+    FLAG, _org, client = _api()
+    org = _org("hiw-h4-no-bk4", FLAG, "screener_breakouts", "intraday_pack")
+    how = client.get("/api/strategy-templates/H4/how-it-works", headers=org["headers"]).json()
+    assert how["scanner"] == {"long": None, "short": None}

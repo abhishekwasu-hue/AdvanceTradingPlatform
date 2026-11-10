@@ -1232,10 +1232,12 @@ export interface DeploymentCreateRequest extends ContractRules {
 /** Strategy templates section 5 (src/strategyTemplates/exits.ts): where a template bot's stop comes from, when it takes profit. */
 export interface TemplateExitsRequest {
   stop_source?: "TEMPLATE_INVALIDATION" | "PREMIUM_PCT" | "CREDIT_PCT" | null;
-  target_rule?: "NONE" | "R_MULTIPLE" | "TEMPLATE_EXIT" | "CREDIT_PCT" | "WAVE_PROJECTION" | null;
+  target_rule?: "NONE" | "R_MULTIPLE" | "TEMPLATE_EXIT" | "CREDIT_PCT" | "WAVE_PROJECTION" | "TEMPLATE_LEVEL" | null;
   target_r?: number | null;
   target_base_wave?: string | null;
   target_ratio?: number | null;
+  /** M94 F10: TEMPLATE_LEVEL's level (VWAP / SESSION_EXTREME / PREV_CLOSE / OR_FAR_SIDE), read on the signal bar */
+  target_level?: string | null;
 }
 
 export type RoutingPolicy = "EXPLICIT" | "MOST_MARGIN" | "LEAST_UTILISED" | "FEWEST_POSITIONS";

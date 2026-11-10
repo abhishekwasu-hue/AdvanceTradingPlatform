@@ -6,7 +6,8 @@ import type { StrategyTemplate } from "./api";
 export type TemplateValue = number | string | boolean;
 export interface TemplateLink { template: string; timeframe: string | null; params: Record<string, TemplateValue> }
 
-const TEMPLATE_ID = /^[A-G][0-9]{1,2}$/;
+// M94: family H (Intraday) ids too - before, an H template's "Use on the trading bot" link was dropped here
+const TEMPLATE_ID = /^[A-H][0-9]{1,2}$/;
 const TIMEFRAME = /^[0-9]{1,2}[mhdw]$/;
 const KEY = /^[a-z][a-z0-9_]{0,31}$/;
 const SET = "set.";
@@ -68,4 +69,50 @@ export function settingRows(template: Pick<StrategyTemplate, "params">, params: 
     const value = choice ? choice.label : typeof v === "boolean" ? (v ? "Yes" : "No") : String(v);
     return { key: p.key, label: p.label, value };
   });
+}
+
+// --------------------------------------------------------------------------------------------- M94 PR-6 (intraday_pack)
+/** The address parameter of a template's "how it works" screen on Strategies › Library (`/strategies?how=H6`). */
+export const HOW_PARAM = "how";
+/** The address parameters of the template overlay on a chart (`/charts?tpl=H6&tpltf=5m`): drawn only when he asks. */
+export const OVERLAY_PARAM = "tpl";
+export const OVERLAY_TF_PARAM = "tpltf";
+
+/** A template id from an address value, or null (unknown shapes are dropped, never guessed). */
+export function templateIdOf(value: string | null | undefined): string | null {
+  return value && TEMPLATE_ID.test(value) ? value : null;
+}
+
+/** Where a template's "how it works" screen opens. */
+export function howPathFor(id: string): string {
+  return `/strategies?${new URLSearchParams({ [HOW_PARAM]: id }).toString()}`;
+}
+
+/** Where its setup scanner opens: the Screener with the template's own setup (`/screener?template=H6&side=long`). */
+export function scannerPathFor(id: string, side: "long" | "short"): string {
+  return `/screener?${new URLSearchParams({ template: id, side }).toString()}`;
+}
+
+/** The setup scanner an address asks the Screener to open, or null. */
+export function templateScanFromSearch(search: string): { template: string; side: "long" | "short" } | null {
+  const q = new URLSearchParams(search);
+  const template = templateIdOf(q.get("template"));
+  const side = q.get("side");
+  return template && (side === "long" || side === "short") ? { template, side } : null;
+}
+
+/** Where the template overlay opens on a chart (the chart's own symbol; the overlay is drawn when he turns it on). */
+export function chartPathFor(id: string, timeframe: string | null): string {
+  const q = new URLSearchParams({ [OVERLAY_PARAM]: id });
+  if (timeframe && TIMEFRAME.test(timeframe)) q.set(OVERLAY_TF_PARAM, timeframe);
+  return `/charts?${q.toString()}`;
+}
+
+/** The template overlay an address carries, or null. */
+export function overlayFromSearch(search: string): { template: string; timeframe: string | null } | null {
+  const q = new URLSearchParams(search);
+  const template = templateIdOf(q.get(OVERLAY_PARAM));
+  if (!template) return null;
+  const tf = q.get(OVERLAY_TF_PARAM);
+  return { template, timeframe: tf && TIMEFRAME.test(tf) ? tf : null };
 }

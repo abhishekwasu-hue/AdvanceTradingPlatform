@@ -460,7 +460,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   preselect?: Preselect | null;
 }) {
   const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
-    target: useId(), times: useId(), wave: useId(), share: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
+    target: useId(), times: useId(), wave: useId(), share: useId(), level: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
     entry: useId(), band: useId(), expiry: useId(), strike: useId(), offset: useId(), lots: useId(), mode: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
   const ready = useMemo(() => (library ?? []).filter((s) => READY.some((r) => r.id === s.id))
@@ -755,6 +755,13 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
                   <input id={ids.share} className={FIELD} inputMode="decimal" autoComplete="off" value={exitsNow.ratio}
                     aria-invalid={touched && !!exitIssue} onChange={(e) => setExit({ ratio: e.target.value })} />
                 </div>
+              </div>
+            )}
+            {exitsNow.target === "TEMPLATE_LEVEL" && (
+              <div>
+                <label htmlFor={ids.level} className={LABEL}>At which level</label>
+                <Combobox id={ids.level} label="At which level" value={exitsNow.level} className="w-full" onChange={(v) => setExit({ level: v })}
+                  placeholder="Pick a level" options={exitChoices.levels ?? []} />
               </div>
             )}
             <ul id={ids.exitNotes} className="list-disc space-y-space-1 pl-space-4 text-t13 text-fg-muted" data-exit-notes>

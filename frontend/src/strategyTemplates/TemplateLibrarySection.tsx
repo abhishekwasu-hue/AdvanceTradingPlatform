@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useInRouterContext, useLocation, useNavigate } from "react-router";
 import { errorSentence } from "../api/errors";
 import { LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
@@ -10,7 +11,8 @@ import { LibraryFold, SettingList } from "../ui/LibraryChips";
 import type { SettingRow } from "../ui/strategyLabels";
 import { useFeatures } from "../ui/useFeatures";
 import { REFERENCE_LABEL, showsReferenceLabel, templatesApi, type StrategyTemplate } from "./api";
-import { paperBotPathFor, testPathFor } from "./link";
+import { HowItWorksSheet } from "./HowItWorks";
+import { HOW_PARAM, howPathFor, paperBotPathFor, templateIdOf, testPathFor } from "./link";
 
 /**
  * P2-3: the strategy templates under Strategies > Library (flag `strategy_templates`). Every sentence about a template
@@ -25,13 +27,35 @@ export default function TemplateLibrarySection() {
   const [error, setError] = useState<string | null>(null);
   const [family, setFamily] = useState<string>(ALL);
   const intradayPackOn = useFeatures().on("intraday_pack");
+  const routed = useInRouterContext();
 
   useEffect(() => {
     templatesApi.list().then((r) => setTemplates(r.templates)).catch((e) => { setTemplates([]); setError(errorSentence(e)); });
   }, []);
 
-  return <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} intradayPackOn={intradayPackOn} />;
+  return (
+    <>
+      <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} intradayPackOn={intradayPackOn} />
+      {intradayPackOn && routed && <HowItWorksFromAddress />}
+    </>
+  );
 }
+
+/** M94 F15: `?how=H6` opens that template's "how it works" screen over the library; closing it leaves the address. */
+function HowItWorksFromAddress() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const id = templateIdOf(new URLSearchParams(location.search).get(HOW_PARAM));
+  const close = () => {
+    const q = new URLSearchParams(location.search);
+    q.delete(HOW_PARAM);
+    navigate({ search: q.toString() ? `?${q.toString()}` : "" }, { replace: true });
+  };
+  return <HowItWorksSheet id={id} onClose={close} />;
+}
+
+/** M94 F15: a template that has a "how it works" screen (family H, while `intraday_pack` is on). */
+export const hasHowItWorks = (t: Pick<StrategyTemplate, "family">, intradayPackOn: boolean): boolean => intradayPackOn && t.family === "H";
 
 /** M94: the reference-values label (behind `intraday_pack`): the template's defaults come from a study; nothing is enforced. */
 export function ReferenceLabel() {
@@ -72,13 +96,13 @@ export function TemplateLibraryView({ templates, error, family, onFamily, intrad
       )}
       <div className="grid gap-space-3 lg:grid-cols-2" aria-busy={templates === null}>
         {templates === null && <Skeleton className="h-40" panel label="Loading templates" />}
-        {shown.map((t) => <TemplateCard key={t.id} t={t} reference={showsReferenceLabel(t, intradayPackOn)} />)}
+        {shown.map((t) => <TemplateCard key={t.id} t={t} reference={showsReferenceLabel(t, intradayPackOn)} how={hasHowItWorks(t, intradayPackOn)} />)}
       </div>
     </section>
   );
 }
 
-function TemplateCard({ t, reference }: { t: StrategyTemplate; reference: boolean }) {
+function TemplateCard({ t, reference, how }: { t: StrategyTemplate; reference: boolean; how: boolean }) {
   const link = { template: t.id, timeframe: t.default_timeframe, params: {} };
   const reads = [t.reads?.long, t.reads?.short].filter((s): s is string => !!s);
   const rows = templateRows(t);
@@ -100,6 +124,12 @@ function TemplateCard({ t, reference }: { t: StrategyTemplate; reference: boolea
         </div>
       )}
       {timeframes && <p data-template-timeframes className="mt-space-2 text-t13 text-fg-muted">{timeframes}</p>}
+      {how && (
+        <InPlaceLink to={howPathFor(t.id)} data-how-link={t.id} aria-label={`How it works: ${t.name}`}
+          className="mt-space-2 inline-flex min-h-11 items-center rounded-control text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8">
+          How it works
+        </InPlaceLink>
+      )}
       {t.available ? (
         <div className="mt-space-3 flex flex-wrap items-center gap-space-2">
           <InPlaceLink to={paperBotPathFor(link)} className={LINK_PRIMARY} data-use-template={t.id} aria-label={`Use on the trading bot: ${t.name}`}>Use on the trading bot</InPlaceLink>

@@ -248,6 +248,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # `marketing_site`: the public Features / How it works / About pages for the front page (read globally - a visitor
     # has no organisation). OFF: GET /api/site/pages answers 404 and the sign-in screen links none of them.
     "marketing_site": "Public marketing pages: Features, How it works and About on the front page (no claims, no prices)",
+    # M95 PR-5 (app/guest_demo): "Look inside without login" - one stored past market day of NIFTY 50 and BANK NIFTY (at
+    # least 90 days old, every price shown as a distance), built by the operator's command; read globally (a visitor has
+    # no organisation). OFF: GET /api/guest-demo answers 404 and the sign-in screen shows no link. No broker or AI call.
+    "guest_demo": "Look inside without login: one past market day of NIFTY 50 and BANK NIFTY, read-only, no prices (public)",
     # `onboarding_emails`: the first-week e-mails (connect your broker, start a trading bot, review your first signal),
     # once each, with an unsubscribe link; nothing is sent without PLATFORM_SMTP_* and PUBLIC_BASE_URL. Places nothing.
     "onboarding_emails": "First-week e-mails: connect your broker, start your first trading bot, review your first signal (each once, with unsubscribe)",

@@ -39,6 +39,8 @@ const EXCLUDED_FILES: Record<string, string> = {
   "src/site/SitePage.tsx": "PUBLIC - the signed-out public website, not an app tab",
   "src/site/SiteLinks.tsx": "PUBLIC - the public website's own links",
   "src/legal/LegalPage.tsx": "PUBLIC - the public legal pages",
+  "src/lookInside/LookInsidePage.tsx": "PUBLIC - the signed-out Look inside page (M95 F3), not an app tab",
+  "src/lookInside/LookInsideLink.tsx": "PUBLIC - the sign-in screen's link to the signed-out Look inside page",
   "src/legal/markdown.tsx": "PUBLIC - links between the legal documents",
   "src/legal/LegalConsentField.tsx": "AUTH - the sign-up consent field (opens the document in a new tab before an account exists)",
   "src/status/StatusView.tsx": "PUBLIC - the public status page",

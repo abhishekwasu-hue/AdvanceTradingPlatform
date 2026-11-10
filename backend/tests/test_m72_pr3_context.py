@@ -54,7 +54,8 @@ def test_the_context_is_read_for_the_asker_only():
     assert journal["object"]["your_tags"] == ["patient"] and journal["object"]["trade"]["symbol"] == "GGGSTOCK"
     sig = _resolve(tenant_id, a, {"object": {"kind": "signal", "id": signal_id}})["object"]
     assert sig == {"kind": "signal", "symbol": "SIGSTOCK", "timeframes": "15min+1h", "grade": "A", "signal_time": sig["signal_time"]}
-    assert "111" not in json.dumps(sig) and "LONG" not in json.dumps(sig)                  # no price, no direction word
+    rest = json.dumps({k: v for k, v in sig.items() if k != "signal_time"})   # the clock field is the real time (microseconds can hold "111")
+    assert "111" not in rest and "LONG" not in rest and "111" not in str(sig["grade"])  # no price, no direction word
     from fastapi import HTTPException
     for kind, oid in (("trade", trade_id), ("journal", trade_id), ("signal", signal_id), ("position", trade_id)):
         with pytest.raises(HTTPException) as err:

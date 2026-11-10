@@ -88,6 +88,7 @@ from app.fx.routes import admin_router as fx_admin_router
 from app.fx.routes import router as fx_router
 from app.growth.routes import admin_router as growth_admin_router
 from app.growth.routes import router as growth_router
+from app.guest_demo.routes import router as guest_demo_router
 from app.idea_library.routes import router as idea_library_router
 from app.incidents.routes import router as incidents_router
 from app.instruments.reference_routes import router as instrument_reference_router
@@ -523,6 +524,7 @@ app.include_router(terminal_router)  # Trading Terminal T1: the status bar's fig
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)
 app.include_router(growth_admin_router)  # C13: the referral reward wording (SUPER_ADMIN + two-factor)
 app.include_router(learn_router)     # C13: the Learn section (ui_v2 + learn), the public marketing pages (marketing_site)
+app.include_router(guest_demo_router)   # M95 PR-5: the public "Look inside" snapshot (guest_demo, read globally)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(paper_fno_router)       # FNO-1: trading from the option chain, PAPER only (flags ui_v2 + paper_account)
 app.include_router(incomplete_orders_router)  # SE-7: incomplete multi-leg orders - his answer and his rule (ui_v2 + smart_execution)

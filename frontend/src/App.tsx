@@ -29,6 +29,7 @@ import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui
 import type { SystemStatus } from "./types";
 import { codeFromSearch, rememberCode } from "./growth/referral";
 import { SITE_SLUGS, sitePath } from "./site/site";
+import { LOOK_INSIDE_PATH } from "./lookInside/lookInside";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
 const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
@@ -51,6 +52,8 @@ const SupportDialog = lazy<ComponentType<SupportDialogProps>>(
 const LegalPage = lazy(() => import("./legal/LegalPage"));
 // Readiness C13: the public marketing pages (flag `marketing_site`), their own chunk; the invite link's code is kept.
 const SitePage = lazy(() => import("./site/SitePage"));
+// M95 PR-5: "Look inside without signing in" - one stored past market day, read-only, its own chunk.
+const LookInsidePage = lazy(() => import("./lookInside/LookInsidePage"));
 // UI2-1: the v2 shell (sidebar sections, bottom bar + More sheet, command bar, /charts, broker gate on data pages) -
 // its own chunk, loaded only while `ui_v2` is on for the organisation.
 const AppShellV2 = lazy(() => import("./shell/AppShellV2"));
@@ -369,6 +372,9 @@ export default function App() {
                   <ErrorBoundary title="The page"><Suspense fallback={null}><SitePage /></Suspense></ErrorBoundary>
                 } />
               ))}
+              <Route path={LOOK_INSIDE_PATH} caseSensitive element={
+                <ErrorBoundary title="The page"><Suspense fallback={null}><LookInsidePage /></Suspense></ErrorBoundary>
+              } />
               <Route path="*" element={<SignInGate><Shell /></SignInGate>} />
             </Routes>
           )}

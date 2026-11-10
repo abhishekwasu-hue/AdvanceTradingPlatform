@@ -79,6 +79,10 @@ CHECKS: tuple[Check, ...] = (
     Check("risk_sizing", "Risk-based sizing", "The size is your risk per trade divided by the stop distance, in whole lots.",
           (Field("risk_per_trade_pct", "% of account", "%", 0, 100, optional=True),
            Field("risk_per_trade_rupees", "Rupees", "₹", 0, BIG, optional=True)), any_field=True),
+    # M94 R3 (app/risk_engine/giveback.py): today's peak is closed + open P&L as ATP sees it; it starts afresh each trading day.
+    Check("profit_giveback", "Profit give-back stop",
+          "Once today's profit falls back this share from its peak, no new entry for the rest of today. Exits always work.",
+          (Field("giveback_pct", "Of today's peak profit", "%", 0, 100),)),
     Check("portfolio_risk", "Risk across open positions", "What every open stop and the new trade could lose together stays under this.",
           (Field("max_portfolio_risk_pct", "% of account", "%", 0, 100),), group="more"),
     Check("stop_cooldown", "Cool-down after a stop-out", "After a stop, new entries in the same symbol wait this long.",
@@ -256,6 +260,14 @@ def reward_risk_block(rr: float, minimum: float) -> dict[str, Any]:
                  numbers={"reward_risk": round(rr, 2), "minimum": minimum})
 
 
+def giveback_block(peak: float, now: float, limit_pct: float) -> dict[str, Any]:
+    """M94 R3: today's P&L fell back the trader's own % from its peak profit (or did earlier today)."""
+    given_back = (peak - now) / peak * 100.0 if peak > 0 else 0.0
+    return block("profit_giveback", f"Today's profit peaked at {_fmt_money(peak)} and is {'-' if now < 0 else ''}{_fmt_money(abs(now))} now: your profit give-back "
+                 f"stop of {limit_pct:g}% was reached today. No new entries for the rest of today; exits still work.",
+                 numbers={"peak": round(peak, 2), "now": round(now, 2), "given_back": round(given_back, 2), "limit": limit_pct})
+
+
 def below_one_lot_block(cap: float, per_lot: float) -> dict[str, Any]:
     return block("risk_sizing", f"Your risk per trade of {_fmt_money(cap)} is less than one lot's risk of {_fmt_money(per_lot)} "
                  "at this stop-loss. Set a closer stop-loss, or change the limit.", numbers={"risk_per_trade": round(cap, 2), "per_lot": round(per_lot, 2)})
@@ -286,7 +298,7 @@ async def log_block(session: Any, *, tenant_id: int, user_id: int | None, item: 
     from app.db.models import RiskEventRecord
     try:
         numbers = item.get("numbers") or {}
-        current = next((float(v) for k, v in numbers.items() if k in ("asked", "held", "loss", "made", "losses", "reward_risk", "per_lot")
+        current = next((float(v) for k, v in numbers.items() if k in ("asked", "held", "loss", "made", "losses", "reward_risk", "per_lot", "given_back")
                         and isinstance(v, (int, float))), 0.0)
         limit = next((float(v) for k, v in numbers.items() if k in ("limit", "minimum", "risk_per_trade") and isinstance(v, (int, float))), 0.0)
         session.add(RiskEventRecord(

@@ -40,6 +40,10 @@ class TradingDayState:
     open_positions: int = 0
     last_loss_at: datetime | None = None
     as_of: datetime | None = None
+    # M94 R3 (app/risk_engine/giveback.py): today's peak closed + open P&L, and whether the profit give-back stop was
+    # reached today (now or earlier). None / False: the check is off or nothing was read.
+    day_peak_pnl: float | None = None
+    giveback_reached: bool = False
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -119,6 +123,11 @@ class RiskManager:
         daily_limit = cfg.daily_loss_amount()
         if daily_limit is not None and state.daily_pnl <= -daily_limit:
             blocks.append(risk_limits.daily_loss_block(-state.daily_pnl, daily_limit))
+        # M94 R3: the profit give-back stop, only when the trader switched it on (entries only, ADR-0004).
+        if cfg.giveback_pct is not None and state.day_peak_pnl is not None:
+            from app.risk_engine import giveback
+            if state.giveback_reached or giveback.reached(state.day_peak_pnl, state.daily_pnl, cfg.giveback_pct):
+                blocks.append(risk_limits.giveback_block(state.day_peak_pnl, state.daily_pnl, cfg.giveback_pct))
 
         if blocks:
             return self._refused(blocks)

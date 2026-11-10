@@ -65,6 +65,7 @@ def _stored_config(record: RiskSettingsRecord) -> RiskConfig:
         margin_safety_pct=record.margin_safety_pct,
         # M68 PR-5 (TS1-052, D3): only a saved "allow" / "deny" is a choice; anything else is Not set (= allowed).
         opposite_positions=record.opposite_positions if record.opposite_positions in (OPPOSITE_ALLOW, OPPOSITE_DENY) else None,
+        giveback_pct=record.giveback_pct,     # M94 R3: NULL = not set
     )
 
 
@@ -138,7 +139,8 @@ async def update_risk_settings(
             setattr(record, key, getattr(config, key))
     # M64: the fields this older form does not send keep their values; each check it sends is ON when its value is set,
     # OFF when cleared, and counts as saved by the trader (app/risk_engine/risk_limits.py).
-    for key in ("max_lots_per_order", "daily_loss_rupees", "risk_per_trade_rupees", "loss_cooldown_minutes", "margin_safety_pct"):
+    for key in ("max_lots_per_order", "daily_loss_rupees", "risk_per_trade_rupees", "loss_cooldown_minutes", "margin_safety_pct",
+                "giveback_pct"):
         if key in config.model_fields_set:
             setattr(record, key, getattr(config, key))
     needs = risk_limits.needs_settings(record)
@@ -164,6 +166,22 @@ async def update_risk_settings(
     await session.commit()
     await session.refresh(record)
     return _record_to_config(record)
+
+
+# --- M94 R1: the position-size calculator (information only) -----------------------------------------------------------
+
+@router.post("/size-calculator")
+async def size_calculator(body: dict, user: User = Depends(get_current_user)) -> dict:
+    """The quantity his typed risk per trade buys at his typed entry / stop, worked out by the engine's own risk-based
+    sizing, rounded down to whole lots or shares (app/risk_engine/size_calculator.py). Places nothing, saves nothing and
+    reads none of his settings. 422 with the first problem in plain words for a value that cannot be sized."""
+    from app.risk_engine import size_calculator as calc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="The values could not be read. Try again.")
+    out = calc.calculate(body)
+    if not out["ok"]:
+        raise HTTPException(status_code=422, detail=out["problems"][0])
+    return out
 
 
 # --- CP6-15: the losses-in-a-row pause and "Resume after losses in a row" -------------------------------------------------

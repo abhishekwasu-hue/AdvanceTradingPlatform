@@ -4138,6 +4138,25 @@ class DailyReportSendRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
 
 
+class InviteRequestRecord(Base):
+    """M95 PR-3 (owner order M95, M95-Q3 approved): one "Ask for an invite" request from the sign-in screen while
+    `self_signup` is OFF - the e-mail address (normalised to lower case), an optional note (<= 500 characters), when it
+    came, and a keyed hash of the caller's IP (never the raw address). Platform-wide (no organisation: the person has no
+    account yet). The SUPER_ADMIN reads them in Admin > Users & business and marks one invited or dismissed; the invite
+    itself goes through the existing invite flow. No e-mail is ever sent from here. Status: new | invited | dismissed."""
+
+    __tablename__ = "invite_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ip_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="new")
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    handled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow, index=True)
+
+
 class TriggerPlanRecord(Base):
     """M75 W-8 (owner order M75 CW-6, DECISIONS 1 Nov M75Q-1 / M75Q-2): one trigger plan of one member - "set and wait":
     a condition (the underlying's price crossing his level, by touch or by a closed candle of his timeframe, inside his

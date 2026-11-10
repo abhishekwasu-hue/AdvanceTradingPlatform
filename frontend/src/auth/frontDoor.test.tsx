@@ -20,7 +20,7 @@ vi.mock("./SocialButtons", async (importOriginal) => {
   return { ...real, useSignInProviders: () => ({ providers: state.providers, v2: state.v2 }) };
 });
 
-import SignInScreen, { InviteRequestSlot, NewHereLine } from "./SignInScreen";
+import SignInScreen from "./SignInScreen";
 import { BENEFITS, FRONT_LANG_KEY, FrontDoorDetails, IMAGE_H, IMAGE_W, LanguageSwitch, brokersAnswer, readFrontLang, safeHttps, storeFrontLang } from "./FrontDoor";
 import screenSource from "./SignInScreen.tsx?raw";
 
@@ -117,18 +117,22 @@ describe("M95 F2 / Q2: the large Google button only when the server lists Google
 });
 
 describe("M95 F6: self_signup on / off", () => {
-  it("on: Create an account, as today", () => {
-    const out = renderToStaticMarkup(<NewHereLine open onCreate={() => undefined} />);
-    expect(out).toContain("Create an account");
-    expect(out).not.toContain("data-invite-request-slot");
+  it("on: Create an account, as today (the screen's own branch; the invite slot renders nothing)", () => {
+    expect(screenSource).toContain(`<span>New here? <button type="button" onClick={() => switchTo("register")} className={linkClass}>Create an account</button></span>`);
+    expect(screenSource).toContain("<InviteRequestSlot signUpOpen={signUpOpen} v2={v2} />");
   });
 
-  it("off: the invite mount point (today's sentence until the invite form lands)", () => {
-    const out = renderToStaticMarkup(<NewHereLine open={false} onCreate={() => undefined} />);
-    expect(out).not.toContain("Create an account");
-    expect(out).toBe(renderToStaticMarkup(<InviteRequestSlot />));
-    expect(out).toContain("New here? Ask your team owner for an invite link.");
-    expect(html()).toContain("data-invite-request-slot");                   // closed until the server says open
+  it("off (closed until the server says open): the Ask for an invite form under ui_v2, today's sentence without it", () => {
+    state.v2 = true;
+    const v2 = html();
+    expect(v2).not.toContain("Create an account");
+    expect(v2).toContain('data-invite-request="closed"');
+    expect(v2).toContain("Ask for an invite");
+    state.v2 = false;
+    const old = html();
+    expect(old).toContain("New here? Ask your team owner for an invite link.");
+    expect(old).not.toContain("Create an account");
+    expect(old).not.toContain("data-invite-request");
   });
 });
 

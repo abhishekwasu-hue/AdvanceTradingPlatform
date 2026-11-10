@@ -247,6 +247,11 @@ export async function openAdmin(page: Page, path: string, o: AdminOptions = {}) 
   await page.route(A("/admin/console/system$"), ok(SYSTEM));
   await page.route(A("/admin/ops-alerts$"), ok(OPS));
   await page.route(A("/admin/console/users(\\?.*)?$"), ok(USERS));
+  // M95 PR-3: Admin › Users & business › Invite requests (made-up addresses).
+  await page.route(A("/admin/invite-requests(\\?.*)?$"), ok({ counts: { new: 2, invited: 1, dismissed: 0 }, requests: [
+    { id: 2, email: "new.trader@example.com", note: "A friend told me about the paper trading practice.", status: "new", created_at: T(2), handled_by: null, handled_at: null },
+    { id: 1, email: "learner@example.com", note: null, status: "new", created_at: T(26), handled_by: null, handled_at: null },
+  ] }));
   await page.route(A("/admin/console/ai-cost(\\?.*)?$"), ok(AI_COST));
   await page.route(A("/admin/console/support/users/12$"), ok(SUPPORT_USER));
   await page.route(A("/admin/console/support/users/404$"), (r) => r.fulfill({ status: 404, json: { detail: "Unknown user" } }));

@@ -11,6 +11,7 @@ import { acceptanceFor, type LegalSummary } from "../legal/legal";
 import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
 import { FRONT_BUNDLES, FrontDoorDetails, FrontHeadline, LanguageSwitch, useFrontDoorData, useFrontLang } from "./FrontDoor";
+import { InviteRequestSlot } from "./InviteRequest";
 import { OrUseEmail, SignInOptionsList, brokerOptions, useSignInProviders } from "./SocialButtons";
 import { takeSocialReturn } from "./social";
 import type { SocialPendingInfo } from "./socialTypes";
@@ -340,7 +341,11 @@ export default function SignInScreen() {
             </form>
             <div className="mt-space-5 flex flex-wrap items-center justify-center gap-x-space-4 gap-y-space-2 border-t border-subtle pt-space-4 text-t14 text-fg-muted">
               {mode === "signin" ? (
-                <NewHereLine open={signUpOpen} onCreate={() => switchTo("register")} />
+                signUpOpen ? (
+                  <span>New here? <button type="button" onClick={() => switchTo("register")} className={linkClass}>Create an account</button></span>
+                ) : (
+                  <InviteRequestSlot signUpOpen={signUpOpen} v2={v2} />
+                )
               ) : (
                 <button type="button" onClick={() => { setMfaToken(null); setMfaCode(""); setPendingToken(null); setPendingInfo(null); switchTo("signin"); }} className={linkClass}>
                   {mode === "register" ? "Already have an account? Sign in" : "Back to sign in"}
@@ -400,23 +405,6 @@ export default function SignInScreen() {
       )}
     </div>
   );
-}
-
-/** Under the Sign in card: "Create an account" while sign-up is open (`self_signup`), else the invite mount point. */
-export function NewHereLine({ open, onCreate }: { open: boolean; onCreate: () => void }) {
-  return open ? (
-    <span>New here? <button type="button" onClick={onCreate} className={linkClass}>Create an account</button></span>
-  ) : (
-    <InviteRequestSlot />
-  );
-}
-
-/**
- * M95 F6 / PR-3: the mount point for "Ask for an invite" while sign-up is closed (`self_signup` OFF). The form is
- * another PR's (src/auth/InviteRequest.tsx); until it lands, today's sentence.
- */
-export function InviteRequestSlot() {
-  return <span data-invite-request-slot>New here? Ask your team owner for an invite link.</span>;
 }
 
 /** M73: the link step a 409 `link_required` answer carries (the typed e-mail is an account's), or null. */

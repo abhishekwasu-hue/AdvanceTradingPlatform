@@ -31,6 +31,15 @@ const ANSWER_LANGUAGE_FILES = new Set([
   "./copilot/language/AnswerLanguageV2.tsx",
 ]);
 
+// M95 F5 (owner approval M95-Q4, 10 Nov: "the order approves one allow-listed front-door MR / HI namespace"): the
+// signed-out front door's English / Marathi / Hindi switch - its namespace and its single importer, the same two files
+// scripts/check_english_only.py allows (FRONT_DOOR_NAMESPACE_FILE / FRONT_DOOR_NAMESPACE_USERS). The sign-in form and
+// every other screen stay English.
+const FRONT_DOOR_FILES = new Set([
+  "./i18n/frontDoor.ts",
+  "./auth/FrontDoor.tsx",
+]);
+
 const FORBIDDEN: [string, RegExp][] = [
   ["a Marathi / Hindi / Hinglish label", /\b(marathi|hindi|hinglish)\b/i],
   ["a lang attribute for Marathi / Hindi", /\blang=["'{]*\s*["'](mr|hi)["']/],
@@ -40,21 +49,34 @@ const FORBIDDEN: [string, RegExp][] = [
   ["an AI answer-language setting", /\b(aiPreferences|aiSavePreferences|ai_language)\b|answer language|Copilot languages/i],
 ];
 
+/** Every forbidden line of the given files, outside the allowed ones. */
+function findingsIn(sources: Record<string, string>): string[] {
+  const findings: string[] = [];
+  for (const [path, text] of Object.entries(sources)) {
+    if (INTERVIEW_FILES.has(path) || ANSWER_LANGUAGE_FILES.has(path) || FRONT_DOOR_FILES.has(path)) continue;
+    text.split("\n").forEach((line, i) => {
+      for (const [what, re] of FORBIDDEN) if (re.test(line)) findings.push(`${path}:${i + 1}: ${what}: ${line.trim().slice(0, 120)}`);
+    });
+  }
+  return findings;
+}
+
 describe("English only outside the strategy interview", () => {
   it("reads a sensible number of UI source files", () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(100);
-    for (const f of [...INTERVIEW_FILES, ...ANSWER_LANGUAGE_FILES]) expect(Object.keys(SOURCES)).toContain(f);   // a renamed file is noticed
+    for (const f of [...INTERVIEW_FILES, ...ANSWER_LANGUAGE_FILES, ...FRONT_DOOR_FILES]) expect(Object.keys(SOURCES)).toContain(f);   // a renamed file is noticed
   });
 
   it("no UI file outside the interview offers or shows another language", () => {
-    const findings: string[] = [];
-    for (const [path, text] of Object.entries(SOURCES)) {
-      if (INTERVIEW_FILES.has(path) || ANSWER_LANGUAGE_FILES.has(path)) continue;
-      text.split("\n").forEach((line, i) => {
-        for (const [what, re] of FORBIDDEN) if (re.test(line)) findings.push(`${path}:${i + 1}: ${what}: ${line.trim().slice(0, 120)}`);
-      });
-    }
-    expect(findings).toEqual([]);
+    expect(findingsIn(SOURCES)).toEqual([]);
+  });
+
+  it("M95-Q4 allows only the front door's two files: any other file naming a language still fails", () => {
+    const line = "// the switch: English / Marathi / Hindi";
+    expect(findingsIn({ "./auth/FrontDoor.tsx": line, "./i18n/frontDoor.ts": line })).toEqual([]);
+    expect(findingsIn({ "./auth/SignInScreen.tsx": line })).toHaveLength(1);
+    expect(findingsIn({ "./i18n/otherDoor.ts": line })).toHaveLength(1);
+    expect(findingsIn({ "./site/SitePage.tsx": '<p lang="mr">x</p>' })).toHaveLength(1);
   });
 
   it("Settings > Appearance has no AI-language toggle", () => {

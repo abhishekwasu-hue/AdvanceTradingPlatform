@@ -32,6 +32,8 @@ export interface Taxonomy {
   matrix: Record<string, Record<string, number>>;   // method -> setup -> screens filed there (0 = an empty cell)
   total: number;
   note: string;
+  /** M94: a line every card of a source carries (the intraday footer); absent while no such source is shown. */
+  source_notes?: Record<string, string>;
 }
 
 /** The response has both axes, a matrix and a screen list (anything else - an older server, a proxy page - shows no
@@ -41,8 +43,23 @@ export function isTaxonomy(x: unknown): x is Taxonomy {
   return !!t && Array.isArray(t.methods) && Array.isArray(t.setups) && Array.isArray(t.screens) && !!t.matrix && typeof t.matrix === "object" && !!t.tags;
 }
 
-export interface GalleryFilter { method: string | null; setup: string | null; query: string }
-export const NO_FILTER: GalleryFilter = { method: null, setup: null, query: "" };
+/** `pack` (M94): only the screens of one library source (the "Intraday" chip); absent or null = every source. */
+export interface GalleryFilter { method: string | null; setup: string | null; query: string; pack?: string | null }
+export const NO_FILTER: GalleryFilter = { method: null, setup: null, query: "", pack: null };
+
+/** M94: the library sources the gallery offers a chip for, by source id (the chip shows only when one is served). */
+export const PACKS: Record<string, string> = { intraday: "Intraday" };
+
+/** The packs with at least one served screen, in PACKS order. */
+export function packsShown(tax: Taxonomy): { id: string; label: string; count: number }[] {
+  return Object.entries(PACKS).map(([id, label]) => ({ id, label, count: tax.screens.filter((s) => s.source === id).length }))
+    .filter((p) => p.count > 0);
+}
+
+/** The taxonomy as the gallery shows it with a pack picked: only that source's screens, counts and matrix recomputed. */
+export function inPack(tax: Taxonomy, pack: string | null | undefined): Taxonomy {
+  return pack ? keepScreens(tax, (s) => s.source === pack) : tax;
+}
 
 /** Screens in one cell, one row (setup null), one column (method null) or the whole library (both null). */
 export function cellCount(tax: Taxonomy, method: string | null, setup: string | null): number {

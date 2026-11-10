@@ -63,6 +63,10 @@ LEVELS: Dict[str, Tuple[str, str]] = {
     # FN2-a: CCI reads the typical price against its own average (the deviation's sign flips, its size does not); OBV
     # adds the volume on the other side of each close change; the highest high of reflected bars is the lowest low
     "CCI": (NEG, "CCI"), "OBV": (NEG, "OBV"), "AroonUp": (INV, "AroonDown"), "AroonDown": (INV, "AroonUp"),
+    # M94 PR-2: the intraday pack's session values - the session's high so far is, on reflected bars, its low so far; the
+    # pre-open bars' high their low; volumes read the same
+    "SessionHigh": (REFL, "SessionLow"), "SessionLow": (REFL, "SessionHigh"), "PreOpenHigh": (REFL, "PreOpenLow"),
+    "PreOpenLow": (REFL, "PreOpenHigh"), "SessionVolume": (INV, "SessionVolume"), "PreOpenVolume": (INV, "PreOpenVolume"),
 }
 # FN2-a: Williams %R on reflected bars is -100 minus its value (the close's distance from the lowest low instead of the
 # highest high), i.e. minus (WilliamsR + 100) on the real bars: the NEG class of that expression.
@@ -98,7 +102,10 @@ PATTERN_SWAP = {"bullish_engulfing": "bearish_engulfing", "bearish_engulfing": "
                 "bullish_rejection": "bearish_rejection", "bearish_rejection": "bullish_rejection", "doji": "doji", "inside_bar": "inside_bar",
                 # AMW-3: the v2 candles (ATR and the gap read the same on reflected bars); a confirmation status is kept as it is
                 "bullish_strong_body": "bearish_strong_body", "bearish_strong_body": "bullish_strong_body",
-                "bullish_gap_reversal": "bearish_gap_reversal", "bearish_gap_reversal": "bullish_gap_reversal"}
+                "bullish_gap_reversal": "bearish_gap_reversal", "bearish_gap_reversal": "bullish_gap_reversal",
+                # M94 PR-2: the shapes are reflections of each other (candlestick_patterns: body > 0, the long wick >= 2 x the
+                # body on one side, the other wick <= 0.3 x the body) - checked bar by bar on reflected bars like the rest
+                "hammer": "shooting_star", "shooting_star": "hammer"}
 
 
 class NoMirror(ValueError):
@@ -194,7 +201,7 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
         if cls not in (INV, REFL, NEG, COMP):
             raise NoMirror(_part(node), "not mirrored")
         return (INV if cls == INV else NEG), _same_call(node, name, [x, *_kept(list(node.args[1:]))])
-    if name in ("Count", "CountStreak"):
+    if name in ("Count", "CountStreak", "SessionCount"):            # M94 PR-2: SessionCount counts like Count
         cond = node.args[-1]
         ccls, cexpr = rewrite(cond)
         if ccls != INV:
@@ -221,7 +228,7 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
     if name == "Pattern":
         arg = node.args[0] if node.args else None
         if not isinstance(arg, n.Str) or arg.value not in PATTERN_SWAP:
-            raise NoMirror(_part(node), "this candlestick pattern has no mirrored twin (hammer and shooting star differ by context)")
+            raise NoMirror(_part(node), "this candlestick pattern has no mirrored twin")
         return INV, _same_call(node, name, [n.Str(PATTERN_SWAP[arg.value]), *_kept(list(node.args[1:]))])
     if name in SIDED_LEVELS:
         if not node.args:

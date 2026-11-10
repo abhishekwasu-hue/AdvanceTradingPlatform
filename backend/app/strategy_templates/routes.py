@@ -29,11 +29,18 @@ from app.strategy_templates.schema import Template
 
 FLAG = "strategy_templates"
 FAMILY_NAMES: Dict[str, str] = {"A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
-                                "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves"}
+                                "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves",
+                                "H": "Intraday"}
 FETCH_DEPENDENT_DEGREE = 2      # swings of this degree and larger depend on how much history is loaded (registry SC-14)
 # A family that is listed only while its own flag is on as well (family G, the wave templates: `screener_waves`). While
 # that flag is off its templates are not shown and cannot be adopted (404), not merely shown as unavailable.
-FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves"}
+# M94 (F2): family H "Intraday" is listed only while `intraday_pack` is on.
+FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack"}
+# M94 (F8): the label of a template whose defaults are reference values from a study (a label only; nothing is enforced)
+REFERENCE_LABEL = "Reference values - edit before use"
+# M94-Q7: an intraday template carries no time-of-day rule; the optional window is the user's own operational setting
+WINDOW_NOTE = ("Only between: Not set - the whole session. Your own New entries from / until (Settings › Trade settings) "
+               "applies if you set it.")
 
 router = APIRouter(prefix="/api/strategy-templates", tags=["strategy-templates"])
 
@@ -112,6 +119,8 @@ def _card(template: Template, available: bool) -> Dict[str, Any]:
         "params": [_param(p) for p in template.params],
         "rules": [c.message for c in template.constraints],
         "available": available,
+        # M94 (F8): shown as REFERENCE_LABEL in the picker and the form; family H is listed only with `intraday_pack` on
+        "reference_values": template.reference_values,
     }
 
 
@@ -120,6 +129,10 @@ def _notes(template: Template, strategy: TemplateStrategy) -> List[str]:
              "Paper money only. Nothing starts until you confirm it."]
     if packs.is_pack(template):
         notes.append(packs.STRUCTURE_NOTE)
+    if template.reference_values:
+        notes.append(f"{REFERENCE_LABEL}.")
+    if template.family == "H":
+        notes.append(WINDOW_NOTE)
     degrees = [v for k, v in strategy.settings.params.items() if k.endswith("degree") and isinstance(v, int)]
     if any(d >= FETCH_DEPENDENT_DEGREE for d in degrees):
         notes.append("Larger swings depend on how much history is loaded, so an early signal can differ from a longer chart.")
@@ -185,4 +198,4 @@ def _exit_choices(strategy: TemplateStrategy) -> Dict[str, Any]:
     }
 
 
-__all__ = ["router", "FLAG", "AdoptBody", "FAMILY_FLAGS"]
+__all__ = ["router", "FLAG", "AdoptBody", "FAMILY_FLAGS", "REFERENCE_LABEL", "WINDOW_NOTE"]

@@ -1,0 +1,77 @@
+{
+  "schema": "atp.template/1",
+  "id": "H10",
+  "version": 1,
+  "name": "Previous-day level rejection",
+  "family": "H",
+  "idea": "The market is turned away from the previous day's high (or holds the previous day's low as support), touched a set number of times; the signal is the close beyond the bar before. The idea is wrong beyond the level or the fast average, as you choose.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "touches", "label": "Touches of the level", "help": "How many bars touched the level and closed back on this side of it. Reference: 2.", "type": "int", "default": 2, "min": 1, "max": 50, "step": 1},
+    {"key": "count_in", "label": "Touches counted in", "help": "This session so far, or the last bars looked back.", "type": "enum", "default": "last_bars", "choices": ["last_bars", "session"], "choice_labels": ["The last bars looked back", "This session so far"]},
+    {"key": "look", "label": "Bars looked back", "help": "For 'the last bars looked back': the bars in which the touches are counted.", "type": "int", "default": 12, "min": 1, "max": 500, "step": 1},
+    {"key": "tol", "label": "Touch zone", "help": "How close to the level a bar must come, in average true ranges (0 means not set: it must reach the level itself).", "type": "float", "default": 0.0, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range the distances and buffers are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "expiry", "label": "Confirmation within (bars)", "help": "The close beyond the bar before must come within this many bars after the touches, in the same session.", "type": "int", "default": 12, "min": 0, "max": 200, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level with a buffer, or the fast average with a buffer.", "type": "enum", "default": "level", "choices": ["level", "ema"], "choice_labels": ["The level", "The fast average"]},
+    {"key": "ema_n", "label": "Fast average", "help": "For 'the fast average': the bars of the exponential average. Reference: 9 on the 1-minute chart.", "type": "int", "default": 9, "min": 1, "max": 500, "step": 1},
+    {"key": "buf", "label": "Buffer", "help": "How many average true ranges beyond the level or the average (0 means not set: the level or the average itself).", "type": "float", "default": 0.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "by": "count_in",
+    "variants": {
+      "last_bars": {
+        "kind": "event",
+        "long": "Count($look, low <= PDL() + $tol * ATR($atr_n)[1] AND close > PDL()) >= $touches",
+        "short": "Count($look, high >= PDH() - $tol * ATR($atr_n)[1] AND close < PDH()) >= $touches",
+        "expiry_bars": "$expiry",
+        "same_bar": true,
+        "session_bound": true
+      },
+      "session": {
+        "kind": "event",
+        "long": "SessionCount(low <= PDL() + $tol * ATR($atr_n)[1] AND close > PDL()) >= $touches",
+        "short": "SessionCount(high >= PDH() - $tol * ATR($atr_n)[1] AND close < PDH()) >= $touches",
+        "expiry_bars": "$expiry",
+        "same_bar": true,
+        "session_bound": true
+      }
+    }
+  },
+  "trigger": {
+    "long": "close > high[1]",
+    "short": "close < low[1]"
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "level": {
+        "long": "PDL() - $buf * ATR($atr_n)[1]",
+        "short": "PDH() + $buf * ATR($atr_n)[1]"
+      },
+      "ema": {
+        "long": "EMA(close, $ema_n) - $buf * ATR($atr_n)[1]",
+        "short": "EMA(close, $ema_n) + $buf * ATR($atr_n)[1]"
+      }
+    }
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "previous_day_low_held_support"
+      }
+    ],
+    "short": [
+      {
+        "token": "previous_day_high_rejected"
+      }
+    ]
+  }
+}

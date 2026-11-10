@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LibraryView } from "../pages/StrategyLibraryV2";
-import type { StrategyTemplate } from "./api";
+import { REFERENCE_LABEL, showsReferenceLabel, type StrategyTemplate } from "./api";
 import { TemplateLibraryView, templateRows } from "./TemplateLibrarySection";
 
 /** P2-3: the Templates section. Made-up templates only. */
@@ -16,8 +16,11 @@ const BASE: StrategyTemplate = {
 };
 const OFF: StrategyTemplate = { ...BASE, id: "B3", name: "Made-up channel", family: "B", family_name: "Breakout", available: false, reads: { long: "A made-up long read.", short: null } };
 const noop = () => undefined;
-const view = (t: StrategyTemplate[] | null, family = "all") =>
-  renderToStaticMarkup(<TemplateLibraryView templates={t} error={null} family={family} onFamily={noop} />);
+const view = (t: StrategyTemplate[] | null, family = "all", intradayPackOn = false) =>
+  renderToStaticMarkup(<TemplateLibraryView templates={t} error={null} family={family} onFamily={noop} intradayPackOn={intradayPackOn} />);
+/** M94: a made-up family H "Intraday" template whose defaults are reference values. */
+const INTRADAY: StrategyTemplate = { ...BASE, id: "H6", name: "Made-up opening range", family: "H", family_name: "Intraday",
+  style: "Intraday (session-based)", timeframes: [{ value: "5m", label: "5-minute" }], default_timeframe: "5m", reference_values: true };
 
 describe("P2-3: the Templates section", () => {
   it("shows name, family, idea, both reads, the timeframes and the two links", () => {
@@ -54,5 +57,28 @@ describe("P2-3: the Templates section", () => {
     const html = renderToStaticMarkup(<LibraryView {...base} after={<TemplateLibraryView templates={[BASE]} error={null} family="all" onFamily={noop} />} />);
     expect(html).toContain("data-templates-section");
     expect(html.indexOf("data-templates-section")).toBeGreaterThan(html.indexOf("data-library-stat"));
+  });
+
+  it("M94: the Intraday family chip lists only the Intraday templates", () => {
+    const all = view([BASE, OFF, INTRADAY], "all", true);
+    expect(all).toContain(">Intraday<");
+    const html = view([BASE, OFF, INTRADAY], "H", true);
+    expect(html).toContain('data-template-card="H6"');
+    expect(html).not.toContain('data-template-card="D2"');
+    expect(html).not.toContain('data-template-card="B3"');
+    expect(view([BASE, OFF], "all", true)).not.toContain(">Intraday<");
+  });
+
+  it("M94: the reference-values label shows on such a template only while intraday_pack is on", () => {
+    expect(REFERENCE_LABEL).toBe("Reference values - edit before use");
+    const card = view([BASE, INTRADAY], "all", true).split('data-template-card="H6"')[1];
+    expect(card).toContain("data-template-reference");
+    expect(card).toContain(REFERENCE_LABEL);
+    expect(view([BASE, INTRADAY], "all", false)).not.toContain(REFERENCE_LABEL);
+    expect(view([BASE], "all", true)).not.toContain(REFERENCE_LABEL);
+    expect(showsReferenceLabel(INTRADAY, true)).toBe(true);
+    expect(showsReferenceLabel(INTRADAY, false)).toBe(false);
+    expect(showsReferenceLabel(BASE, true)).toBe(false);
+    expect(showsReferenceLabel({ reference_values: undefined }, true)).toBe(false);
   });
 });

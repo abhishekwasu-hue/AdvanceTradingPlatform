@@ -1,0 +1,63 @@
+{
+  "schema": "atp.template/1",
+  "id": "H7",
+  "version": 1,
+  "name": "VWAP false breakout",
+  "family": "H",
+  "idea": "Within one session, the market crosses to one side of the session VWAP and holds there for a while, then the close comes back through VWAP: the move failed. The idea is wrong beyond the session extreme since the cross, or VWAP with a buffer.",
+  "difficulty": "Intermediate",
+  "style": "Intraday (session-based)",
+  "allowed_timeframes": ["5m", "1m", "3m", "15m"],
+  "reference_values": true,
+  "params": [
+    {"key": "bars_n", "label": "Bars looked back", "help": "The bars before the cross-back in which the time on the other side of VWAP is counted. Reference: 9 on the 5-minute chart (about 45 minutes).", "type": "int", "default": 9, "min": 1, "max": 200, "step": 1},
+    {"key": "bars_min", "label": "Bars held on the other side", "help": "Of those bars, at least this many closed on the other side of VWAP. Reference: 6 on the 5-minute chart (about 30 minutes).", "type": "int", "default": 6, "min": 1, "max": 200, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The session extreme since the market crossed to the other side of VWAP, or VWAP with a buffer.", "type": "enum", "default": "session_extreme", "choices": ["session_extreme", "vwap_buffer"], "choice_labels": ["The session extreme since the cross", "VWAP with a buffer"]},
+    {"key": "atr_n", "label": "ATR period", "help": "The bars of the average true range the distances and buffers are measured in.", "type": "int", "default": 14, "min": 1, "max": 100, "step": 1},
+    {"key": "stop_mult", "label": "VWAP buffer", "help": "For 'VWAP with a buffer': how many average true ranges beyond VWAP.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [
+    {"left": "bars_min", "op": "<=", "right": "bars_n", "message": "The bars held on the other side cannot be more than the bars looked back."}
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "CrossBelow(close, SessionVWAP())",
+    "short": "CrossAbove(close, SessionVWAP())",
+    "same_bar": false,
+    "session_bound": true
+  },
+  "trigger": {
+    "long": "CrossAbove(close, SessionVWAP()) AND Count($bars_n, close < SessionVWAP())[1] >= $bars_min",
+    "short": "CrossBelow(close, SessionVWAP()) AND Count($bars_n, close > SessionVWAP())[1] >= $bars_min"
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "session_extreme": {
+        "extreme": "since_setup"
+      },
+      "vwap_buffer": {
+        "long": "SessionVWAP() - $stop_mult * ATR($atr_n)[1]",
+        "short": "SessionVWAP() + $stop_mult * ATR($atr_n)[1]"
+      }
+    }
+  },
+  "exit_signal": {
+    "long": "close < SessionVWAP()",
+    "short": "close > SessionVWAP()"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "vwap_false_break_up"
+      }
+    ],
+    "short": [
+      {
+        "token": "vwap_false_break_down"
+      }
+    ]
+  }
+}

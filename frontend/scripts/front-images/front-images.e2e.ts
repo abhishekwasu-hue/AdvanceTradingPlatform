@@ -77,7 +77,7 @@ const BASE_CSS = [
   "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; transition: none !important; animation: none !important; }",
   "* { scrollbar-width: none !important; } *::-webkit-scrollbar { display: none !important; }",
   // A crop of the screen: the bottom bar's room goes to the screen itself.
-  "[data-bottom-nav-v2] { display: none !important; }",
+  "[data-bottom-nav-v2], [data-chat-bubble] { display: none !important; }",
 ].join("\n");
 
 async function prepare(page: Page, features: Record<string, boolean>, extra: Partial<MockOptions> = {}, dismissed: string[] = [], at = AT) {
@@ -121,6 +121,15 @@ async function visibleText(page: Page): Promise<string[]> {
   });
 }
 
+/** Scrolls the page so the element's top sits `gap` px below the screen's top. */
+async function toTop(page: Page, selector: string, gap = 8) {
+  // Twice: a top bar that folds away on scroll moves the element after the first jump.
+  for (let i = 0; i < 2; i++) {
+    await page.locator(selector).first().evaluate((el, g) => { document.scrollingElement!.scrollTop += el.getBoundingClientRect().top - g; }, gap);
+    await page.waitForTimeout(300);
+  }
+}
+
 async function capture(page: Page, slug: string, hideCss: string, place?: () => Promise<void>) {
   await page.addStyleTag({ content: BASE_CSS + "\n" + hideCss });
   if (place) await place();
@@ -128,6 +137,12 @@ async function capture(page: Page, slug: string, hideCss: string, place?: () => 
   await page.waitForTimeout(400);
   const words = await visibleText(page);
   writeFileSync(join(RAW, `${slug}.txt`), words.join("\n") + "\n");
+  // M95-Q1 checks on the words on screen (the chart canvases are checked by eye): no amount, no price-like figure
+  // (a thousands separator or two decimals; the chain's OI counts are the one allowed use), no other name.
+  const text = words.join(" ");
+  expect(text, "no rupee amount").not.toMatch(/₹|\bRs\.?\s?\d/);
+  if (slug !== "option-chain") expect(text, "no price-like figure").not.toMatch(/\d,\d{3}|\d\.\d{2}\b(?!%)/);
+  expect(text, "only the two indices").not.toMatch(/STOCK\d|DEMO[A-D]\b|TEST[A-D]{3}|RELIANCE|SENSEX|VIX|FINNIFTY/i);
   await page.screenshot({ path: join(RAW, `${slug}.png`), animations: "disabled" });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow, "no sideways scroll").toBeLessThanOrEqual(0);
@@ -202,12 +217,10 @@ test("copilot", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await capture(page, "copilot", [HIDE_CHART_PRICES,
     "[data-headline-price], [data-headline-live], [data-headline] > div:has([data-headline-area]) { display: none !important; }",
-    "[data-composer='bottom'] { display: none !important; }"].join("\n"), async () => {
-    await page.getByText("You asked").first().evaluate((el) => {
-      const top = el.getBoundingClientRect().top + window.scrollY;
-      const scroller = document.scrollingElement!;
-      scroller.scrollTop = top - 64;
-    });
+    // The question box and what follows the mini chart in the card (the action row, the folded details): the chart
+    // answer then ends with its chart in the phone crop.
+    "[data-composer='bottom'], [data-answer='chart'] [data-mini-chart] ~ * { display: none !important; }"].join("\n"), async () => {
+    await toTop(page, "[data-answer='chart']");
   });
 });
 
@@ -244,16 +257,23 @@ test("option-chain", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await page.locator("[data-summary-more]").click();
   // Hidden: every price card (spot, ATM strike, max pain, futures, OI walls), the strike and premium columns. Shown:
-  // PCR, ATM IV, days to expiry and OI by side (its bars and the highest-OI marks).
+  // PCR, ATM IV and OI by side (its bars and the highest-OI marks).
   await capture(page, "option-chain", [
     "[data-summary='spot'], [data-summary='atm'], [data-summary='max-pain'], [data-summary='futures'], [data-summary='oi-walls'], [data-summary-more] { display: none !important; }",
+    // Days to expiry too, so PCR and IV share one row and the chain has the room.
+    "[data-summary='dte'] { display: none !important; }",
     "[data-chain-scroll] [data-col$='-ltp'], [data-chain-scroll] tr > th[scope='row'], [data-chain-scroll] th[data-front-hide] { display: none !important; }",
   ].join("\n"), async () => {
     // The header cells of the hidden columns (they carry no data attribute of their own): marked here, hidden above.
     await page.locator("[data-chain-scroll] thead th").evaluateAll((els) => els.forEach((e) => {
       if (/LTP|Strike/.test(e.textContent ?? "")) e.setAttribute("data-front-hide", "");
     }));
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await toTop(page, "[data-block='chain-summary']");
+    // The chain's own scroll box ends inside the crop (its rows scroll there, as on a phone), not cut by the crop's edge.
+    await page.locator("[data-chain-scroll]").evaluate((el) => {
+      const box = el as HTMLElement;
+      box.style.maxHeight = `${window.innerHeight - box.getBoundingClientRect().top - 8}px`;
+    });
   });
 });
 
@@ -279,9 +299,8 @@ test("find-setups", async ({ page }) => {
   await page.goto("/screener");
   await expect(page.getByTestId("start-scan")).toBeVisible({ timeout: 15_000 });
   await page.waitForLoadState("networkidle");
-  await capture(page, "find-setups", "", async () => {
-    await page.getByTestId("screener-hero").evaluate((el) => { document.scrollingElement!.scrollTop = el.getBoundingClientRect().top + window.scrollY - 64; });
-  });
+  // Hidden: each ready scan's formula line (its name and Run stay) and the phone's run bar (it floats where the hidden bottom bar was; nothing is picked yet).
+  await capture(page, "find-setups", "[data-testid='ready-scans'] li .line-clamp-1, [data-testid='screener-bottom-bar'] { display: none !important; }", () => toTop(page, "[data-testid='screener-hero']"));
 });
 
 test("trading-bot", async ({ page }) => {
@@ -308,20 +327,24 @@ test("trading-bot", async ({ page }) => {
   await page.goto("/deployments");
   await page.waitForLoadState("networkidle");
   await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
-  await capture(page, "trading-bot", "");
+  await capture(page, "trading-bot", "", () => toTop(page, "[data-block='bots']"));
 });
 
 test("journal", async ({ page }) => {
   await prepare(page, { ui_v2: true, discipline_engine: true, phase0_paper_only: true }, { brokers: [] }, ["journal"]);
-  // Four paper entries on the two indices in the as-of week; amounts and prices are hidden below (outcome words stay).
+  // The e2e journal answers moved to the two indices and the as-of week. The picture is the Week tab's discipline score
+  // (scores and counts, no amount); the list behind the Trades tab is mocked only because the page reads it first.
   const day = (d: number, hm: string) => { const t = new Date(`${ASOF}T${hm}:00+05:30`); t.setUTCDate(t.getUTCDate() - d); return t.toISOString(); };
   const list = { ...DEMO_LIST, setups: ["Buyer area", "Seller area"], tags: ["late entry"],
     entries: DEMO_LIST.entries.map((e, i) => ({ ...e, symbol: i % 2 ? "NIFTY BANK" : "NIFTY 50", source: "ATP", source_label: null, outside_atp: false,
       kind: "trade", mode: "PAPER", entry_time: day(i, "10:05"), exit_time: e.exit_time ? day(i, "13:40") : null, tags: [], user_tags: i === 2 ? ["late entry"] : [] })) };
   await page.route(/\/api(?:\/v1)?\/journal\/entries(\?.*)?$/, (r) => r.fulfill({ json: list }));
   await page.route(/\/api(?:\/v1)?\/journal\/stats(\?.*)?$/, (r) => r.fulfill({ json: DEMO_STATS }));
-  const monday = day(4, "00:00");
-  const week = { ...DEMO_WEEK, week: "2026-W31", start: monday, end: day(-3, "00:00"),
+  const asof = new Date(`${ASOF}T00:00:00Z`);
+  const back = (asof.getUTCDay() + 6) % 7;                                  // days since Monday
+  const thursday = new Date(asof); thursday.setUTCDate(asof.getUTCDate() - back + 3);
+  const isoWeek = Math.ceil(((thursday.getTime() - Date.UTC(thursday.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
+  const week = { ...DEMO_WEEK, week: `${thursday.getUTCFullYear()}-W${String(isoWeek).padStart(2, "0")}`, start: day(back, "00:00"), end: day(back - 7, "00:00"),
     entries: DEMO_WEEK.entries.map((e, i) => ({ ...e, symbol: i % 2 ? "NIFTY BANK" : "NIFTY 50", entry_time: day(i + 1, "10:05"), exit_time: day(i + 1, "13:40") })),
     manual_entries: [] };
   await page.route(/\/api(?:\/v1)?\/journal\/week(\?.*)?$/, (r) => r.fulfill({ json: week }));
@@ -330,9 +353,13 @@ test("journal", async ({ page }) => {
   await expect(page.locator("[data-block='journal-list']")).toBeVisible({ timeout: 15_000 });
   await page.getByRole("tab", { name: "Week" }).click();
   await page.waitForLoadState("networkidle");
-  // Hidden: every amount and R figure (the row's signed result and its R), the server-drawn chart thumbnails (price axis).
-  await capture(page, "journal", "[data-journal-row] [data-signed], [data-journal-row] .mt-px > .font-tabular, [data-chart-thumb] { display: none !important; }", async () => {
-    await page.getByRole("tabpanel").first().evaluate((el) => { document.scrollingElement!.scrollTop = el.getBoundingClientRect().top + window.scrollY - 64; });
+  // On the Week tab: the discipline score card only (the cards after it would be cut by the crop).
+  await capture(page, "journal", "[data-front-score] ~ * { visibility: hidden !important; }", async () => {
+    await page.getByText("Discipline score").first().evaluate((el) => {
+      const card = el.closest("section, [data-block], div.rounded-panel") ?? el;
+      card.setAttribute("data-front-score", "");
+      document.scrollingElement!.scrollTop = card.getBoundingClientRect().top + window.scrollY - 8;
+    });
   });
 });
 
@@ -349,7 +376,9 @@ test("daily-report", async ({ page }) => {
   const report = { ...REPORT, trade_date: ASOF, generated_at: `${ASOF}T13:00:00Z`, info_line: `Last close ${when} · AI-generated · information only, not advice`,
     index: [indexRow(n)],
     sections: { ...REPORT.sections,
-      index_read: `${n} closed ${changePct(n) >= 0 ? "higher" : "lower"}; its daily structure is ${words[dailyWord(n)]}, the weekly ${words[weeklyWord(n)]}.` } };
+      index_read: dailyWord(n) === weeklyWord(n)
+        ? `${n} closed ${changePct(n) >= 0 ? "higher" : "lower"}; daily and weekly structure ${words[dailyWord(n)]}.`
+        : `${n} closed ${changePct(n) >= 0 ? "higher" : "lower"}; daily structure ${words[dailyWord(n)]}, weekly ${words[weeklyWord(n)]}.` } };
   await page.route(/\/api(?:\/v1)?\/daily-report\/latest$/, (r) => r.fulfill({ json: { report } }));
   await page.goto("/copilot/read");
   const card = page.locator("[data-daily-report]");
@@ -359,8 +388,9 @@ test("daily-report", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await page.waitForLoadState("networkidle");
   // Hidden: the index close (the first figure of its row of four), the page behind the sheet (its card repeats the
-  // close) and the parts between the index read and the conclusion (stock breadth, sectors, names).
+  // close) and the parts after the index read (stock breadth, sectors, names) and each part's repeat of the
+  // information line (the sheet's top line keeps it).
   await capture(page, "daily-report", ["[data-daily-report-body] [data-report-part] > .grid > div:first-child { display: none !important; }",
     "#root { visibility: hidden !important; }",
-    "[data-daily-report-body] > [data-report-part]:not(:first-child):not(:last-child) { display: none !important; }"].join("\n"));
+    "[data-daily-report-body] > [data-report-part]:not(:first-child), [data-report-part] [data-report-info] { display: none !important; }"].join("\n"));
 });

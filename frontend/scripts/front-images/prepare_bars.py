@@ -30,7 +30,7 @@ def main() -> None:
     ap.add_argument("--keep", type=int, default=160, help="bars kept per symbol")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    if dt.date.fromisoformat(a.asof) > dt.date.today() - dt.timedelta(days=92):
+    if dt.date.fromisoformat(a.asof) > dt.datetime.now(dt.timezone.utc).date() - dt.timedelta(days=92):
         raise SystemExit("the as-of date must be at least three months old (M95-Q1)")
     out = {"asof": a.asof, "symbols": {}}
     for item in a.bars:

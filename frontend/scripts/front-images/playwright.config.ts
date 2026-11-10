@@ -2,8 +2,12 @@ import { defineConfig } from "@playwright/test";
 
 /**
  * M95: makes the front door's six benefit images (public/front/<slug>.png) from the app's own screens on a mocked API.
- * Run from frontend/: `npx vite build`, then `npx playwright test -c scripts/front-images/playwright.config.ts`
- * (PW_CHROMIUM may point at a preinstalled Chromium), then `python3 scripts/front-images/shrink.py`.
+ * Run from frontend/:
+ * 1. `python3 scripts/front-images/prepare_bars.py --asof <a day at least three months old> --out /tmp/front-bars.json
+ *    --bars "NIFTY 50=<daily CSV>" --bars "NIFTY BANK=<daily CSV>"` (real index bars from a private store; never committed);
+ * 2. `npx vite build`; 3. `FRONT_BARS=/tmp/front-bars.json npx playwright test -c scripts/front-images/playwright.config.ts`
+ *    (PW_CHROMIUM may point at a preinstalled Chromium; raw shots and their visible words go to FRONT_RAW, /tmp/front-raw);
+ * 4. `python3 scripts/front-images/shrink.py` writes public/front/<slug>.png; look at each before committing.
  */
 export default defineConfig({
   testDir: ".",

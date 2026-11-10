@@ -50,14 +50,13 @@ export default function SizeCalculatorV2({ calculate = calculateSize, initiallyO
 
   return (
     <CardV2 title="Position-size calculator" testId="size-calculator">
-      <p className="text-t13 text-fg-muted">Your risk per trade ÷ the stop distance, rounded down to whole lots or shares. Places and saves nothing.</p>
       {!open && (
-        <button type="button" className={`${BUTTON_SECONDARY} mt-space-3`} aria-expanded={false} onClick={() => setOpen(true)} data-testid="size-calculator-open">
+        <button type="button" className={BUTTON_SECONDARY} aria-expanded={false} onClick={() => setOpen(true)} data-testid="size-calculator-open">
           Open the calculator
         </button>
       )}
       {open && (
-        <div className="mt-space-3 space-y-space-3" data-testid="size-calculator-form">
+        <div className="space-y-space-3" data-testid="size-calculator-form">
           <div className="grid grid-cols-1 gap-space-2 sm:grid-cols-2">
             {field("account", "Account", "₹", "Your account")}
             <div className="min-w-0">
@@ -92,6 +91,7 @@ export default function SizeCalculatorV2({ calculate = calculateSize, initiallyO
             </div>
           )}
           <Details id="size-calculator.how" label="How it works" className="mt-0">
+            <p>Your risk per trade ÷ the stop distance, rounded down to whole lots or shares. Places and saves nothing.</p>
             <p>With both a % and a rupee amount, the smaller applies - as Risk-based sizing does when an entry is placed. Less than one lot is never rounded up.</p>
           </Details>
         </div>

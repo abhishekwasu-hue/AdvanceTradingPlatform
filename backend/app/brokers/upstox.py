@@ -27,6 +27,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    circuit_limits,
     lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
@@ -311,7 +312,7 @@ class UpstoxBroker(BrokerInterface):
             raise BrokerAPIError(f"No quote returned for {exchange}:{symbol}")
         ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
         return Quote(symbol=symbol, ltp=float(entry.get("last_price", 0.0)), volume=entry.get("volume", 0.0) or 0.0,
-                     oi=entry.get("oi"), timestamp=ts)
+                     oi=entry.get("oi"), timestamp=ts, **circuit_limits(entry))
 
     async def disconnect(self) -> None:
         """`DELETE /logout` invalidates the access token at Upstox; the local copy is dropped
@@ -356,11 +357,14 @@ class UpstoxBroker(BrokerInterface):
                 bid=best_buy.get("price"), ask=best_sell.get("price"),
                 bid_qty=best_buy.get("quantity"), ask_qty=best_sell.get("quantity"),
                 prev_close=_prev_close(entry),
+                **circuit_limits(entry),        # M94 PR-3: Upstox `upper_circuit_limit` / `lower_circuit_limit`
             )
         return quotes
 
     multi_quote = True
     quote_batch_max = 500           # M90 B4: instruments one multi-quote call serves (the route sends one call per this many)
+    # M94 PR-3: the v2 Full Market Quote documents `upper_circuit_limit` / `lower_circuit_limit` per instrument
+    price_bands = True
 
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: one `/market-quote/quotes` call for the whole list (Upstox serves up to 500 instrument keys per
@@ -385,7 +389,8 @@ class UpstoxBroker(BrokerInterface):
                 out[pair] = Quote(symbol=pair[1], ltp=float(entry["last_price"]), open=float(ohlc.get("open") or 0),
                                   high=float(ohlc.get("high") or 0), low=float(ohlc.get("low") or 0), close=float(ohlc.get("close") or 0),
                                   volume=float(entry.get("volume") or 0), oi=entry.get("oi"), prev_close=_prev_close(entry),
-                                  timestamp=parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp")))
+                                  timestamp=parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp")),
+                                  **circuit_limits(entry))
         return out
 
     async def get_historical_data(

@@ -25,6 +25,7 @@ from app.brokers.models import (
     OptionChain,
     OptionChainRow,
     Quote,
+    circuit_limits,
     lot_or_none,
 )
 from app.brokers.timestamps import parse_broker_timestamp
@@ -171,7 +172,7 @@ class ZerodhaBroker(BrokerInterface):
             raise BrokerAPIError(f"No quote returned for {key}")
         ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
         return Quote(symbol=symbol, ltp=float(entry["last_price"]), volume=entry.get("volume", 0.0) or 0.0,
-                     oi=entry.get("oi"), timestamp=ts)
+                     oi=entry.get("oi"), timestamp=ts, **circuit_limits(entry))
 
     async def disconnect(self) -> None:
         """`DELETE /session/token` invalidates the Kite access token; the local copy is dropped
@@ -210,9 +211,12 @@ class ZerodhaBroker(BrokerInterface):
             ask_qty=best_sell.get("quantity"),
             # Kite: ohlc.close is the close of the last trading day (the previous session's close)
             prev_close=ohlc.get("close") or None,
+            # M94 PR-3: Kite `/quote` documents `upper_circuit_limit` / `lower_circuit_limit` (the day's price band)
+            **circuit_limits(entry),
         )
 
     multi_quote = True
+    price_bands = True              # M94 PR-3: Kite's full quote carries the day's circuit limits
     quote_batch_max = 500           # M90 B4: instruments one multi-quote call serves (the route sends one call per this many)
 
     async def get_quotes_batch(self, items):

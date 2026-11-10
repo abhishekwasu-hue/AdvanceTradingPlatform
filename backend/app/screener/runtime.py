@@ -90,6 +90,8 @@ class SymbolData:
     ownership: Optional[Any] = None                        # N3 S8a: app.screener.ownership.Ownership (point in time)
     fundamentals: Optional[Any] = None                     # U7 LG3: app.fundamentals.pit versions (point in time) for the fundamentals functions
     chains: Optional[Any] = None                           # FN2-e: app.screener.chains.ChainTimeline (stored snapshots, point in time)
+    quote: Any | None = None                               # M94 PR-3: app.brokers.models.Quote, the user's own broker quote (BandDistancePct)
+    quote_reason: str | None = None                        # M94 PR-3: why no quote / band was read (shown as "not checked")
 
 
 @dataclass
@@ -707,6 +709,8 @@ class _Eval:
             "ChainBias": lambda: _chain_on(self.data, f, tf, "bias"),
             "MaxPainDistancePct": lambda: _chain_on(self.data, f, tf, "max_pain_distance_pct"),
             "FuturesOI": lambda: _chain_on(self.data, f, tf, "future_oi"),
+            # M94 PR-3: the day's price band in the user's broker quote, the last bar only (app/screener/bands.py)
+            "BandDistancePct": lambda: _band(self.data, str(self.ev(args[0], tf))),
             "Max": lambda: self.series(args[0], tf).rolling(win(1)).max(),
             "Min": lambda: self.series(args[0], tf).rolling(win(1)).min(),
             "Greatest": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).max(axis=1, skipna=False),
@@ -1414,6 +1418,11 @@ def _chain_on(data: SymbolData, f: pd.DataFrame, tf: str, what: str) -> Any:
     if what == "future_oi":
         return np.nan
     return _chain(data.option_chain, what)
+
+
+def _band(data: SymbolData, side: str) -> float:
+    from app.screener.bands import value
+    return value(data, side)
 
 
 def _chain(chain: Any, what: str) -> Any:

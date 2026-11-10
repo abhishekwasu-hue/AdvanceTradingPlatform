@@ -1,0 +1,413 @@
+{
+ "footer": "Information and education only, not investment advice.",
+ "lines": [
+  {
+   "key": "idea",
+   "label": "The idea",
+   "text": "Within one session, a signal on the first close beyond the high (or low) of the session's first minutes, with volume against the same time of day and the close on the same side of the session VWAP."
+  },
+  {
+   "key": "reads",
+   "label": "A signal reads",
+   "text": "The close broke above the session's opening range on the 5-minute chart; the close is above the session VWAP."
+  },
+  {
+   "key": "wrong",
+   "label": "The idea is wrong",
+   "text": "Back through the other side of the range, its middle or VWAP, as you choose."
+  },
+  {
+   "key": "runs",
+   "label": "Runs on",
+   "text": "5-minute, 1-minute, 3-minute or 15-minute bars; an idea never outlives its session."
+  },
+  {
+   "key": "exits",
+   "label": "Exit options",
+   "text": "Your own settings: no fixed level, a multiple of your risk, the template's exit signal, a level (the session VWAP, the session high / low, the previous close, the far side of the opening range)."
+  }
+ ],
+ "reference_label": "Reference values - edit before use",
+ "scanner": {
+  "long": {
+   "base_tf": "5m",
+   "params": {
+    "k": 0.0,
+    "minutes": 15,
+    "skip": 0,
+    "vol_mult": 1.5,
+    "vwap": true
+   },
+   "text": "ORBreakout(\"up\", $minutes, $vol_mult, $vwap, $skip, $k)"
+  },
+  "short": {
+   "base_tf": "5m",
+   "params": {
+    "k": 0.0,
+    "minutes": 15,
+    "skip": 0,
+    "vol_mult": 1.5,
+    "vwap": true
+   },
+   "text": "ORBreakout(\"down\", $minutes, $vol_mult, $vwap, $skip, $k)"
+  }
+ },
+ "schematic": {
+  "candles": [
+   [
+    4.0,
+    19.0,
+    0.0,
+    12.0
+   ],
+   [
+    12.0,
+    20.0,
+    11.0,
+    17.0
+   ],
+   [
+    17.0,
+    21.0,
+    10.0,
+    15.0
+   ],
+   [
+    15.0,
+    16.0,
+    4.0,
+    15.0
+   ],
+   [
+    15.0,
+    27.0,
+    15.0,
+    26.0
+   ],
+   [
+    26.0,
+    42.0,
+    18.0,
+    41.0
+   ],
+   [
+    41.0,
+    43.0,
+    36.0,
+    41.0
+   ],
+   [
+    41.0,
+    42.0,
+    25.0,
+    32.0
+   ],
+   [
+    32.0,
+    45.0,
+    30.0,
+    38.0
+   ],
+   [
+    38.0,
+    39.0,
+    32.0,
+    36.0
+   ],
+   [
+    36.0,
+    46.0,
+    26.0,
+    44.0
+   ],
+   [
+    44.0,
+    50.0,
+    38.0,
+    45.0
+   ],
+   [
+    45.0,
+    64.0,
+    43.0,
+    62.0
+   ],
+   [
+    62.0,
+    67.0,
+    62.0,
+    67.0
+   ],
+   [
+    67.0,
+    80.0,
+    65.0,
+    76.0
+   ],
+   [
+    69.0,
+    92.0,
+    64.0,
+    88.0
+   ],
+   [
+    88.0,
+    91.0,
+    70.0,
+    73.0
+   ],
+   [
+    73.0,
+    83.0,
+    67.0,
+    78.0
+   ],
+   [
+    78.0,
+    85.0,
+    75.0,
+    83.0
+   ],
+   [
+    83.0,
+    95.0,
+    78.0,
+    91.0
+   ],
+   [
+    91.0,
+    94.0,
+    88.0,
+    91.0
+   ],
+   [
+    91.0,
+    91.0,
+    79.0,
+    86.0
+   ],
+   [
+    86.0,
+    93.0,
+    79.0,
+    80.0
+   ],
+   [
+    80.0,
+    92.0,
+    76.0,
+    87.0
+   ],
+   [
+    95.0,
+    95.0,
+    95.0,
+    95.0
+   ],
+   [
+    95.0,
+    96.0,
+    92.0,
+    93.0
+   ],
+   [
+    93.0,
+    96.0,
+    90.0,
+    93.0
+   ],
+   [
+    93.0,
+    94.0,
+    89.0,
+    92.0
+   ],
+   [
+    92.0,
+    95.0,
+    75.0,
+    84.0
+   ],
+   [
+    84.0,
+    89.0,
+    81.0,
+    88.0
+   ],
+   [
+    88.0,
+    97.0,
+    84.0,
+    97.0
+   ],
+   [
+    97.0,
+    100.0,
+    93.0,
+    99.0
+   ],
+   [
+    99.0,
+    100.0,
+    89.0,
+    94.0
+   ]
+  ],
+  "invalidation": 64.0,
+  "same_bar": true,
+  "scale": 100.0,
+  "seed": 0,
+  "setup": 24,
+  "side": "long",
+  "timeframe": "5m",
+  "timeframe_words": "5-minute",
+  "trigger": 24
+ },
+ "template": {
+  "available": true,
+  "default_timeframe": "5m",
+  "difficulty": "Beginner",
+  "family": "H",
+  "family_name": "Intraday",
+  "id": "H6",
+  "idea": "Within one session, a signal on the first close beyond the high (or low) of the session's first minutes, with volume against the same time of day and the close on the same side of the session VWAP. The idea is wrong back through the other side of the range, its middle or VWAP, as you choose.",
+  "name": "Opening range breakout",
+  "params": [
+   {
+    "default": 15,
+    "help": "The high and low of this many minutes from the session's open form the range. Reference: 5, 15 or 30. It must be a whole number of the chart's bars.",
+    "key": "minutes",
+    "label": "Opening range (minutes)",
+    "max": 240.0,
+    "min": 1.0,
+    "step": 1.0,
+    "type": "int"
+   },
+   {
+    "default": 1.5,
+    "help": "The breaking bar's volume against the same time of day in the previous sessions, at least this many times (0 means no volume condition).",
+    "key": "vol_mult",
+    "label": "Volume against the same time of day",
+    "max": 20.0,
+    "min": 0.0,
+    "step": 0.1,
+    "type": "float"
+   },
+   {
+    "default": true,
+    "help": "The breaking close is above the session VWAP (below for the downside).",
+    "key": "vwap",
+    "label": "Close on the side of the session VWAP",
+    "type": "bool"
+   },
+   {
+    "default": 0,
+    "help": "No signal from a bar that starts in this many minutes from the session's open (0 means none).",
+    "key": "skip",
+    "label": "Quiet minutes after the open",
+    "max": 240.0,
+    "min": 0.0,
+    "step": 1.0,
+    "type": "int"
+   },
+   {
+    "default": 0.0,
+    "help": "How far beyond the range the breaking close must be, in average true ranges (0 means any close beyond).",
+    "key": "k",
+    "label": "Break distance",
+    "max": 5.0,
+    "min": 0.0,
+    "step": 0.05,
+    "type": "float"
+   },
+   {
+    "default": false,
+    "help": "Only when the opening range is small against the Daily average true range.",
+    "key": "use_range_filter",
+    "label": "Only a small opening range",
+    "type": "bool"
+   },
+   {
+    "default": 1.0,
+    "help": "For 'only a small opening range': the range is at most this many Daily average true ranges. Reference: 1.",
+    "key": "max_or_atr",
+    "label": "Largest range against the Daily ATR",
+    "max": 10.0,
+    "min": 0.05,
+    "step": 0.05,
+    "type": "float"
+   },
+   {
+    "default": 14,
+    "help": "For 'only a small opening range': the Daily bars of the average true range.",
+    "key": "daily_atr_n",
+    "label": "Daily ATR period",
+    "max": 100.0,
+    "min": 1.0,
+    "step": 1.0,
+    "type": "int"
+   },
+   {
+    "choices": [
+     {
+      "label": "The other side of the range",
+      "value": "other_side"
+     },
+     {
+      "label": "The middle of the range",
+      "value": "mid_range"
+     },
+     {
+      "label": "The session VWAP",
+      "value": "vwap"
+     }
+    ],
+    "default": "other_side",
+    "help": "The other side of the opening range, its middle, or the session VWAP.",
+    "key": "invalidation",
+    "label": "The idea is wrong beyond",
+    "type": "enum"
+   },
+   {
+    "default": 1,
+    "help": "For the template's exit signal: a close beyond the low (high for the downside) of this many bars before it.",
+    "key": "exit_n",
+    "label": "A new low against (bars)",
+    "max": 100.0,
+    "min": 1.0,
+    "step": 1.0,
+    "type": "int"
+   }
+  ],
+  "reads": {
+   "long": "The close broke above the session's opening range on the 5-minute chart; the close is above the session VWAP.",
+   "short": "The close broke below the session's opening range on the 5-minute chart; the close is below the session VWAP."
+  },
+  "reference_values": true,
+  "rules": [
+   "The opening range must be a whole number of the chart's bars (for example 15 or 30 minutes on the 15-minute chart)."
+  ],
+  "sides_default": "both",
+  "style": "Intraday (session-based)",
+  "timeframes": [
+   {
+    "label": "5-minute",
+    "value": "5m"
+   },
+   {
+    "label": "1-minute",
+    "value": "1m"
+   },
+   {
+    "label": "3-minute",
+    "value": "3m"
+   },
+   {
+    "label": "15-minute",
+    "value": "15m"
+   }
+  ],
+  "version": 1
+ },
+ "window_note": "Only between: Not set - the whole session. Your own New entries from / until (Settings \u203a Trade settings) applies if you set it."
+}

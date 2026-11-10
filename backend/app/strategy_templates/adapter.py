@@ -10,7 +10,7 @@ The adapter never calls BaseStrategy.build_signal (section 5: it forces targets 
 deployment's), stop_loss = the template's invalidation, no targets, risk_reward None. Targets and exits are the user's
 deployment settings: section 5 "exits as settings" (app/strategy_templates/exits.py) - the caller hands the deployment's
 (or the backtest request's) choice to `use_exits`; with no choice the Signal is exactly as before (the invalidation as
-its stop, no target). A target rule fills target1 (R multiple, wave projection) and its risk_reward (the account's
+its stop, no target). A target rule fills target1 (R multiple, wave projection, M94's level - TEMPLATE_LEVEL) and its risk_reward (the account's
 minimum R:R then applies, as for any strategy); TEMPLATE_EXIT makes `acts_on_exit_signal` true, and both backtest
 engines and the worker then close an open trade of this strategy on the exit signal (R5). `determine_exit_price`
 accepts a missing target (R4), so both backtest engines run a template signal that carries only its stop.
@@ -82,13 +82,15 @@ class TemplateStrategy(BaseStrategy):
     def use_exits(self, choice: exit_settings.TemplateExits) -> "TemplateStrategy":
         """Section 5: take the deployment's / backtest's exit choice (checked by the caller against the instrument with
         `TemplateExits.problems`). A WAVE_PROJECTION target compiles its projection on the template's own wave degree and
-        timeframe, read on the same bars as the signals."""
+        timeframe, read on the same bars as the signals; a TEMPLATE_LEVEL target (M94 F10) its level per side the same way."""
         extras: Dict[str, Part] = {}
         if choice.target_rule == "WAVE_PROJECTION":
             if not self.capabilities().wave_projection:
                 raise TemplateError(["The wave projection is for the wave templates only"])
             extras["projection"] = compile_part(exit_settings.projection_text(choice), what="wave projection target", want="num",
                                                 template=self.template, settings=self.settings)
+        elif choice.target_rule == "TEMPLATE_LEVEL":
+            extras.update(exit_settings.level_parts(self.template, self.settings, str(choice.target_level)))
         self.exits, self._extras, self._cache = choice, extras, None
         return self
 
@@ -161,11 +163,13 @@ class TemplateStrategy(BaseStrategy):
     def target_at(self, series: engine.SignalSeries, t: int, direction: int, entry: float, stop: float) -> Tuple[Optional[float], Optional[float]]:
         """(target1, risk_reward) of the signal on bar t by the user's target rule - the scan side of the parity reads the
         same function on the same series."""
-        if self.exits.target_rule not in ("R_MULTIPLE", "WAVE_PROJECTION"):
+        if self.exits.target_rule not in ("R_MULTIPLE", "WAVE_PROJECTION", "TEMPLATE_LEVEL"):
             return None, None
         projection = series.extras.get("projection")
+        level = series.extras.get("level:long" if direction > 0 else "level:short")
         return exit_settings.target_level(self.exits.target_rule, direction, entry, stop, target_r=self.exits.target_r,
-                                          projection=float(projection[t]) if projection is not None else None)
+                                          projection=float(projection[t]) if projection is not None else None,
+                                          level=float(level[t]) if level is not None else None)
 
     def exit_signal(self, data: Dict[str, pd.DataFrame], direction: Any) -> bool:
         """The template's exit signal on the last closed bar for an open idea of `direction` (R5 / S10: both backtest

@@ -22,6 +22,8 @@ export interface TemplateExitChoices {
   base_waves: { value: string; label: string }[];
   target_r: { min: number; max: number };
   ratio: { min: number; max: number };
+  /** M94 F10: the levels a level target may sit at (absent from an older server, empty: the rule is not offered). */
+  levels?: { value: string; label: string }[];
 }
 
 /** What the form holds (numbers as typed text until they are checked). */
@@ -31,9 +33,11 @@ export interface ExitPick {
   targetR: string;
   baseWave: string;
   ratio: string;
+  /** M94 F10: the level of a level target (one per bot). */
+  level: string;
 }
 
-export const EMPTY_PICK: ExitPick = { stop: "", target: "", targetR: "", baseWave: "", ratio: "" };
+export const EMPTY_PICK: ExitPick = { stop: "", target: "", targetR: "", baseWave: "", ratio: "", level: "" };
 
 export const STOP_WORDS: Record<StopSource, string> = {
   TEMPLATE_INVALIDATION: "Where the idea is wrong",
@@ -47,6 +51,7 @@ export const TARGET_WORDS: Record<TargetRule, string> = {
   TEMPLATE_EXIT: "When the template says the idea has ended",
   WAVE_PROJECTION: "Where the wave projection points",
   CREDIT_PCT: "My spread's target % of the credit",
+  TEMPLATE_LEVEL: "At a level",
 };
 
 /** The instrument the bot will trade, as the server's precedence table names it. */
@@ -93,6 +98,7 @@ export function exitProblem(pick: ExitPick, choices: TemplateExitChoices): strin
     const { min, max } = choices.ratio;
     if (r === null || r <= min || r > max) return `Type the projection's size as a share of that wave (above ${min}, up to ${max}).`;
   }
+  if (pick.target === "TEMPLATE_LEVEL" && !(choices.levels ?? []).some((l) => l.value === pick.level)) return "Pick the level to take profit at.";
   return null;
 }
 
@@ -108,16 +114,18 @@ export function templateExitsBody(pick: ExitPick, choices: TemplateExitChoices, 
     body.target_base_wave = p.baseWave;
     body.target_ratio = num(p.ratio);
   }
+  if (p.target === "TEMPLATE_LEVEL") body.target_level = p.level;
   return Object.keys(body).length ? body : null;
 }
 
 /** The short notes under the choice (what else still applies). */
 export function exitNotes(pick: ExitPick, cls: ExitClass): string[] {
   const notes: string[] = [];
-  if (pick.target === "R_MULTIPLE" || pick.target === "WAVE_PROJECTION") {
+  if (pick.target === "R_MULTIPLE" || pick.target === "WAVE_PROJECTION" || pick.target === "TEMPLATE_LEVEL") {
     notes.push("Your minimum reward to risk in your risk settings still applies.");
   }
   if (pick.target === "WAVE_PROJECTION") notes.push("When the count shows no projection at the signal, the trade has no fixed target.");
+  if (pick.target === "TEMPLATE_LEVEL") notes.push("The level is read on the signal bar; when it is not beyond the entry, the trade has no fixed target.");
   if (pick.target === "TEMPLATE_EXIT") notes.push("The trade closes at the next price after the bar where the idea ended.");
   if (cls === "OPTION_SINGLE") notes.push("Your premium stop always stays as a safety net.");
   if (cls === "OPTION_STRUCTURE") notes.push("Your spread's own target and stop % always stay as set.");

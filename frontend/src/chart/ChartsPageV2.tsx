@@ -1,4 +1,4 @@
-import { Filter, LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square } from "lucide-react";
+import { Filter, Layers, LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -46,6 +46,8 @@ import { ReadChartPanel, useReadChart } from "./ReadChartV2";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
+import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
+import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
 import { Skeleton } from "../components/primitives";
@@ -75,6 +77,9 @@ import { Skeleton } from "../components/primitives";
  * M91 C1 (flag `watchlist_screen`): a stock opened from a watchlist with a screen chosen carries it in the address
  * (`?wscreen=`); the chart then draws that screen (src/chart/ScreenOverlay.tsx) with its legend below, and the toolbar's
  * "Screen overlay" hides it. A symbol picked any other way opens without it: nothing is drawn.
+ * M94 F16 (flag `intraday_pack`): a strategy template's "Show on a chart" opens the chart with `?tpl=H6&tpltf=5m`; the
+ * toolbar's "Template overlay" then draws the template's conditions (src/chart/TemplateOverlay.tsx) only when pressed,
+ * with its legend below. The address keeps it while another symbol is picked.
  */
 type Tools = ReturnType<typeof useDrawingTools>;
 
@@ -164,6 +169,11 @@ export default function ChartsPageV2(_props: PageProps) {
   const [screenShown, setScreenShown] = useState(true);
   const screen = useScreenOverlay(engine, { screenId, symbol, exchange, timeframe, candles: data.candles,
     on: screenShown && tab === "chart" && !hubView });
+  // M94 F16: the template overlay from the address - read and drawn only on demand (its toolbar button; off at first)
+  const tplAsk = features.on("intraday_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
+  const [tplShown, setTplShown] = useState(false);
+  const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
+    candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -201,7 +211,10 @@ export default function ChartsPageV2(_props: PageProps) {
   const fs = useFullscreen(root, busy, tab === "chart");
 
   const pick = (p: PickedSymbol, from?: ScreenFrom) => {
-    const q = screenParam(p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "", from);
+    const base = screenParam(p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "", from);
+    // M94 F16: the template overlay stays with the chart when another symbol is picked
+    const keep = tplAsk ? `${OVERLAY_PARAM}=${encodeURIComponent(tplAsk.template)}${tplAsk.timeframe ? `&${OVERLAY_TF_PARAM}=${encodeURIComponent(tplAsk.timeframe)}` : ""}` : "";
+    const q = keep ? `${base}${base ? "&" : "?"}${keep}` : base;
     if (p.symbol !== symbol || p.exchange !== exchange || (from?.screenId ?? null) !== screenId) navigate(`${chartsPath(p.symbol)}${q}`);
   };
   const openItem = (item: WatchItem, from?: ScreenFrom) => { setSheet(false); pick(item, from); };
@@ -230,6 +243,9 @@ export default function ChartsPageV2(_props: PageProps) {
     ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
       moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
       icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
+    ...(tplAsk ? [{ id: "template-overlay", label: "Template overlay", title: tplShown ? "Hide the template overlay" : "Show the template overlay",
+      moreLabel: tplShown ? "Hide the template overlay" : "Show the template overlay", pressed: tplShown, testId: "template-overlay-button",
+      icon: <Layers size={16} aria-hidden />, onClick: () => setTplShown((v) => !v) }] : []),
     // Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page.
     ...(!shellAsk && features.on("chart_analyze") && !fs.on ? [{ id: "analyze", label: "Analyze a chart", icon: <ScanSearch size={16} aria-hidden />, to: pathFor("chart-analyze") }] : []),
     ...(!shellAsk && readOn && readTf ? [{ id: "read", label: "Read this chart", title: reading ? "Hide the reading" : "Read this chart", moreLabel: reading ? "Hide the reading" : "Read this chart",
@@ -319,12 +335,16 @@ export default function ChartsPageV2(_props: PageProps) {
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
-                levels={screen.levels} markers={screen.markers}
+                levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
+                markers={tpl.markers.length ? [...screen.markers, ...tpl.markers].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
             {screenId != null && screenShown && !fs.on && (
               <ScreenLegend state={screen} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
+            )}
+            {tplAsk && tplShown && !fs.on && (
+              <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (

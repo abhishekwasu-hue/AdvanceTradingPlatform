@@ -210,7 +210,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "MABreakoutRef": ['MABreakoutRef("stop_level_atr", "up", 20, "sma", 0)', 'MABreakoutRef("level", "down", 20, "ema", 0)',
                       'MABreakoutRef("held_level", "up", 10, "sma", 0)'],
     "PatternBreakoutRef": ['PatternBreakoutRef("stop_base", "up", "triangle", 0, 0)', 'PatternBreakoutRef("level", "down", "flag", 0, 0)',
-                           'PatternBreakoutRef("held_level", "up", "triangle", 0, 0)'],
+                           'PatternBreakoutRef("held_level", "up", "triangle", 0, 0)',
+                           'PatternBreakoutRef("base_low", "up", "flag", 0, 0, pole=2, flag_min=3, flag_max=10, retrace=0.6)'],
     # M93-Q2: the up pivot is the base high - a random walk almost never rallies from the last low past the first high without
     # a swing high on the way, so the up side's look-ahead cases run on the VCP fixture (tests/test_z7_bk3_breakouts.py)
     "VCPBreakoutRef": ['VCPBreakoutRef("level", "down", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakoutRef("stop_base", "down", 2, 1, 0, 0, FALSE, FALSE)'],
@@ -224,6 +225,15 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "DayExtremeBreak": ['DayExtremeBreak("up", 0, FALSE, 15, 0)', 'DayExtremeBreak("down", 0, FALSE, 0, 0)@15m'],
     "RelVolumeTOD": ["RelVolumeTOD(5)", 'RelVolumeTOD(3, "cumulative")@1h'],
     "SessionVWAP": ["SessionVWAP()", "SessionVWAP()@1h"],
+    # M94 PR-1: the session's running values (this bar included) and the pre-open levels - the PreOpen cases run on the
+    # synthetic sessions with each date's first bar moved before the open (SCREENQL_PREOPEN: the data then has pre-open bars)
+    "SessionHigh": ["SessionHigh()", "SessionHigh()@1h"],
+    "SessionLow": ["SessionLow()", "SessionLow()@15m"],
+    "SessionVolume": ["SessionVolume()", "SessionVolume()@1h"],
+    "SessionCount": ["SessionCount(close > open)", "SessionCount(close > SessionVWAP())@15m"],
+    "PreOpenHigh": ["PreOpenHigh()", "PreOpenHigh()@15m"],
+    "PreOpenLow": ["PreOpenLow()"],
+    "PreOpenVolume": ["PreOpenVolume()", "PreOpenVolume()@1h"],
     # U6 BK3: VCP (Daily in screens; daily cases below) and the indicator breakouts; volume and distance conditions off
     "VCPBreakout": ['VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],                       # up side: M93-Q2 note above
     "VCPReady": ['VCPReady("up", 2, 1, 5, FALSE)', 'VCPReady("down", 2, 1, 10, FALSE, FALSE)'],
@@ -237,7 +247,9 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                           'TrendlineBreakout("up", "line", 2, 0)@1h'],
     # idea library IDEA-12: the B5 channel's trend-side line on every bar
     "ChannelLine": ['ChannelLine("up")', 'ChannelLine("down", 2, 2)', 'ChannelLine("down")@1h'],
-    "PatternBreakout": ['PatternBreakout("up", "triangle", 0, 0)', 'PatternBreakout("down", "flag", 0, 0)', 'PatternBreakout("up", "triangle", 0, 0)@1h'],
+    "PatternBreakout": ['PatternBreakout("up", "triangle", 0, 0)', 'PatternBreakout("down", "flag", 0, 0)', 'PatternBreakout("up", "triangle", 0, 0)@1h',
+                        # M94: the named flag / pennant settings
+                        'PatternBreakout("up", "flag", 0, 0, pole=2, pole_bars=12, flag_min=3, flag_max=10, retrace=0.6)'],
     # the synthetic 5m sessions open where the previous one closed or with a gap: only some sessions gap (down here)
     "GapBreakout": ['GapBreakout("down", "prev_day", 15)', 'GapBreakout("down", "prev_day", 5)', 'GapBreakout("down", "prev_day", 60)@15m'],
     "GapType": ['GapType("down", "prev_day", 15)', 'GapType("up", "prev_day", 30)@15m'],
@@ -279,6 +291,24 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "GrahamNumber": ["GrahamNumber()", "close > GrahamNumber()"],
     "NCAVPerShare": ["NCAVPerShare()"],
 }
+# M94: the expressions that read the pre-open bars run on bars that have them (`with_preopen`)
+SCREENQL_PREOPEN = frozenset(text for name in ("PreOpenHigh", "PreOpenLow", "PreOpenVolume") for text in SCREENQL_SERIES[name])
+PREOPEN_SHIFT = pd.Timedelta(minutes=10)
+
+
+def with_preopen(f: pd.DataFrame) -> pd.DataFrame:
+    """M94: the same bars with each date's first bar stamped PREOPEN_SHIFT earlier (09:05 instead of 09:15 IST on the
+    synthetic sessions), so every session has one pre-open bar before its open. Row by row and in place of the stamp
+    only: a cut or a changed future gives the same rows up to t."""
+    if not len(f):
+        return f
+    days = pd.DatetimeIndex(f.index).tz_convert("Asia/Kolkata").normalize()
+    first = np.r_[True, days[1:] != days[:-1]]
+    out = f.copy()
+    out.index = pd.DatetimeIndex([t - PREOPEN_SHIFT if k else t for t, k in zip(f.index, first)])
+    return out
+
+
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
 SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
@@ -329,6 +359,8 @@ def _screenql(text: str, base_tf: str = BASE_TF):
                 extra["fundamentals"] = _fundamentals_timeline(f, base_tf)
             return evaluate(ast, SymbolData("S", {base_tf: f}, **extra), base_tf=base_tf)
         return run
+    if text in SCREENQL_PREOPEN:
+        return lambda f: evaluate(ast, SymbolData("S", {base_tf: with_preopen(f)}), base_tf=base_tf)
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
 
 

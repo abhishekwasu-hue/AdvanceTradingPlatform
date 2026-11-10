@@ -54,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, RETEST_WAVE_OF
+from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -296,6 +296,20 @@ class _Eval:
             self._session_bars[key] = b
         return self._session_bars[key]
 
+    def session_series(self, tf: str, what: str) -> pd.Series:
+        """M94: one of the session's running values (high / low / volume so far) or the pre-open bars' levels (pre_high /
+        pre_low / pre_volume) on the exchange clock - the session map of `session_bars`, cached per frame and value."""
+        b = self.session_bars(tf)
+
+        def build() -> dict[str, np.ndarray]:
+            ses, sm = _ses(), b.sessions()
+            hi, lo = ses.session_extremes_so_far(b.h, b.l, sm)
+            pre_hi, pre_lo = ses.premarket_levels(b.h, b.l, sm)
+            return {"high": hi, "low": lo, "volume": ses.session_volume(b.v, sm), "pre_high": pre_hi, "pre_low": pre_lo,
+                    "pre_volume": ses.premarket_volume(b.v, sm)}
+
+        return pd.Series(b.memo(("m94_session",), build)[what], index=self.frame(tf).index, dtype=float)
+
     def _gap_bars(self, tf: str) -> Any:
         """U6 BK4: B8 reads the exchange session on intraday bars (the BK2 session Bars); on Daily it needs none."""
         return self.session_bars(tf) if n.TF_MINUTES.get(tf, 0) < n.TF_MINUTES["1d"] else None
@@ -451,6 +465,16 @@ class _Eval:
                 out["swing_degree"] = int(given["swing"])
             return out
 
+        def pattern_shape() -> dict[str, Any]:
+            """M94: the B6 flag / pennant settings given as named arguments (pole= ...); each one left out keeps the breakout
+            parameter's default, so a call without them runs exactly as before."""
+            out: dict[str, Any] = {}
+            for arg, param in PATTERN_SHAPE_KWARGS.items():
+                value = kw(arg)
+                if value is not None:
+                    out[param] = int(value) if isinstance(_bkd(param), int) else float(value)
+            return out
+
         def retest_entry() -> pd.Series:
             side, of = str(self.ev(args[0], tf)), _text(1, _bkd("retest_of"))
             if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline / channel / projected: the B9 path
@@ -587,8 +611,8 @@ class _Eval:
                 "ma_n": win(2, _bkd("ma_n")), "ma_type": _text(3, _bkd("ma_type")), "min_break_atr": num(4, _bkd("min_break_atr"))},
                 num(5, _bkd("stop_atr_mult"))),
             "PatternBreakoutRef": lambda: _breakout_ref(f, "B6", _text(0, "level"), str(self.ev(args[1], tf)), {
-                "pattern": _text(2, _bkd("pattern")), "vol_mult": num(3, _bkd("vol_mult")), "min_break_atr": num(4, _bkd("min_break_atr"))},
-                num(5, _bkd("stop_atr_mult"))),
+                "pattern": _text(2, _bkd("pattern")), "vol_mult": num(3, _bkd("vol_mult")), "min_break_atr": num(4, _bkd("min_break_atr")),
+                **pattern_shape()}, num(5, _bkd("stop_atr_mult"))),
             "VCPBreakoutRef": lambda: _breakout_ref(f, "B3", _text(0, "level"), str(self.ev(args[1], tf)), {
                 "vcp_min_contractions": num(2, _bkd("vcp_min_contractions")), "vcp_ratio": num(3, _bkd("vcp_ratio")),
                 "vol_mult": num(4, _bkd("vol_mult")), "min_break_atr": num(5, _bkd("min_break_atr")), "tt_filter": _bool(6, _bkd("tt_filter")),
@@ -609,6 +633,15 @@ class _Eval:
             "RelVolumeTOD": lambda: pd.Series(self.session_bars(tf, win(0, 20), min(5, win(0, 20)), _text(1, "bar")).tod_rvol(), index=f.index,
                                               dtype=float),
             "SessionVWAP": lambda: pd.Series(self.session_bars(tf).vwap(), index=f.index, dtype=float),
+            # M94 PR-1: the session's running values and the pre-open bars' levels on the same session map
+            "SessionHigh": lambda: self.session_series(tf, "high"),
+            "SessionLow": lambda: self.session_series(tf, "low"),
+            "SessionVolume": lambda: self.session_series(tf, "volume"),
+            "SessionCount": lambda: pd.Series(_ses().session_count(_as_bool(self.ev(args[0], tf), f.index).to_numpy(dtype=bool),
+                                                                   self.session_bars(tf).sessions()), index=f.index, dtype=float),
+            "PreOpenHigh": lambda: self.session_series(tf, "pre_high"),
+            "PreOpenLow": lambda: self.session_series(tf, "pre_low"),
+            "PreOpenVolume": lambda: self.session_series(tf, "pre_volume"),
             # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
             "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
                 "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
@@ -634,7 +667,8 @@ class _Eval:
             # idea library IDEA-12: the B5 channel's trend-side line on every bar (app/screener/breakouts/lines.channel_line)
             "ChannelLine": lambda: _channel_line(f, str(self.ev(args[0], tf)), num(1, _bkd("tl_min_touches")), int(num(2, 0))),
             "PatternBreakout": lambda: _breakout(f, "B6", str(self.ev(args[0], tf)), {
-                "pattern": _text(1, _bkd("pattern")), "vol_mult": num(2, _bkd("vol_mult")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+                "pattern": _text(1, _bkd("pattern")), "vol_mult": num(2, _bkd("vol_mult")), "min_break_atr": num(3, _bkd("min_break_atr")),
+                **pattern_shape()}),
             "GapBreakout": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
             "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
@@ -1179,6 +1213,12 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
+def _ses() -> Any:
+    """The exchange-session module of the intraday breakouts (imported where used, as the other session code here)."""
+    from app.screener.breakouts import session
+    return session
+
+
 def _bkd(name: str) -> Any:
     """U6 BK3: a breakout parameter's default (the ScreenQL argument's default when it is left out)."""
     from app.screener.breakouts.params import DEFAULTS
@@ -1604,7 +1644,8 @@ def last_match(symbol: str, value: Any) -> Match:
 # Functions that read the bars' volume themselves (beside the `volume` field). The breakout functions' volume
 # CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
 # VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
-VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower"})
+VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower", "SessionVolume",
+                              "PreOpenVolume"})
 
 
 def no_index_volume(universe: list[SymbolData]) -> None:
@@ -1690,6 +1731,18 @@ def _figures_unavailable(ev: _Eval, ast: Any, base_tf: str) -> reasons.Reason | 
     return None
 
 
+def _preopen_unavailable(ev: _Eval, ast: Any, base_tf: str) -> reasons.Reason | None:
+    """M94-Q4: the reason when the screen did not match and a pre-open value it reads (PreOpenHigh / PreOpenLow /
+    PreOpenVolume) is missing on the last bar - the data has no pre-open bars for that session. Never a false match (a
+    missing value never matches) and never a silent "did not match"; a screen that matched on its other parts stays a match."""
+    for node in n.walk(ast):
+        if isinstance(node, n.Call) and node.name in PREOPEN_FUNCTIONS:
+            value = _last(ev.ev(node, base_tf))
+            if isinstance(value, (float, np.floating)) and np.isnan(value):
+                return reasons.of(reasons.NO_PREOPEN)
+    return None
+
+
 def symbol_match(ev: _Eval, ast: Any, base_tf: str) -> Match:
     """One symbol's answer on its last bar - `run_screen`'s, the watch list's and the chart's (app/screener/watch_screen.py).
     M93-Q3: a part that reads volume with no volume data, or fundamentals with no figures, makes it "not checked" with the
@@ -1707,6 +1760,10 @@ def symbol_match(ev: _Eval, ast: Any, base_tf: str) -> Match:
     if notes.required:
         return Match(symbol, False, reasons.of(reasons.NO_VOLUME))
     match = last_match(symbol, value)
+    if not match.matched:
+        why = _preopen_unavailable(ev, ast, base_tf)
+        if why is not None:
+            return Match(symbol, False, why)
     if notes.skipped and match.reason is None:
         match.note = VOLUME_SKIPPED_NOTE
     return match

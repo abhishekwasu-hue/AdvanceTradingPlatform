@@ -162,8 +162,11 @@ class _Checker:
     def arg_value(self, node: n.Call, spec: Spec, name: str) -> Any:
         """The value an argument takes in this call: the literal / parameter given, or the default when it is left out."""
         pos = next((i for i, a in enumerate(spec.args) if a.name == name), None)
-        if pos is None:
-            return None
+        if pos is None:                                   # M94: a named argument (PatternBreakout's flag_min / flag_max)
+            kw = next((a for a in spec.kwargs if a.name == name), None)
+            if kw is None:
+                return None
+            return self._value(node.kwargs[name]) if name in node.kwargs else kw.default
         return self._value(node.args[pos]) if pos < len(node.args) else spec.args[pos].default
 
     def choice_bars(self, node: n.Call, spec: Spec) -> int:

@@ -157,6 +157,7 @@ RSI_DIVERGENCE_REF_WHATS: Tuple[str, ...] = ("extreme", "confirm_bar")
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
 BREAKOUT_BK4_FLAG = "screener_breakouts_bk4"        # U6 BK4: trendline / pattern / gap / retest, on top of `screener_breakouts`
+INTRADAY_FLAG = "intraday_pack"                     # M94: the intraday pack's session functions, on top of `screener_breakouts`
 
 
 def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[object, ...] = ()) -> Arg:
@@ -178,6 +179,21 @@ _V_TOD = _bk("tod_vol_mult", "v", NUM)
 _VWAP = _bk("vwap_agree", "vwap", BOOL)
 _SKIP = _bk("skip_first_min", "skip", NUM)
 _K = _bk("min_break_atr", "k", NUM)
+# M94 (docs/design/M94_INTRADAY_PACK.md section 2): the B6 flag / pennant settings as named arguments of PatternBreakout /
+# PatternBreakoutRef - each one left out keeps the breakout parameter's default, so every older call is byte-identical.
+# Using one needs the `intraday_pack` flag too (app/screener/breakouts/gate.py).
+PATTERN_SHAPE_KWARGS: dict[str, str] = {"pole": "pole_min_atr", "pole_bars": "pole_max_bars", "flag_min": "flag_min_bars",
+                                        "flag_max": "flag_max_bars", "retrace": "flag_max_retrace"}
+_PATTERN_SHAPE = (_bk("pole_min_atr", "pole", NUM), _bk("pole_max_bars", "pole_bars", "window"), _bk("flag_min_bars", "flag_min", "window"),
+                  _bk("flag_max_bars", "flag_max", "window"), _bk("flag_max_retrace", "retrace", NUM))
+PATTERN_SHAPE_DOC = ("; named arguments (flag / pennant only): pole= the pole's least rise in ATRs, pole_bars= the pole's most bars,"
+                     " flag_min= / flag_max= the consolidation's fewest / most bars, retrace= the most of the pole the consolidation"
+                     " gives back (left out: the breakout parameters' defaults)")
+_INTRADAY = (INTRADAY_FLAG,)
+_SESSION_NOTE = (" - on the exchange calendar's session (pre-open bars left out); missing on a pre-open bar and outside the"
+                 " session")
+_PREOPEN_NOTE = (" - the bars of the session's date before its open, known from the session's first bar on; missing (never 0) when"
+                 " the data has no pre-open bars, and the result then says pre-open data is not available")
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 # U6 BK3 history: the trend template reads a year of sessions (tt_year_bars 250) and the slow SMA's rise (200 + 21 bars);
@@ -522,9 +538,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          cost=3.0, min_bars=BREAKOUT_MIN_BARS, extra_bars=MA_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
          doc="B12 moving-average breakout's prices (level: the average on the signal bar)" + _REF_DOC.format(fn="MABreakout")),
     Spec("PatternBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("pattern", "pattern", STR), _bk("vol_mult", "v", NUM), _K, _STOP_MULT),
-         cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         kwargs=_PATTERN_SHAPE, cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         ordered_args=(("flag_min", "flag_max", True),),
          doc="B6 flag / pennant / triangle breakout's prices (base_low: the low of the flag, or the triangle's support at the signal"
-             " bar)" + _REF_DOC.format(fn="PatternBreakout")),
+             " bar)" + _REF_DOC.format(fn="PatternBreakout") + PATTERN_SHAPE_DOC),
     Spec("VCPBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
                                                     _bk("vol_mult", "v", NUM), _K, _TT_ARG, _DRY_ARG, _STOP_MULT),
          cost=4.0, min_bars=VCP_MIN_BARS, timeframes=("1d",), flag=BREAKOUT_FLAG, also_flags=_BK3,
@@ -566,6 +583,24 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " sessions (prior sessions only; at least 5)"),
     Spec("SessionVWAP", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
          doc="VWAP from the session open on the exchange calendar (pre-open bars left out); equals VWAP on regular-session bars"),
+    # M94 PR-1 (docs/design/M94_INTRADAY_PACK.md section 2): the session's running values and the pre-open bars' levels
+    # (app/screener/breakouts/session.py) - closed bars, each value read from the bars up to and including its own bar;
+    # behind `screener_breakouts` AND `intraday_pack`.
+    Spec("SessionHigh", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the highest high of the session's bars up to and including this bar" + _SESSION_NOTE),
+    Spec("SessionLow", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the lowest low of the session's bars up to and including this bar" + _SESSION_NOTE),
+    Spec("SessionVolume", "factor", NUM, "volume", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the volume of the session's bars up to and including this bar" + _SESSION_NOTE),
+    Spec("SessionCount", "factor", NUM, "count", (Arg("cond", BOOL),), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
+         also_flags=_INTRADAY,
+         doc="the bars of this session so far (this bar included) where cond held; starts again at each session" + _SESSION_NOTE),
+    Spec("PreOpenHigh", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the high of the pre-open bars" + _PREOPEN_NOTE),
+    Spec("PreOpenLow", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the low of the pre-open bars" + _PREOPEN_NOTE),
+    Spec("PreOpenVolume", "factor", NUM, "volume", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the volume of the pre-open bars" + _PREOPEN_NOTE),
     # U6 BK3: B3 VCP and the indicator breakouts B10 / B11 / B12 / B15 (app/screener/breakouts/vcp.py, indicator_breaks.py) -
     # closed bars, one signal per leg (VCPReady: a state); behind `screener_breakouts` AND `screener_breakouts_bk3`.
     Spec("VCPBreakout", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
@@ -612,8 +647,9 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " here; missing when there is no channel or it already closed beyond its far edge. edge_touches (0: not"
              " checked) also needs that many swings on the far edge"),
     Spec("PatternBreakout", "filter", BOOL, None, (_SIDE, _bk("pattern", "pattern", STR), _bk("vol_mult", "v", NUM), _K), cost=4.0,
-         min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
-         doc="B6: a close above (up) / below (down) a flag, a pennant or a converging triangle by k ATR on volume >= v x average"),
+         kwargs=_PATTERN_SHAPE, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4, ordered_args=(("flag_min", "flag_max", True),),
+         doc="B6: a close above (up) / below (down) a flag, a pennant or a converging triangle by k ATR on volume >= v x average"
+             + PATTERN_SHAPE_DOC),
     Spec("GapBreakout", "filter", BOOL, None, (_SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM)), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B8: the session opened beyond the previous session's high (up) / low (down) - level base: the last 20 sessions' - and every"
@@ -807,9 +843,11 @@ BREAKOUT_BK4_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS
 # today's answer as if it had held all along. The validator refuses that combination.
 LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
 READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev",
-                           "TMA"})
+                           "TMA", "SessionCount"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
+INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
+PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
 
 def describe_spec(spec: Spec) -> Dict[str, object]:
@@ -835,7 +873,8 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
-           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
+           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS", "INTRADAY_FLAG", "INTRADAY_FUNCTIONS", "PREOPEN_FUNCTIONS", "PATTERN_SHAPE_DOC",
+           "PATTERN_SHAPE_KWARGS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec"]

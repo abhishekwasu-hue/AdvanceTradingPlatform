@@ -128,6 +128,16 @@ TOKENS: Dict[str, str] = {
                           " {timeframe} chart"),
     "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
                             " {timeframe} chart"),
+    # M99 P5 family L "Fibonacci + Elliott" (L1-L2): structure words only - no price, no number, no instruction
+    "zigzag_c_complete_fall": ("after a falling zigzag's wave C went beyond the end of wave A, the close went back over its last"
+                               " smaller swing on the {timeframe} chart"),
+    "zigzag_c_complete_rise": ("after a rising zigzag's wave C went beyond the end of wave A, the close went back under its last"
+                               " smaller swing on the {timeframe} chart"),
+    "wave_three_up_may_start": ("in wave two of a rising impulse, the close went over the last smaller swing of wave two on"
+                                " the {timeframe} chart"),
+    "wave_three_down_may_start": ("in wave two of a falling impulse, the close went under the last smaller swing of wave two on"
+                                  " the {timeframe} chart"),
+    "count_is_an_interpretation": "the wave count is an interpretation of the bars",
     # M94 family H "Intraday" (H6-H10): structure words only - no price, no number, no instruction
     "opening_range_broken_upward": "the close broke above the session's opening range on the {timeframe} chart",
     "opening_range_broken_downward": "the close broke below the session's opening range on the {timeframe} chart",

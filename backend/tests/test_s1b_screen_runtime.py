@@ -586,6 +586,18 @@ def test_m94_session_functions():
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
 
+def test_m99_b1_fib_and_p5_fib_ew_functions():
+    """M99 B1-b FibLevel / FibDistancePct / ClusterDistancePct and P5 FibEw / FibEwLevel (the full fixtures:
+    tests/test_m99_fib_levels.py, tests/test_m99_p5_fib_ew.py) - each reads the bars into a series of the frame's length."""
+    from app.quality.lookahead import synthetic_bars
+    f = synthetic_bars(400, seed=4)
+    d = SymbolData("S", {"15m": f})
+    for text in ('FibLevel("retrace", 0.618)', 'FibDistancePct("extend", 1)', "ClusterDistancePct(0.5)", 'FibEw("count_void")',
+                 'FibEwLevel("invalidation")'):
+        got = _ev(text, d, base_tf="15m")
+        assert len(got) == len(f) and np.isfinite(got.to_numpy(float)).any(), text
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

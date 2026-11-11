@@ -54,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import FIB_EW_SETTINGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -582,6 +582,9 @@ class _Eval:
             "FibLevel": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "level"),
             "FibDistancePct": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "distance"),
             "ClusterDistancePct": lambda: _cluster_distance(f, num(0, float("nan")), _text(1, "pct"), int(num(2, 0))),
+            # M99 P5 (flag fib_ew_pack): the Fibonacci + Elliott pack (app/price_action/fib_ew.py), settings as named arguments
+            "FibEw": lambda: _fib_ew(f, _text(0, "cluster_touch"), _text(1, "any"), {k: kw(k) for k in FIB_EW_SETTINGS}),
+            "FibEwLevel": lambda: _fib_ew(f, _text(0, "invalidation"), None, {k: kw(k) for k in FIB_EW_SETTINGS}),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
@@ -1053,6 +1056,24 @@ def _cluster_distance(f: pd.DataFrame, band: float, mode: str, degree: int) -> p
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), c["centre"]), index=f.index)
+
+
+def _fib_ew(f: pd.DataFrame, name: str, side: str | None, given: dict[str, Any]) -> pd.Series:
+    """M99 P5: one Fibonacci / wave reading as a series - 1.0 where it holds, 0.0 where not - or, with `side` None, one of
+    its levels (NaN where there is none). One evaluation per frame and settings (fib_ew.cached)."""
+    from app.price_action import fib_ew
+    try:
+        s = fib_ew.settings_from({k: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    r = fib_ew.cached(f, s)
+    if side is None:
+        if name not in fib_ew.LEVELS:
+            raise ScreenRuntimeError(f"FibEwLevel: unknown level {name!r}")
+        return pd.Series(r.level(name), index=f.index, dtype=float)
+    if name not in fib_ew.NAMES or side not in fib_ew.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"FibEw: unknown reading {name!r} or side {side!r}")
+    return pd.Series(r.value(name, side), index=f.index, dtype=float)
 
 
 PRIOR_SWING_BACK: Dict[str, int] = {"one": 1, "two": 2, "three": 3}

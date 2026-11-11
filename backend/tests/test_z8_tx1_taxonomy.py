@@ -134,7 +134,7 @@ def test_every_registered_backend_template_source_is_fully_filed():
 
 def test_the_guard_catches_an_unfiled_template_an_orphan_and_an_unregistered_source():
     base = _data()
-    base["screens"] = [s for s in base["screens"] if s["source"] not in ("breakouts", "breakouts_bk3", "breakouts_bk4", "legends", "intraday")]   # the filed U6 / U7 / M94 templates aside
+    base["screens"] = [s for s in base["screens"] if s["source"] not in ("breakouts", "breakouts_bk3", "breakouts_bk4", "legends", "intraday", "fib_ew")]   # the filed U6 / U7 / M94 / M99 P5 templates aside
     tax, _ = tx.parse(base)
     fake = {"breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
     problems = tx.coverage_problems(tax, fake)

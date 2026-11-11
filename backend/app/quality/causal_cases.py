@@ -296,6 +296,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "FibLevel": ['FibLevel("retrace", 0.618)', 'FibLevel("extend", 1.618, 1)', 'FibLevel("golden", 0.382)', 'FibLevel("retrace", 0.5)@1h'],
     "FibDistancePct": ['FibDistancePct("retrace", 0.5)', 'FibDistancePct("extend", 1, 0)@15m'],
     "ClusterDistancePct": ['ClusterDistancePct(0.3)', 'ClusterDistancePct(0.5, "atr")', 'ClusterDistancePct(0.5, "pct", 1)@15m'],
+    # M99 P5 (flag fib_ew_pack): the Fibonacci + Elliott pack (app/price_action/fib_ew.py) - every reading on the bar it
+    # becomes known, every level as known at each close
+    "FibEw": ['FibEw("cluster_touch")', 'FibEw("wave3_entry", "up")', 'FibEw("zigzag_c_entry", "any", zz_trigger="wave_b")',
+              'FibEw("count_void", "down", void_on="wick")', 'FibEw("impulse_complete")', 'FibEw("diagonal_complete", "any", degree=2)',
+              'FibEw("cluster_touch", "up", band=1, band_mode="pct")@1h'],
+    "FibEwLevel": ['FibEwLevel("invalidation")', 'FibEwLevel("thrust")', 'FibEwLevel("cluster_low")', 'FibEwLevel("wave3_trigger")',
+                   'FibEwLevel("cluster_high", band=1, band_mode="pct")'],
 }
 # M94: the expressions that read the pre-open bars run on bars that have them (`with_preopen`)
 SCREENQL_PREOPEN = frozenset(text for name in ("PreOpenHigh", "PreOpenLow", "PreOpenVolume") for text in SCREENQL_SERIES[name])
@@ -645,6 +652,23 @@ def _register_primitives() -> None:
         register(f"structure.cluster_centre_{mode}_{band:g}", partial(_cluster_centres, band, mode), group="structure", samples=6)
 
 
+def _fib_ew_events(f: pd.DataFrame) -> list[Any]:
+    from app.price_action.fib_ew import evaluate
+    return [(e.bar, e.name, e.side, e.origin, e.why) for e in evaluate(f).events]
+
+
+def _fib_ew_level(what: str, f: pd.DataFrame) -> np.ndarray:
+    from app.price_action.fib_ew import evaluate
+    return evaluate(f).level(what)
+
+
+def _register_fib_ew() -> None:
+    """M99 P5: the Fibonacci + Elliott readings and levels (app/price_action/fib_ew.py)."""
+    register("structure.fib_ew_events", _fib_ew_events, kind=EVENTS, group="structure", known_at=lambda r: r[0], samples=12, length=400)
+    for what in ("invalidation", "cluster_low", "cluster_high", "wave3_trigger"):
+        register(f"structure.fib_ew_{what}", partial(_fib_ew_level, what), group="structure", samples=6, length=400)
+
+
 def _register_structure() -> None:
     from app.price_action.market_structure import analyze_market_structure
     from app.support_resistance.engine import SupportResistanceEngine
@@ -709,6 +733,7 @@ def register_all() -> None:
     _register_swings()
     _register_structure()
     _register_primitives()
+    _register_fib_ew()
     _register_zones()
     _register_screenql()
 

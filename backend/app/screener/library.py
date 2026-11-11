@@ -108,6 +108,12 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
             return None, "no such intraday scanner"
         # M94: the set values only - a Not set parameter stays a $parameter, so a run asks for it (M94-Q2)
         text, base_tf, params = scanner.text, scanner.base_tf, scanner.defaults()
+    elif screen.source == "fib_ew":
+        from app.screener import fib_ew_scanners as fes
+        found = fes.scanner(screen.id)
+        if found is None:
+            return None, "no such Fibonacci + Elliott scanner"
+        text, base_tf, params = found.text, found.base_tf, found.defaults()      # M99 P5: every value a reference value
     else:
         return None, f"the {screen.source!r} source has no ScreenQL text"
     return Resolved(screen.id, screen.name, screen.method, screen.setup, str(screen.tags.get("direction", "long")), screen.source,

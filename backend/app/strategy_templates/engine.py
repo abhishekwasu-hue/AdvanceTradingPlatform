@@ -58,8 +58,11 @@ DIVERGENCE_SPARSE_SERIES: Tuple[str, ...] = ("RsiDivergenceRef",)
 ZONE_EDGE_SPARSE_SERIES: Tuple[str, ...] = ("SwingZoneEdge",)
 # M55 T5 (A1): the level gate's invalidation is a price on its entry candles only
 AREA_GATE_SPARSE_SERIES: Tuple[str, ...] = ("AreaGateRef",)
+# M99 P5: the Fibonacci + Elliott levels are prices where they apply only (a setup's trigger while watched, the idea's
+# void level on its signal bars, a cluster, a thrust projection)
+FIB_EW_SPARSE_SERIES: tuple[str, ...] = ("FibEwLevel",)
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES
-                                     + AREA_GATE_SPARSE_SERIES)
+                                     + AREA_GATE_SPARSE_SERIES + FIB_EW_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
 REASON_CONFLICT = "conflict"

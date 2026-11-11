@@ -37,6 +37,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M99 P5: the Fibonacci tool, clusters and the wave count with its rules and invalidation lines, each reading with a Why?.
+  { id: "fib_ew", group: "layers", label: "Fibonacci + Elliott", note: "Fibonacci levels and clusters of the latest swings, the wave count with its rule checks and invalidation lines, each reading with a Why?.",
+    flag: "fib_ew_pack", keywords: "fibonacci fib retracement extension golden cluster elliott wave count impulse zigzag triangle diagonal" },
 ];
 
 /** What the menu reads and changes. */

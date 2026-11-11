@@ -43,6 +43,8 @@ export interface AnswerHeadline {
   /** DATA-FIX D1 (owner 2 Nov): the live price and its time while the market is open (absent / null otherwise); the
    * area's `where` is then said from it. */
   live_price?: number | null; live_at?: string | null; trend: "up" | "down" | "sideways" | null; timeframe: string;
+  /** COP-2 C: the trend is weak (the structure card's own "· weak"); absent from an older answer. */
+  weak?: boolean;
   area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null;
           /** M78 (F3): the area's own timeframe and state, when the server sends them. */
           timeframe?: string | null; state?: string | null } | null;
@@ -66,7 +68,11 @@ export interface ChatHome {
   keep?: number;
 }
 /** CU6: one stored turn of the conversation (oldest first). `answer` null: the stored card could not be read. */
-export interface StoredTurn { id: number; question: string; answer: ChatAnswer | null; at: string | null }
+export interface StoredTurn {
+  id: number; question: string; answer: ChatAnswer | null; at: string | null;
+  /** COP-2 A: the server says a newer close is stored than the one this chart answer states (absent: an older server). */
+  stale?: boolean;
+}
 export interface ChatHistory { turns: StoredTurn[]; keep: number; session?: Conversation | null }
 /** CH-2: one named conversation of the person ("New chat"); its title is the first question until renamed. */
 export interface Conversation { id: number; title: string }
@@ -256,6 +262,37 @@ export function keptIsToday(history: ChatHistory | null, now: Date = new Date())
   return newest !== null && istDay(newest) === istDay(now);
 }
 
+/**
+ * COP-2 A (owner 11 Nov): the newest chart answer of the kept conversation is out of date - the server found a newer
+ * stored close for its symbol than the one it states (`stale`, computed on the server). A conversation without a chart
+ * answer is never out of date this way.
+ */
+export function keptIsStale(history: ChatHistory | null): boolean {
+  const chart = [...(history?.turns ?? [])].reverse().find((t) => !!t.answer?.headline);
+  return !!chart?.stale;
+}
+
+/** COP-2 A: the kept conversation comes back on screen on its own only while it is current: asked today (India date)
+ * and its newest chart answer not overtaken by a newer stored close. Otherwise the screen starts fresh; the
+ * conversation stays in the Conversations list and opens from there as it was. */
+export function keptIsCurrent(history: ChatHistory | null, now: Date = new Date()): boolean {
+  return keptIsToday(history, now) && !keptIsStale(history);
+}
+
+/** COP-2 A (owner 11 Nov, "when the calendar date changes, the old information must go away automatically"): the
+ * milliseconds from `now` to the next India midnight (00:00 IST = 18:30 UTC; India keeps no daylight saving). */
+export function msToNextIstMidnight(now: Date = new Date()): number {
+  const IST_MS = 330 * 60_000;
+  const local = now.getTime() + IST_MS;
+  const nextDay = (Math.floor(local / 86_400_000) + 1) * 86_400_000;
+  return nextDay - local;
+}
+
+/** COP-2 A: the India date of a moment, for the page's "the date changed" check. */
+export function istDayOf(d: Date): string {
+  return istDay(d);
+}
+
 export const MAX_QUESTION = 1000;
 export const PHONE_MAX_WIDTH = 767;
 
@@ -354,6 +391,29 @@ export function quickChips(jobs: readonly ChatJob[]): { id: JobId; label: string
     const job = jobs.find((j) => j.id === q.id);
     return job ? [{ ...q, question: job.starter }] : [];
   });
+}
+
+/** COP-2 B: the indices the Copilot's chart reader reads, by the names the instrument list and the recents may carry. */
+const CHART_INDEX: Record<string, string> = {
+  NIFTY: "NIFTY", "NIFTY 50": "NIFTY", NIFTY50: "NIFTY", BANKNIFTY: "BANKNIFTY", "NIFTY BANK": "BANKNIFTY", FINNIFTY: "FINNIFTY",
+  "NIFTY FIN SERVICE": "FINNIFTY", "NIFTY FINANCIAL SERVICES": "FINNIFTY", MIDCPNIFTY: "MIDCPNIFTY", "NIFTY MID SELECT": "MIDCPNIFTY",
+  "NIFTY MIDCAP SELECT": "MIDCPNIFTY", SENSEX: "SENSEX", BANKEX: "BANKEX",
+};
+
+/** COP-2 B: the Read chart picker's first suggestion (recents come before it). */
+export const CHART_SUGGESTIONS: readonly { symbol: string; exchange: string; name: string }[] = [{ symbol: "NIFTY", exchange: "NSE", name: "NIFTY 50" }];
+
+/** COP-2 B: a row the Read chart picker offers - a share, or one of the indices the chart reader reads (an index it
+ * does not read, such as "NIFTY IT", is left out). Pure. */
+export function chartPickable(row: { symbol: string }): boolean {
+  const s = row.symbol.trim().toUpperCase().replace(/\s+/g, " ");
+  return !!s && (s in CHART_INDEX || /^[A-Z0-9&-]+$/.test(s));
+}
+
+/** COP-2 B: the question a picked symbol asks - "Read the RELIANCE chart", "Read the BANKNIFTY chart". Pure. */
+export function chartQuestionFor(symbol: string): string {
+  const s = symbol.trim().toUpperCase().replace(/\s+/g, " ");
+  return `Read the ${CHART_INDEX[s] ?? s} chart`;
 }
 
 /** CU3: the nearest area as "Demand 24,520 – 24,610" (the side word only when the server knows it). */

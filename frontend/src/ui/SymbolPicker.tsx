@@ -95,7 +95,7 @@ export async function searchSymbols(q: string, contracts = false): Promise<Picke
 }
 
 export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Symbol", className = "min-w-0 flex-1 sm:w-56 sm:flex-none",
-  universe = "all", id: fieldId, placeholder = "Search a symbol", suggestions, commitTyped = false, onClear, onLeave, invalid, describedBy, inputClassName }: {
+  universe = "all", id: fieldId, placeholder = "Search a symbol", suggestions, commitTyped = false, onClear, onLeave, invalid, describedBy, inputClassName, rowFilter }: {
   value: string; exchange: string; onPick: (pick: PickedSymbol) => void;
   /** This user's recent-symbols key (`recentKeyFor(user.id)`); null while signed out. */
   storageKey: string | null; label?: string; className?: string;
@@ -113,6 +113,8 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
   /** The field was left (forms mark it touched). */
   onLeave?: () => void;
   invalid?: boolean; describedBy?: string; inputClassName?: string;
+  /** COP-2: only the rows this page can use (e.g. the Copilot's Read chart: shares and the indices it reads). */
+  rowFilter?: (row: PickedSymbol) => boolean;
 }) {
   const [text, setText] = useState(value);
   const [open, setOpen] = useState(false);
@@ -131,11 +133,12 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
   const listKey = listKeyFor(text, value);
   useEffect(() => {
     if (!open) return undefined;
-    if (!listKey) { setRows(emptyRows(readRecent(storageKey), shownSuggestions, universe)); setRowsFor(""); setActive(-1); return undefined; }
+    const only = (r: PickedSymbol[]) => (rowFilter ? r.filter(rowFilter) : r);
+    if (!listKey) { setRows(only(emptyRows(readRecent(storageKey), shownSuggestions, universe))); setRowsFor(""); setActive(-1); return undefined; }
     if (optionable) { setRows(searchOptionable(listKey)); setRowsFor(listKey); setActive(0); return undefined; }   // no server call
     let live = true;
     const t = window.setTimeout(() => {
-      void searchSymbols(listKey, universe === "with-contracts").then((r) => { if (live) { setRows(r); setRowsFor(listKey); setActive(0); } });
+      void searchSymbols(listKey, universe === "with-contracts").then((r) => { if (live) { setRows(only(r)); setRowsFor(listKey); setActive(0); } });
     }, 250);
     return () => { live = false; window.clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the suggestions are read when the list opens

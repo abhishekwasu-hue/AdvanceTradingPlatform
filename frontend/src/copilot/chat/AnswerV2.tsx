@@ -9,7 +9,7 @@ import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
 import {
-  actionState, answerParts, answerRow, areaText, chipPath, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
+  actionState, answerParts, answerRow, cardTrendText, areaText, chipPath, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
   type AnswerBlock, type AnswerChip, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
@@ -24,7 +24,6 @@ const SECONDARY = "inline-flex min-h-11 w-full items-center justify-center gap-s
 const CHIP = "inline-flex min-h-9 items-center rounded-pill border border-border bg-surface-2 px-space-3 py-space-1 text-t13 text-fg";
 const CHIP_ACTION = "inline-flex min-h-11 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-medium text-fg transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9";
 const TREND_TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", sideways: "bg-surface-2 text-fg" } as const;
-const TREND_WORD = { up: "▲ Up", down: "▼ Down", sideways: "Sideways" } as const;
 
 // CU3: the mini chart is the Charts page's own embedded chart (its own chunk: the chart library loads with it).
 const EmbeddedChartV2 = lazy(() => import("../../chart/EmbeddedChartV2"));
@@ -109,7 +108,7 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
         <dt className="text-t12 font-medium uppercase text-fg-muted">{t("chat.trend")} · {h.timeframe}</dt>
         <dd className="mt-space-1">
           <span className={cx("inline-flex min-h-7 items-center rounded-pill px-space-3 text-t13 font-semibold", h.trend ? TREND_TONE[h.trend] : "bg-surface-2 text-fg-muted")}
-            data-trend={h.trend ?? "unknown"}>{h.trend ? TREND_WORD[h.trend] : t("chat.trendUnknown")}</span>
+            data-trend={h.trend ?? "unknown"} data-weak={h.trend && h.weak ? true : undefined}>{h.trend ? cardTrendText({ trend: h.trend, weak: !!h.weak }) : t("chat.trendUnknown")}</span>
         </dd>
       </div>
       <div className="col-span-2 min-w-0 md:col-span-1">

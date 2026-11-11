@@ -19,7 +19,7 @@ Reference only - nothing here places an order.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -29,14 +29,14 @@ DIRECTIONS = ("rising", "falling")
 LINE_PARAMS = ("tl_order", "tl_min_gap", "tl_max_slope", "tl_touch_tol", "tl_min_touches", "tl_max_bars")
 
 
-def params_doc() -> Dict[str, Dict[str, Any]]:
+def params_doc() -> dict[str, dict[str, Any]]:
     """The line parameters with their defaults (app/screener/breakouts/params.py), each labelled as a reference."""
     from app.screener.breakouts.params import BY_NAME
     return {k: {"default": BY_NAME[k].default, "doc": BY_NAME[k].doc, "label": REFERENCE} for k in LINE_PARAMS}
 
 
 
-def _params(overrides: Dict[str, Any]) -> Dict[str, Any]:
+def _params(overrides: dict[str, Any]) -> dict[str, Any]:
     from app.screener.breakouts import params as bp
     bad = sorted(set(overrides) - set(LINE_PARAMS))
     if bad:
@@ -86,7 +86,7 @@ def line_series(frame: pd.DataFrame, direction: str, **overrides: Any) -> LineSe
     return out
 
 
-def trendline_at(frame: pd.DataFrame, t: int, direction: str, **overrides: Any) -> Optional[Dict[str, Any]]:
+def trendline_at(frame: pd.DataFrame, t: int, direction: str, **overrides: Any) -> dict[str, Any] | None:
     """The chart layer's finder (`trendlines.find_trendline` + `channel_of`) on the bars before t, projected to t:
     {value, channel, anchor_a, anchor_b, slope, touches} in real prices, or None. No age filter (the finder has none)."""
     from app.price_action import trendlines as tl

@@ -262,9 +262,9 @@ WAVES_FLAG = "screener_waves"
 # structure_tracker.py) as per-bar series - BOS / CHoCH on the bar the close made them known, the trend-or-range regime
 # at each bar's close. Every number a named setting (left out: the tracker's reference values by timeframe).
 M99_FLAG = "m99_primitives"
-_STRUCT_KWARGS: Tuple[Arg, ...] = (Arg("pivot_n", NUM, None, False, literal_only=True, bounds=(1, 20)),
+_STRUCT_KWARGS: tuple[Arg, ...] = (Arg("pivot_n", NUM, None, False, literal_only=True, bounds=(1, 20)),
                                    Arg("swing_k", NUM, None, False, literal_only=True, bounds=(0.0, 20.0)))
-_REGIME_KWARGS: Tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None, False, literal_only=True, bounds=(0.0, 100.0)),
+_REGIME_KWARGS: tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None, False, literal_only=True, bounds=(0.0, 100.0)),
                                                     Arg("range_swings", NUM, None, False, literal_only=True, bounds=(2, 20)))
 _SDOC = (" - the structure tracker fed one closed bar at a time (a swing counts from its confirm bar, pivot_n bars after its"
          " own; swings at least swing_k median ranges apart; named settings, left out: the reference values by timeframe)")
@@ -874,7 +874,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
                            "TMA", "SessionCount"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
-M99_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
+M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 

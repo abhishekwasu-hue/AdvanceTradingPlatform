@@ -16,8 +16,8 @@ Reference only - nothing here places an order.
 from __future__ import annotations
 
 from bisect import bisect_right
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Optional, Tuple
 
 ACTIVE, TESTED, BROKEN, FLIPPED, EXPIRED = "ACTIVE", "TESTED", "BROKEN", "FLIPPED", "EXPIRED"
 STATES = (ACTIVE, TESTED, BROKEN, FLIPPED, EXPIRED)
@@ -35,7 +35,7 @@ class Level:
     state: str
     state_bar: int              # the bar of the record this view comes from
     tf: str = ""
-    meta: Tuple[Tuple[str, object], ...] = ()
+    meta: tuple[tuple[str, object], ...] = ()
 
     @property
     def price(self) -> float:
@@ -55,8 +55,8 @@ class LevelStore:
 
     def __init__(self, tf: str = "") -> None:
         self.tf = tf
-        self._history: Dict[int, List[Level]] = {}
-        self._bars: Dict[int, List[int]] = {}              # per level: its records' bars (for bisect)
+        self._history: dict[int, list[Level]] = {}
+        self._bars: dict[int, list[int]] = {}              # per level: its records' bars (for bisect)
         self._clock = -1
         self._next = 1
 
@@ -70,8 +70,8 @@ class LevelStore:
         self._clock = bar
         return bar
 
-    def add(self, bar: int, source: str, label: str, low: float, high: Optional[float] = None, state: str = ACTIVE,
-            meta: Optional[Dict[str, object]] = None) -> int:
+    def add(self, bar: int, source: str, label: str, low: float, high: float | None = None, state: str = ACTIVE,
+            meta: dict[str, object] | None = None) -> int:
         """A new level known at `bar`'s close (`high` None: a single price). Returns its id."""
         if state not in STATES:
             raise ValueError(f"unknown level state {state!r}")
@@ -87,8 +87,8 @@ class LevelStore:
         self._bars[lid] = [bar]
         return lid
 
-    def update(self, level_id: int, bar: int, state: Optional[str] = None, low: Optional[float] = None,
-               high: Optional[float] = None) -> Level:
+    def update(self, level_id: int, bar: int, state: str | None = None, low: float | None = None,
+               high: float | None = None) -> Level:
         """A change to a level known at `bar`'s close: a new record (the older ones stay)."""
         if level_id not in self._history:
             raise KeyError(f"no level {level_id}")
@@ -109,7 +109,7 @@ class LevelStore:
         return rec
 
     # ------------------------------------------------------------------ reads (as of a bar)
-    def get(self, level_id: int, bar: int) -> Optional[Level]:
+    def get(self, level_id: int, bar: int) -> Level | None:
         """The level as known at `bar`'s close; None when it did not exist yet."""
         bars = self._bars.get(level_id)
         if not bars:
@@ -117,12 +117,12 @@ class LevelStore:
         i = bisect_right(bars, int(bar))
         return self._history[level_id][i - 1] if i else None
 
-    def as_of(self, bar: int, source: Optional[str] = None, states: Optional[Iterable[str]] = None,
-              label: Optional[str] = None) -> List[Level]:
+    def as_of(self, bar: int, source: str | None = None, states: Iterable[str] | None = None,
+              label: str | None = None) -> list[Level]:
         """Every level known at `bar`'s close (in the order they were added), optionally only one source / label / some
         states (the state as known at that bar)."""
         want = None if states is None else set(states)
-        out: List[Level] = []
+        out: list[Level] = []
         for lid in self._history:
             lv = self.get(lid, bar)
             if lv is None:
@@ -131,11 +131,11 @@ class LevelStore:
                 out.append(lv)
         return out
 
-    def nearest(self, bar: int, price: float, side: Optional[str] = None, **filters: object) -> Optional[Level]:
+    def nearest(self, bar: int, price: float, side: str | None = None, **filters: object) -> Level | None:
         """The level known at `bar` nearest to `price`; side "above" / "below": only levels whose band is above / below it."""
         if side not in (None, "above", "below"):
             raise ValueError(f"unknown side {side!r}")
-        best: Optional[Level] = None
+        best: Level | None = None
         best_d = float("inf")
         for lv in self.as_of(bar, **filters):  # type: ignore[arg-type]
             if side == "above" and lv.low < price:
@@ -147,7 +147,7 @@ class LevelStore:
                 best, best_d = lv, d
         return best
 
-    def history(self, level_id: int) -> List[Level]:
+    def history(self, level_id: int) -> list[Level]:
         """Every record of a level, oldest first (for a chart's timeline)."""
         return list(self._history.get(level_id, []))
 

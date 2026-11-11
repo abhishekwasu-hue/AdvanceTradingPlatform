@@ -1363,7 +1363,7 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
 
 
-def _structure_series(f: pd.DataFrame, tf: str, what: str, given: Dict[str, Any]) -> pd.Series:
+def _structure_series(f: pd.DataFrame, tf: str, what: str, given: dict[str, Any]) -> pd.Series:
     """M99 B1-c: StructureEventSeries ("event": "" on bars without one) / RegimeTag ("regime": missing in warm-up) from
     app/price_action/structure_series.py - the tracker fed the frame's closed bars one at a time (bars <= t decide t)."""
     from app.price_action import structure_series as ss

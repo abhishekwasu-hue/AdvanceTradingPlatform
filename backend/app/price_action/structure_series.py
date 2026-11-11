@@ -30,7 +30,7 @@ Every number is a parameter (PARAMS), labelled "reference - edit before use"; th
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields, replace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -44,13 +44,13 @@ REGIMES = (UP, DOWN, UP_WEAK, DOWN_WEAK, RANGE)
 EVENTS = ("BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH")
 # the tracker's states -> the regime tag (a pullback is still the trend; a broken protected level is WEAK, not merged
 # into RANGE or the opposite trend)
-REGIME_OF_STATE: Dict[str, str] = {
+REGIME_OF_STATE: dict[str, str] = {
     st.UP: UP, st.UP_PB: UP, st.UP_WEAK: UP_WEAK,
     st.DN: DOWN, st.DN_PB: DOWN, st.DN_WEAK: DOWN_WEAK,
     st.RANGE: RANGE, st.INIT: "",
 }
 # the tracker's event + the state it moved to -> the direction of the close that made it
-_EVENT_OF: Dict[tuple, str] = {
+_EVENT_OF: dict[tuple, str] = {
     ("BOS", st.UP): "BOS_BULLISH", ("BOS", st.DN): "BOS_BEARISH",
     ("CHOCH", st.UP_WEAK): "CHOCH_BEARISH", ("CHOCH", st.DN_WEAK): "CHOCH_BULLISH",
 }
@@ -66,7 +66,7 @@ class Param:
 
 
 # Every number the facade reads. pivot_n / swing_k: None = the tracker's value for the frame's timeframe.
-PARAMS: Dict[str, Param] = {
+PARAMS: dict[str, Param] = {
     "pivot_n": Param(None, "a pivot needs this many bars on each side; it is confirmed this many bars after its own bar"
                            f" (None: the tracker's value by timeframe, {dict(_CFG.pivot_n)})"),
     "swing_k": Param(None, "a new swing must be at least this many reference ranges from the last swing"
@@ -89,7 +89,7 @@ PARAMS: Dict[str, Param] = {
 }
 
 
-def settings(**overrides: Any) -> Dict[str, Any]:
+def settings(**overrides: Any) -> dict[str, Any]:
     """The facade's parameters with `overrides` applied (an unknown name is refused)."""
     bad = sorted(set(overrides) - set(PARAMS))
     if bad:
@@ -99,7 +99,7 @@ def settings(**overrides: Any) -> Dict[str, Any]:
     return out
 
 
-def tracker_config(tf: str, s: Optional[Dict[str, Any]] = None) -> st.StructureConfig:
+def tracker_config(tf: str, s: dict[str, Any] | None = None) -> st.StructureConfig:
     """The tracker's config for one timeframe from the facade's parameters (pivot_n / swing_k set for `tf` only)."""
     s = settings() if s is None else s
     names = {f.name for f in fields(st.StructureConfig)} - {"pivot_n", "swing_k"}
@@ -141,16 +141,16 @@ class StructureSeries:
                 "swing_low_confirm", "swing_low_label", "event", "state", "regime", "protected", "ref_range")
         return pd.DataFrame({c: getattr(self, c) for c in cols}, index=self.index)
 
-    def events_at(self, t: int) -> List[Dict[str, Any]]:
+    def events_at(self, t: int) -> list[dict[str, Any]]:
         """Every tracker event (SWING, BOS, CHOCH, REVERSAL_CONFIRMED, RECOVERY, RANGE_*, SWEEP ...) known on bar t."""
         return [e for e in self.tracker.events if e["bar_idx"] == t]
 
 
-def _last_of(swings: List[st.Swing], kind: str) -> Optional[st.Swing]:
+def _last_of(swings: list[st.Swing], kind: str) -> st.Swing | None:
     return next((sw for sw in reversed(swings) if sw.kind == kind), None)
 
 
-def structure_series(frame: pd.DataFrame, tf: str, s: Optional[Dict[str, Any]] = None, time_col: Optional[str] = None) -> StructureSeries:
+def structure_series(frame: pd.DataFrame, tf: str, s: dict[str, Any] | None = None, time_col: str | None = None) -> StructureSeries:
     """Feed `frame` (closed bars, oldest first, open / high / low / close; optional `bar_is_full`) through a fresh
     StructureTracker, one bar at a time, and record what is known after each bar. `time_col`: the bar-end column (else
     the index). Only bars <= t decide the values at t (the tracker is incremental), so a frame cut at t gives the same
@@ -162,7 +162,7 @@ def structure_series(frame: pd.DataFrame, tf: str, s: Optional[Dict[str, Any]] =
     o, h, lo, c = (frame[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     times = frame[time_col].to_numpy() if time_col else np.asarray(frame.index)
     full = frame["bar_is_full"].to_numpy(bool) if "bar_is_full" in frame.columns else np.ones(n, dtype=bool)
-    out: Dict[str, np.ndarray] = {
+    out: dict[str, np.ndarray] = {
         "swing_high": np.full(n, np.nan), "swing_low": np.full(n, np.nan), "protected": np.full(n, np.nan), "ref_range": np.full(n, np.nan),
         **{k: np.full(n, -1, dtype=int) for k in ("swing_high_bar", "swing_high_confirm", "swing_low_bar", "swing_low_confirm")},
         **{k: np.full(n, "", dtype=object) for k in ("swing_high_label", "swing_low_label", "event", "state", "regime")},
@@ -209,7 +209,7 @@ class PivotSeries:
     swing_low_label: np.ndarray
 
 
-def causal_pivot_series(frame: pd.DataFrame, degree: int, s: Optional[Dict[str, Any]] = None) -> PivotSeries:
+def causal_pivot_series(frame: pd.DataFrame, degree: int, s: dict[str, Any] | None = None) -> PivotSeries:
     """`causal_swings.degree_pivots` (degree's settings from `s`, else pa_settings) as per-bar arrays: from each pivot's
     confirm bar on, the last confirmed high / low, its pivot bar, its confirm bar and its label against the pivot of its
     kind before it (HH / LH, HL / LL; an equal high is not higher (LH), an equal low not lower (HL) - the screener's
@@ -221,12 +221,12 @@ def causal_pivot_series(frame: pd.DataFrame, degree: int, s: Optional[Dict[str, 
     fr["timestamp"] = frame["timestamp"].to_numpy() if "timestamp" in frame.columns else np.asarray(frame.index)
     fr["bar_end"] = frame["bar_end"].to_numpy() if "bar_end" in frame.columns else fr["timestamp"].to_numpy()
     n = len(fr)
-    arr: Dict[str, np.ndarray] = {
+    arr: dict[str, np.ndarray] = {
         "swing_high": np.full(n, np.nan), "swing_low": np.full(n, np.nan),
         **{k: np.full(n, -1, dtype=int) for k in ("swing_high_bar", "swing_high_confirm", "swing_low_bar", "swing_low_confirm")},
         **{k: np.full(n, "", dtype=object) for k in ("swing_high_label", "swing_low_label")},
     }
-    prev: Dict[str, Optional[float]] = {"H": None, "L": None}
+    prev: dict[str, float | None] = {"H": None, "L": None}
     for p in cs.degree_pivots(fr, degree, s):
         if p.confirmed_idx is None:
             continue

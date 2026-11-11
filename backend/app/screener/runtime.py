@@ -628,6 +628,9 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # M99 B1-c (flag m99_primitives): the structure tracker's per-bar BOS / CHoCH and regime (structure_series.py)
+            "StructureEventSeries": lambda: _structure_series(f, tf, "event", {k: kw(k) for k in ("pivot_n", "swing_k")}),
+            "RegimeTag": lambda: _structure_series(f, tf, "regime", {k: kw(k) for k in ("pivot_n", "swing_k", "range_width", "range_swings")}),
             # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
             "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
                 "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
@@ -1364,6 +1367,21 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     from app.screener.breakouts.screens import Bars
     b = Bars(f, _breakout_params({"atr_n": atr_n}))
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
+
+
+def _structure_series(f: pd.DataFrame, tf: str, what: str, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-c: StructureEventSeries ("event": "" on bars without one) / RegimeTag ("regime": missing in warm-up) from
+    app/price_action/structure_series.py - the tracker fed the frame's closed bars one at a time (bars <= t decide t)."""
+    from app.price_action import structure_series as ss
+    try:
+        s = ss.settings(**{k: v for k, v in given.items() if v is not None})
+        out = ss.structure_series(f, tf, s)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    values = getattr(out, what)
+    if what == "regime":
+        values = np.where(values == "", None, values)
+    return pd.Series(values, index=f.index, dtype=object)
 
 
 def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:

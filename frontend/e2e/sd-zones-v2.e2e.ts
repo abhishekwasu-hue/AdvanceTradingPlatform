@@ -56,7 +56,7 @@ async function open(page: Page, formation: Formation, width: number) {
   });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: { ui_v2: true, sd_pack: true }, brokers: CONNECTED });
-  await mockCharts(page, { prefs: { theme: "dark", indicators: { volume: false, rsi: false } } });
+  const calls = await mockCharts(page, { prefs: { theme: "dark", indicators: { volume: false, rsi: false } } });
   const asks: URLSearchParams[] = [];
   await page.route(api("/charts/layers/sd-zones"), (r) => {
     const q = new URL(r.request().url()).searchParams;
@@ -73,7 +73,7 @@ async function open(page: Page, formation: Formation, width: number) {
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
   await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
-  return asks;
+  return Object.assign(asks, { calls });
 }
 
 async function turnOn(page: Page) {
@@ -117,6 +117,22 @@ test.describe("M97 Supply & Demand zones layer", () => {
     await expect(tip).toContainText("Proximal");
     await expect(tip).toContainText("Leg-out");
     await expect(tip).not.toContainText(/buy|sell|target|stop/i);
+  });
+
+  test("PR-5: the toggle saves sd_zones on the server; a trading style preselects its timeframes and an edit is kept", async ({ page }) => {
+    const asks = await open(page, "DBR", 1440);
+    await turnOn(page);
+    await expect.poll(() => asks.calls.prefsPuts.at(-1)?.body.sd_zones).toBe(true);
+    await page.getByTestId("sd-zones-bar").getByRole("combobox", { name: "Trading style" }).click();
+    await page.getByRole("option", { name: "Swing · D, 2H" }).click();
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("2h,1d");
+    await expect.poll(() => (asks.calls.prefsPuts.at(-1)?.body.sd_overlay as { style?: string })?.style).toBe("swing");
+    await page.getByTestId("sd-zones-bar").getByRole("button", { name: "1H", exact: true }).click();
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("1h,2h,1d");
+    await expect.poll(() => (asks.calls.prefsPuts.at(-1)?.body.sd_overlay as { presets?: unknown })?.presets).toEqual({ swing: ["1h", "2h", "1d"] });
+    await page.getByRole("button", { name: /^Indicators/ }).click();
+    await page.getByRole("switch", { name: /Supply & Demand zones/ }).click();
+    await expect.poll(() => asks.calls.prefsPuts.at(-1)?.body.sd_zones).toBe(false);
   });
 
   for (const formation of FORMATIONS) {

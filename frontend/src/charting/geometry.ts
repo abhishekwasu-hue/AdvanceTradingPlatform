@@ -27,6 +27,9 @@ export interface Converters {
   span?: (t: number, end: number) => { x1: number; x2: number } | null;
   /** M98 F3: the visible candles' body rectangles in pane pixels - a time-anchored band's label keeps clear of them. */
   bodies?: () => readonly Rect[];
+  /** M98-P1 Q3: labels other layers paint on this pane (the candle-box names of a tap's highlight, `markLabelRects`):
+   * a band label keeps clear of them, so the box names and the zone labels never overlap. */
+  labelBlocks?: readonly Rect[];
 }
 
 /** M98 F1: which chart bars (first and last index into the ascending bar start times) a candle of [t, end) covers: the
@@ -331,7 +334,7 @@ export interface BandLabelItem { top: number; bottom: number; text: string; colo
  * is still drawn), so labels never pile up on each other. Both shapes are painted above the series. */
 export function placeBandLabels(items: readonly BandLabelItem[], c: Converters): Shape[] {
   const avoid = c.avoid ?? [];
-  const taken: Rect[] = [...avoid];
+  const taken: Rect[] = [...avoid, ...(c.labelBlocks ?? [])];          // M98-P1 Q3: the box names are taken first
   const style = c.labelStyle;
   const fontPx = style?.fontPx ?? BAND_LABEL_FONT_PX;
   const measure = c.measure ?? ((text: string) => text.length * Math.ceil((fontPx * LABEL_CHAR_PX) / LABEL_FONT_PX));
@@ -492,40 +495,77 @@ export function labelShapes(labels: readonly LayerLabel[], c: Converters): Shape
   return out;
 }
 
-/** Everything a layer paints as one primitive: bands first (underneath), then segments, then labels on top. */
-/** M98 F1: candle marks - per mark an outlined box around exactly the chart bars of its candle (`Converters.span`),
- * from the candle's low to its high (a little padding), and its text centred above or below the box, painted above the
- * series. A mark whose candle is not on the pane is left out. */
-export function markShapes(marks: readonly LayerMark[], c: Converters): Shape[] {
-  const out: Shape[] = [];
+/** M98 F1 + M98-P1 Q3: one candle mark as placed - its box (pane pixels) and its name's chip (null: no name, or no
+ * free spot for it). */
+interface PlacedMark { mark: LayerMark; box: Rect; label: Rect | null }
+
+/** M98-P1 Q3: the one placement of the candle-box names, shared by `markShapes` (what is painted) and `markLabelRects`
+ * (what a band label must keep clear of, on this layer and on every other layer of the pane). Per mark with a name: the
+ * side asked for, else the other side, else one and then two more chip heights further out on either side; the first
+ * spot inside the pane that is clear of the reserved boxes (`avoid`, the view controls) and of the names already placed
+ * wins. A name with no free spot is left out (its box is still drawn), so the names never pile up on each other. */
+function placeMarks(marks: readonly LayerMark[], c: Converters): PlacedMark[] {
+  const out: PlacedMark[] = [];
+  const taken: Rect[] = [...(c.avoid ?? [])];
+  const size = c.labelStyle?.fontPx ?? BAND_LABEL_FONT_PX;
+  const h = chipHeight(size);
   for (const m of marks) {
     const yHigh = c.y(m.high), yLow = c.y(m.low);
     if (yHigh == null || yLow == null) continue;
     const span = c.span ? c.span(m.time, m.end ?? m.time + 1) : (() => { const x = c.x(m.time); return x == null ? null : { x1: x - 3, x2: x + 3 }; })();
     if (!span || span.x2 < 0 || span.x1 > c.width) continue;
-    const color = m.color ?? DEFAULT_COLOR;
     const top = Math.min(yHigh, yLow) - MARK_PAD, bottom = Math.max(yHigh, yLow) + MARK_PAD;
-    out.push({ type: "rect", x: span.x1, y: top, w: Math.max(2, span.x2 - span.x1), h: bottom - top, fill: withAlpha(color, 0.12), stroke: color });
+    const box = { x: span.x1, y: top, w: Math.max(2, span.x2 - span.x1), h: bottom - top };
+    let label: Rect | null = null;
     if (m.text) {
-      // the name on a chip of the chart background, so it reads over neighbouring candles on a phone
-      const above = m.position === "above";
-      const size = c.labelStyle?.fontPx ?? BAND_LABEL_FONT_PX;
-      const h = chipHeight(size);
       const w = Math.ceil((c.measure ?? ((t: string) => t.length * LABEL_CHAR_PX))(m.text)) + 2 * CHIP_PAD_X;
       const cx = Math.min(Math.max((span.x1 + span.x2) / 2, w / 2), c.width - w / 2);
-      // the side asked for, else the other one when a reserved box (the view controls) or the pane's edge is in the way
-      const fits = (yy: number) => yy >= 0 && yy + h <= c.height && !(c.avoid ?? []).some((a) => overlaps({ x: cx - w / 2, y: yy, w, h }, a));
-      const ask = above ? top - 2 - h : bottom + 2, other = above ? bottom + 2 : top - 2 - h;
-      const y = fits(ask) || !fits(other) ? ask : other;
-      if (c.labelStyle?.chip) out.push({ type: "rect", x: cx - w / 2, y, w, h, fill: withAlpha(c.labelStyle.chip, CHIP_ALPHA), top: true });
-      out.push({ type: "text", x: cx, y: y + h / 2, text: m.text, color: labelInk(color, c.labelStyle), align: "center", baseline: "middle", top: true, size });
+      const above = (k: number) => top - 2 - h - k * (h + 2), below = (k: number) => bottom + 2 + k * (h + 2);
+      const asked = m.position === "above" ? above : below, other = m.position === "above" ? below : above;
+      for (const y of [asked(0), other(0), asked(1), other(1), asked(2), other(2)]) {
+        const r = { x: cx - w / 2, y, w, h };
+        if (y < 0 || y + h > c.height || taken.some((t) => overlaps(r, t))) continue;
+        label = r;
+        break;
+      }
+      if (label) taken.push(label);
     }
+    out.push({ mark: m, box, label });
+  }
+  return out;
+}
+
+/** M98-P1 Q3: the name chips the candle marks take on the pane (the rectangles `markShapes` paints them in). */
+export function markLabelRects(marks: readonly LayerMark[], c: Converters): Rect[] {
+  return placeMarks(marks, c).flatMap((p) => (p.label ? [p.label] : []));
+}
+
+/** M98 F1: candle marks - per mark an outlined box around exactly the chart bars of its candle (`Converters.span`),
+ * from the candle's low to its high (a little padding), and its name centred above or below the box on a chip of the
+ * chart background (so it reads over neighbouring candles on a phone), painted above the series (`placeMarks`). A mark
+ * whose candle is not on the pane is left out. */
+export function markShapes(marks: readonly LayerMark[], c: Converters): Shape[] {
+  const out: Shape[] = [];
+  const size = c.labelStyle?.fontPx ?? BAND_LABEL_FONT_PX;
+  for (const { mark: m, box, label } of placeMarks(marks, c)) {
+    const color = m.color ?? DEFAULT_COLOR;
+    out.push({ type: "rect", ...box, fill: withAlpha(color, 0.12), stroke: color });
+    if (!m.text || !label) continue;
+    if (c.labelStyle?.chip) out.push({ type: "rect", ...label, fill: withAlpha(c.labelStyle.chip, CHIP_ALPHA), top: true });
+    out.push({ type: "text", x: label.x + label.w / 2, y: label.y + label.h / 2, text: m.text, color: labelInk(color, c.labelStyle),
+               align: "center", baseline: "middle", top: true, size });
   }
   return out;
 }
 const MARK_PAD = 2;
 
+/** Everything a layer paints as one primitive: bands first (underneath), then segments, then labels on top. M98-P1 Q3:
+ * the candle-box names are placed first and the band labels keep clear of them (and of `labelBlocks`, the names other
+ * layers of the pane paint), one collision check for both. */
 export function layerShapes(data: Pick<LayerData, "bands" | "segments" | "labels" | "marks">, c: Converters): Shape[] {
-  return [...bandShapes(data.bands ?? [], c), ...segmentShapes(data.segments ?? [], c), ...markShapes(data.marks ?? [], c),
+  const marks = data.marks ?? [];
+  const names = marks.length ? markLabelRects(marks, c) : [];
+  const bc = names.length ? { ...c, labelBlocks: [...(c.labelBlocks ?? []), ...names] } : c;
+  return [...bandShapes(data.bands ?? [], bc), ...segmentShapes(data.segments ?? [], c), ...markShapes(marks, c),
           ...labelShapes(data.labels ?? [], c)];
 }

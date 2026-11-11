@@ -92,9 +92,10 @@ export function sdTipRows(z: SdZone): [string, string][] {
     ["State", stateText(z)],
     ["Proximal", price(z.proximal)],
     ["Distal", price(z.distal)],
-    ["Leg-in", `range ${price(z.leg_in.range)} · ${times(z.leg_in.mult)} avg · body ${pct(z.leg_in.body_pct)}`],
-    ["Base", `${z.base.candles} ${z.base.candles === 1 ? "candle" : "candles"} · up to ${times(z.base.max_mult)} avg · body ≤ ${pct(z.base.max_body_pct)}`],
-    ["Leg-out", `range ${price(z.leg_out.range)} · ${times(z.leg_out.mult)} ${z.leg_out.of === "ATR" ? "ATR" : "avg"} · body ${pct(z.leg_out.body_pct)}`],
+    // range · multiple of the average range before it · body % of the range (short enough for one line on a phone)
+    ["Leg-in", `${price(z.leg_in.range)} · ${times(z.leg_in.mult)} avg · body ${pct(z.leg_in.body_pct)}`],
+    ["Base", `${z.base.candles} ${z.base.candles === 1 ? "candle" : "candles"} · ≤ ${times(z.base.max_mult)} avg · body ≤ ${pct(z.base.max_body_pct)}`],
+    ["Leg-out", `${price(z.leg_out.range)} · ${times(z.leg_out.mult)} ${z.leg_out.of === "ATR" ? "ATR" : "avg"} · body ${pct(z.leg_out.body_pct)}`],
   ];
 }
 
@@ -122,7 +123,7 @@ export function sdFocusLayer(z: SdZone): LayerData {
   const mark = (c: SdCandle, text: string | null, width: number) => {
     if (c.high == null || c.low == null) return;
     segments.push({ t1: c.time, p1: c.low, t2: c.time, p2: c.high, role: z.side, width });
-    if (text) labels.push({ time: c.time, price: z.side === "demand" ? c.low : c.high, text, position: z.side === "demand" ? "below" : "above" });
+    if (text) labels.push({ time: c.time, price: z.side === "demand" ? c.low : c.high, text, position: z.side === "demand" ? "below" : "above", inside: true });
   };
   mark(z.leg_in, "Leg-in", 4);
   z.base.bars.forEach((b, i) => mark(b, i === 0 ? "Base" : null, 4));

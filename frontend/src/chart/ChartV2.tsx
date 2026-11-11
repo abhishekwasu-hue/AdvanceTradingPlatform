@@ -113,7 +113,7 @@ export function BandTip({ tip, width }: { tip: BandTipState; width: number }) {
       {tip.band.label && <p className="font-semibold">{tip.band.label}</p>}
       {tip.band.tip?.length ? (
         // M97 PR-4: the layer's own rows (a supply / demand zone: formation, state, its lines, the leg / base numbers)
-        <dl className="grid grid-cols-[auto_auto] gap-x-space-2" data-band-rows>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-space-2" data-band-rows>
           {tip.band.tip.map(([k, v]) => <div key={k} className="contents"><dt>{k}</dt><dd className="text-right">{v}</dd></div>)}
         </dl>
       ) : (

@@ -149,6 +149,33 @@ async def recent(session: AsyncSession, tenant_id: int, user_id: int, session_id
     return out
 
 
+def _day(value: Any) -> str | None:
+    text = str(value or "")[:10]
+    return text if len(text) == 10 and text[4] == "-" and text[7] == "-" else None
+
+
+async def mark_stale(session: AsyncSession, user: Any, turns: list[dict[str, Any]]) -> None:
+    """COP-2 A (owner 11 Nov): each turn's `stale` - True when its chart answer (the headline row) states a close older
+    than the newest Daily close now stored for that symbol (`own_bars.official_close`, the same read the chart reader
+    states, in the person's own scope); False for any other turn or when nothing newer is stored. One read per symbol."""
+    from app.ai.tools.copilot import lake_key
+    from app.market_lake import own_bars
+    newest: dict[str, str | None] = {}
+    for turn in turns:
+        head = (turn.get("answer") or {}).get("headline")
+        symbol = str(head.get("symbol") or "").strip() if isinstance(head, dict) else ""
+        shown = _day(head.get("as_of")) if isinstance(head, dict) else None
+        if not symbol or shown is None:
+            turn["stale"] = False
+            continue
+        if symbol not in newest:
+            key = lake_key(symbol)
+            close = await own_bars.official_close(session, key, await own_bars.scope_for(session, user, key))
+            newest[symbol] = _day((close or {}).get("date"))
+        stored = newest[symbol]
+        turn["stale"] = stored is not None and stored > shown
+
+
 async def current(session: AsyncSession, tenant_id: int, user_id: int, session_id: int | None = None) -> dict[str, Any] | None:
     """The named conversation (NotYours when not his) or his most recently used one, as {"id", "title"}; None when none.
     Adopts loose turns first. Does not commit."""

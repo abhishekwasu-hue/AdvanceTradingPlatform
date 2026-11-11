@@ -242,6 +242,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     # M68 PR-0: Settings > Trade settings - the registry's own replies (backend/app/me/trade_settings.py view(); synthetic)
     "frontend/e2e/fixtures/trade-settings-user.json": "b23c314b416367c7a90d0f1fbe20ab4606e0d0bd3dfb619a71ff04e9e91a959d",
     "frontend/e2e/fixtures/trade-settings-admin.json": "75cd180bc18fe209f4d28a53754f5eb6fa53030e05514b36c63ac10865447627",
+    "frontend/e2e/fixtures/sd-zones-proof.json": "ea960af8ce0aa75df944cc137369eef0fa3b09d61f8a2e6beba3647d686096d8",   # M97 PR-4: made-up bars + their zones (backend/scripts/m97_proof_fixture.py)
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

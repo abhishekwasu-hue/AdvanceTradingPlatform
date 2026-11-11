@@ -283,20 +283,22 @@ SD_FORMATIONS: tuple[str, ...] = ("DBR", "RBR", "RBD", "DBD", "demand", "supply"
 SD_MIN_BARS = 100                       # the average range (up to 200 candles by avg_n) plus room for a few zones
 SD_KWARGS: tuple[Arg, ...] = (
     Arg("avg_n", "window", 20, False, bounds=(5, 200)),
-    Arg("leg_mult", NUM, 1.5, False, literal_only=True, bounds=(1.0, 5.0)),
+    Arg("leg_mult", NUM, 1.0, False, literal_only=True, bounds=(1.0, 5.0)),
     Arg("base_mult", NUM, 0.7, False, literal_only=True, bounds=(0.1, 1.0)),
     Arg("out_mult", NUM, 1.5, False, literal_only=True, bounds=(1.0, 5.0)),
-    Arg("leg_body_pct", NUM, 75.0, False, literal_only=True, bounds=(50.0, 100.0)),
+    Arg("leg_body_pct", NUM, 50.0, False, literal_only=True, bounds=(50.0, 100.0)),
     Arg("base_body_pct", NUM, 50.0, False, literal_only=True, bounds=(5.0, 90.0)),
     Arg("base_max", "window", 5, False, bounds=(1, 10)),
     Arg("out_ref", STR, "average", False, choices=("average", "atr")),
     Arg("edge", STR, "wick", False, choices=("wick", "body")),
+    Arg("skip_flat_bars", BOOL, True, False),
 )
 _SD_SIDE = Arg("side", STR, choices=SD_SIDES)
 _SD_ORDER: tuple[tuple[str, str, bool], ...] = (("base_mult", "leg_mult", False), ("base_mult", "out_mult", False))
 _SD_DOC = (" - zones from a base of 1..base_max small candles between a leg-in candle and an explosive leg-out candle,"
            " known from the leg-out candle's close; settings (reference values, edit before use): avg_n, leg_mult, base_mult,"
-           " out_mult, leg_body_pct, base_body_pct, base_max, out_ref (average / atr), edge (wick / body)")
+           " out_mult, leg_body_pct, base_body_pct, base_max, out_ref (average / atr), edge (wick / body), skip_flat_bars (TRUE:"
+           " a flat candle, high = low, is never a base candle)")
 
 # TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
 # factors of the parabolic SAR are read once for the whole series (literal_only) within their bounds.

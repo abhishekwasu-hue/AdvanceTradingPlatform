@@ -4,7 +4,7 @@
    "id": "supply_demand.demand_enter",
    "name": "Price entering a fresh demand zone",
    "definition": "The bar's low first touches the near line of a demand zone no candle has visited since it formed.",
-   "text": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
+   "text": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
    "base_tf": "1d",
    "params": [
     {
@@ -16,7 +16,7 @@
     },
     {
      "name": "leg_mult",
-     "value": 1.5,
+     "value": 1.0,
      "doc": "A leg candle's range is at least this multiple of the average range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -37,7 +37,7 @@
     },
     {
      "name": "leg_body_pct",
-     "value": 75.0,
+     "value": 50.0,
      "doc": "A leg candle's body is at least this percent of its range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -67,6 +67,13 @@
      "name": "edge",
      "value": "wick",
      "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
      "ref": true,
      "note": "Reference value - edit before use"
     }
@@ -79,7 +86,7 @@
    "id": "supply_demand.supply_enter",
    "name": "Price entering a fresh supply zone",
    "definition": "The bar's high first touches the near line of a supply zone no candle has visited since it formed.",
-   "text": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
+   "text": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
    "base_tf": "1d",
    "params": [
     {
@@ -91,7 +98,7 @@
     },
     {
      "name": "leg_mult",
-     "value": 1.5,
+     "value": 1.0,
      "doc": "A leg candle's range is at least this multiple of the average range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -112,7 +119,7 @@
     },
     {
      "name": "leg_body_pct",
-     "value": 75.0,
+     "value": 50.0,
      "doc": "A leg candle's body is at least this percent of its range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -144,6 +151,13 @@
      "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
      "ref": true,
      "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
     }
    ],
    "unset": [],
@@ -154,7 +168,7 @@
    "id": "supply_demand.zone_formed",
    "name": "New zone formed",
    "definition": "A leg-out candle closes after a small-candle base, forming a new zone of the chosen formation.",
-   "text": "SDZoneFormed($formation, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
+   "text": "SDZoneFormed($formation, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
    "base_tf": "1d",
    "params": [
     {
@@ -173,7 +187,7 @@
     },
     {
      "name": "leg_mult",
-     "value": 1.5,
+     "value": 1.0,
      "doc": "A leg candle's range is at least this multiple of the average range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -194,7 +208,7 @@
     },
     {
      "name": "leg_body_pct",
-     "value": 75.0,
+     "value": 50.0,
      "doc": "A leg candle's body is at least this percent of its range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -224,6 +238,13 @@
      "name": "edge",
      "value": "wick",
      "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
      "ref": true,
      "note": "Reference value - edit before use"
     }
@@ -236,7 +257,7 @@
    "id": "supply_demand.zone_violated",
    "name": "Zone violated",
    "definition": "The bar closes beyond the far line of a demand or a supply zone; the zone is then violated.",
-   "text": "SDZoneViolated(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) OR SDZoneViolated(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
+   "text": "SDZoneViolated(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) OR SDZoneViolated(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
    "base_tf": "1d",
    "params": [
     {
@@ -248,7 +269,7 @@
     },
     {
      "name": "leg_mult",
-     "value": 1.5,
+     "value": 1.0,
      "doc": "A leg candle's range is at least this multiple of the average range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -269,7 +290,7 @@
     },
     {
      "name": "leg_body_pct",
-     "value": 75.0,
+     "value": 50.0,
      "doc": "A leg candle's body is at least this percent of its range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -301,6 +322,13 @@
      "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
      "ref": true,
      "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
     }
    ],
    "unset": [],
@@ -311,7 +339,7 @@
    "id": "supply_demand.near_fresh_zone",
    "name": "Near a fresh zone",
    "definition": "The close is within your percent of the near line of the nearest fresh demand or supply zone.",
-   "text": "SDZoneDistancePct(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) <= $within_pct OR SDZoneDistancePct(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) <= $within_pct",
+   "text": "SDZoneDistancePct(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) <= $within_pct OR SDZoneDistancePct(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) <= $within_pct",
    "base_tf": "1d",
    "params": [
     {
@@ -330,7 +358,7 @@
     },
     {
      "name": "leg_mult",
-     "value": 1.5,
+     "value": 1.0,
      "doc": "A leg candle's range is at least this multiple of the average range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -351,7 +379,7 @@
     },
     {
      "name": "leg_body_pct",
-     "value": 75.0,
+     "value": 50.0,
      "doc": "A leg candle's body is at least this percent of its range.",
      "ref": true,
      "note": "Reference value - edit before use"
@@ -381,6 +409,13 @@
      "name": "edge",
      "value": "wick",
      "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
      "ref": true,
      "note": "Reference value - edit before use"
     }

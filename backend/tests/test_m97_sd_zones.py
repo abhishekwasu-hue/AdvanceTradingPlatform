@@ -21,12 +21,12 @@ from app.screener import compile_screen, parse, sd_gate
 from app.screener.registry import FUNCTIONS, SD_FLAG, SD_FUNCTIONS, SD_KWARGS
 from app.screener.runtime import SymbolData, evaluate
 
-PRELUDE = 21                                    # neutral candles: range 2, body 60 % (neither a leg nor a base candle)
+PRELUDE = 21                                    # neutral candles: range 2, body 40 % (neither a leg nor a base candle)
 
 
 def _neutral(level: float = 100.0) -> tuple[float, float, float, float]:
-    """Range 2, body 1.2 (60 %): not a leg (range < 1.5 x 2), not a base (body > 50 %)."""
-    return (level - 0.6, level + 1.0, level - 1.0, level + 0.6)
+    """Range 2, body 0.8 (40 %): not a leg (body < the 50 % reference, M98-P1 Q1), not a base (range 2 > 0.7 x 2)."""
+    return (level - 0.4, level + 1.0, level - 1.0, level + 0.4)
 
 
 def _frame(candles: list[tuple[float, float, float, float]]) -> pd.DataFrame:
@@ -100,11 +100,40 @@ def test_a_big_body_base_candle_is_not_a_base_candle():
 
 
 def test_a_small_body_leg_in_is_not_a_leg():
-    small_body = (98.5, 100.2, 96.8, 97.0)     # range 3.4, body 1.5 = 44 % < 75 %
+    # the leg-in's average range is exactly 2.0 (the 20 neutral candles before it); reference leg_mult 1.0, body 50 %
+    small_body = (98.5, 100.2, 96.8, 97.0)     # range 3.4, body 1.5 = 44 % < 50 % (the reference and the lowest bound)
     assert _zones([small_body, *BASE, OUT_UP])[1] == []
-    assert len(_zones([small_body, *BASE, OUT_UP], leg_body_pct=50)[1]) == 0         # 44 % is below the lowest bound too
-    short_leg = (99.4, 99.6, 97.0, 97.2)       # body 2.2 = 85 %, but range 2.6 < 1.5 x ~2.0
-    assert _zones([short_leg, *BASE, OUT_UP])[1] == []
+    half_body = (99.0, 100.2, 96.8, 97.0)      # range 3.4, body 2.0 = 59 %: a leg at the 50 % reference, not at 75 %
+    assert [z.formation for z in _zones([half_body, *BASE, OUT_UP])[1]] == ["DBR"]
+    assert _zones([half_body, *BASE, OUT_UP], leg_body_pct=75)[1] == []
+    short_leg = (99.4, 99.6, 97.0, 97.2)       # body 2.2 = 85 %, range 2.6 >= 1.0 x 2.0 (a leg) but < 1.5 x 2.0
+    assert [z.formation for z in _zones([short_leg, *BASE, OUT_UP])[1]] == ["DBR"]
+    assert _zones([short_leg, *BASE, OUT_UP], leg_mult=1.5)[1] == []
+    too_short = (99.0, 99.1, 97.3, 97.4)       # body 1.6 = 89 %, but range 1.8 < 1.0 x 2.0 (and > 0.7 x 2.0: no base)
+    assert _zones([too_short, *BASE, OUT_UP])[1] == []
+
+
+# M98-P1 Q2: a flat candle (high == low) is never a base candle with skip_flat_bars on (the reference).
+FLAT = (97.2, 97.2, 97.2, 97.2)
+FLAT_OUT = (97.2, 101.0, 97.2, 100.8)          # range 3.8 >= 1.5 x 1.87 (17 x 2.0, 3.4, 0, 0 over 20); low = the flat bars
+
+
+def test_flat_bars_before_an_explosive_bar_make_no_zone_with_skip_flat_bars_on():
+    assert sd.SDSettings().skip_flat_bars is True
+    assert _zones([LEG_DOWN, FLAT, FLAT, FLAT_OUT])[1] == []
+    assert _zones([LEG_DOWN, BASE[0], FLAT, FLAT_OUT])[1] == []                # a flat bar ends the base run too
+    df, zones = _zones([LEG_DOWN, FLAT, FLAT, FLAT_OUT], skip_flat_bars=False)  # the old behaviour: two base candles
+    assert [(z.formation, z.leg_in, z.base_start, z.base_end, z.formed) for z in zones] == [("DBR", 21, 22, 23, 24)]
+    assert (zones[0].proximal, zones[0].distal) == (97.2, 97.2)                # a zone with no height
+    d = SymbolData("S", {"5m": df})
+    assert not evaluate(parse('SDZoneFormed("DBR")'), d, base_tf="5m").any()
+    off = evaluate(parse('SDZoneFormed("DBR", skip_flat_bars=FALSE)'), d, base_tf="5m")
+    assert list(np.flatnonzero(off.to_numpy())) == [24]
+    assert not evaluate(parse('SDZoneFormed("DBR", skip_flat_bars=TRUE)'), d, base_tf="5m").any()
+    # a real base candle is unchanged by the setting
+    assert [z.formation for z in _zones([LEG_DOWN, *BASE, OUT_UP], skip_flat_bars=False)[1]] == ["DBR"]
+    assert [z.formation for z in _zones(_mirror([LEG_DOWN, FLAT, FLAT, FLAT_OUT]), skip_flat_bars=False)[1]] == ["RBD"]
+    assert _zones(_mirror([LEG_DOWN, FLAT, FLAT, FLAT_OUT]))[1] == []
 
 
 # ---------------------------------------------------------------------------------------------------- the lines
@@ -254,8 +283,8 @@ def test_the_cache_returns_the_same_series_and_keys_on_settings():
 def test_settings_reference_values_bounds_and_the_registry_mirror():
     ref = sd.SDSettings()
     assert (ref.avg_n, ref.leg_mult, ref.base_mult, ref.out_mult, ref.leg_body_pct, ref.base_body_pct, ref.base_max) == \
-        (20, 1.5, 0.7, 1.5, 75.0, 50.0, 5)
-    assert (ref.out_ref, ref.edge) == ("average", "wick")
+        (20, 1.0, 0.7, 1.5, 50.0, 50.0, 5)                                     # M98-P1 Q1: the leg-in 1.0 / 50 (was 1.5 / 75)
+    assert (ref.out_ref, ref.edge, ref.skip_flat_bars) == ("average", "wick", True)
     kwargs = {a.name: a for a in SD_KWARGS}
     assert list(kwargs) == [row[0] for row in sd.SETTINGS_TABLE]
     for name, kind, default, rule in sd.SETTINGS_TABLE:
@@ -267,16 +296,18 @@ def test_settings_reference_values_bounds_and_the_registry_mirror():
     for name in SD_FUNCTIONS:
         assert FUNCTIONS[name].kwargs == SD_KWARGS and FUNCTIONS[name].timeframed
     for bad in ({"leg_mult": 9}, {"base_max": 2.5}, {"edge": "close"}, {"nope": 1}, {"base_mult": 1.0, "leg_mult": 1.0},
-                {"avg_n": True}):
+                {"avg_n": True}, {"skip_flat_bars": 1}, {"skip_flat_bars": "yes"}):
         with pytest.raises(ValueError):
             sd.settings_from(bad)
     for bad in ('SDZoneEnter("demand", leg_mult=9)', 'SDZoneEnter("demand", base_max=11)', 'SDZoneEnter("demand", edge="close")',
                 'SDZoneEnter("demand", base_mult=1, leg_mult=1)', 'SDZoneEnter("up")', 'SDZoneFormed("XYZ")',
-                'SDZoneDistancePct("demand", "violated")', 'SDZoneEdge("demand", "middle")', 'SDZoneEnter("demand", leg_mult=close)'):
+                'SDZoneDistancePct("demand", "violated")', 'SDZoneEdge("demand", "middle")', 'SDZoneEnter("demand", leg_mult=close)',
+                'SDZoneEnter("demand", skip_flat_bars=1)'):
         assert not compile_screen(bad, base_tf="5m")[1].ok, bad
     for good in ('SDZoneEnter("demand", leg_mult=2, base_max=3, edge="body", out_ref="atr")', 'SDZoneDistancePct("supply") < 1',
-                 'close < SDZoneEdge("demand", "distal")@1h', 'SDZoneFormed("RBR", avg_n=$n)'):
-        assert compile_screen(good, base_tf="5m", params={"n": 30} if "$n" in good else {})[1].ok, good
+                 'close < SDZoneEdge("demand", "distal")@1h', 'SDZoneFormed("RBR", avg_n=$n)',
+                 'SDZoneEnter("demand", skip_flat_bars=FALSE)', 'SDZoneEnter("demand", skip_flat_bars=$f)'):
+        assert compile_screen(good, base_tf="5m", params={k: v for k, v in (("n", 30), ("f", False)) if f"${k}" in good})[1].ok, good
 
 
 def test_higher_timeframe_read_is_aligned_to_its_close():

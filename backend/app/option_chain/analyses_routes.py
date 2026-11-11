@@ -10,6 +10,9 @@ analyses (app/option_chain/analyses.py) for the caller's own broker data, behind
   (B1) they are the user's OWN earlier reads instead: every chain read here through his own session is stored as his
   session snapshot (app/option_chain/own_snapshots.py, tenant- and user-private) and read back by him only; until one
   exists the path tabs say the path through the session starts now.
+* **M96 N1 chain analytics** (the `analytics` key, app/option_chain/analyses.py `chain_analytics`): from the same chain and
+  history, plus the earlier sessions' closing ATM IV (`recent_session_closes`, organisation store only), the options'
+  lot size from the instrument list and the user's own volume / OI threshold (prefs `chain_analytics`).
 * **Plain states, never sample data:** `no_broker` (no usable broker session), `unavailable` (the broker did not
   return a chain), `no_data` (an empty chain), `ok`. Only `ok` carries analyses.
 

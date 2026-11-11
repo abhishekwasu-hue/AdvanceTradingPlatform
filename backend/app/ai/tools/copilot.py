@@ -11,6 +11,9 @@ Each tool wraps a read the platform already serves to the same user, so the Copi
                            and the nearest unbroken swing levels. Shared lake bars only. Flag `chart_price_action`.
 * `get_market_zones`     - ATP's market-zones layer (`GET /api/charts/layers/market-zones`, app/charts/zones_layer.py): the
                            stored demand / supply, order-block, S/R and gap zones nearest the price. Flag `market_zones`.
+* `get_sd_zones`         - M97 PR-5 (Z7, M97-Q5): the Supply & Demand zones (`GET /api/charts/layers/sd-zones`,
+                           app/charts/sd_zones_layer.py) of one symbol and timeframe, computed on the server - only while
+                           the user's own chart overlay is on (`ChartPrefs.sd_zones`). Flag `sd_pack`.
 * `get_option_chain_analyses` - the six built-in option chain analyses (`GET /api/option-chain/analyses`,
                            app/option_chain/analyses_routes.py) on the user's own broker chain. Flag `ui_v2`.
 
@@ -199,6 +202,56 @@ async def get_market_zones(ctx: ToolContext, args: _ZoneArgs) -> ToolResult:
     return ToolResult(True, {"symbol": args.symbol.upper(), **data}, data["as_of"], "market_zones", {"snapshot": data["as_of"]})
 
 
+# --- M97 PR-5 (Z7): the Supply & Demand zones of the user's own overlay -----------------------------------------------------
+
+SD_OFF = "the Supply & Demand zones overlay is off on your chart"
+MAX_SD_ZONES = 6
+SD_FIELDS = ("timeframe", "side", "formation", "state", "tests", "proximal", "distal")
+
+
+class _SdArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    symbol: str = SYMBOL
+    timeframe: Literal["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M"] = Field(
+        default="1d", description="The timeframe whose zones are read")
+
+
+async def sd_overlay_on(ctx: ToolContext) -> bool:
+    """The user's own chart setting `sd_zones` (the overlay toggle), read on the server - never sent by the client."""
+    from app.me import prefs
+    value, _version = await prefs.read_one("chart", ctx.user, ctx.session)
+    return bool(value.get("sd_zones"))
+
+
+def summarise_sd(layer: dict[str, Any]) -> dict[str, Any]:
+    """The zones the overlay draws, trimmed for the model: side, formation, state, tests, the proximal / distal lines and
+    the timeframe - the nearest first, at most MAX_SD_ZONES (violated ones are not read)."""
+    rows = (layer.get("timeframes") or [{}])[0]
+    zones = [{k: z.get(k) for k in SD_FIELDS} for z in rows.get("zones") or []][:MAX_SD_ZONES]
+    return {"symbol": layer.get("symbol"), "timeframe": rows.get("timeframe"), "as_of_bar": rows.get("as_of_bar"), "bars": rows.get("bars"),
+            "reason": rows.get("reason"), "zones": zones, "settings_note": layer.get("settings_note")}
+
+
+async def get_sd_zones(ctx: ToolContext, args: _SdArgs) -> ToolResult:
+    """The Supply & Demand zones (DBR / RBR / RBD / DBD bases between two strong candles) of one symbol and timeframe on
+    its closed bars, computed on the server, with each zone's state (fresh / tested) and its proximal / distal lines -
+    only while the user's own chart has the Supply & Demand zones overlay on."""
+    from app.charts import sd_zones_layer as szl
+    if not await sd_overlay_on(ctx):
+        return ToolResult(False, None, None, "sd_zones", error=SD_OFF)
+    key = lake_key(args.symbol)
+    try:
+        layer = await szl.sd_zones_layer(symbol=key, timeframes=args.timeframe, at=None, include_violated=False, user=ctx.user,
+                                         session=ctx.session)
+    except HTTPException as exc:
+        return _refused("sd_zones", exc)
+    data = summarise_sd(layer)
+    if data["reason"]:
+        return ToolResult(False, None, None, "sd_zones", error=data["reason"])
+    as_of = layer.get("at")
+    return ToolResult(True, {**data, "symbol": args.symbol.upper()}, as_of, "sd_zones", {"read_at": as_of})
+
+
 # --- job 7: the option chain analyses ------------------------------------------------------------------------------------
 
 def summarise_analyses(out: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,10 +288,12 @@ for _tool in (
     Tool("get_chart_structure", get_chart_structure.__doc__ or "", _ChartArgs, get_chart_structure, cost_units=2, timeout_seconds=20,
          flag="chart_price_action"),
     Tool("get_market_zones", get_market_zones.__doc__ or "", _ZoneArgs, get_market_zones, cost_units=1, timeout_seconds=10, flag="market_zones"),
+    Tool("get_sd_zones", get_sd_zones.__doc__ or "", _SdArgs, get_sd_zones, cost_units=1, timeout_seconds=20, flag="sd_pack"),
     Tool("get_option_chain_analyses", get_option_chain_analyses.__doc__ or "", _ChainArgs, get_option_chain_analyses, cost_units=3,
          timeout_seconds=20, flag="ui_v2"),
 ):
     register(_tool)
 
-__all__ = ["get_market_context", "get_chart_structure", "get_market_zones", "get_option_chain_analyses", "lake_key",
+__all__ = ["get_market_context", "get_chart_structure", "get_market_zones", "get_sd_zones", "get_option_chain_analyses", "lake_key",
+           "summarise_sd", "sd_overlay_on", "SD_OFF",
            "summarise_context", "summarise_structure", "summarise_zones", "summarise_analyses"]

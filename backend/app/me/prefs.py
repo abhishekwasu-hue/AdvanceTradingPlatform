@@ -105,6 +105,35 @@ def _unique_favourites(value: List[str]) -> List[str]:
     return value
 
 
+# M97 PR-5 (Z6): the Supply & Demand zones overlay's own choices - its timeframes, a trading-style preset that only
+# preselects them (editable: an edit of a preset's timeframes is kept as the user's own), and "Show violated".
+SdTimeframe = Literal["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M"]
+SdStyle = Literal["investor", "positional", "swing", "short_term", "intraday", "scalper"]
+SD_STYLE_TIMEFRAMES: dict[str, tuple[str, ...]] = {
+    "investor": ("1M",), "positional": ("1w",), "swing": ("1d", "2h"), "short_term": ("1h", "30m"), "intraday": ("15m", "10m"),
+    "scalper": ("5m", "3m"),
+}
+MAX_SD_TIMEFRAMES = 4                                   # the layer's own limit (app/charts/sd_zones_layer.py MAX_TIMEFRAMES)
+
+
+def _sd_timeframes(value: list[str] | None) -> list[str] | None:
+    if value is not None and len(set(value)) != len(value):
+        raise ValueError("a timeframe is chosen only once")
+    return value
+
+
+SdTimeframes = Annotated[list[SdTimeframe], AfterValidator(_sd_timeframes), Field(min_length=1, max_length=MAX_SD_TIMEFRAMES)]
+
+
+class SdOverlayPrefs(_Prefs):
+    """`chart.sd_overlay`: the overlay's options. `style` None = the user's own timeframes; `presets`: the user's own
+    timeframes for a style he edited (a style left out keeps its ladder, SD_STYLE_TIMEFRAMES)."""
+    style: SdStyle | None = None
+    timeframes: SdTimeframes | None = Field(default=None, description="the timeframes shown; null = the chart's own")
+    presets: dict[SdStyle, SdTimeframes] = Field(default_factory=dict)
+    show_violated: bool = False
+
+
 class ChartPrefs(_Prefs):
     """`chart`: one setting place for every chart (both chart tabs, Signals, Positions, the Option chain)."""
     theme: Literal["app", "light", "dark"] = Field(default="app", description="app = follow the app theme (which follows the device)")
@@ -112,6 +141,10 @@ class ChartPrefs(_Prefs):
     candle_colors: Optional[CandleColors] = None
     indicators: ChartIndicators = Field(default_factory=ChartIndicators)
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
+    # M97 PR-5 (Z7, M97-Q5): the Supply & Demand zones overlay is on - set by the chart's toggle; the Copilot's chart
+    # answer adds the zones (computed on the server) only while it is
+    sd_zones: bool = Field(default=False, description="the 'Supply & Demand zones' overlay is on")
+    sd_overlay: SdOverlayPrefs = Field(default_factory=SdOverlayPrefs)
     timeframe_favourites: Annotated[List[ChartTimeframe], AfterValidator(_unique_favourites)] = Field(
         default_factory=lambda: list(DEFAULT_TIMEFRAME_FAVOURITES), max_length=11,
         description="TF-1: the starred timeframes, shown as one-click buttons beside the dropdown (in this order)")
@@ -848,7 +881,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "DailyReportPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "SdOverlayPrefs", "SD_STYLE_TIMEFRAMES", "MAX_SD_TIMEFRAMES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "DailyReportPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

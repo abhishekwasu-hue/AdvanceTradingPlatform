@@ -13,6 +13,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { ApiError, request } from "../api/client";
 import type { CandleColors, ChartThemeChoice } from "./chartTheme";
 import { DEFAULT_FAVOURITES, cleanFavourites, type TimeframeId } from "./timeframes";
+import { DEFAULT_SD_OVERLAY, cleanSdOverlay, type SdOverlayPrefs } from "./sdStyles";
 
 /** `chart-prefs/1` (backend `app/me/prefs.py` ChartPrefs). */
 export interface ChartPrefs {
@@ -21,6 +22,10 @@ export interface ChartPrefs {
   candle_colors: CandleColors | null;
   indicators: { volume: boolean; rsi: boolean };
   reader_overlay: boolean;
+  /** M97 PR-5: the Supply & Demand zones overlay is on (set by its toggle; the Copilot's chart answer reads it). */
+  sd_zones: boolean;
+  /** M97 PR-5: the overlay's options - a style preset, its timeframes, the user's own preset edits, Show violated. */
+  sd_overlay: SdOverlayPrefs;
   /** TF-1: the starred timeframes, shown as one-click buttons beside the timeframe dropdown. */
   timeframe_favourites: TimeframeId[];
 }
@@ -28,7 +33,7 @@ export interface ChartPrefs {
 /** The server's defaults: the app theme, no grid, the theme's candle colours, volume and RSI on (CHP-13). */
 export const DEFAULT_CHART_PREFS: ChartPrefs = {
   theme: "app", grid: false, candle_colors: null, indicators: { volume: true, rsi: true }, reader_overlay: false,
-  timeframe_favourites: [...DEFAULT_FAVOURITES],
+  sd_zones: false, sd_overlay: DEFAULT_SD_OVERLAY, timeframe_favourites: [...DEFAULT_FAVOURITES],
 };
 
 export type ChartPrefsPatch = Partial<Omit<ChartPrefs, "indicators">> & { indicators?: Partial<ChartPrefs["indicators"]> };
@@ -51,6 +56,8 @@ export function cleanPrefs(raw: unknown): ChartPrefs {
     candle_colors: colors,
     indicators: { volume: bool(ind.volume, d.indicators.volume), rsi: bool(ind.rsi, d.indicators.rsi) },
     reader_overlay: bool(v.reader_overlay, d.reader_overlay),
+    sd_zones: bool(v.sd_zones, d.sd_zones),
+    sd_overlay: cleanSdOverlay(v.sd_overlay),
     timeframe_favourites: cleanFavourites(v.timeframe_favourites),
   };
 }

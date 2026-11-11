@@ -181,7 +181,7 @@ export default function ChartsPageV2(_props: PageProps) {
   // M97 PR-4: Supply & Demand zones (flag sd_pack) - read again when a new bar arrives; a tapped zone's candles highlighted
   const [tipBand, setTipBand] = useState<BandRef | null>(null);
   const sdOn = view.layers.includes(SD_LAYER_ID) && features.on("sd_pack") && tab === "chart" && !hubView;
-  const sd = useSdZones(engine, `${exchange}:${symbol}`, timeframe, sdOn, last ? Date.parse(last.timestamp) : null, tipBand);
+  const sd = useSdZones(engine, `${exchange}:${symbol}`, timeframe, sdOn, last ? Date.parse(last.timestamp) : null, tipBand, prefs.prefs.sd_overlay);
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
   const readTf = readTimeframe(timeframe);
@@ -242,6 +242,8 @@ export default function ChartsPageV2(_props: PageProps) {
     const change = toggleIndicator(id, indicatorState);
     if ("panes" in change) prefs.update({ indicators: change.panes });
     else setView(change);
+    // M97 PR-5 (Z7): the server knows the overlay is on, so the Copilot's chart answer adds the zones only then
+    if (id === SD_LAYER_ID && "layers" in change) prefs.update({ sd_zones: change.layers.includes(SD_LAYER_ID) });
   };
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
@@ -353,7 +355,9 @@ export default function ChartsPageV2(_props: PageProps) {
             {tplAsk && tplShown && !fs.on && (
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
-            {sdOn && !fs.on && <SdZonesBar chartTf={timeframe} shown={sd.shown} options={sd.options} onChange={sd.setOptions} note={sd.note} />}
+            {sdOn && !fs.on && (
+              <SdZonesBar chartTf={timeframe} shown={sd.shown} options={prefs.prefs.sd_overlay} onChange={(o) => prefs.update({ sd_overlay: o })} note={sd.note} />
+            )}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

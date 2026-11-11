@@ -16,20 +16,19 @@ import { request } from "../api/client";
 import type { BandRef } from "../charting/geometry";
 import type { ChartEngine, LayerBand, LayerData, LayerLabel, LayerSegment } from "../charting/engine";
 import { formatNumber } from "../ui/format";
+import { SD_MAX_TIMEFRAMES, SD_TIMEFRAMES, type SdOverlayPrefs, type SdTimeframe } from "./sdStyles";
 import type { TimeframeId } from "./timeframes";
+
+export { SD_MAX_TIMEFRAMES, SD_TIMEFRAMES, type SdTimeframe };
 
 export const SD_LAYER_ID = "sd_zones";
 export const SD_FOCUS_ID = "sd_zones_focus";
 export const SD_LABEL = "Supply & Demand zones";
 
-/** The layer's timeframes (the server's names), finest first, with the chips' short names. */
-export const SD_TIMEFRAMES = ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M"] as const;
-export type SdTimeframe = (typeof SD_TIMEFRAMES)[number];
+/** The chips' short names of the layer's timeframes (the server's names, finest first: sdStyles.ts SD_TIMEFRAMES). */
 export const SD_TF_SHORT: Record<SdTimeframe, string> = {
   "1m": "1m", "3m": "3m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H", "1d": "D", "1w": "W", "1M": "M",
 };
-/** At most this many timeframes at once (the server's MAX_TIMEFRAMES). */
-export const SD_MAX_TIMEFRAMES = 4;
 
 const OF_CHART: Record<TimeframeId, SdTimeframe> = {
   "1min": "1m", "3min": "3m", "5min": "5m", "10min": "10m", "15min": "15m", "30min": "30m", "60min": "1h", "120min": "2h",
@@ -151,25 +150,7 @@ export function sdNote(resp: SdZonesResponse | null, failed: boolean): string | 
   return parts.length ? `${SD_LABEL}: ${parts.join(" · ")}.` : null;
 }
 
-// --- the user's options (per browser; PR-5 keeps them in the server prefs) ------------------------------------------------
-
-export interface SdOptions { timeframes: SdTimeframe[] | null; showViolated: boolean }
-export const DEFAULT_SD_OPTIONS: SdOptions = { timeframes: null, showViolated: false };
-const KEY = "atp.chart.sdZones.v1";
-
-export function readSdOptions(): SdOptions {
-  try {
-    const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    if (!raw || typeof raw !== "object") return DEFAULT_SD_OPTIONS;
-    const v = raw as { timeframes?: unknown; showViolated?: unknown };
-    const tfs = Array.isArray(v.timeframes) ? SD_TIMEFRAMES.filter((t) => (v.timeframes as unknown[]).includes(t)) : null;
-    return { timeframes: tfs && tfs.length ? tfs : null, showViolated: v.showViolated === true };
-  } catch { return DEFAULT_SD_OPTIONS; }
-}
-
-export function saveSdOptions(o: SdOptions): void {
-  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* intentional: storage unavailable */ }
-}
+// --- the user's options (M97 PR-5: the server prefs, `ChartPrefs.sd_overlay`; sdStyles.ts) ----------------------------------
 
 /** Turns one timeframe on or off in the choice (starting from what the chart shows now); never below one, never above
  * SD_MAX_TIMEFRAMES (the newest pick then replaces the last one). Pure. */
@@ -179,13 +160,12 @@ export function toggleSdTimeframe(shown: readonly SdTimeframe[], t: SdTimeframe)
   return next.length > SD_MAX_TIMEFRAMES ? next.filter((x) => x === t || x !== shown[shown.length - 1]).slice(0, SD_MAX_TIMEFRAMES) : next;
 }
 
-export interface SdZonesState { note: string | null; shown: SdTimeframe[]; options: SdOptions; setOptions: (o: SdOptions) => void; zones: SdZone[] }
+export interface SdZonesState { note: string | null; shown: SdTimeframe[]; zones: SdZone[] }
 
-/** Reads and draws the layer while `on` (again when a new bar arrives); `focus` is the tapped band's id (its candles
- * are highlighted while its tooltip is open). */
+/** Reads and draws the layer while `on` (again when a new bar arrives) with the user's overlay options (his server
+ * prefs); `focus` is the tapped band (its candles are highlighted while its tooltip is open). */
 export function useSdZones(engine: ChartEngine | null, symbol: string, tf: TimeframeId, on: boolean, newestBar: number | null,
-                           focus: BandRef | null): SdZonesState {
-  const [options, setOptionsState] = useState<SdOptions>(readSdOptions);
+                           focus: BandRef | null, options: SdOverlayPrefs): SdZonesState {
   const [resp, setResp] = useState<SdZonesResponse | null>(null);
   const [failed, setFailed] = useState(false);
   const shown = useMemo(() => shownSdTimeframes(options.timeframes, tf), [options.timeframes, tf]);
@@ -194,10 +174,10 @@ export function useSdZones(engine: ChartEngine | null, symbol: string, tf: Timef
     let live = true;
     setFailed(false);
     if (!on || !symbol) { setResp(null); return () => { live = false; }; }
-    sdZonesApi.layer(symbol, shown, options.showViolated).then((r) => { if (live) setResp(r); },
+    sdZonesApi.layer(symbol, shown, options.show_violated).then((r) => { if (live) setResp(r); },
       () => { if (live) { setResp(null); setFailed(true); } });
     return () => { live = false; };
-  }, [on, symbol, key, options.showViolated, newestBar]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [on, symbol, key, options.show_violated, newestBar]);  // eslint-disable-line react-hooks/exhaustive-deps
   const data = useMemo(() => (on && resp ? toSdLayer(resp) : null), [on, resp]);
   useEffect(() => {
     if (!engine) return undefined;
@@ -211,6 +191,5 @@ export function useSdZones(engine: ChartEngine | null, symbol: string, tf: Timef
     engine.setLayer(SD_FOCUS_ID, sdFocusFor(focused ? [focused] : [], focus));
     return () => engine.setLayer(SD_FOCUS_ID, null);
   }, [engine, focused]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const setOptions = (o: SdOptions) => { setOptionsState(o); saveSdOptions(o); };
-  return { note: on ? sdNote(resp, failed) : null, shown, options, setOptions, zones };
+  return { note: on ? sdNote(resp, failed) : null, shown, zones };
 }

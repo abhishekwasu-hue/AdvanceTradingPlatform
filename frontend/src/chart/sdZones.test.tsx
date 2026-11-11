@@ -15,6 +15,7 @@ import {
   SD_FOCUS_ID, SD_LAYER_ID, sdFocusFor, sdFocusLayer, sdNote, sdTimeframesFor, sdTipRows, shownSdTimeframes, toSdLayer, toggleSdTimeframe,
   type SdZone, type SdZonesResponse,
 } from "./sdZones";
+import { DEFAULT_SD_OVERLAY } from "./sdStyles";
 import { SdZonesBar } from "./SdZonesBar";
 import { TIMEFRAMES, parseCustomInterval, servedText, timeframeShort } from "./timeframes";
 
@@ -158,7 +159,7 @@ describe("timeframe choice", () => {
   });
 
   it("the options bar: one chip per offered timeframe (pressed when shown) and Show violated off by default", () => {
-    const html = renderToStaticMarkup(<SdZonesBar chartTf="60min" shown={["1h", "1d"]} options={{ timeframes: ["1h", "1d"], showViolated: false }} onChange={() => {}} note={null} />);
+    const html = renderToStaticMarkup(<SdZonesBar chartTf="60min" shown={["1h", "1d"]} options={{ ...DEFAULT_SD_OVERLAY, timeframes: ["1h", "1d"] }} onChange={() => {}} note={null} />);
     expect(html.match(/data-sd-tf=/g)).toHaveLength(11);
     expect(html.indexOf('data-sd-tf="1h"')).toBeLessThan(html.indexOf('data-sd-tf="1m"'));     // the chart's own first
     expect(html).toMatch(/aria-pressed="true" data-sd-tf="1h"/);

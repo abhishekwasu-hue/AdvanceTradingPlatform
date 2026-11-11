@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-CHART_TOOLS = ("get_engine_read", "get_chart_structure", "get_market_zones")
+CHART_TOOLS = ("get_engine_read", "get_chart_structure", "get_market_zones", "get_sd_zones")   # M97 PR-5: the wording guard too
 _INVALIDATION = re.compile(r"\binvalidat\w*", re.IGNORECASE)
 
 

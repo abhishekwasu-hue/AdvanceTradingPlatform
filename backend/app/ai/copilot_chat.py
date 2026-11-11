@@ -405,6 +405,9 @@ class Answer:
     headline: dict[str, Any] | None = None
     # M59 CR-1: the chart reader's structure as data for the answer card (None elsewhere; the sentences stay for others)
     structure_card: dict[str, Any] | None = None
+    # M97 PR-5 (Z7): the user's own chart has the Supply & Demand zones overlay on (`ChartPrefs.sd_zones`, read on the
+    # server by the chat route) - the chart reader then adds the zones as facts
+    sd_zones: bool = False
 
     def flag_on(self, name: str) -> bool:
         return self.flags is None or bool(self.flags.get(name))
@@ -484,6 +487,7 @@ TOOL_NAMES: Dict[str, str] = {
     "get_candles": "Price history", "get_market_regime": "Market regime", "get_option_chain": "Option chain",
     "calc_difference": "Calculation", "calc_percent_change": "Calculation", "calc_sum": "Calculation",
     "get_coach_week": "Your journal week",       # M72 PR-8 (CP-8)
+    "get_sd_zones": "Supply & Demand zones",     # M97 PR-5
 }
 NOT_SET_UP: Dict[str, str] = {
     "get_market_context": "the market context panel is not set up yet", "get_chart_structure": "the chart structure reader is not set up yet",
@@ -493,10 +497,11 @@ NOT_SET_UP: Dict[str, str] = {
     "get_screen_universe": "screens in the Copilot are not set up yet", "build_screen": "screens in the Copilot are not set up yet",
     "run_screen": "screens in the Copilot are not set up yet", "explain_results": "screens in the Copilot are not set up yet",
     "propose_alert": "alerts from the Copilot are not set up yet",
+    "get_sd_zones": "the Supply & Demand zones are not set up yet",
 }
 # Tools the chat reads only while a flag of its own is on (the registry does not gate them: the agent's flag `ai_agent`
 # covers news and market memory), and the jobs that need a flag as a whole.
-CHAT_TOOL_FLAGS: Dict[str, str] = {"get_news": "ai_agent", "get_market_snapshot": "ai_agent"}
+CHAT_TOOL_FLAGS: Dict[str, str] = {"get_news": "ai_agent", "get_market_snapshot": "ai_agent", "get_sd_zones": "sd_pack"}
 JOB_FLAGS: Dict[str, str] = {"screen": "screener_copilot", "views": "ai_multiview"}
 JOB_NOT_SET_UP: Dict[str, str] = {"screen": "screens in the Copilot are not set up", "views": "the full view of a symbol is not set up"}
 CHAT_FLAGS: Tuple[str, ...] = tuple(sorted({*CHAT_TOOL_FLAGS.values(), *JOB_FLAGS.values()}))
@@ -678,6 +683,26 @@ def _zone_lines(res: ToolResult) -> List[str]:
         what = str(b.get("zone_type") or b.get("family") or "zone").replace("_", " ").lower()
         out.append(f"{str(b.get('role') or '').capitalize()} area {_f(b['low'])} - {_f(b['high'])} ({what}, {b.get('state')}"
                    + (f", {b['touches']} {'touch' if b.get('touches') == 1 else 'touches'}" if b.get("touches") else "") + ")")
+    return out
+
+
+SD_FLAG = "sd_pack"
+SD_TF_WORDS = {"1m": "1-minute", "3m": "3-minute", "5m": "5-minute", "10m": "10-minute", "15m": "15-minute", "30m": "30-minute",
+               "1h": "1-hour", "2h": "2-hour", "1d": "daily", "1w": "weekly", "1M": "monthly"}
+
+
+def sd_zone_lines(res: ToolResult) -> List[str]:
+    """M97 PR-5: one fact line per Supply & Demand zone, in structure words only - its side, formation, state and
+    timeframe, then its proximal and distal lines (the area as two edges, never a level to act on)."""
+    if not res.ok or not isinstance(res.data, dict):
+        return []
+    out = []
+    for z in res.data.get("zones") or []:
+        if not isinstance(z.get("proximal"), (int, float)) or not isinstance(z.get("distal"), (int, float)):
+            continue
+        state = f"tested {z['tests']} {'time' if z.get('tests') == 1 else 'times'}" if z.get("state") == "tested" else "fresh"
+        out.append(f"{'Demand' if z.get('side') == 'demand' else 'Supply'} zone ({z.get('formation')}, {state}) on the "
+                   f"{SD_TF_WORDS.get(str(z.get('timeframe')), str(z.get('timeframe')))} chart: proximal {_f(z['proximal'])}, distal {_f(z['distal'])}.")
     return out
 
 
@@ -969,6 +994,14 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
             "rows": [{k: b.get(k) for k in ("role", "low", "high", "state", "touches")} for b in (zones.data or {}).get("bands") or []]}})
     else:
         answer.unknowns.append(_zones_unknown(symbol, zones, res) + ".")
+    if answer.sd_zones and answer.flag_on(SD_FLAG):
+        # M97 PR-5 (Z7, M97-Q5): the zones the user's own overlay draws, computed on the server for this symbol and timeframe
+        sd = await _call(answer, run, "get_sd_zones", f"{symbol} supply and demand zones", {"symbol": symbol, "timeframe": tf})
+        lines = sd_zone_lines(sd)
+        if lines:
+            answer.section("Supply & Demand zones", lines)
+        elif sd.ok:
+            answer.unknowns.append(f"I don't see a fresh or tested supply / demand zone on the {TF_LABELS.get(tf, tf).lower()} {symbol} chart now.")
     answer.headline = chart_headline(symbol, tf, res, zones)
     answer.structure_card = structure_card(symbol, tf, res, zones)
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
@@ -2120,10 +2153,12 @@ def _filtered(answer: Answer) -> None:
     answer.summary = [x for x in answer.summary if output_filter.check(x, "en", where="copilot_chat")[0]] or ["Here is what ATP's data shows."]
 
 
-async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: Optional[Dict[str, bool]] = None) -> Answer:
+async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: Optional[Dict[str, bool]] = None,
+                 sd_zones: bool = False) -> Answer:
     """The rule answer for `message`, from the tools `run` reaches. Never raises on a tool failure (it says what is missing).
     `signal_v2`: flag `signal_language_v2` (handover 11l) - the teacher's "on your chart" lines in the signal language.
-    `flags`: the chat's own flags (CHAT_FLAGS) as the request read them; None = all on (the rule tests and the evals)."""
+    `flags`: the chat's own flags (CHAT_FLAGS) as the request read them; None = all on (the rule tests and the evals).
+    `sd_zones` (M97 PR-5): the user's own Supply & Demand zones overlay is on (his chart setting, read on the server)."""
     job_id = route(message)
     if job_id == "refuse":
         out = Answer("refuse", "I can't do that")
@@ -2134,7 +2169,7 @@ async def answer(message: str, run: Runner, *, signal_v2: bool = False, flags: O
         help_answer(out)
         return out
     job = BY_ID[job_id]
-    out = Answer(job.id, job.title, signal_v2=signal_v2, flags=flags)
+    out = Answer(job.id, job.title, signal_v2=signal_v2, flags=flags, sd_zones=sd_zones)
     if not job.built:
         not_built(out, job)
         return out

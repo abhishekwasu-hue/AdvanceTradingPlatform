@@ -15,7 +15,9 @@ from tests.test_phase_l_ai import _owner
 
 BASE = "/api/me/prefs"
 CHART_DEFAULTS = {"theme": "app", "grid": False, "candle_colors": None, "indicators": {"volume": True, "rsi": True},
-                  "reader_overlay": False, "timeframe_favourites": ["5min", "15min", "60min", "day"]}
+                  "reader_overlay": False, "sd_zones": False,                    # M97 PR-5: the Supply & Demand overlay
+                  "sd_overlay": {"style": None, "timeframes": None, "presets": {}, "show_violated": False},
+                  "timeframe_favourites": ["5min", "15min", "60min", "day"]}
 
 
 def _run(coro):

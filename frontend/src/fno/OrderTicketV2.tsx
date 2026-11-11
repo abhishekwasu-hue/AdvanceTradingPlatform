@@ -4,7 +4,7 @@ import { ChevronRight, Minus, Plus, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { PaperBadge } from "../ui/PaperBadge";
+import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
 import { Details } from "../ui/Details";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { FROM_DEFAULTS, ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
@@ -15,11 +15,11 @@ import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
-import { fnoApi, runOnOptions, type FnoApi, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
+import { fnoApi, runOnOptions, type FnoApi, type LiveStatus, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
   ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
-  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing,
+  PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing, ORDER_MODES, LIVE_OFF_TEXT,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
@@ -56,7 +56,7 @@ export interface OrderTicketProps {
   onClose: () => void;
   /** After a PLACED order (the chain re-reads its "P" markers). */
   onPlaced?: (result: OrderResult) => void;
-  api?: Pick<FnoApi, "preview" | "place"> & Partial<Pick<FnoApi, "practiceAccounts" | "placeMulti" | "exitMulti">>;
+  api?: Pick<FnoApi, "preview" | "place"> & Partial<Pick<FnoApi, "practiceAccounts" | "placeMulti" | "exitMulti" | "liveStatus">>;
   /** 8b slice 4: the chain rows on screen when the ticket opened from the chain (its liquidity line); absent elsewhere
    * (the line then says bid-ask and open interest are not known here). */
   chainRows?: readonly ChainRow[] | null;
@@ -134,6 +134,13 @@ export interface OrderTicketState {
   multi?: MultiTicket;
   /** M76 MP-2 (flag `trade_warnings`): the ONE check card (absent: the ticket is exactly as before). */
   card?: TicketCard;
+  /** M96-Q1: whether his LIVE choice can be placed now (null: not read yet / could not be read - the server decides). */
+  live?: LiveStatus | null;
+}
+
+/** M96-Q1: the mode chip of a ticket header - PAPER, or LIVE once he picked it. */
+export function TicketModeBadge({ mode }: { mode: Draft["mode"] }) {
+  return mode === "LIVE" ? <LiveBadge /> : <PaperBadge />;
 }
 
 /** M76 MP-2: the draft the check service reads (the LTP is the one on his screen). */
@@ -184,6 +191,14 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   const multiOn = features.on("ui_v2") && features.on("multi_account") && typeof api.practiceAccounts === "function";
   const [practice, setPractice] = useState<PracticeAccount[]>([]);
   const [runOn, setRunOn] = useState("ONE");
+  // M96-Q1: whether his LIVE choice can go now (the owner's switches, his own broker) - read when the ticket opens.
+  const [live, setLive] = useState<LiveStatus | null>(null);
+  useEffect(() => {
+    if (!open || !api.liveStatus) return;
+    let on = true;
+    api.liveStatus().then((s) => { if (on) setLive(s); }).catch(() => { if (on) setLive(null); });
+    return () => { on = false; };
+  }, [open, api]);
   useEffect(() => {
     if (!open || !multiOn || !api.practiceAccounts) return;
     let live = true;
@@ -301,7 +316,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     if (warnOn && step.kind === "review") checks.placed(lines, checkDraftOf(target, draft));   // accepted today; fire and forget
     setBusy(true);
     try {
-      if (runOn !== "ONE" && api.placeMulti) {
+      if (runOn !== "ONE" && api.placeMulti && draft.mode !== "LIVE") {      // practice accounts are PAPER only
         const multi = await api.placeMulti(askOf(target, draft, ref.current), runOn);
         setStep({ kind: "multi", result: multi });
         const first = multi.results.find((r) => r.status === "PLACED");
@@ -345,7 +360,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     onAccept: (line) => { checks.acceptHere(line); if (askFirst(lines, new Set([...checks.acceptedHere, factKey(line)])).length === 0) void place(line); },
   } : undefined;
   return {
-    card,
+    card, live,
     draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place: () => place(), saveDefaults: features.on("ui_v2"),
     multi: options.length ? { options, runOn, setRunOn, exitAll } : undefined,
     onDraft: (patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); },
@@ -371,7 +386,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-space-2">
                 <RD.Title className="truncate text-t18 font-semibold text-fg">{label}</RD.Title>
-                <PracticeFrame />
+                <TicketModeBadge mode={t.draft.mode} />
               </div>
               <p className="text-t13 text-fg-muted font-tabular">
                 LTP <TermHint term="ltp" /> {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}
@@ -387,7 +402,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
             </RD.Close>
           </div>
           <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
-            budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card}
+            budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live}
             onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
       </RD.Portal>
@@ -432,7 +447,7 @@ export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; ac
 }
 
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false, card }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false, card, live = null }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** M68 TS-3: "Save as my default" next to the order type and the product once he picks one (not when it came from it). */
   saveDefaults?: boolean;
@@ -455,6 +470,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   multi?: MultiTicket;
   /** M76 MP-2: the ONE check card (flag trade_warnings; absent: the confirm step is exactly as before). */
   card?: TicketCard;
+  /** M96-Q1: whether his LIVE choice can go now (null: not known - the server decides at Review). */
+  live?: LiveStatus | null;
 }) {
   const n = needs(draft.orderType);
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
@@ -462,11 +479,18 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   const marks = draftFromDefaults(draft, defaults);
   const fromDefaults = [marks.lots && "lots", marks.orderType && "order type", marks.product && "product"].filter(Boolean) as string[];
   const sideTone = draft.side === "BUY" ? "bg-up text-on-brand" : "bg-down text-on-brand";
+  // M96-Q1: LIVE while the owner's switches (or his broker) say no - the sentence, and no Review.
+  const liveOff = draft.mode === "LIVE" && live !== null && !live.open;
   return (
     <>
       <div className={cx("min-h-0 flex-1 space-y-space-3 overflow-y-auto px-space-4 py-space-3", stickyActions && "pb-24 md:pb-space-3")} data-ticket-body>
         {step.kind === "edit" && (
           <>
+            {/* M96-Q1 (owner): PAPER or LIVE, his own choice (PAPER unless he picks LIVE). */}
+            <div>
+              <Segmented label="Mode" testId="mode" value={draft.mode} onChange={(v) => onDraft({ mode: v })} options={ORDER_MODES} />
+              {liveOff && <p className="mt-space-1 text-t13 text-warn" data-ticket="live-off">{live?.text ?? LIVE_OFF_TEXT}</p>}
+            </div>
             <Segmented label="Side" testId="side" value={draft.side} onChange={(v) => onDraft({ side: v })}
               options={[{ value: "BUY", label: "Buy" }, { value: "SELL", label: "Sell" }]} />
             {keysHint && <p className="hidden text-t12 text-fg-muted md:block">Keys: B for Buy, S for Sell.</p>}
@@ -557,7 +581,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 </div>
               </div>
             </details>
-            {multi && (
+            {multi && draft.mode !== "LIVE" && (
               <div>
                 <label htmlFor={`${idPrefix}-run-on`} className="mb-space-1 block text-t12 font-medium text-fg-muted">Run on</label>
                 <Combobox id={`${idPrefix}-run-on`} label="Run on" value={multi.runOn} onChange={multi.setRunOn} options={multi.options} className="w-full"
@@ -593,7 +617,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             ? "fixed inset-x-0 bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-10 bg-surface-1 shadow-raised md:sticky md:inset-x-auto md:bottom-0 md:shadow-none md:pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
             : "pb-[calc(0.75rem+env(safe-area-inset-bottom))]")}>
         {step.kind === "edit" && (
-          <button type="button" onClick={onReview} disabled={busy || asking !== null} data-ticket="review"
+          <button type="button" onClick={onReview} disabled={busy || asking !== null || liveOff} data-ticket="review"
             className={cx("min-h-11 flex-1 rounded-control px-space-4 text-t15 font-semibold disabled:opacity-60", sideTone)}>
             {busy ? "Checking…" : `Review ${sideWord(draft.side)} order`}
           </button>
@@ -664,6 +688,10 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
   const type = p.order_type === "MARKET" ? "Market" : p.order_type === "LIMIT" ? "Limit" : p.order_type;
   return (
     <div className="space-y-space-3" data-ticket="confirm">
+      {/* M96-Q1: the mode, in large text, before anything else on the confirm step. */}
+      <p className={cx("text-t18 font-semibold", p.mode === "LIVE" ? "text-warn" : "text-fg")} data-ticket="confirm-mode">
+        {p.mode === "LIVE" ? "LIVE order: real money, your broker" : "PAPER order: practice, no real money"}
+      </p>
       <dl className="rounded-control border border-subtle px-space-3">
         <Line label="Order" testId="order">{sideWord(p.side)} · {type} · {p.product}</Line>
         <Line label="Quantity" testId="quantity">{unitsText(p.lots, p.lot_size)}</Line>

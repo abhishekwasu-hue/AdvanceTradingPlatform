@@ -6,8 +6,11 @@ which process entry points can reach a broker order method (`place_order`, `modi
 
 1. Every direct call of a broker order method outside `app/brokers/` is in ORDER_CALL_SITES, classified ENTRY, EXIT or
    PROTECTIVE with a reason. A new call site fails until someone classifies it.
-2. No API route reaches an ENTRY call site. This is the criterion itself: a new LIVE position can only be opened by
-   the trading worker, never by a request.
+2. No API route reaches an ENTRY call site, except the ones in ROUTES_REACHING_BROKER_ENTRY (each with the owner order
+   that allows it). This was the Phase 0 criterion "a new LIVE position can only be opened by the trading worker";
+   M96-Q1 (owner, changed): the F&O order ticket's own order route sends the user's own LIVE order - refused at runtime
+   while `phase0_paper_only` is on or `live_trading` is off / not granted (fno_ticket.live_status, phase0_lock.assert_paper
+   and the RateLimitedBroker chokepoint), tests/test_m96_ticket_live.py.
 3. The API routes that reach an EXIT / PROTECTIVE call site are exactly ROUTES_REACHING_BROKER_ORDERS, each with its
    reason. Exits of an existing LIVE position must stay possible (ADR-0004); a new route that reaches the broker - or
    one that stops reaching it - fails until the table says so.
@@ -64,9 +67,20 @@ GATED: Dict[str, str] = {
     "app.trading.position_monitor.close_position": "broker",
     "app.ai.monitor.execute": "broker",
     "app.execution.marketable_limit.reprice_until_filled": "adapter",
+    # M96-Q1: the ticket sends LIVE only to the broker its order route hands in; the basket, Reverse, trigger plans and
+    # an approved proposal call it without one (the AI never places, ADR-0006).
+    "app.paper.fno_ticket.place": "broker",
 }
 # Where a broker adapter comes from: everything that builds one goes through these.
 ADAPTER_FACTORIES = frozenset({"app.brokers.registry.get_broker_adapter", "app.brokers.token_lifecycle.build_adapter"})
+
+# API routes allowed to reach a broker ENTRY (rule 2), each with the owner order. Nothing else may.
+ROUTES_REACHING_BROKER_ENTRY: Dict[Tuple[str, str], str] = {
+    ("POST", "/api/paper/fno/order"):
+        "M96-Q1 (owner, changed): the F&O order ticket's LIVE choice - the user's own Market order to his own broker "
+        "session (fno_ticket.live_broker, behind RateLimitedBroker), refused while phase0_paper_only is on or "
+        "live_trading is off / not granted; PAPER never gets a broker",
+}
 
 # API routes that can reach an EXIT / PROTECTIVE call site, and why that is allowed (never an entry - rule 2).
 ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
@@ -101,6 +115,8 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
         "an approved EXIT_POSITION proposal closes that position at its broker (exit); an approved ENTRY books PAPER only",
     ("POST", "/api/telegram/webhook/{webhook_token}"):
         "the Telegram approve button of a proposal - same monitor.execute path as the web approve (exit only)",
+    ("POST", "/api/paper/fno/order"):
+        "M96-Q1: the ticket's LIVE order (see ROUTES_REACHING_BROKER_ENTRY) and its broker-side stop when he set one",
 }
 
 # Process entry points (graph node) that reach a broker order call site.
@@ -172,10 +188,13 @@ def test_rule2_no_api_route_reaches_a_broker_entry(graph):
     offenders = []
     for route in iter_api_routes(app):
         hit = _route_sinks(graph, route) & entries
-        if hit:
+        if hit and route.key not in ROUTES_REACHING_BROKER_ENTRY:
             chain = graph.path_to_sink(endpoint_node(route.endpoint)) or []
             offenders.append(f"{route.method} {route.path}: {' > '.join(chain)}")
-    assert not offenders, "API route(s) can reach a broker ENTRY (Phase 0: no API order path):\n" + "\n".join(offenders)
+    assert not offenders, "API route(s) can reach a broker ENTRY (only ROUTES_REACHING_BROKER_ENTRY may):\n" + "\n".join(offenders)
+    allowed = {route.key for route in iter_api_routes(app) if _route_sinks(graph, route) & entries}
+    stale = sorted(set(ROUTES_REACHING_BROKER_ENTRY) - allowed)
+    assert not stale, f"ROUTES_REACHING_BROKER_ENTRY lists routes that no longer reach an entry (remove them): {stale}"
 
 
 def test_rule3_routes_reaching_broker_orders_are_exactly_the_allow_list(graph):

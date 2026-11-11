@@ -47,6 +47,9 @@ export interface HeldLeg {
   stop_loss: number | null;
 }
 
+/** M96-Q1 (owner): where the ticket's order goes - PAPER (the default) or LIVE (his own broker; the owner's switches decide). */
+export type OrderMode = "PAPER" | "LIVE";
+
 export interface OrderAsk {
   underlying: string;
   expiry: string;
@@ -66,12 +69,17 @@ export interface OrderAsk {
   client_ref?: string | null;
   /** M76 MP-5 (trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. */
   accepted_warnings?: string[];
+  /** M96-Q1: his own choice on the ticket; not sent = PAPER. */
+  mode?: OrderMode;
 }
+
+/** M96-Q1: whether a LIVE ticket order can go now, and the plain sentence why not. */
+export interface LiveStatus { open: boolean; text: string | null }
 
 export interface MoneyLine { value: number | null; basis: string; estimated?: boolean; note?: string }
 
 export interface OrderPreview {
-  mode: "PAPER";
+  mode: OrderMode;
   practice: string;
   contract: FnoContract | null;
   label: string;
@@ -126,6 +134,8 @@ export const fnoApi = {
   held: (underlying: string, expiry: string) => request<HeldLeg[]>(`/paper/fno/held?${q({ underlying, expiry })}`),
   preview: (ask: OrderAsk) => request<OrderPreview>("/paper/fno/order/preview", { method: "POST", body: JSON.stringify(ask) }),
   place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order", { method: "POST", body: JSON.stringify(ask) }),
+  /** M96-Q1: whether his LIVE choice can be placed now (reads only). */
+  liveStatus: () => request<LiveStatus>("/paper/fno/live-status"),
   // M45 MA-6 (`ui_v2` + `multi_account`): the user's simulated PAPER accounts, one order on several of them, one exit.
   practiceAccounts: () => request<PracticeAccount[]>("/accounts/mine/paper"),
   placeMulti: (ask: OrderAsk, runOn: string) =>

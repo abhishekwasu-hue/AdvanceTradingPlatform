@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
-import { mockCopilotNumbers } from "./copilotMocks";
+import { mockCopilotNumbers, readChart } from "./copilotMocks";
 
 /**
  * Item 5 (owner's handover, the AI Copilot as a trader's brain): the chat-first Copilot at /copilot with `ui_v2` on.
@@ -151,7 +151,7 @@ test.describe("v2 copilot chat 1440 desktop", () => {
 
   test("a chip's answer shows the data, the tables and how it was worked out (behind Details)", async ({ page }) => {
     const asked = await open(page, "light");
-    await page.locator("[data-quick='chart']").click();
+    await readChart(page);
     const answer = page.locator("[data-answer='chart']");
     await expect(answer).toContainText("NIFTY last closed at 24,850.5");
     await answer.locator("[data-details='copilot.answer'] summary").click();
@@ -213,7 +213,7 @@ test.describe("v2 copilot - one Copilot (CU4) and the kept conversation (CU6)", 
   test("CU6: the conversation is still there after a reload", async ({ page }) => {
     const kept: Kept = { turns: [], deleted: 0 };
     await open(page, "light", kept);
-    await page.locator("[data-quick='chart']").click();
+    await readChart(page);
     await expect(page.locator("[data-answer='chart']")).toBeVisible();
     await page.reload();
     await expect(page.locator("[data-page='copilot-v2']")).toBeVisible({ timeout: 15_000 });
@@ -271,7 +271,7 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
     test("table, areas nearby, swing levels, one line; '1-hour: data not ready'; no raw Markdown", async ({ page }) => {
       await open(page, "light");
       await page.route(/\/api(?:\/v1)?\/ai\/chat$/, (route) => route.request().method() === "POST" ? route.fulfill({ json: CARDED }) : route.fallback());
-      await page.locator("[data-quick='chart']").click();
+      await readChart(page);
       const answer = page.locator("[data-answer='chart']");
       const card = answer.locator("[data-structure-card='NIFTY']");
       await expect(card).toBeVisible();

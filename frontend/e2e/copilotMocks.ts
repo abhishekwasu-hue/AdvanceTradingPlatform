@@ -33,3 +33,11 @@ export async function mockCopilotNumbers(page: Page): Promise<{ strip: string[];
   });
   return calls;
 }
+
+/** COP-2 B: "Read chart" opens the symbol picker; pick `symbol` (default the suggested NIFTY) to ask "Read the X chart". */
+export async function readChart(page: Page, symbol = "NIFTY"): Promise<void> {
+  await page.locator("[data-quick='chart']").click();
+  const picker = page.locator("[data-chart-picker]");
+  if (symbol !== "NIFTY") await picker.locator("input").fill(symbol);
+  await picker.getByRole("option").filter({ hasText: new RegExp(`^${symbol}`) }).first().click();
+}

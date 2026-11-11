@@ -199,22 +199,17 @@ async def put_agent_limits(body: AgentLimitsBody, user: User = Depends(require_r
 # --- Phase N4: feature flags -----------------------------------------------------------------------
 
 async def _flag_listing_for(session: AsyncSession, user: User) -> dict:
-    """The flag listing; the two LIVE switches also say they are owner-only and whether this admin is the owner (M55 S1)."""
+    """The flag listing; the LIVE switch also says it is owner-only and whether this admin is the owner (M55 S1).
+    LIVE-1 (owner order: ONE live switch): `live_trading` is the only LIVE switch in the list. The derived PAPER-only lock
+    (`phase0_paper_only`, it follows live_trading) and the former "LIVE for organisations" grant list are not offered:
+    neither decides anything any more (app/platform/live_switch.py)."""
     from app.platform import live_owner
     flags = await controls.flag_listing(session, user)
+    flags.pop(controls.PAPER_ONLY_FLAG, None)
     owner = live_owner.is_owner(user)
-    for name in live_owner.OWNER_ONLY_FLAGS:
-        if name in flags:
-            flags[name].update(owner_only=True, can_switch_live=owner, confirm_text=live_owner.CONFIRM_TEXT,
-                               opens_live_when_on=name == live_owner.LIVE_TRADING)
     if live_owner.LIVE_TRADING in flags:
-        # M55 S1b: "LIVE for organisations" - the owner's grant list (the flag's allow-list), with the names.
-        from sqlalchemy import select
-
-        from app.db.models import Tenant
-        ids = list(flags[live_owner.LIVE_TRADING].get("tenants") or [])
-        names = dict((await session.execute(select(Tenant.id, Tenant.name).where(Tenant.id.in_(ids)))).all()) if ids else {}
-        flags[live_owner.LIVE_TRADING]["live_orgs"] = [{"id": i, "name": names.get(i) or f"Organisation {i}"} for i in ids]
+        flags[live_owner.LIVE_TRADING].update(owner_only=True, can_switch_live=owner, confirm_text=live_owner.CONFIRM_TEXT,
+                                              opens_live_when_on=True)
     return flags
 
 

@@ -25,7 +25,7 @@ ROUTE_NOTIFY, ROUTE_PROPOSE, ROUTE_PAPER, ROUTE_REFUSE = "NOTIFY", "PROPOSE", "P
 ROUTES = (ROUTE_NOTIFY, ROUTE_PROPOSE, ROUTE_PAPER, ROUTE_REFUSE)
 
 WHY_LIVE = "Auto LIVE is not available: ATP places no broker API order in N1 (PAPER only)"
-WHY_LIVE_LOCKED = "Auto LIVE refused: the Phase 0 PAPER-only lock (phase0_paper_only) is on"
+WHY_LIVE_LOCKED = "Auto LIVE refused: live trading is switched off by the admin"
 WHY_AUTO_APPROVAL = "Approval-only mode is on: Auto PAPER becomes a proposal a person approves"
 WHY_AUTO_OFF = "Auto PAPER is not enabled for this organisation: a proposal instead"
 

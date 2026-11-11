@@ -1,8 +1,10 @@
 """M55 S1 (owner order): LIVE can be switched on only by the owner.
 
-live_trading is OFF and the phase0_paper_only lock is ON by default in every deployment mode; turning live_trading on
-or the lock off needs the owner identity (LIVE_OWNER_USER_ID), a recent two-factor check on the session and the typed
-confirmation; every attempt is audited; the USER role has no trading:live and no plan grants LIVE."""
+live_trading is OFF (so the derived phase0_paper_only lock is ON) by default in every deployment mode; turning
+live_trading on needs the owner identity (LIVE_OWNER_USER_ID), a recent two-factor check on the session and the typed
+confirmation; every attempt is audited; no plan grants LIVE.
+LIVE-1 (owner order: ONE live switch): live_trading is the only switch - phase0_paper_only follows it and cannot be set
+on its own (400, nothing changed), and every USER has trading:live by default (the switch decides)."""
 import asyncio
 import json
 
@@ -91,8 +93,10 @@ def test_owner_setting_defaults_to_user_one(monkeypatch):
         assert config._env_int_in("LIVE_OWNER_USER_ID", 1, 1, 2**31 - 1) == 1
 
 
-def test_user_role_has_no_trading_live():
-    assert "trading:live" not in ROLE_SCOPES[UserRole.USER.value]
+def test_user_role_has_trading_live_the_one_switch_decides():
+    """LIVE-1 (was test_user_role_has_no_trading_live): the per-user default gate is folded into live_trading."""
+    assert "trading:live" in ROLE_SCOPES[UserRole.USER.value]
+    assert "trading:live" not in ROLE_SCOPES[UserRole.VIEWER.value]
 
 
 def test_no_plan_grants_live():
@@ -105,32 +109,31 @@ def test_a_super_admin_who_is_not_the_owner_gets_403_and_is_audited(monkeypatch)
     headers, me = _admin("m55-not-owner@example.com")
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"] + 100000)
     before = len(_audit(live_owner.REFUSED_EVENT))
-    for name, body in (("live_trading", {"on": True}), ("live_trading", {"on": False, "tenants": [5]}),
-                       ("phase0_paper_only", {"on": False}), ("phase0_paper_only", {"on": False, "tenants": [5]})):
+    for name, body in (("live_trading", {"on": True}), ("live_trading", {"on": False, "tenants": [5]})):
         res = client.put(f"{FLAGS}/{name}", headers=headers, json={**body, "confirm": live_owner.CONFIRM_TEXT})
         assert res.status_code == 403, res.text
         assert res.json()["detail"] == live_owner.NOT_OWNER
     refused = _audit(live_owner.REFUSED_EVENT)[before:]
-    assert len(refused) == 4 and all("not the owner" in r for r in refused)
+    assert len(refused) == 2 and all("not the owner" in r for r in refused)
     flags = _resolved()
     assert flags["live_trading"]["on"] is False and flags["live_trading"]["tenants"] == []
     assert flags["phase0_paper_only"]["on"] is True
-    # The restrictive direction is never held up: LIVE off and the lock on stay allowed for any admin.
+    # The restrictive direction is never held up: LIVE off stays allowed for any admin.
     assert client.put(f"{FLAGS}/live_trading", headers=headers, json={"on": False}).status_code == 200
-    assert client.put(f"{FLAGS}/phase0_paper_only", headers=headers, json={"on": True}).status_code == 200
 
 
 def test_the_listing_says_the_live_switches_are_owner_only(monkeypatch):
     headers, me = _admin("m55-listing@example.com")
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"] + 100000)
     body = client.get(FLAGS, headers=headers).json()
-    for name in live_owner.OWNER_ONLY_FLAGS:
-        assert body[name]["owner_only"] is True and body[name]["can_switch_live"] is False
+    assert body["live_trading"]["owner_only"] is True and body["live_trading"]["can_switch_live"] is False
     assert "owner_only" not in body["terminal"]
+    # LIVE-1: one switch in the list - the derived lock is not offered (nor the former organisation grant list).
+    assert "phase0_paper_only" not in body and "live_orgs" not in body["live_trading"]
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])
     body = client.get(FLAGS, headers=headers).json()
     assert body["live_trading"]["can_switch_live"] is True and body["live_trading"]["confirm_text"] == "ENABLE LIVE"
-    assert body["live_trading"]["opens_live_when_on"] is True and body["phase0_paper_only"]["opens_live_when_on"] is False
+    assert body["live_trading"]["opens_live_when_on"] is True
 
 
 def test_the_owner_without_the_typed_confirmation_is_refused(monkeypatch):
@@ -138,11 +141,21 @@ def test_the_owner_without_the_typed_confirmation_is_refused(monkeypatch):
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])
     before = len(_audit(live_owner.REFUSED_EVENT))
     for confirm in (None, "", "enable live", "YES"):
-        res = client.put(f"{FLAGS}/phase0_paper_only", headers=headers, json={"on": False, "confirm": confirm})
+        res = client.put(f"{FLAGS}/live_trading", headers=headers, json={"on": True, "confirm": confirm})
         assert res.status_code == 400 and res.json()["detail"] == live_owner.NO_CONFIRM
     refused = _audit(live_owner.REFUSED_EVENT)[before:]
     assert len(refused) == 4 and all("typed confirmation missing" in r for r in refused)
-    assert _resolved()["phase0_paper_only"]["on"] is True
+    assert _resolved()["live_trading"]["on"] is False and _resolved()["phase0_paper_only"]["on"] is True
+
+
+def test_the_lock_cannot_be_set_on_its_own_it_follows_live_trading(monkeypatch):
+    """LIVE-1: phase0_paper_only is no second switch - setting it (either way, owner or not) is refused, nothing changes."""
+    headers, me = _admin("m55-lock-folded@example.com")
+    monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])
+    for body in ({"on": False}, {"on": True}, {"on": False, "tenants": [5]}):
+        res = client.put(f"{FLAGS}/phase0_paper_only", headers=headers, json={**body, "confirm": live_owner.CONFIRM_TEXT})
+        assert res.status_code == 400 and res.json()["detail"] == controls.PAPER_ONLY_FOLDED, res.text
+    assert _resolved()["phase0_paper_only"]["on"] is True and _resolved()["live_trading"]["on"] is False
 
 
 def test_the_owner_without_a_two_factor_check_is_refused_and_audited(monkeypatch):
@@ -170,15 +183,12 @@ def test_the_owner_with_two_factor_and_the_confirmation_succeeds_and_is_audited(
     headers, me = _admin("m55-owner-ok@example.com")
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])
     before = len(_audit(live_owner.ALLOWED_EVENT))
-    res = client.put(f"{FLAGS}/phase0_paper_only", headers=headers, json={"on": False, "confirm": "ENABLE LIVE"})
-    assert res.status_code == 200, res.text
-    assert res.json()["phase0_paper_only"]["on"] is False
     res = client.put(f"{FLAGS}/live_trading", headers=headers, json={"on": True, "confirm": "ENABLE LIVE"})
     assert res.status_code == 200, res.text
-    assert res.json()["live_trading"]["on"] is True
+    # LIVE-1: the one step - live_trading ON also lifts the derived lock.
+    assert res.json()["live_trading"]["on"] is True and _resolved()["phase0_paper_only"]["on"] is False
     allowed = _audit(live_owner.ALLOWED_EVENT)[before:]
-    assert len(allowed) == 2
-    assert allowed[0].startswith("phase0_paper_only: on=False") and allowed[1].startswith("live_trading: on=True")
+    assert len(allowed) == 1 and allowed[0].startswith("live_trading: on=True")
 
 
 def test_a_non_live_flag_needs_no_confirmation(monkeypatch):
@@ -191,7 +201,6 @@ def test_opens_live_covers_every_loosening_change():
     assert live_owner.opens_live("live_trading", on=True, tenants=None)
     assert live_owner.opens_live("live_trading", on=False, tenants=[3])
     assert not live_owner.opens_live("live_trading", on=False, tenants=[])
-    assert live_owner.opens_live("phase0_paper_only", on=False, tenants=None)
-    assert live_owner.opens_live("phase0_paper_only", on=False, tenants=[3])      # locked for some tenants only
-    assert not live_owner.opens_live("phase0_paper_only", on=True, tenants=None)
+    # LIVE-1: the lock opens nothing any more (it follows live_trading; set_flag refuses it before this check).
+    assert not live_owner.opens_live("phase0_paper_only", on=False, tenants=None)
     assert not live_owner.opens_live("terminal", on=True, tenants=None)

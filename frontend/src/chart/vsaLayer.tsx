@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { request } from "../api/client";
 import type { ChartMarker } from "../charting/markers";
 import { cx } from "../components/primitives/cx";
+import { formatDateIST, formatDateTimeIST } from "../ui/format";
 import type { ChartBar, TimeframeId } from "./timeframes";
 import { onCandles } from "./watchScreen";
 
@@ -99,13 +100,10 @@ export function useVsaLayer(args: { symbol: string; exchange: string; timeframe:
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
-/** "12 Nov 10:15" (intraday) or "12 Nov 2026" (daily and above), in India time. */
+/** "12 Nov, 10:15" (intraday) or "12 Nov 2026" (daily and above), in India time - the shared IST formatters. */
 export function markTime(iso: string, baseTf: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
   const daily = baseTf === "1d" || baseTf === "1w";
-  return d.toLocaleString("en-IN", daily ? { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }
-    : { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  return daily ? formatDateIST(iso) : formatDateTimeIST(iso, { year: false, suffix: false });
 }
 
 export function VsaBar({ state, options, onChange }: { state: VsaState; options: VsaOptions; onChange: (o: VsaOptions) => void }) {

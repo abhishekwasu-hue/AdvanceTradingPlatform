@@ -10,7 +10,7 @@ import { SWITCHES_OFF, SWITCH_FIELDS, loadSwitches, saveSwitches, type MyLimitSw
 import SizeCalculatorV2 from "./SizeCalculatorV2";
 import {
   bodyOf, draftOf, loadRiskLimits, onCount, saveRiskLimits, valueWords, type OppositePick, type PausePick, type RiskLimitCheck,
-  type RiskLimitsDraft, type RiskLimitsView,
+  type RiskLimitsDraft, type RiskLimitsView, type StepResetPick,
 } from "./riskLimits";
 
 /**
@@ -56,6 +56,7 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
 
   const main = view.checks.filter((c) => c.group === "main");
   const more = view.checks.filter((c) => c.group === "more");
+  const options = view.checks.filter((c) => c.group === "options");      // M99 P7: only with the risk_options flag on
   const setCheck = (id: string, patch: Partial<RiskLimitsDraft["checks"][string]>) => {
     setDraft({ ...draft, checks: { ...draft.checks, [id]: { ...draft.checks[id], ...patch } } }); setNote(null);
   };
@@ -90,6 +91,15 @@ export default function RiskLimitsV2({ load = loadRiskLimits, save = saveRiskLim
             pause={draft.pause} onPause={(pause) => { setDraft({ ...draft, pause }); setNote(null); }} />)}
         </ul>
       </CardV2>
+      {/* M99 P7 (flag risk_options): the trader's own risk options - each off until he turns it on; exits never checked */}
+      {options.length > 0 && (
+        <CardV2 title="Risk options" testId="risk-options">
+          <ul className="divide-y divide-subtle" data-testid="risk-limits-options">
+            {options.map((c) => <CheckRow key={c.id} check={c} draft={draft} onChange={setCheck}
+              reset={draft.reset} resets={view.step_down_resets} onReset={(reset) => { setDraft({ ...draft, reset }); setNote(null); }} />)}
+          </ul>
+        </CardV2>
+      )}
       {/* M94 R1: information only - it places and saves nothing */}
       <SizeCalculatorV2 />
       <CardV2 title="More checks">
@@ -161,9 +171,10 @@ function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) 
   );
 }
 
-function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
+function CheckRow({ check, draft, onChange, paper, pause, onPause, reset, resets, onReset }: {
   check: RiskLimitCheck; draft: RiskLimitsDraft; onChange: (id: string, patch: Partial<RiskLimitsDraft["checks"][string]>) => void;
   paper?: Record<string, number>; pause?: PausePick | ""; onPause?: (p: PausePick | "") => void;
+  reset?: StepResetPick | ""; resets?: { value: StepResetPick; label: string }[]; onReset?: (r: StepResetPick | "") => void;
 }) {
   const id = useId();
   const d = draft.checks[check.id];
@@ -179,7 +190,7 @@ function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
         <Switch on={d.enabled} label={check.label} onChange={(on) => onChange(check.id, { enabled: on })} />
       </div>
       {/* the value fields show while the check is on (off: the saved value, if any, in the line above) */}
-      {d.enabled && <div className="mt-space-2 grid grid-cols-1 gap-space-2 sm:grid-cols-2">
+      {d.enabled && (check.fields.length > 0 || check.id === "loss_step_down") && <div className="mt-space-2 grid grid-cols-1 gap-space-2 sm:grid-cols-2">
         {check.fields.map((f) => (
           <div key={f.key} className="min-w-0">
             <label htmlFor={`${id}-${f.key}`} className={LABEL}>{f.label}{f.unit.toLowerCase() === f.label.toLowerCase() ? "" : ` (${f.unit})`}</label>
@@ -193,6 +204,15 @@ function CheckRow({ check, draft, onChange, paper, pause, onPause }: {
             <label htmlFor={`${id}-pause`} className={LABEL}>With no minutes, the pause ends</label>
             <Combobox id={`${id}-pause`} label="With no minutes, the pause ends" value={pause ?? ""} className="w-full"
               onChange={(v) => onPause(v as PausePick | "")} options={PAUSE_OPTIONS} dataAttrs={{ "data-field": "pause" }} />
+          </div>
+        )}
+        {/* M99 P7: when the full size returns is his own choice - "Not set" until he picks one */}
+        {check.id === "loss_step_down" && onReset && resets && (
+          <div className="min-w-0">
+            <label htmlFor={`${id}-reset`} className={LABEL}>Full size returns</label>
+            <Combobox id={`${id}-reset`} label="Full size returns" value={reset ?? ""} className="w-full"
+              onChange={(v) => onReset(v as StepResetPick | "")} options={[{ value: "", label: "Not set" }, ...resets]}
+              dataAttrs={{ "data-field": "step_down_reset" }} />
           </div>
         )}
       </div>}

@@ -155,6 +155,9 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   const [exitBreakEven, setExitBreakEven] = useState("");
   const [exitMinutes, setExitMinutes] = useState("");
   const [exitAt, setExitAt] = useState("");
+  // M99 P7 (flag risk_options): his own scale-out - the level in R and the share of the lots (both or none)
+  const [exitScaleR, setExitScaleR] = useState("");
+  const [exitScalePct, setExitScalePct] = useState("");
   // Settings part C: on the v2 Trading bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
   // each field that still shows its default is marked, and every field stays editable. No defaults: nothing changes.
   const features = useFeatures();
@@ -186,6 +189,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     if (exitBreakEven) r.break_even_at_r = Number(exitBreakEven);
     if (exitMinutes) r.time_exit_minutes = Number(exitMinutes);
     if (exitAt) r.time_exit_at = exitAt;
+    if (exitScaleR && exitScalePct && features.on("risk_options")) { r.scale_out_at_r = Number(exitScaleR); r.scale_out_pct = Number(exitScalePct); }
     return Object.keys(r).length ? r : null;
   }
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -286,6 +290,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
     if (p.exitBreakEven !== undefined) setExitBreakEven(p.exitBreakEven);
     if (p.exitMinutes !== undefined) setExitMinutes(p.exitMinutes);
     if (p.exitAt !== undefined) setExitAt(p.exitAt);
+    if (p.exitScaleR !== undefined && p.exitScalePct !== undefined) { setExitScaleR(p.exitScaleR); setExitScalePct(p.exitScalePct); }
     if (p.approval) setEntryMode("APPROVAL");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaults]);
@@ -836,6 +841,16 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
               <label className="block text-xs text-fg-muted mb-1">Flat at (HH:MM IST)<FromDefaults on={marked("exitAt", exitAt)} /></label>
               <input placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={exitAt} onChange={(e) => setExitAt(e.target.value)} />
             </div>
+            {features.on("risk_options") && features.on("ui_v2") && <>
+              <div>
+                <label htmlFor="dep-scale-r" className="mb-1 block text-t12 text-fg-muted">Scale out at R<FromDefaults on={marked("exitScaleR", exitScaleR)} /></label>
+                <input id="dep-scale-r" type="number" step="0.1" min={0} placeholder="off" className="w-full rounded border border-border bg-surface-2 px-2 py-1.5 text-t13" value={exitScaleR} onChange={(e) => setExitScaleR(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="dep-scale-pct" className="mb-1 block text-t12 text-fg-muted">Scale out share of lots %<FromDefaults on={marked("exitScalePct", exitScalePct)} /></label>
+                <input id="dep-scale-pct" type="number" step="1" min={1} max={99} placeholder="off" className="w-full rounded border border-border bg-surface-2 px-2 py-1.5 text-t13" value={exitScalePct} onChange={(e) => setExitScalePct(e.target.value)} />
+              </div>
+            </>}
           </div>
         </div>
 

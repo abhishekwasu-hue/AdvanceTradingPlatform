@@ -70,6 +70,7 @@ const NO_SYMBOLS: readonly string[] = [];
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
+const NotMovingV2 = lazy(() => import("../risk/NotMovingV2"));
 // FNO-4: the ONE order ticket (PAPER), loaded only when Add is tapped on an F&O position.
 const OrderTicketV2 = lazy(() => import("../fno/OrderTicketV2"));
 // 8b-g: "Compare a change", loaded only when it is opened.
@@ -320,6 +321,8 @@ export default function PositionsV2(_props: PageProps = {}) {
 
       {/* AUD-T7 (flag cost_meter): what charges took from his own closed trades, this year and this month. */}
       {features.on("cost_meter") && signedIn && <CostMeterV2 />}
+      {/* M99 P7 (flag risk_options): his own "not moving" flag - information only, nothing is closed by it */}
+      {features.on("risk_options") && signedIn && <Suspense fallback={null}><NotMovingV2 refreshKey={list?.length ?? 0} /></Suspense>}
 
       {fnoOn && (
         <Suspense fallback={null}>

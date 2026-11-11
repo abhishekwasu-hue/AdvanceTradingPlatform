@@ -8,7 +8,7 @@ import { HelpPopover } from "../ui/HelpPopover";
 import { ResponsiveTable, type Column } from "../ui/ResponsiveTable";
 import { SubTabs } from "../ui/SubTabs";
 import { PnlV2, RV2 } from "./JournalPartsV2";
-import type { JournalStatsResponse, StatsGroup } from "./types";
+import type { JournalRiskMetrics, JournalStatsResponse, StatsGroup } from "./types";
 
 /**
  * M62 JN-3: the statistics of his own journal (the same filters as the list) - win rate, profit factor, expectancy,
@@ -56,6 +56,24 @@ export function StatsTilesV2({ t }: { t: StatsGroup }) {
   );
 }
 
+/** M99 P7 (flag risk_options): drawdown, streaks and the rule breaches counted - numbers only, nothing blocks. */
+export function RiskMetricsV2({ m }: { m: JournalRiskMetrics }) {
+  const now = m.streak_now.kind ? `${formatNumber(m.streak_now.length)} ${m.streak_now.kind === "win" ? "win" : "loss"}${m.streak_now.length === 1 ? "" : m.streak_now.kind === "win" ? "s" : "es"} in a row` : "–";
+  return (
+    <CardV2 title="Discipline" testId="journal-risk-metrics">
+      <TilesV2 columns={4}>
+        <TileV2 label="Max drawdown" hint="drawdown" value={m.max_drawdown > 0 ? `▼ ${formatINR(m.max_drawdown)}` : formatINR(0)}
+          tone={m.max_drawdown > 0 ? "down" : "neutral"} sub="largest fall from a high" testId="max-dd" />
+        <TileV2 label="Longest win run" value={formatNumber(m.longest_win_streak)} tone={m.longest_win_streak ? "up" : "neutral"} testId="win-run" />
+        <TileV2 label="Longest loss run" value={formatNumber(m.longest_loss_streak)} tone={m.longest_loss_streak ? "down" : "neutral"} sub={`now: ${now}`} testId="loss-run" />
+        <TileV2 label="Rule breaches" value={formatNumber(m.breaches.total)} tone={m.breaches.total ? "down" : "neutral"}
+          sub={`${formatNumber(m.breaches.loss_beyond_plan)} loss beyond the stop · ${formatNumber(m.breaches.no_named_setup)} no setup`} testId="breaches" />
+      </TilesV2>
+      <p className="mt-space-2 text-t12 text-fg-muted">{m.note}</p>
+    </CardV2>
+  );
+}
+
 export function JournalStatsV2({ state, onRetry }: { state: StatsState; onRetry: () => void }) {
   const [by, setBy] = useState<By>("setup");
   if (state.status === "loading") return <CardV2 title="Statistics" testId="journal-stats"><LoadingRowsV2 rows={4} /></CardV2>;
@@ -82,6 +100,7 @@ export function JournalStatsV2({ state, onRetry }: { state: StatsState; onRetry:
         badge={d.totals.outside_atp ? <span className={chipClass({ tone: "warn" })} data-outside-count>{formatNumber(d.totals.outside_atp)} outside ATP</span> : undefined}>
         {d.totals.trades === 0 ? <EmptyStateV2 text="No trades match these filters." /> : <StatsTilesV2 t={d.totals} />}
       </CardV2>
+      {d.risk_metrics && d.risk_metrics.closed > 0 && <RiskMetricsV2 m={d.risk_metrics} />}
       {d.totals.trades > 0 && (
         <CardV2 title="Breakdown" testId="journal-breakdown">
           <SubTabs label="Break down by" value={by} onChange={setBy} size="sm"

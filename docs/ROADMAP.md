@@ -69,6 +69,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | SCR-AUDIT | Audit of the 48 pre-built screens (owner 9 Nov, M93): definition vs code, run on real stored data through the production screener, every match checked independently, one result per screen with annotated charts | DECISIONS 9 Nov (M93) | one private report per screen with marked charts; findings listed; logic fixes as separate PRs; owner ✅ |
 | M94 | Intraday pack: 12 intraday scanners + 10 intraday strategy templates (setup scanner + trigger + stop + exits, PAPER path) + 3 optional risk tools (default OFF); India rules I1-I5 | DECISIONS 10 Nov (M94) | tests per scanner / template / risk tool; proof: library list (390 + desktop), one template page, one scanner run, one PAPER trade; owner ✅ |
 | M95 | Front door + link preview: link preview image and text (F1), login page as the front door (F2), read-only guest demo on EOD data (F3), video slot (F4), MR / HI / EN switch (F5), rules F6, marketing_site pages finished (F7) | owner 10 Nov | INBOX / DECISIONS 10 Nov (M95) |
+| LIVE-1 | One live switch: audit every PAPER / LIVE gate and fold them into the single `live_trading` flag; when ON every order path offers PAPER and LIVE, the user chooses | owner 11 Nov (binding) | DECISIONS 11 Nov |
 | M97 | Supply & Demand pack: zone detector (Z1), states (Z2), chart overlay (Z3), scanners (Z4), templates (Z5), style presets (Z6), Copilot facts (Z7) | owner 11 Nov | INBOX 11 Nov (M97) |
 | COP-2 | Copilot: stale answers leave the screen (A), Read chart for any symbol (B), headline trend = card trend (C), EOD timing audit (D) | owner 11 Nov | INBOX / DECISIONS 11 Nov |
 | M96 | Terminal option chain: audit (A1), banner + OI-difference table on top (L1), order from the OI-difference table (O1), trader analysis features (N1), tests (T1) | owner 11 Nov | INBOX 11 Nov (M96) |
@@ -309,6 +310,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M95 | merged (#983-#990); waits for deploy (migration a3c5e7f9b1d4) + guest-demo build on the server + flag decisions (guest_demo, marketing_site) + the owner's real WhatsApp preview screenshot + ✅ | proof ZIP sent 11 Nov; left before marketing_site ON: docs/design/M95_MARKETING_SITE_LEFT.md | DECISIONS 10 Nov (M95) |
 | COP-2 | merged (#993, #994); deploy 11081161 given, waits for deploy + owner ✅ | proof ZIP sent 11 Nov; D: no bug (10 Nov NSE holiday) | DECISIONS 11 Nov (COP-2) |
 | M96 | in progress (owner 11 Nov) | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
+| LIVE-1 | in progress (owner 11 Nov) | audit of all gates, then one PR | DECISIONS 11 Nov |
 | M97 | in progress (owner 11 Nov) | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |

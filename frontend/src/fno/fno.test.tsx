@@ -10,7 +10,6 @@ import { DEFAULT_COLUMNS, formatOiChangePct } from "../optionChain/model";
 import pageSource from "../optionChain/OptionChainPageV2.tsx?raw";
 import ladderSource from "../optionChain/ChainLadderV2.tsx?raw";
 import type { FnoContract, HeldLeg, OrderPreview, OrderResult } from "./api";
-import apiSource from "./api.ts?raw";
 import { BasketStore, MAX_LEGS } from "./basket";
 import {
   ActionSheetBody, alertCondition, alertSave, basketAdd, chartLink, watchlistAdd, type ActionTarget, type BodyHandlers, type Panel,
@@ -238,13 +237,13 @@ describe("FNO-1 order ticket", () => {
     expect(draftProblems(newDraft("BUY", mis))).toEqual([]);
   });
 
-  it("the request carries lots, the order type and the prices it needs - and no mode (PAPER only)", () => {
+  it("the request carries lots, the order type and the prices it needs - and the mode, PAPER unless he picks LIVE (M96-Q1)", () => {
     const ask = askOf(TT, { ...newDraft("SELL", { product: "MIS" }), lots: 2, orderType: "LIMIT", price: "251", trigger: "249", stopLoss: "300" }, "ref-12345678");
     expect(ask).toEqual({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 2, order_type: "LIMIT",
-      product: "MIS", price: 251, trigger_price: null, stop_loss: 300, target: null, chain_ltp: 250, client_ref: "ref-12345678" });   // M96: no target entered = none
-    expect(ask).not.toHaveProperty("mode");
-    expect(apiSource).not.toMatch(/LIVE/);
-    expect(apiSource.slice(apiSource.indexOf("export interface OrderAsk"), apiSource.indexOf("export interface MoneyLine"))).not.toContain("mode");
+      product: "MIS", price: 251, trigger_price: null, stop_loss: 300, target: null, chain_ltp: 250, client_ref: "ref-12345678",   // M96: no target entered = none
+      mode: "PAPER" });
+    // M96-Q1 (owner, changed): the ticket has a LIVE choice now; replaced "no mode / no LIVE" - nothing pre-selects LIVE.
+    expect(newDraft("BUY", { lots: 1, product: "MIS", orderType: "MARKET" }).mode).toBe("PAPER");
   });
 
   it("the confirm step shows the margin required and the max loss BEFORE placing; the first step cannot place", () => {
@@ -302,7 +301,7 @@ describe("FNO-1 order ticket", () => {
     const chip = renderToStaticMarkup(<PracticeFrame />);
     expect(text(chip).trim()).toBe("PAPER");
     expect(chip).toContain('title="Practice mode: no real order is sent and no money moves."');
-    expect(ticketSource).toContain("<PracticeFrame />");
+    expect(ticketSource).toContain("<TicketModeBadge mode={t.draft.mode} />");      // M96-Q1: PAPER unless he picks LIVE
     expect(ticketSource).not.toContain("Place PAPER order");
     expect(ticketSource).toContain("fixed inset-x-0 bottom-0");                 // a bottom sheet on a phone
     expect(ticketSource).toContain("md:right-0");                                // a side panel from md

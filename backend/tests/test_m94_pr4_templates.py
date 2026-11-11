@@ -93,12 +93,14 @@ def slot(df, day, k, minutes=5):
 # ================================================================================= the schema and the library
 def test_family_h_is_a_schema_change_and_families_a_to_g_are_unchanged():
     for t in library.templates():
+        if t.family == "M":                       # M99 P6 (tests/test_m99_p6_pa.py)
+            continue
         if t.family == "H":
             assert t.id in FAMILY_H and t.reference_values and t.style == "Intraday (session-based)"
         else:
             assert t.family in "ABCDEFG" and t.id[0] in "ABCDEFG" and t.reference_values is False, t.id
-    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack"}
-    assert {k: v for k, v in FAMILY_NAMES.items() if k != "H"} == {
+    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack", "M": "pa_pack"}   # M99 P6: M
+    assert {k: v for k, v in FAMILY_NAMES.items() if k not in ("H", "M")} == {
         "A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
         "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves"}
     data = T["H6"].model_dump(by_alias=True)

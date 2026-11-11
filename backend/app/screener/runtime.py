@@ -54,7 +54,15 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import BAR_CLASS_KWARGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import (
+    BAR_CLASS_KWARGS,
+    FUNCTIONS,
+    FUNDAMENTALS_FLAG,
+    PA_SETTINGS,
+    PATTERN_SHAPE_KWARGS,
+    PREOPEN_FUNCTIONS,
+    RETEST_WAVE_OF,
+)
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -581,6 +589,9 @@ class _Eval:
             "ClosePosition": lambda: _bar_class(f, name, 0, {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
             "BarDirection": lambda: _bar_class(f, name, 0, {}),
             "VolumeClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            # M99 P6 (flag pa_pack): the price-action pattern pack (app/price_action/pa_pack.py), settings as named arguments
+            "PricePattern": lambda: _pa(f, _text(0, "fault"), _text(1, "any"), {k: kw(k) for k in PA_SETTINGS}),
+            "PricePatternLevel": lambda: _pa(f, _text(0, "neckline"), None, {k: kw(k) for k in PA_SETTINGS}),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
@@ -1441,6 +1452,24 @@ def _bar_class(f: pd.DataFrame, fn: str, n_: int, given: dict[str, Any]) -> pd.S
     if fn == "BarDirection":
         return bc.bar_direction(f)
     return bc.volume_class(f, s)
+
+
+def _pa(f: pd.DataFrame, name: str, side: str | None, given: dict[str, Any]) -> pd.Series:
+    """M99 P6: one price pattern as a series - 1.0 where it holds, 0.0 where not, NaN where it cannot be read - or, with
+    `side` None, one of its levels (NaN where there is none). One evaluation per frame and settings (pa_pack.cached)."""
+    from app.price_action import pa_pack
+    try:
+        s = pa_pack.settings_from({k: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    r = pa_pack.cached(f, s)
+    if side is None:
+        if name not in pa_pack.LEVELS:
+            raise ScreenRuntimeError(f"PricePatternLevel: unknown level {name!r}")
+        return pd.Series(r.level(name), index=f.index, dtype=float)
+    if name not in pa_pack.NAMES or side not in pa_pack.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"PricePattern: unknown pattern {name!r} or side {side!r}")
+    return pd.Series(r.value(name, side), index=f.index, dtype=float)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

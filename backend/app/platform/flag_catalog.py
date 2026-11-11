@@ -114,6 +114,9 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_breakouts_bk4": FlagInfo("Breakout screens, set 3", "screens", "screens", ("screener_breakouts",), "", "ready"),
     "intraday_pack": FlagInfo("Intraday pack: session high / low / volume so far, the pre-open levels and flag settings in screens", "screens",
                               "builder functions", ("screener_breakouts",), "", "unfinished"),
+    "pa_pack": FlagInfo("Price patterns pack: swing extremes, missing link, pullback after an acceleration, trigger candles, candles,"
+                        " head and shoulders, cup and handle in screens, on the chart and in templates",
+                        "screens", "screens, a chart layer and templates", ("screener_v2",), "", "ready"),
     "m99_primitives": FlagInfo("Bar classes: the size of each bar's range and volume against the bars before, and where it closed",
                                "screens", "builder functions", ("screener_v2",), "", "unfinished"),
     "screener_breakouts_fitness": FlagInfo("What followed past breakouts", "screens", "a history box", ("screener_breakouts",), "shared daily data", "ready"),
@@ -316,6 +319,7 @@ FLAG_GROUP: dict[str, str] = {
     "screener_breakouts_bk4": "screen_library",
     "intraday_pack": "screen_library",
     "m99_primitives": "screen_library",
+    "pa_pack": "screen_library",
     "screener_breakouts_fitness": "screen_library",
     "screener_legends": "screen_library",
     "screener_legends_lg2": "screen_library",

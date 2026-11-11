@@ -198,7 +198,14 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     if (!hasIntraday) { setIntraday(null); return; }
     screenerApi.intraday().then((l) => setIntraday(isIntradayLibrary(l) ? l : null)).catch(() => setIntraday(null));
   }, [hasIntraday]);
-  const intradayMap = useMemo(() => scannersById(intraday), [intraday]);
+  // M99 P6: the "Price patterns" scanners' settings, the same shape as the intraday ones (one settings table on the cards)
+  const [paLib, setPaLib] = useState<IntradayLibrary | null>(null);
+  const hasPa = !!taxonomy?.screens.some((s) => s.source === "pa");
+  useEffect(() => {
+    if (!hasPa) { setPaLib(null); return; }
+    screenerApi.pa().then((l) => setPaLib(isIntradayLibrary(l) ? l : null)).catch(() => setPaLib(null));
+  }, [hasPa]);
+  const intradayMap = useMemo(() => ({ ...scannersById(intraday), ...scannersById(paLib) }), [intraday, paLib]);
 
   useEffect(() => {
     if (!universeV2) return undefined;
@@ -253,7 +260,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
-    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE))), [registry, builderU2]);
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE || s.source === "pa"))), [registry, builderU2]);
   // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
   const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
   // M49 U6: "Ready scan" leads with the library's other screens this page can open (the templates are the starters, so

@@ -501,6 +501,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("GET", "/api/charts/layers/price-patterns"): "member",     # M99 P6: the user's own bars (store first, then the user's broker), read-only
     # M88-R: the shared daily market report - one stored report of the shared EOD files, the same for every member (no
     # tenant data, no AI call on read); its admin card is SUPER_ADMIN with two-factor
     ("GET", "/api/daily-report/latest"): "member: M88-R - the one shared stored report built from the shared EOD files; no organisation data",
@@ -934,6 +935,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/library/confluence"): "trader",
     ("POST", "/api/screener/library/watch-trigger"): "trader",
     ("GET", "/api/screener/intraday"): "member",
+    ("GET", "/api/screener/pa"): "member",
     ("GET", "/api/screener/legends"): "member",
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",

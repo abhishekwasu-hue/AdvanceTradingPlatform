@@ -1,0 +1,86 @@
+{
+  "schema": "atp.template/1",
+  "id": "M4",
+  "version": 1,
+  "name": "Head and shoulders neckline break",
+  "family": "M",
+  "idea": "After a fall, three swing lows with the middle one lowest and the shoulders about level; a signal on the first close over the line of the two highs between them (the inverse pattern). The mirror after a rise: the head and shoulders under its neckline. Wrong beyond the right shoulder.",
+  "difficulty": "Intermediate",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "15m",
+    "30m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Swing size (the swing degree read)",
+      "help": "Which swings are read: 0 is the smallest, 3 the largest. Larger swings need more history. Reference: 0.",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range the tolerances are measured in",
+      "help": "Bars for the average true range the tolerances are measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "shoulder_tol",
+      "label": "Head and shoulders: shoulders within this share of the head's height",
+      "help": "The two shoulders within this share of the head's height of each other. Reference: 0.5.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 2.0,
+      "step": 0.05
+    },
+    {
+      "key": "expiry",
+      "label": "Bars a pattern stays watched",
+      "help": "Bars a pattern stays watched (after its pullback, its second low or its second rim). Reference: 30.",
+      "type": "int",
+      "default": 30,
+      "min": 1,
+      "max": 1000,
+      "step": 1
+    }
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PricePattern(\"head_shoulders\", \"up\", degree=$degree, atr_n=$atr_n, shoulder_tol=$shoulder_tol, expiry=$expiry)",
+    "short": "PricePattern(\"head_shoulders\", \"down\", degree=$degree, atr_n=$atr_n, shoulder_tol=$shoulder_tol, expiry=$expiry)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PricePatternLevel(\"hs_void\", degree=$degree, atr_n=$atr_n, shoulder_tol=$shoulder_tol, expiry=$expiry)",
+    "short": "PricePatternLevel(\"hs_void\", degree=$degree, atr_n=$atr_n, shoulder_tol=$shoulder_tol, expiry=$expiry)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "inverse_hs_neckline_broken"
+      }
+    ],
+    "short": [
+      {
+        "token": "hs_neckline_broken"
+      }
+    ]
+  }
+}

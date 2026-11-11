@@ -37,6 +37,10 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M99 P6: the price patterns (swing extremes, missing link, pullback after an acceleration, trigger candles, candles, head and
+  // shoulders, cup and handle) with a Why? for each mark.
+  { id: "price_patterns", group: "layers", label: "Price patterns", note: "Patterns of the swings and bars, with a Why? for each mark.",
+    flag: "pa_pack", keywords: "price patterns fault double trap climax missing link pullback trigger inside outside hammer two-bar head shoulders cup handle" },
 ];
 
 /** What the menu reads and changes. */

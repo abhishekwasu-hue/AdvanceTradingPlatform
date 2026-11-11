@@ -66,7 +66,14 @@ def library_source(screen_id: str) -> Tuple[Optional[Tuple[str, str, Dict[str, A
         if scanner is None:
             return None, "no such intraday scanner"
         return (scanner.text, scanner.base_tf, scanner.defaults(), scanner.name), None
-    return None, "only Legends, breakout and intraday screens are opened from the server (the starters are built in the page)"
+    if screen_id.startswith("pa."):
+        from app.screener import pa_scanners as pas
+        found = pas.scanner(screen_id)
+        if found is None:
+            return None, "no such price pattern scanner"
+        return (found.text, found.base_tf, found.defaults(), found.name), None          # M99 P6
+    return None, ("only Legends, breakout, intraday and price pattern screens are opened from the server (the starters are built"
+                  " in the page)")
 
 
 __all__ = ["FLAG", "inline", "split", "library_source"]

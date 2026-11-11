@@ -604,6 +604,18 @@ def test_m99_bar_class_functions():
     assert _ev("VolumeClass(4)", d).iloc[-1] == "HIGH" and _ev("VolumeClass(4, high=1.6, ultra=2)", d).iloc[-1] == "AVERAGE"
 
 
+def test_m99_p6_price_pattern_functions():
+    """M99 P6 PricePattern / PricePatternLevel (the full fixtures: tests/test_m99_p6_pa.py) - each reads the bars into a
+    series of the frame's length; a level is missing where no pattern is watched."""
+    from app.quality.lookahead import synthetic_bars
+    f = synthetic_bars(400, seed=4)
+    d = SymbolData("S", {"15m": f})
+    for text in ('PricePattern("fault")', 'PricePattern("hammer", "up", after_move=FALSE)', 'PricePatternLevel("neckline")'):
+        got = _ev(text, d, base_tf="15m")
+        assert len(got) == len(f) and np.isfinite(got.to_numpy(float)).any(), text
+    assert np.nansum(_ev('PricePattern("fault")', d, base_tf="15m").to_numpy(float)) > 0
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

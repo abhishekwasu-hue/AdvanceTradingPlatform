@@ -143,6 +143,8 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_breakouts": _ready(),
     "screener_breakouts_bk3": _ready(),
     "screener_breakouts_bk4": _ready(),
+    "pa_pack": _ready("The price patterns, the Price patterns screens, the chart layer with Why? and the M templates",
+                      "Screener > Price patterns; Charts > Layers > Price patterns; Strategy templates > Price patterns"),
     "m99_primitives": _not_built("Only the bar classes are built; the other primitives, scanners and templates come next", "M99"),
     "intraday_pack": _not_built("Only the screen functions are built; the intraday scanners, templates and risk tools come next", "M94"),
     "screener_breakouts_fitness": _ready(),

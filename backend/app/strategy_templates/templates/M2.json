@@ -1,0 +1,121 @@
+{
+  "schema": "atp.template/1",
+  "id": "M2",
+  "version": 1,
+  "name": "Pullback after an acceleration",
+  "family": "M",
+  "idea": "A run of at least the set size breaks the last swing high, pauses with a shallow pullback that holds the level and goes on beyond its extreme; a signal when price comes back to the area between the level and the pause and turns up out of it. The mirror below a swing low. Wrong beyond the level.",
+  "difficulty": "Intermediate",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "15m",
+    "30m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Swing size (the swing degree read)",
+      "help": "Which swings are read: 0 is the smallest, 3 the largest. Larger swings need more history. Reference: 0.",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range the tolerances are measured in",
+      "help": "Bars for the average true range the tolerances are measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "acc_k",
+      "label": "Baston: acceleration at least this many average true ranges",
+      "help": "The acceleration that breaks the level: at least this many average true ranges. Reference: 2.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 50.0,
+      "step": 0.1
+    },
+    {
+      "key": "hook_max",
+      "label": "Baston: pullback at most this share of the acceleration",
+      "help": "Its pullback: at most this share of the acceleration. Reference: 0.333.",
+      "type": "float",
+      "default": 0.333,
+      "min": 0.05,
+      "max": 1.0,
+      "step": 0.001
+    },
+    {
+      "key": "pen_tol",
+      "label": "Baston: tolerated penetration of the level, in average true ranges",
+      "help": "How far beyond the broken level the pullback may go, in average true ranges. Reference: 0.1.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "entry",
+      "label": "Baston: signal on the turn out of the area, or on the touch",
+      "help": "turn: the close back out of the area after price came into it; touch: price reaching the area.",
+      "type": "enum",
+      "default": "turn",
+      "choices": [
+        "turn",
+        "touch"
+      ],
+      "choice_labels": [
+        "The close back out of the area",
+        "The touch of the area"
+      ]
+    },
+    {
+      "key": "expiry",
+      "label": "Bars a pattern stays watched",
+      "help": "Bars a pattern stays watched (after its pullback, its second low or its second rim). Reference: 30.",
+      "type": "int",
+      "default": 30,
+      "min": 1,
+      "max": 1000,
+      "step": 1
+    }
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PricePattern(\"baston\", \"up\", degree=$degree, atr_n=$atr_n, acc_k=$acc_k, hook_max=$hook_max, pen_tol=$pen_tol, entry=$entry, expiry=$expiry)",
+    "short": "PricePattern(\"baston\", \"down\", degree=$degree, atr_n=$atr_n, acc_k=$acc_k, hook_max=$hook_max, pen_tol=$pen_tol, entry=$entry, expiry=$expiry)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PricePatternLevel(\"baston_void\", degree=$degree, atr_n=$atr_n, acc_k=$acc_k, hook_max=$hook_max, pen_tol=$pen_tol, entry=$entry, expiry=$expiry)",
+    "short": "PricePatternLevel(\"baston_void\", degree=$degree, atr_n=$atr_n, acc_k=$acc_k, hook_max=$hook_max, pen_tol=$pen_tol, entry=$entry, expiry=$expiry)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "run_pullback_turned_up"
+      }
+    ],
+    "short": [
+      {
+        "token": "run_pullback_turned_down"
+      }
+    ]
+  }
+}

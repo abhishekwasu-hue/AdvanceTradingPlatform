@@ -379,6 +379,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and
     # alert rules using them pause. Signals only - places no orders.
     "m99_primitives": "Bar classes: relative range, spread class, close position, bar direction and volume class in screens (signals only, places no orders)",
+    # M99 P6: the price-action pattern pack (app/price_action/pa_pack.py) - the ScreenQL functions PricePattern(...) /
+    # PricePatternLevel(...) (the four extreme types, missing link, pullback after an acceleration, trigger candle at a
+    # level, inside / outside bar, hammer, two-bar reversal, head and shoulders, cup and handle), the "Price patterns"
+    # library screens, the chart layer with "Why?", the optional indicator evidence rows (off) and the M templates. OFF:
+    # hidden and refused, alert rules pause. Signals only - places no orders.
+    "pa_pack": "Price patterns pack: swing extremes (fault, double, trap, climax), missing link, pullback after an acceleration, trigger candles, candles, head and shoulders, cup and handle in screens, on the chart and in templates (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
     # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint
@@ -396,10 +402,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
-    # M99 B1 (owner order M99): the shared primitives the M99 packs build on - bar classifier, Fibonacci, clusters and
-    # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
-    # functions are hidden and refused.
-    "m99_primitives": "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,

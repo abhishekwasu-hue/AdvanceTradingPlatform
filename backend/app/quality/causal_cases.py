@@ -155,6 +155,14 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ClosePosition": ["ClosePosition()", "ClosePosition(part=0.25)", "ClosePosition()@1h"],
     "BarDirection": ["BarDirection()", "BarDirection()@1h"],
     "VolumeClass": ["VolumeClass(20)", "VolumeClass(10, low=0.9, high=1.1, ultra=1.5)", "VolumeClass(5)@1h"],
+    # M99 P6 (flag pa_pack): the price-action pattern pack (app/price_action/pa_pack.py) - confirmed swings, the watched
+    # patterns' levels and the candles are all read from closed bars only
+    "PricePattern": ['PricePattern("fault")', 'PricePattern("climax", "up", degree=1)', 'PricePattern("missing_link")',
+                     'PricePattern("baston", entry="touch")', 'PricePattern("trigger_candle", trigger="tail")',
+                     'PricePattern("head_shoulders")', 'PricePattern("cup_handle", rim_tol=0.3)', 'PricePattern("hammer")@1h',
+                     'PricePattern("two_bar_reversal", tall_k=1)'],
+    "PricePatternLevel": ['PricePatternLevel("neckline")', 'PricePatternLevel("cup_rim")', 'PricePatternLevel("baston_zone_high")',
+                          'PricePatternLevel("trigger_level")@1h'],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],

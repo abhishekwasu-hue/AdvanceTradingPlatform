@@ -43,6 +43,7 @@ import { useFullscreen } from "./useFullscreen";
 import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
 import { ReadChartPanel, useReadChart } from "./ReadChartV2";
+import { DEFAULT_PA_OPTIONS, PA_LAYER_ID, PaBar, usePaLayer, type PaOptions } from "./paLayer";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
@@ -174,6 +175,14 @@ export default function ChartsPageV2(_props: PageProps) {
   const [tplShown, setTplShown] = useState(false);
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
+  // M99 P6: the price pattern readings (flag pa_pack) - read again when a new bar closes; each mark with its "Why?" below
+  const [paOptions, setPaOptions] = useState<PaOptions>(DEFAULT_PA_OPTIONS);
+  const paOn = view.layers.includes(PA_LAYER_ID) && features.on("pa_pack") && tab === "chart" && !hubView;
+  const paLayer = usePaLayer({ symbol, exchange, timeframe, candles: data.candles, on: paOn, options: paOptions });
+  const chartMarkers = useMemo(() => {
+    const extra = [...tpl.markers, ...paLayer.markers];
+    return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
+  }, [screen.markers, tpl.markers, paLayer.markers]);
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -336,7 +345,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
-                markers={tpl.markers.length ? [...screen.markers, ...tpl.markers].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers}
+                markers={chartMarkers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
@@ -346,6 +355,7 @@ export default function ChartsPageV2(_props: PageProps) {
             {tplAsk && tplShown && !fs.on && (
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
+            {paOn && !fs.on && <PaBar state={paLayer} options={paOptions} onChange={setPaOptions} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

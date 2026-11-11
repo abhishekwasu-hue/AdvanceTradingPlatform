@@ -303,7 +303,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | STRAT-X | not started (owner 30 Oct: "build what you think is right") | Built-in min R:R OFF, stop / target labelled suggested; 4 new templates (PDHL, 52WH, RS vs NIFTY, weekly + daily pullback) | claude/stratx-* |
 | SCR-AUDIT | waiting for owner (9 Nov) | report done: 48 screens on real data (17 OK, 13 problem, 9 bug, 5 data limit, 4 not run); private report + charts in trade-data review/atp_scanner_audit_2026-11-09; fixes wait for M93-Q1..Q3 | DECISIONS 9 Nov (M93) |
 | M94 | merged (#972-#982); deploy 4a6ff0e2 given, waits for deploy + flag decision + owner ✅ | intraday_pack OFF; proof ZIP sent 10 Nov | DECISIONS 10 Nov (M94) |
-| M95 | in progress (owner 10 Nov) | spec review against the code first (docs/design/M95_FRONT_DOOR.md), then one PR per part | DECISIONS 10 Nov (M95) |
+| M95 | merged (#983-#990); waits for deploy (migration a3c5e7f9b1d4) + guest-demo build on the server + flag decisions (guest_demo, marketing_site) + the owner's real WhatsApp preview screenshot + ✅ | proof ZIP sent 11 Nov; left before marketing_site ON: docs/design/M95_MARKETING_SITE_LEFT.md | DECISIONS 10 Nov (M95) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

@@ -386,7 +386,8 @@ describe("OC1 phone layout", () => {
   });
 
   it("UX3: the summary is two rows of two on a phone (the rest under More), never sideways; one row from md", () => {
-    const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} />);
+    const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} asOf="2026-10-27T05:00:00+00:00" />);
+    expect(text(html)).toContain("Data time 10:30 IST");
     // M96 L1: from md as many columns as fit the width (never a fixed four that cuts values in a narrow panel).
     expect(html).toMatch(/aria-label="Summary"[^>]*class="grid grid-cols-2[^"]*md:grid-cols-\[repeat\(auto-fill,minmax\(9rem,1fr\)\)\]"/);
     expect(html).not.toMatch(/data-summary[^>]*>[\s\S]{0,200}?class="[^"]*truncate/);
@@ -396,6 +397,10 @@ describe("OC1 phone layout", () => {
     for (const key of ["futures", "atm-iv", "dte", "oi-walls", "as-of"]) expect(html).toMatch(new RegExp(`data-summary="${key}"[^>]*class="[^"]*hidden md:block`));
     expect(html).toMatch(/data-summary="futures"[^>]*md:order-2/);                       // the server's order from md
     expect(html).toContain("More: futures, IV, expiry, OI walls, data time");
+    // M96 L1: on a Terminal phone the figures its context bar shows are left out, and the rest all show (no More).
+    const omitted = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} asOf={null} omit={["spot", "pcr", "atm", "dte"]} />);
+    expect([...omitted.matchAll(/data-summary="([a-z-]+)"/g)].map((m) => m[1])).toEqual(["futures", "max-pain", "atm-iv", "oi-walls", "as-of"]);
+    expect(omitted).not.toMatch(/hidden md:block|data-summary-more/);
     expect(stripSource).toContain("<TermHint term={c.term} floating");      // a hint inside the strip is not cut off
   });
 });

@@ -63,7 +63,7 @@ function MiniGauge({ label, value, max }: { label: string; value: number | null 
  * does the chain's own spot (or the last close) stand.
  */
 export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null, prevClose: number | null = null,
-  asOf: string | null = null): Card[] {
+  asOf?: string | null): Card[] {
   const future = s?.futures ?? null;
   const live = spot && spot.source !== "chain" ? spot : null;
   // UI-28 U7.1: the spot's signed change and % against the previous close (the number on screen minus that close).
@@ -93,7 +93,9 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
     { key: "oi-walls", label: "OI walls", value: s?.max_put_oi_strike == null && s?.max_call_oi_strike == null ? "–"
       : `${formatStrike(s?.max_put_oi_strike)} / ${formatStrike(s?.max_call_oi_strike)}`, caption: "put / call" },
     // M96 L1: the time of the figures on screen (the chain's capture time; the last close while the market is closed).
-    { key: "as-of", label: "Data time", value: asOf ? formatTimeIST(asOf) : "–", caption: asOf ? formatDateIST(asOf).replace(/ \d{4}$/, "") : undefined },
+    // Only where the caller offers it (the F&O desk's compact row does not).
+    ...(asOf === undefined ? [] : [{ key: "as-of", label: "Data time", value: asOf ? formatTimeIST(asOf) : "–",
+      caption: asOf ? formatDateIST(asOf).replace(/ \d{4}$/, "") : undefined }]),
   ];
 }
 
@@ -104,7 +106,7 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 break-words rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf = null, omit }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
   /** TERM-2: the same figures as one compact row (the Terminal's chain panel), so the chain stays in view. */
   dense?: boolean;

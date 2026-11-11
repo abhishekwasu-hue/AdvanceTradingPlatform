@@ -404,6 +404,7 @@ FINISH: Dict[str, str] = {
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",
     "term_roll": "TERM-2 R1", "term_whatif": "TERM-2 R2", "term_strike_area": "TERM-2 R3", "term_margin_pair": "TERM-2 R4",
     "trade_warnings": "M76 (MP-1 .. MP-15)",
+    "m99_primitives": "M99 (B1 primitives, then the packs that use them)",
     "intraday_pack": "M94 (PR-2 .. PR-7: the scanners, templates, pages and risk tools)",
     "m99_primitives": "M99 (B1 .. B4: the remaining primitives, then the scanners and templates built on them)",
     "trade_engine": "M66 (owner only, after parity is green)", "copilot_workspace": "M75 W-2..W-6 (the Copilot trading workspace)", "trigger_plans": "M75 W-8..W-9 (trigger plans; method conditions in W-9)", "broker_gtt": "TT-1 (the LIVE manual path records a filled GTT with its exits; M75Q-9)",

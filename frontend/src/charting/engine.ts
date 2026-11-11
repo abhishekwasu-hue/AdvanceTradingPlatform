@@ -37,8 +37,9 @@ export interface LayerSegment {
   t1: number; p1: number; t2: number; p2: number; color?: string; width?: number; style?: "solid" | "dashed" | "dotted"; label?: string;
   extend?: "right"; role?: BandRole;
 }
-/** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. */
-export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below" }
+/** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. M97 PR-4: `inside` - drawn only
+ * when its point is on the pane (a tapped zone's "Leg-out" of a candle left of the bars shown is not cut in half). */
+export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below"; inside?: boolean }
 /** A platform overlay (price-action levels, market-zone bands, option walls, trade markers...), computed server-side with an as-of time. */
 export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[] }
 

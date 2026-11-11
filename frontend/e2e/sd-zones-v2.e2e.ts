@@ -83,15 +83,17 @@ async function turnOn(page: Page) {
   await expect(page.getByTestId("sd-zones-bar")).toBeVisible();
 }
 
-/** Moves the pointer down the price pane (left of the price axis) at a few widths until a zone's tooltip opens. */
-async function hoverZone(page: Page) {
+/** Moves the pointer down the price pane (left of the price axis) at a few widths until the tooltip of a zone whose
+ * label holds `want` opens. */
+async function hoverZone(page: Page, want = "·") {
   const box = await page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first().boundingBox();
   if (!box) throw new Error("no chart");
   const plot = box.width - 90;                                   // the price axis takes the right edge
   for (const frac of [0.97, 0.9, 0.8]) {
     for (let y = box.y + 30; y < box.y + box.height * 0.8; y += 3) {
       await page.mouse.move(box.x + plot * frac, y);
-      if (await page.locator("[data-band-tip] [data-band-rows]").count()) return true;
+      const tip = page.locator("[data-band-tip]");
+      if (await tip.locator("[data-band-rows]").count() && (await tip.locator("p").first().textContent())?.includes(want)) return true;
     }
   }
   return false;
@@ -125,7 +127,7 @@ test.describe("M97 Supply & Demand zones layer", () => {
         await turnOn(page);
         await page.getByTestId("sd-zones-bar").getByRole("button", { name: "D", exact: true }).click();
         await page.waitForLoadState("networkidle");
-        await hoverZone(page);
+        await hoverZone(page, `· ${formation} · Fresh · 15m`);
         await page.waitForTimeout(150);
         await page.locator("[data-page='charts-v2']").screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css" });
       });

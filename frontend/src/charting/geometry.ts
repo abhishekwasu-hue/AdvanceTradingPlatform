@@ -428,6 +428,7 @@ export function labelShapes(labels: readonly LayerLabel[], c: Converters): Shape
   for (const l of labels) {
     const x = c.x(l.time), y = c.y(l.price);
     if (x == null || y == null || !l.text) continue;
+    if (l.inside && (x < 0 || x > c.width)) continue;
     const below = l.position === "below";
     out.push({ type: "text", x, y: below ? y + LABEL_GAP : y - LABEL_GAP, text: l.text, color: l.color ?? DEFAULT_COLOR, align: "center",
                baseline: below ? "top" : "bottom" });

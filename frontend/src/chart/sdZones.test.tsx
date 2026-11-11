@@ -5,7 +5,7 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { LABEL_PAD, bandLeft, bandShapes, segmentShapes, type Converters, type Shape } from "../charting/geometry";
+import { LABEL_PAD, bandLeft, bandShapes, labelShapes, segmentShapes, type Converters, type Shape } from "../charting/geometry";
 import { LightweightEngine } from "../charting/lightweight";
 import type { LayerPrimitive } from "../charting/primitives";
 import { BandTip } from "./ChartV2";
@@ -110,6 +110,9 @@ describe("the layer", () => {
     expect(sdFocusFor([z], { id: "other" })).toBeNull();
     expect(sdFocusFor([z], null)).toBeNull();
     expect(sdFocusLayer({ ...z, side: "supply" }).labels?.[0].position).toBe("above");
+    // a label whose candle is left of the bars shown is not drawn half-cut
+    expect(labelShapes(focus?.labels ?? [], pane()).map((t) => t.type === "text" && t.text)).toEqual(["Leg-in", "Base", "Leg-out"]);
+    expect(labelShapes(focus?.labels ?? [], { ...pane(), x: (t) => t - 1105 }).map((t) => t.type === "text" && t.text)).toEqual(["Leg-out"]);
     expect([SD_LAYER_ID, SD_FOCUS_ID]).toEqual(["sd_zones", "sd_zones_focus"]);
   });
 

@@ -6,7 +6,7 @@
  * Every number in a label comes from the anchors (prices, ratios), never from pixels.
  */
 import type { DrawingV1 } from "./drawings";
-import type { LayerBand, LayerData, LayerLabel, LayerSegment } from "./engine";
+import type { LayerBand, LayerData, LayerLabel, LayerMark, LayerSegment } from "./engine";
 import { formatNumber } from "../ui/format";
 
 /** Pane coordinates for one paint: `x` maps an anchor time (epoch seconds), `y` a price; null = cannot place it. */
@@ -22,6 +22,27 @@ export interface Converters {
   /** M78 (F1 / F2): how band labels are drawn - the chart's axis-label font size, the chip colour (the chart
    * background token) and the fallback ink (the chart text token). Left out: the 12 px default, no chip, band colour. */
   labelStyle?: BandLabelStyle;
+  /** M98 F1: the pane x span of the chart bars one candle of [t, end) covers (`barSpan`), from the left edge of the
+   * first bar to the right edge of the last (half a bar spacing each side). Left out: x(t) give or take 3 px. */
+  span?: (t: number, end: number) => { x1: number; x2: number } | null;
+  /** M98 F3: the visible candles' body rectangles in pane pixels - a time-anchored band's label keeps clear of them. */
+  bodies?: () => readonly Rect[];
+}
+
+/** M98 F1: which chart bars (first and last index into the ascending bar start times) a candle of [t, end) covers: the
+ * bars whose start lies in it - one bar on the same timeframe, every lower-timeframe bar inside a higher-timeframe
+ * candle. None (a lower-timeframe candle on a higher-timeframe chart, or a stamp inside a bar): the bar holding t, the
+ * last one starting at or before it. Null before the first bar. Pure. */
+export function barSpan(times: readonly number[], t: number, end: number): [number, number] | null {
+  const n = times.length;
+  if (!n || !Number.isFinite(t)) return null;
+  let lo = 0, hi = n;                                        // first index with times[i] >= t
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (times[mid] < t) lo = mid + 1; else hi = mid; }
+  const first = lo;
+  let last = first - 1;
+  while (last + 1 < n && times[last + 1] < end) last += 1;
+  if (last >= first) return [first, last];
+  return first > 0 ? [first - 1, first - 1] : null;           // the bar holding t (none before the first bar)
 }
 
 /** M78: a band label's look, all from the chart tokens (ChartCore passes them; the v1 chart keeps the defaults). */
@@ -33,7 +54,7 @@ export interface Rect { x: number; y: number; w: number; h: number }
 export type Dash = "solid" | "dashed" | "dotted";
 export type Shape =
   | { type: "segment"; x1: number; y1: number; x2: number; y2: number; color: string; width: number; dash: Dash }
-  | { type: "rect"; x: number; y: number; w: number; h: number; fill: string; stroke?: string }
+  | { type: "rect"; x: number; y: number; w: number; h: number; fill: string; stroke?: string; /** M98 F1: painted above the series */ top?: true }
   | { type: "polygon"; points: [number, number][]; fill: string }
   | { type: "text"; x: number; y: number; text: string; color: string; align: "left" | "right" | "center"; baseline: "top" | "middle" | "bottom";
       /** M78: painted above the series (a band label), in this font size. */ top?: true; size?: number }
@@ -296,7 +317,9 @@ export function labelInk(color: string, style: BandLabelStyle | undefined): stri
 export const chipHeight = (fontPx: number) => fontPx + 2 * CHIP_PAD_Y;
 
 /** `left` (M97 PR-4): a time-anchored band's left edge in pane pixels - its label is tried just inside that edge first. */
-export interface BandLabelItem { top: number; bottom: number; text: string; color: string; band?: BandRef; left?: number }
+export interface BandLabelItem { top: number; bottom: number; text: string; color: string; band?: BandRef; left?: number;
+  /** M98 F3: keep the chip off the candle bodies (`Converters.bodies`), inside the band first. */
+  clearOfCandles?: boolean }
 
 /** M75 W-1 (W3) + M78 (F1, F4): where each band's label goes, as a chip (a box the text's width plus padding) with
  * the text inside it. Tried in order at the left of the pane - inside the band (when the band is tall enough), on a
@@ -318,6 +341,12 @@ export function placeBandLabels(items: readonly BandLabelItem[], c: Converters):
   for (const it of items) {
     const w = Math.ceil(measure(it.text)) + 2 * CHIP_PAD_X;
     if (w + 2 * LABEL_PAD > c.width) continue;
+    const clear = it.clearOfCandles && c.bodies ? clearSpot(it, w, h, c, taken) : null;
+    if (clear) {
+      taken.push(clear);
+      out.push(...chipShapes(it, clear, h, fontPx, style));
+      continue;
+    }
     const ys: number[] = [];
     const shownTop = Math.max(it.top, 0);                                      // a band taller than the pane: its visible top
     if (it.bottom - shownTop >= h + 2 * 2) ys.push(shownTop + 2);              // inside, top-left
@@ -344,12 +373,39 @@ export function placeBandLabels(items: readonly BandLabelItem[], c: Converters):
     }
     if (!spot) continue;
     taken.push(spot);
-    const band = it.band ?? { low: NaN, high: NaN, label: it.text };
-    out.push({ type: "chip", ...spot, r: CHIP_RADIUS, fill: style?.chip ? withAlpha(style.chip, CHIP_ALPHA) : "", top: true, band },
-             { type: "text", x: spot.x + CHIP_PAD_X, y: spot.y + h / 2, text: it.text, color: labelInk(it.color, style), align: "left",
-               baseline: "middle", top: true, size: fontPx });
+    out.push(...chipShapes(it, spot, h, fontPx, style));
   }
   return out;
+}
+
+function chipShapes(it: BandLabelItem, spot: Rect, h: number, fontPx: number, style: BandLabelStyle | undefined): Shape[] {
+  const band = it.band ?? { low: NaN, high: NaN, label: it.text };
+  return [{ type: "chip", ...spot, r: CHIP_RADIUS, fill: style?.chip ? withAlpha(style.chip, CHIP_ALPHA) : "", top: true, band },
+          { type: "text", x: spot.x + CHIP_PAD_X, y: spot.y + h / 2, text: it.text, color: labelInk(it.color, style), align: "left",
+            baseline: "middle", top: true, size: fontPx }];
+}
+
+/** M98 F3: a time-anchored band's label spot clear of the candle bodies, the reserved boxes and the labels already
+ * placed - inside the band first (top, middle, bottom rows; from its left edge to the pane's right edge in small steps),
+ * then just above / below it. Null when every such spot touches a candle (the caller then uses the usual spots). */
+function clearSpot(it: BandLabelItem, w: number, h: number, c: Converters, taken: readonly Rect[]): Rect | null {
+  const top = Math.max(it.top, 0), bottom = Math.min(it.bottom, c.height);
+  const ys: number[] = [];
+  if (bottom - top >= h + 4) ys.push(top + 2, (top + bottom) / 2 - h / 2, bottom - 2 - h);
+  ys.push(it.top - 2 - h, it.bottom + 2);
+  const near = (b: Rect) => b.y < it.bottom + h + 4 && b.y + b.h > it.top - h - 4;
+  const blocks = [...taken, ...(c.bodies?.() ?? []).filter(near)];
+  const x0 = Math.max(LABEL_PAD, (it.left ?? 0) + LABEL_PAD);
+  const xMax = c.width - LABEL_PAD - w;
+  const step = Math.max(4, Math.round(w / 6));
+  for (const y of ys) {
+    if (y < 0 || y + h > c.height) continue;
+    for (let x = x0; x <= xMax + 0.5; x += step) {
+      const r = { x, y, w, h };
+      if (!blocks.some((b) => overlaps(r, b))) return r;
+    }
+  }
+  return null;
 }
 
 /** M78 (F3): the one text of an area band on every band layer (the Charts tab reading, the Copilot answer chart):
@@ -397,7 +453,7 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
       const band: BandRef = { low: Math.min(b.low, b.high), high: Math.max(b.low, b.high), label: b.label };
       if (b.id !== undefined) band.id = b.id;
       if (b.tip !== undefined) band.tip = b.tip;
-      labels.push({ top, bottom: top + height, text: b.label, color, band, ...(b.start !== undefined ? { left } : {}) });
+      labels.push({ top, bottom: top + height, text: b.label, color, band, ...(b.start !== undefined ? { left, clearOfCandles: true } : {}) });
     }
   }
   return [...out, ...placeBandLabels(labels, c)];
@@ -437,6 +493,39 @@ export function labelShapes(labels: readonly LayerLabel[], c: Converters): Shape
 }
 
 /** Everything a layer paints as one primitive: bands first (underneath), then segments, then labels on top. */
-export function layerShapes(data: Pick<LayerData, "bands" | "segments" | "labels">, c: Converters): Shape[] {
-  return [...bandShapes(data.bands ?? [], c), ...segmentShapes(data.segments ?? [], c), ...labelShapes(data.labels ?? [], c)];
+/** M98 F1: candle marks - per mark an outlined box around exactly the chart bars of its candle (`Converters.span`),
+ * from the candle's low to its high (a little padding), and its text centred above or below the box, painted above the
+ * series. A mark whose candle is not on the pane is left out. */
+export function markShapes(marks: readonly LayerMark[], c: Converters): Shape[] {
+  const out: Shape[] = [];
+  for (const m of marks) {
+    const yHigh = c.y(m.high), yLow = c.y(m.low);
+    if (yHigh == null || yLow == null) continue;
+    const span = c.span ? c.span(m.time, m.end ?? m.time + 1) : (() => { const x = c.x(m.time); return x == null ? null : { x1: x - 3, x2: x + 3 }; })();
+    if (!span || span.x2 < 0 || span.x1 > c.width) continue;
+    const color = m.color ?? DEFAULT_COLOR;
+    const top = Math.min(yHigh, yLow) - MARK_PAD, bottom = Math.max(yHigh, yLow) + MARK_PAD;
+    out.push({ type: "rect", x: span.x1, y: top, w: Math.max(2, span.x2 - span.x1), h: bottom - top, fill: withAlpha(color, 0.12), stroke: color });
+    if (m.text) {
+      // the name on a chip of the chart background, so it reads over neighbouring candles on a phone
+      const above = m.position === "above";
+      const size = c.labelStyle?.fontPx ?? BAND_LABEL_FONT_PX;
+      const h = chipHeight(size);
+      const w = Math.ceil((c.measure ?? ((t: string) => t.length * LABEL_CHAR_PX))(m.text)) + 2 * CHIP_PAD_X;
+      const cx = Math.min(Math.max((span.x1 + span.x2) / 2, w / 2), c.width - w / 2);
+      // the side asked for, else the other one when a reserved box (the view controls) or the pane's edge is in the way
+      const fits = (yy: number) => yy >= 0 && yy + h <= c.height && !(c.avoid ?? []).some((a) => overlaps({ x: cx - w / 2, y: yy, w, h }, a));
+      const ask = above ? top - 2 - h : bottom + 2, other = above ? bottom + 2 : top - 2 - h;
+      const y = fits(ask) || !fits(other) ? ask : other;
+      if (c.labelStyle?.chip) out.push({ type: "rect", x: cx - w / 2, y, w, h, fill: withAlpha(c.labelStyle.chip, CHIP_ALPHA), top: true });
+      out.push({ type: "text", x: cx, y: y + h / 2, text: m.text, color: labelInk(color, c.labelStyle), align: "center", baseline: "middle", top: true, size });
+    }
+  }
+  return out;
+}
+const MARK_PAD = 2;
+
+export function layerShapes(data: Pick<LayerData, "bands" | "segments" | "labels" | "marks">, c: Converters): Shape[] {
+  return [...bandShapes(data.bands ?? [], c), ...segmentShapes(data.segments ?? [], c), ...markShapes(data.marks ?? [], c),
+          ...labelShapes(data.labels ?? [], c)];
 }

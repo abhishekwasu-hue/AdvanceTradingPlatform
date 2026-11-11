@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -250,3 +251,60 @@ def test_input_checks(owner, lake):
     assert client.get(URL, params={"symbol": "NSE:SDTEST", "timeframes": "1d", "at": "2026-11-10T10:00:00"}, headers=headers).status_code == 422
     odd = client.get(URL, params={"symbol": "NSE:BAD|KEY", "timeframes": "1d"}, headers=headers).json()
     assert odd["timeframes"][0]["zones"] == [] and odd["timeframes"][0]["reason"] == S.NO_BARS
+
+
+# ------------------------------------------------------------------------------- M98 F1: the exact candles, end to end
+@pytest.mark.parametrize("formation", list(FORMATIONS))
+@pytest.mark.parametrize("tf, step", [("15m", pd.Timedelta(minutes=15)), ("1h", pd.Timedelta(hours=1)), ("1d", pd.Timedelta(days=1))])
+def test_leg_in_base_and_leg_out_times_are_the_detector_bars_own_start_times(formation, tf, step):
+    """The detector's bar numbers -> the layer's times: each candle's `time` is the start of exactly that bar (the
+    chart stamps its candles by their start) and `end` the start of the next bar of that timeframe."""
+    df = _frame(FORMATIONS[formation])
+    df.index = pd.date_range("2026-03-02 03:45", periods=len(df), freq=step, tz="UTC")
+    (z,) = sd.detect(df)
+    (row,) = S.zone_rows(df, tf)["zones"]
+    start = [int(t.timestamp()) for t in df.index]
+    assert row["leg_in"]["time"] == start[z.leg_in]
+    assert row["base"]["times"] == start[z.base_start:z.base_end + 1] == [b["time"] for b in row["base"]["bars"]]
+    assert row["leg_out"]["time"] == start[z.formed] == row["formed"]
+    assert row["base_start"] == start[z.base_start] and row["base_end"] == start[z.base_end]
+    for c, i in [(row["leg_in"], z.leg_in), *zip(row["base"]["bars"], range(z.base_start, z.base_end + 1)), (row["leg_out"], z.formed)]:
+        assert c["end"] - c["time"] == int(step.total_seconds())
+        assert (c["high"], c["low"]) == (pytest.approx(df["high"].iloc[i]), pytest.approx(df["low"].iloc[i]))
+    # the bars named: leg-in = the strong candle just before the base, leg-out = the strong candle just after it
+    assert z.leg_in + 1 == z.base_start and z.base_end + 1 == z.formed
+
+
+def test_a_monthly_candle_spans_its_calendar_month_in_india():
+    nums = {"range": [1.0], "body_pct": [50.0], "avg": [1.0], "ref": [1.0]}
+    frame = pd.DataFrame({"high": [2.0], "low": [1.0]})
+    times = pd.DatetimeIndex([pd.Timestamp("2026-09-30T18:30:00Z")])                  # 1 Oct 2026 00:00 IST
+    c = S._candle(frame, {k: np.array(v) for k, v in nums.items()}, times, 0, tf="1M")
+    assert c["end"] == int(pd.Timestamp("2026-10-31T18:30:00Z").timestamp())          # 1 Nov 2026 00:00 IST
+
+
+# ------------------------------------------------------------------- M98 T1: higher-timeframe zones on closed bars only
+def test_a_higher_timeframe_zone_on_a_lower_chart_waits_for_its_own_leg_out_to_close(owner, monkeypatch):
+    """A 15m chart with 1H zones added: the 1H zone exists only once its 1H leg-out bar has closed - at any time inside
+    that hour the 1H rows have no zone (and no bar of it), while the 15m rows are read up to the same time."""
+    headers, _ = owner
+    hour = _frame(FORMATIONS["DBR"]).set_axis(pd.date_range("2026-03-02 03:45", periods=len(_frame(FORMATIONS["DBR"])), freq="1h", tz="UTC"))
+    quarter = _frame(FORMATIONS["RBD"]).set_axis(pd.date_range("2026-03-02 03:45", periods=len(_frame(FORMATIONS["RBD"])), freq="15min", tz="UTC"))
+    frames = {"1h": (hour, pd.Timedelta(hours=1)), "15m": (quarter, pd.Timedelta(minutes=15))}
+
+    async def fake_load(session, key, tf, start, end, max_bars=None, private=None, provisional=False):
+        df, step = frames[tf]
+        out = _loader_frame(df, step)
+        return out[pd.to_datetime(out["bar_end"], utc=True) <= pd.Timestamp(end)].reset_index(drop=True), f"lake:{tf}"
+    monkeypatch.setattr(L, "load_frame", fake_load)
+    leg_out_start = hour.index[-1]
+    for minutes in (0, 15, 45, 59):                     # inside the 1H leg-out bar: not closed yet
+        at = (leg_out_start + pd.Timedelta(minutes=minutes)).isoformat()
+        got = client.get(URL, params={"symbol": "NSE:SDTEST", "timeframes": "15m,1h", "at": at}, headers=headers).json()
+        one_h = next(t for t in got["timeframes"] if t["timeframe"] == "1h")
+        assert one_h["zones"] == [] and one_h["bars"] == len(hour) - 1
+        assert pd.Timestamp(one_h["as_of_bar"], unit="s", tz="UTC") + pd.Timedelta(hours=1) <= pd.Timestamp(at)
+    closed = (leg_out_start + pd.Timedelta(hours=1)).isoformat()
+    got = client.get(URL, params={"symbol": "NSE:SDTEST", "timeframes": "15m,1h", "at": closed}, headers=headers).json()
+    one_h = next(t for t in got["timeframes"] if t["timeframe"] == "1h")
+    assert [z["formation"] for z in one_h["zones"]] == ["DBR"]

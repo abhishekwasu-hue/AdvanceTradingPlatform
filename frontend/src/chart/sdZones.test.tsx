@@ -5,14 +5,15 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { LABEL_PAD, bandLeft, bandShapes, labelShapes, segmentShapes, type Converters, type Shape } from "../charting/geometry";
+import { LABEL_PAD, bandLeft, bandShapes, barSpan, markShapes, overlaps, placeBandLabels, segmentShapes, type Converters, type Rect, type Shape } from "../charting/geometry";
 import { LightweightEngine } from "../charting/lightweight";
 import type { LayerPrimitive } from "../charting/primitives";
-import { BandTip } from "./ChartV2";
+import { BandSheet, BandTip } from "./ChartV2";
+import proof from "../../e2e/fixtures/sd-zones-proof.json";
 import { MENU_ITEMS } from "./indicatorsModel";
 import { offeredTimeframes } from "./chartsPage";
 import {
-  SD_FOCUS_ID, SD_LAYER_ID, sdFocusFor, sdFocusLayer, sdNote, sdTimeframesFor, sdTipRows, shownSdTimeframes, toSdLayer, toggleSdTimeframe,
+  SD_FOCUS_ID, SD_LAYER_ID, SD_TF_OPACITY, sdFocusFor, sdFocusLayer, sdNote, sdTimeframesFor, sdTipRows, shownSdTimeframes, toSdLayer, toggleSdTimeframe,
   type SdZone, type SdZonesResponse,
 } from "./sdZones";
 import { DEFAULT_SD_OVERLAY } from "./sdStyles";
@@ -24,7 +25,7 @@ const pane = (width = 400, height = 300): Converters => ({ x: (t) => t - 1000, y
 const rects = (list: Shape[]) => list.filter((s): s is Extract<Shape, { type: "rect" }> => s.type === "rect");
 const chips = (list: Shape[]) => list.filter((s): s is Extract<Shape, { type: "chip" }> => s.type === "chip");
 
-const candle = (time: number, low: number, high: number) => ({ time, low, high, range: high - low, body_pct: 80, mult: 1.8 });
+const candle = (time: number, low: number, high: number) => ({ time, end: time + 10, low, high, range: high - low, body_pct: 80, mult: 1.8 });
 const zone = (over: Partial<SdZone> = {}): SdZone => ({
   id: "sd-15m-abc", timeframe: "15m", side: "demand", formation: "DBR", state: "fresh", tests: 0, proximal: 130, distal: 120,
   base_start: 1100, base_end: 1110, formed: 1120, violated_at: null, leg_in: candle(1090, 125, 140),
@@ -101,19 +102,92 @@ describe("the layer", () => {
     expect(html).toContain("whitespace-normal");
   });
 
-  it("a tap on a zone highlights its leg-in, base and leg-out candles; another band highlights nothing", () => {
+  it("a tap on a zone boxes its leg-in, its base (one box) and its leg-out candles; another band highlights nothing", () => {
     const z = zone();
     const focus = sdFocusFor([z], { id: z.id });
-    expect(focus?.segments?.map((s) => s.t1)).toEqual([1090, 1100, 1110, 1120]);
-    expect(focus?.segments?.[0]).toMatchObject({ p1: 125, p2: 140, role: "demand", width: 4 });
-    expect(focus?.labels?.map((l) => l.text)).toEqual(["Leg-in", "Base", "Leg-out"]);
+    expect(focus?.marks?.map((m) => [m.text, m.time, m.end, m.low, m.high])).toEqual([
+      ["Leg-in", 1090, 1100, 125, 140], ["Base", 1100, 1120, 121, 130], ["Leg-out", 1120, 1130, 120, 145]]);
+    // each name on its own far side: the drop into the demand base above it, the base under it, the rally out above it
+    expect(focus?.marks?.map((m) => m.position)).toEqual(["above", "below", "above"]);
+    expect(focus?.marks?.every((m) => m.role === "demand")).toBe(true);
     expect(sdFocusFor([z], { id: "other" })).toBeNull();
     expect(sdFocusFor([z], null)).toBeNull();
-    expect(sdFocusLayer({ ...z, side: "supply" }).labels?.[0].position).toBe("above");
-    // a label whose candle is left of the bars shown is not drawn half-cut
-    expect(labelShapes(focus?.labels ?? [], pane()).map((t) => t.type === "text" && t.text)).toEqual(["Leg-in", "Base", "Leg-out"]);
-    expect(labelShapes(focus?.labels ?? [], { ...pane(), x: (t) => t - 1105 }).map((t) => t.type === "text" && t.text)).toEqual(["Leg-out"]);
+    expect(sdFocusLayer({ ...z, side: "supply" }).marks?.[1].position).toBe("above");
     expect([SD_LAYER_ID, SD_FOCUS_ID]).toEqual(["sd_zones", "sd_zones_focus"]);
+  });
+
+  it("M98 F1: a candle's box covers exactly the chart bars of that candle - same timeframe, higher on lower, lower on higher", () => {
+    const quarter = [0, 900, 1800, 2700, 3600, 4500];                       // 15m bar starts
+    expect(barSpan(quarter, 1800, 2700)).toEqual([2, 2]);                   // the same timeframe: that one bar
+    expect(barSpan(quarter, 0, 3600)).toEqual([0, 3]);                      // a 1H candle on a 15m chart: its four bars
+    const hours = [0, 3600, 7200];
+    expect(barSpan(hours, 4500, 5400)).toEqual([1, 1]);                     // a 15m candle on a 1H chart: the hour holding it
+    expect(barSpan(hours, -900, 0)).toBeNull();                             // before the first bar
+    // a day's last bar (15:15 IST start, 15:30 close) and the next session: the box never runs into the next day
+    const day = [1000, 1900, 80000];
+    expect(barSpan(day, 1900, 2800)).toEqual([1, 1]);
+    // the box in pixels: from the first bar's left edge to the last bar's right edge (10 px a bar here)
+    const c: Converters = { ...pane(), span: (t, end) => { const b = barSpan(quarter, t, end); return b ? { x1: b[0] * 10 - 5, x2: b[1] * 10 + 5 } : null; } };
+    const [box, text] = markShapes([{ time: 2700, end: 3600, low: 120, high: 130, text: "Leg-out", position: "above" }], c);
+    expect(box).toMatchObject({ type: "rect", x: 25, w: 10 });
+    expect(text).toMatchObject({ type: "text", x: 30, text: "Leg-out", align: "center", top: true });
+    expect((text as { y: number }).y).toBeLessThan((box as { y: number }).y);          // above the box
+    // the view controls over the asked side: the name goes to the other side of the box
+    const blocked = markShapes([{ time: 2700, end: 3600, low: 120, high: 130, text: "Base", position: "below" }],
+      { ...c, avoid: [{ x: 0, y: (c.y(120) ?? 0) + 2, w: 100, h: 30 }] });
+    expect((blocked[1] as { y: number }).y).toBeLessThan((blocked[0] as { y: number }).y);
+  });
+
+  it("M98 F1 end to end: the proof fixture's zones (the detector's own rows) box the very bars it names", () => {
+    type Bar = { timestamp: string; open: number; high: number; low: number; close: number };
+    for (const [name, f] of Object.entries(proof.formations as Record<string, { bars: Bar[]; rows: { zones: SdZone[] } }>)) {
+      const times = f.bars.map((b) => Math.floor(Date.parse(b.timestamp) / 1000));      // the chart's candle times (chartCore toTime)
+      const z = f.rows.zones[0];
+      const marks = sdFocusLayer(z).marks ?? [];
+      const at = (m: { time: number; end?: number }) => barSpan(times, m.time, m.end ?? m.time + 1);
+      const legIn = times.indexOf(z.leg_in.time), out = times.indexOf(z.leg_out.time);
+      expect(legIn, name).toBeGreaterThan(0);
+      expect(at(marks[0])).toEqual([legIn, legIn]);
+      expect(at(marks[1])).toEqual([legIn + 1, out - 1]);                                // the base: the candles between
+      expect(at(marks[2])).toEqual([out, out]);
+      // the boxes hold those bars' own prices
+      expect(marks[0].high).toBe(f.bars[legIn].high);
+      expect(marks[2].low).toBe(f.bars[out].low);
+      expect(marks[1].high).toBe(Math.max(...f.bars.slice(legIn + 1, out).map((b) => b.high)));
+      // every candle is a real candle (low <= open, close <= high)
+      for (const b of f.bars) expect(b.low <= Math.min(b.open, b.close) && b.high >= Math.max(b.open, b.close), `${name} ${b.timestamp}`).toBe(true);
+    }
+  });
+
+  it("M98 F3: a zone's label sits inside its band clear of the candle bodies on the pane", () => {
+    // bodies over the band's left part; the label goes right of them, inside the band
+    const bodies: Rect[] = [100, 110, 120, 130, 140, 150].map((x) => ({ x, y: 170, w: 8, h: 40 }));
+    const c: Converters = { ...pane(), bodies: () => bodies, measure: (t) => t.length * 7 };
+    const list = placeBandLabels([{ top: 160, bottom: 220, text: "Demand · DBR · Fresh · 15m", color: "#0a0", left: 100, clearOfCandles: true }], c);
+    const [chip] = chips(list);
+    expect(chip).toBeTruthy();
+    expect(bodies.some((b) => overlaps(chip, b))).toBe(false);
+    expect(chip.y).toBeGreaterThanOrEqual(160);
+    expect(chip.y + chip.h).toBeLessThanOrEqual(220);
+    // the same band through the layer: the time-anchored band asks for it
+    const fromLayer = chips(bandShapes([{ low: 115, high: 135, start: 1100, label: "Demand · DBR · Fresh · 15m" }], c));
+    expect(fromLayer).toHaveLength(1);
+    expect(bodies.some((b) => overlaps(fromLayer[0], b))).toBe(false);
+  });
+
+  it("M98 F3: on a phone a tapped zone opens a small bottom sheet with a close button (closed until tapped)", () => {
+    const rows = sdTipRows(zone());
+    const onClose = vi.fn();
+    const html = renderToStaticMarkup(<BandSheet band={{ low: 120, high: 130, label: "Demand · DBR · Fresh · 15m", id: "z", tip: rows }} onClose={onClose} />);
+    expect(html).toContain("data-band-sheet");
+    expect(html).toContain("fixed inset-x-0 bottom-0");
+    expect(html).toContain("max-h-[35vh]");
+    expect(html).toContain('aria-label="Close zone details"');
+    expect(html).toContain("Proximal</dt><dd");
+    const el = BandSheet({ band: { low: 1, high: 2, label: "x", tip: rows }, onClose });
+    const close = (el.props.children as React.ReactElement[])[0].props.children[1] as React.ReactElement<{ onClick: () => void }>;
+    close.props.onClick();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("the engine hit-test finds a time-anchored band only right of its start, with its id and rows", () => {
@@ -148,23 +222,38 @@ describe("the layer", () => {
 });
 
 describe("timeframe choice", () => {
-  it("a chart offers its own timeframe first, then every other; the choice keeps the list's order, at most four", () => {
-    expect(sdTimeframesFor("60min")).toEqual(["1h", "1m", "3m", "5m", "10m", "15m", "30m", "2h", "1d", "1w", "1M"]);
-    expect(sdTimeframesFor("10min")[0]).toBe("10m");
-    expect(shownSdTimeframes(null, "15min")).toEqual(["15m"]);
-    expect(shownSdTimeframes(["1d", "10m", "1h"], "15min")).toEqual(["10m", "1h", "1d"]);   // a higher and a lower one
+  it("M98 T1: the zones follow the chart's timeframe; chips add only higher ones; the chart's own is always drawn", () => {
+    expect(sdTimeframesFor("60min")).toEqual(["2h", "1d", "1w", "1M"]);
+    expect(sdTimeframesFor("15min")).toEqual(["30m", "1h", "2h", "1d", "1w", "1M"]);
+    expect(sdTimeframesFor("month")).toEqual([]);
+    // nothing chosen: the chart's own; switching the chart 5m -> 15m -> 1H switches the zones with it
+    expect(["5min", "15min", "60min"].map((tf) => shownSdTimeframes(null, tf as never))).toEqual([["5m"], ["15m"], ["1h"]]);
+    // 1H + D chips on a 15m chart; a stored lower one (10m) or the old chart timeframe is not drawn
+    expect(shownSdTimeframes(["1d", "10m", "1h"], "15min")).toEqual(["15m", "1h", "1d"]);
+    expect(shownSdTimeframes(["15m", "1h"], "5min")).toEqual(["5m", "15m", "1h"]);
+    expect(shownSdTimeframes(["15m", "1h"], "60min")).toEqual(["1h"]);
     expect(shownSdTimeframes(["7m"], "15min")).toEqual(["15m"]);
-    expect(shownSdTimeframes(["15m", "30m", "1h", "2h", "1d"], "15min")).toHaveLength(4);
-    expect(toggleSdTimeframe(["15m"], "1d")).toEqual(["15m", "1d"]);
+    expect(shownSdTimeframes(["30m", "1h", "2h", "1d"], "15min")).toEqual(["15m", "30m", "1h", "2h"]);   // at most four in all
+    // the toggle returns the extras only (the chart's own is never stored)
+    expect(toggleSdTimeframe(["15m"], "1d")).toEqual(["1d"]);
+    expect(toggleSdTimeframe(["15m", "1h", "1d"], "1h")).toEqual(["1d"]);
     expect(toggleSdTimeframe(["15m", "1d"], "15m")).toEqual(["1d"]);
-    expect(toggleSdTimeframe(["1d"], "1d")).toEqual(["1d"]);                                  // never none
-    expect(toggleSdTimeframe(["15m", "30m", "1h", "1d"], "1w")).toHaveLength(4);
+    expect(toggleSdTimeframe(["15m", "30m", "1h", "1d"], "1w")).toEqual(["30m", "1h", "1w"]);           // the newest replaces the highest
   });
 
-  it("the options bar: one chip per offered timeframe (pressed when shown) and Show violated off by default", () => {
-    const html = renderToStaticMarkup(<SdZonesBar chartTf="60min" shown={["1h", "1d"]} options={{ ...DEFAULT_SD_OVERLAY, timeframes: ["1h", "1d"] }} onChange={() => {}} note={null} />);
-    expect(html.match(/data-sd-tf=/g)).toHaveLength(11);
-    expect(html.indexOf('data-sd-tf="1h"')).toBeLessThan(html.indexOf('data-sd-tf="1m"'));     // the chart's own first
+  it("M98 T1: each timeframe's bands get their own opacity - the chart's own strongest, higher ones fainter", () => {
+    const rows = (tf: SdZone["timeframe"], id: string) => ({ timeframe: tf, bars: 9, as_of_bar: 1, zones: [zone({ id, timeframe: tf })], more: 0, hidden_violated: 0, source: null, reason: null });
+    const data = toSdLayer(resp([], { timeframes: [rows("15m", "a"), rows("1h", "b"), rows("1d", "c")] }));
+    expect(data?.bands?.map((b) => b.opacity)).toEqual([SD_TF_OPACITY[0], SD_TF_OPACITY[1], SD_TF_OPACITY[2]]);
+    expect(new Set(SD_TF_OPACITY).size).toBe(SD_TF_OPACITY.length);
+  });
+
+  it("the options bar: the chart's own timeframe fixed, one chip per higher timeframe (pressed when shown), Show violated off", () => {
+    const html = renderToStaticMarkup(<SdZonesBar chartTf="15min" shown={["15m", "1h", "1d"]} options={{ ...DEFAULT_SD_OVERLAY, timeframes: ["1h", "1d"] }} onChange={() => {}} note={null} />);
+    expect(html).toContain('data-sd-own="15m"');
+    expect(html.match(/data-sd-tf=/g)).toHaveLength(6);
+    expect(html).not.toContain('data-sd-tf="15m"');
+    expect(html).not.toContain('data-sd-tf="5m"');
     expect(html).toMatch(/aria-pressed="true" data-sd-tf="1h"/);
     expect(html).toMatch(/aria-pressed="false" data-sd-tf="2h"/);
     expect(html).toContain("Show violated");

@@ -51,8 +51,15 @@ DAYS: dict[str, int] = {"1m": 3, "3m": 7, "5m": 15, "10m": 30, "15m": 45, "30m":
                         "1w": 3650, "1M": 3650}
 SHORT: dict[str, str] = {"1m": "1m", "3m": "3m", "5m": "5m", "10m": "10m", "15m": "15m", "30m": "30m", "1h": "1H", "2h": "2H",
                          "1d": "D", "1w": "W", "1M": "M"}
+# M98 F1: a candle's span on the chart is [its start, its start + this) - the chart marks the bars of its own timeframe
+# whose start falls in that span (one bar on the same timeframe; every lower-timeframe bar inside a higher one)
+SPAN: dict[str, pd.DateOffset | pd.Timedelta] = {
+    "1m": pd.Timedelta(minutes=1), "3m": pd.Timedelta(minutes=3), "5m": pd.Timedelta(minutes=5), "10m": pd.Timedelta(minutes=10),
+    "15m": pd.Timedelta(minutes=15), "30m": pd.Timedelta(minutes=30), "1h": pd.Timedelta(hours=1), "2h": pd.Timedelta(hours=2),
+    "1d": pd.Timedelta(days=1), "1w": pd.Timedelta(days=7), "1M": pd.DateOffset(months=1)}
 MAX_TIMEFRAMES = 4
 MAX_PER_SIDE = 6
+EXCHANGE_TZ = "Asia/Kolkata"
 rate_limited = user_rate_limit("chart_sd_zones", limit=60, window_seconds=60)
 
 
@@ -76,12 +83,17 @@ def label_text(side: str, formation: str, state: str, tests: int, tf: str) -> st
     return " · ".join(("Demand" if side == sd.DEMAND else "Supply", formation, shown, SHORT.get(tf, tf)))
 
 
-def _candle(frame: pd.DataFrame, nums: dict[str, np.ndarray], times: pd.DatetimeIndex, i: int, of: str = "avg") -> dict[str, Any]:
-    """One candle the chart highlights on a tap: its time, high / low, and the numbers it was judged by."""
+def _candle(frame: pd.DataFrame, nums: dict[str, np.ndarray], times: pd.DatetimeIndex, i: int, of: str = "avg",
+            tf: str | None = None) -> dict[str, Any]:
+    """One candle the chart highlights on a tap: its time (the bar's START, as the chart's candles are stamped), the end
+    of its span (`end`, M98 F1: start + the timeframe's length), high / low, and the numbers it was judged by."""
     ref = nums[of][i]
     with np.errstate(invalid="ignore", divide="ignore"):
         mult = nums["range"][i] / ref if ref and np.isfinite(ref) and ref > 0 else float("nan")
-    return {"time": _epoch(times[i]), "high": _num(float(frame["high"].iloc[i])), "low": _num(float(frame["low"].iloc[i])),
+    start = pd.Timestamp(times[i])
+    local = start.tz_convert(EXCHANGE_TZ) if start.tzinfo is not None else start      # a month is a calendar month in India
+    end = _epoch(local + SPAN[tf]) if tf in SPAN else None
+    return {"time": _epoch(start), "end": end, "high": _num(float(frame["high"].iloc[i])), "low": _num(float(frame["low"].iloc[i])),
             "range": _num(nums["range"][i]), "body_pct": _num(nums["body_pct"][i], 1), "mult": _num(mult, 2)}
 
 
@@ -125,12 +137,12 @@ def zone_rows(frame: pd.DataFrame, tf: str, *, settings: sd.SDSettings | None = 
             "proximal": _num(z.proximal), "distal": _num(z.distal),
             "base_start": _epoch(times[z.base_start]), "base_end": _epoch(times[z.base_end]), "formed": _epoch(times[z.formed]),
             "violated_at": _epoch(times[z.violated]) if z.violated is not None and z.violated <= last else None,
-            "leg_in": _candle(frame, nums, times, z.leg_in),
+            "leg_in": _candle(frame, nums, times, z.leg_in, tf=tf),
             "base": {"candles": len(base), "times": [_epoch(times[i]) for i in base], "high": _num(b_hi), "low": _num(b_lo),
-                     "bars": [_candle(frame, nums, times, i) for i in base],
+                     "bars": [_candle(frame, nums, times, i, tf=tf) for i in base],
                      "max_body_pct": _num(float(max(nums["body_pct"][i] for i in base)), 1),
                      "max_mult": _num(max(mults), 2) if mults else None},
-            "leg_out": {**_candle(frame, nums, times, z.formed, of=out_ref), "of": "ATR" if s.out_ref == "atr" else "average range"},
+            "leg_out": {**_candle(frame, nums, times, z.formed, of=out_ref, tf=tf), "of": "ATR" if s.out_ref == "atr" else "average range"},
             "label": label_text(z.side, z.formation, state, int(tests), tf),
         }
         rows.append((abs(close - z.proximal), row))

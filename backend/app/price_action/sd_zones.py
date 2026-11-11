@@ -23,6 +23,8 @@ Definitions (our own words):
     and the leg-out candle;
   - supply: proximal = the base bottom (the lowest low, or the lowest body bottom); distal = the highest high of the
     base and the leg-out candle.
+  - (M98 F2) the leg-in candle is in neither line, the leg-out only in the distal one; the distal line is always the
+    wick extreme, whatever the edge setting.
 * A zone exists only once its leg-out candle has closed (its `formed` bar); nothing before that bar sees it.
 
 States (M97-Q6), computed causally bar by bar from the bar after the leg-out:

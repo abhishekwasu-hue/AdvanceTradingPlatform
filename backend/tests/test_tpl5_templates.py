@@ -39,6 +39,7 @@ NEW = ("C2", "D3", "E1", "E3", "E5")
 LATER = ("C6", "B12", "D9")        # STRAT-X templates (after step 5) may use the step-5 pieces; they are not "earlier"
 LATER += ("H6", "H7", "H8", "H9", "H10")   # M94 family H (Intraday) came later too
 LATER += ("H1", "H2", "H3", "H4", "H5")     # M94 PR-5: the rest of family H
+LATER += ("J1",)                            # M99 P3: family J (Volume spread) came later too
 T = {tid: library.get(tid) for tid in NEW}
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0

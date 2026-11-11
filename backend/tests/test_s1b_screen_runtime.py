@@ -601,6 +601,19 @@ def test_m99_bar_class_functions():
     assert _ev("VolumeClass(4)", d).iloc[-1] == "HIGH" and _ev("VolumeClass(4, high=1.6, ultra=2)", d).iloc[-1] == "AVERAGE"
 
 
+def test_m99_p3_volume_spread_function():
+    """M99 P3: VSA(...) (the full fixtures: tests/test_m99_p3_vsa.py) - an up bar on a narrow spread and lower volume after a
+    fall reads as no demand; the same bars without volume data have no value."""
+    rows = [(100.0 - 0.5 * k + (0.3 if k % 2 else -0.3)) for k in range(70)]
+    f = _bars(rows, freq="1D")
+    last = f.iloc[-1]["close"]
+    f.loc[f.index[-1], ["open", "high", "low", "close", "volume"]] = [last, last + 0.6, last - 0.2, last + 0.5, 50.0]
+    d = SymbolData("S", {"1d": f})
+    got = _ev('VSA("no_demand")', d, base_tf="1d")
+    assert got.iloc[-1] == 1.0 and np.isnan(got.iloc[0])
+    assert np.isnan(_ev('VSA("no_demand")', SymbolData("S", {"1d": f.assign(volume=0.0)}), base_tf="1d").iloc[-1])
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

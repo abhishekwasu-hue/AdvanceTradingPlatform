@@ -108,6 +108,8 @@ export const screenerApi = {
   legends: () => request<LegendsLibrary>("/screener/legends"),
   /** M94 PR-2: the intraday scanners' settings (flags `intraday_pack` + `screener_breakouts`; 503 while off - no settings shown). */
   intraday: () => request<IntradayLibrary>("/screener/intraday"),
+  /** M99 P3: the "Volume spread" scanners' settings (flag `vsa_pack`; 503 while off - no settings shown). Same shape. */
+  vsa: () => request<IntradayLibrary>("/screener/vsa"),
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
   stages: (body: { library_id?: string; source?: string; base_tf?: string; params?: Record<string, number | string | boolean> }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),

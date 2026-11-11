@@ -329,6 +329,50 @@ def _bc_kwargs(fn: str) -> tuple[Arg, ...]:
     return tuple(_bc(setting, arg) for arg, setting in BAR_CLASS_KWARGS[fn])
 
 
+# M99 P3 (flag `vsa_pack`, off by default): the volume spread detectors (app/price_action/vsa.py) - one function, the
+# detector by name, its side, and every setting as a named argument read once (a literal or a $parameter) within its
+# bounds; left out, the reference value ("reference - edit before use"; tests/test_m99_p3_vsa.py checks them against
+# vsa.SETTINGS_TABLE). Closed bars only; close-only in alerts; no volume data -> no value ("not checked").
+VSA_FLAG = "vsa_pack"
+VSA_KWARGS: dict[str, str] = {"n": "avg_n", "narrow": "narrow", "wide": "wide", "ultra": "ultra_wide", "vol_low": "vol_low",
+                              "vol_high": "vol_high", "vol_ultra": "vol_ultra", "part": "close_part", "prev": "prev_bars",
+                              "new_bars": "new_bars", "trend_bars": "trend_bars", "bg_bars": "bg_bars", "area_bars": "area_bars",
+                              "area_tol": "area_tol", "shake_bars": "shake_bars", "background": "background", "confirm": "confirm"}
+
+
+def _vsa_arg(arg: str, setting: str) -> Arg:
+    """A volume spread setting as a named argument: its reference value and bounds are vsa.SETTINGS_TABLE's."""
+    from app.price_action.vsa import SETTINGS_TABLE
+    _, kind, ref, bounds = next(row for row in SETTINGS_TABLE if row[0] == setting)
+    if kind == "bars":
+        return Arg(arg, "window", ref, False, bounds=bounds)
+    if kind == "flag":
+        return Arg(arg, BOOL, ref, False)
+    return Arg(arg, NUM, ref, False, literal_only=True, bounds=bounds)
+
+
+def _vsa_values(name: str) -> Tuple[str, ...]:
+    from app.price_action import vsa
+    return tuple(getattr(vsa, name))
+
+
+# History a VSA(...) call needs: three times its largest window setting (the structure reads two windows, the
+# background one more) plus VSA_EXTRA_BARS (the largest shake-out window and the two-bar readings) - never less than
+# vsa.VsaSettings.warmup() for any settings within their bounds (tests/test_m99_p3_vsa.py checks it).
+VSA_WINDOW_MULT = 3
+VSA_EXTRA_BARS = 52
+
+
+def _vsa_min_bars() -> int:
+    from app.price_action.vsa import OWN_SETTINGS, VsaSettings
+    windows = [VsaSettings().avg_n] + [ref for name, kind, ref, _ in OWN_SETTINGS if kind == "bars" and name != "prev_bars"]
+    return VSA_WINDOW_MULT * max(windows)
+
+
+_VSA_ORDER: tuple[tuple[str, str, bool], ...] = (("narrow", "wide", False), ("wide", "ultra", False), ("vol_low", "vol_high", False),
+                                                  ("vol_high", "vol_ultra", False))
+
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -890,6 +934,16 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="LOW (volume / the mean volume of the n bars before below low) / HIGH (above high) / ULTRA (above ultra) / AVERAGE;"
              " NO_VOLUME where the bar's volume is missing or 0 (an index without its future's volume); missing where the"
              " average cannot be read (a bar without volume data in the n bars before)" + _BC_DOC),
+    # M99 P3 (flag vsa_pack): the volume spread detectors (app/price_action/vsa.py)
+    Spec("VSA", "filter", BOOL, None, (Arg("name", STR, choices=_vsa_values("DETECTORS")),
+                                       Arg("side", STR, "any", False, choices=_vsa_values("SIDE_CHOICES"))),
+         kwargs=tuple(_vsa_arg(a, s) for a, s in VSA_KWARGS.items()), cost=3.0, min_bars=_vsa_min_bars(),
+         window_mult=VSA_WINDOW_MULT, extra_bars=VSA_EXTRA_BARS, flag=VSA_FLAG, ordered_args=_VSA_ORDER,
+         doc="the named volume spread reading on this bar - no_demand, no_supply, test, failed_test, up_thrust, reverse_up_thrust,"
+             " stopping_volume, selling_climax, buying_climax, shake_out, falling_pressure, absorption, effort_vs_result -"
+             " from the bar's spread, volume and close against the n bars before, with the structure before it (background"
+             " on / off) and an optional next-bar confirmation; side any / strength / weakness. Missing where the bars have no"
+             " volume data (closed bars; settings are reference values - edit before use)"),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -908,6 +962,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
+VSA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == VSA_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
@@ -940,4 +995,4 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
-           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS"]
+           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS"]

@@ -47,6 +47,7 @@ import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
+import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
 import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
@@ -175,6 +176,14 @@ export default function ChartsPageV2(_props: PageProps) {
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+  // M99 P3: the volume spread readings (flag vsa_pack) - read again when a new bar closes; each mark with its "Why?" below
+  const [vsaOptions, setVsaOptions] = useState<VsaOptions>(DEFAULT_VSA_OPTIONS);
+  const vsaOn = view.layers.includes(VSA_LAYER_ID) && features.on("vsa_pack") && tab === "chart" && !hubView;
+  const vsaLayer = useVsaLayer({ symbol, exchange, timeframe, candles: data.candles, on: vsaOn, options: vsaOptions });
+  const chartMarkers = useMemo(() => {
+    const extra = [...tpl.markers, ...vsaLayer.markers];
+    return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
+  }, [screen.markers, tpl.markers, vsaLayer.markers]);
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
   const readTf = readTimeframe(timeframe);
@@ -336,7 +345,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
-                markers={tpl.markers.length ? [...screen.markers, ...tpl.markers].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers}
+                markers={chartMarkers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
@@ -346,6 +355,7 @@ export default function ChartsPageV2(_props: PageProps) {
             {tplAsk && tplShown && !fs.on && (
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
+            {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

@@ -71,16 +71,17 @@ async function turnOn(page: Page) {
 }
 
 /** Moves the pointer down the price pane (left of the price axis) at a few widths until the tooltip of a zone whose
- * label holds `want` opens. */
+ * label holds `want` opens. M98 F3: a phone-width chart opens a zone's details on a tap (a click), not on a hover. */
 async function hoverZone(page: Page, want = "·") {
+  const tap = (page.viewportSize()?.width ?? 1440) < 600;
   const box = await page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first().boundingBox();
   if (!box) throw new Error("no chart");
   const plot = box.width - 90;                                   // the price axis takes the right edge
   for (const frac of [0.97, 0.9, 0.8, 0.7]) {
     // bottom up: the first hit is the zone's lower edge, so the tooltip opens below the zone and its candles stay in view
-    for (let y = box.y + box.height * 0.85; y > box.y + 30; y -= 3) {
-      await page.mouse.move(box.x + plot * frac, y);
-      const tip = page.locator("[data-band-tip]");
+    for (let y = box.y + box.height * 0.85; y > box.y + 30; y -= tap ? 6 : 3) {
+      if (tap) await page.mouse.click(box.x + plot * frac, y); else await page.mouse.move(box.x + plot * frac, y);
+      const tip = page.locator("[data-band-tip], [data-band-sheet]");    // M98 F3: a phone-width chart opens a bottom sheet
       if (await tip.locator("[data-band-rows]").count() && (await tip.locator("p").first().textContent())?.includes(want)) return true;
     }
   }
@@ -107,6 +108,39 @@ test.describe("M97 Supply & Demand zones layer", () => {
     await expect(tip).not.toContainText(/buy|sell|target|stop/i);
   });
 
+  test("M98 T1: the zones follow the chart's timeframe; a higher chip is added on top and kept", async ({ page }) => {
+    const asks = await open(page, "DBR", 1440);
+    await turnOn(page);
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("15m");
+    const bar = page.getByTestId("sd-zones-bar");
+    await expect(bar.locator("[data-sd-own]")).toHaveText("15m");
+    await expect(bar.locator('[data-sd-tf="5m"]')).toHaveCount(0);                 // only higher timeframes are chips
+    await bar.getByRole("button", { name: "1H", exact: true }).click();
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("15m,1h");
+    const toolbar = page.locator("[data-page='charts-v2']");
+    await toolbar.getByRole("button", { name: "5 min", exact: true }).first().click();
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("5m,1h");       // the chart's own follows; the 1H chip stays
+    await expect(bar.locator("[data-sd-own]")).toHaveText("5m");
+    await toolbar.getByRole("button", { name: "1 hour", exact: true }).first().click();
+    await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("1h");           // 1H is now the chart's own
+  });
+
+  test("M98 F3: on a phone a zone's details open in a small bottom sheet (closed by default) with a close button", async ({ page }) => {
+    await open(page, "DBR", 390);
+    await turnOn(page);
+    await expect(page.locator("[data-band-sheet]")).toHaveCount(0);
+    expect(await hoverZone(page)).toBe(true);
+    const sheet = page.locator("[data-band-sheet]");
+    await expect(sheet).toBeVisible();
+    await expect(page.locator("[data-band-tip]")).toHaveCount(0);
+    await expect(sheet).toContainText("Proximal");
+    const box = await sheet.boundingBox();
+    expect(box && box.height).toBeLessThanOrEqual(844 * 0.36);
+    expect(box && box.y + box.height).toBeGreaterThanOrEqual(843);                  // at the bottom of the screen
+    await sheet.getByRole("button", { name: "Close zone details" }).click();
+    await expect(sheet).toHaveCount(0);
+  });
+
   for (const formation of FORMATIONS) {
     for (const width of [390, 1440]) {
       test(`proof ${formation} ${width}`, async ({ page }) => {
@@ -118,8 +152,9 @@ test.describe("M97 Supply & Demand zones layer", () => {
         await page.waitForTimeout(150);
         // a page screenshot clipped to the chart page: no scrolling, so the pointer stays and the tooltip stays open
         const clip = await page.locator("[data-page='charts-v2']").boundingBox();
-        await expect(page.locator("[data-band-tip]")).toBeVisible();
-        await page.screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css", clip: clip ?? undefined });
+        await expect(page.locator(width < 600 ? "[data-band-sheet]" : "[data-band-tip]")).toBeVisible();
+        // M98 F3: the phone shot is the whole screen (the zone's bottom sheet sits at the screen's bottom edge)
+        await page.screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css", clip: width < 600 ? undefined : clip ?? undefined });
       });
     }
   }

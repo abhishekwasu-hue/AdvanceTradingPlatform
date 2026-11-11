@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { request } from "../api/client";
 import type { BandRef } from "../charting/geometry";
-import type { ChartEngine, LayerBand, LayerData, LayerLabel, LayerSegment } from "../charting/engine";
+import type { ChartEngine, LayerBand, LayerData, LayerMark, LayerSegment } from "../charting/engine";
 import { formatNumber } from "../ui/format";
 import type { TimeframeId } from "./timeframes";
 
@@ -38,21 +38,25 @@ const OF_CHART: Record<TimeframeId, SdTimeframe> = {
 /** The chart's timeframe as the layer names it. */
 export const sdTimeframeOf = (tf: TimeframeId): SdTimeframe => OF_CHART[tf];
 
-/** The timeframes a chart at `tf` can show zones of: every one - a higher timeframe's zones on a lower-timeframe chart
- * (the usual case), and a lower one too (a style preset such as intraday 15m / 10m on a 15 min chart); each zone is
- * placed by its own times. The chart's own timeframe first. */
+/** M98 T1: the chips a chart at `tf` offers - only the timeframes HIGHER than the chart's. The chart's own timeframe is
+ * always drawn (its zones follow the chart: 5m -> 15m -> 1H recomputes them) and is not a chip. */
 export function sdTimeframesFor(tf: TimeframeId): SdTimeframe[] {
-  const own = sdTimeframeOf(tf);
-  return [own, ...SD_TIMEFRAMES.filter((t) => t !== own)];
+  const own = SD_TIMEFRAMES.indexOf(sdTimeframeOf(tf));
+  return SD_TIMEFRAMES.filter((_, i) => i > own);
 }
 
-/** The user's choice in the list's order, at most SD_MAX_TIMEFRAMES; none chosen: the chart's own. */
+/** M98 T1: what is drawn - the chart's own timeframe, then the user's extra chips that are higher than it (a stored
+ * lower one, e.g. the chart was switched up, is not drawn), finest first, at most SD_MAX_TIMEFRAMES in all. */
 export function shownSdTimeframes(chosen: readonly string[] | null | undefined, tf: TimeframeId): SdTimeframe[] {
-  const picked = SD_TIMEFRAMES.filter((t) => chosen?.includes(t)).slice(0, SD_MAX_TIMEFRAMES);
-  return picked.length ? picked : [sdTimeframeOf(tf)];
+  const higher = sdTimeframesFor(tf).filter((t) => chosen?.includes(t));
+  return [sdTimeframeOf(tf), ...higher].slice(0, SD_MAX_TIMEFRAMES);
 }
 
-export interface SdCandle { time: number; high: number | null; low: number | null; range: number | null; body_pct: number | null; mult: number | null }
+/** M98 T1: a band's fill per timeframe - the chart's own strongest, each higher one fainter (rank in the drawn list). */
+export const SD_TF_OPACITY = [0.16, 0.1, 0.07, 0.05] as const;
+export const sdOpacity = (rank: number, violated: boolean) => (SD_TF_OPACITY[Math.min(rank, SD_TF_OPACITY.length - 1)] ?? 0.05) * (violated ? 0.4 : 1);
+
+export interface SdCandle { time: number; end?: number | null; high: number | null; low: number | null; range: number | null; body_pct: number | null; mult: number | null }
 export interface SdZone {
   id: string; timeframe: SdTimeframe; side: "demand" | "supply"; formation: "DBR" | "RBR" | "RBD" | "DBD"; state: "fresh" | "tested" | "violated";
   tests: number; proximal: number; distal: number; base_start: number; base_end: number; formed: number; violated_at: number | null;
@@ -103,12 +107,14 @@ export function sdTipRows(z: SdZone): [string, string][] {
 export function toSdLayer(resp: SdZonesResponse): LayerData | null {
   const bands: LayerBand[] = [];
   const segments: LayerSegment[] = [];
+  const order = [...resp.timeframes].sort((a, b) => SD_TIMEFRAMES.indexOf(a.timeframe) - SD_TIMEFRAMES.indexOf(b.timeframe));
   for (const rows of resp.timeframes) {
+    const rank = order.indexOf(rows);                      // M98 T1: 0 = the chart's own (the finest drawn)
     for (const z of rows.zones) {
       if (!Number.isFinite(z.proximal) || !Number.isFinite(z.distal)) continue;
       const violated = z.state === "violated";
       bands.push({ low: Math.min(z.proximal, z.distal), high: Math.max(z.proximal, z.distal), start: z.base_start, role: z.side,
-                   opacity: violated ? 0.05 : 0.14, style: violated ? "dashed" : "solid", label: z.label, id: z.id, tip: sdTipRows(z) });
+                   opacity: sdOpacity(rank, violated), style: violated ? "dashed" : "solid", label: z.label, id: z.id, tip: sdTipRows(z) });
       segments.push({ t1: z.base_start, p1: z.proximal, t2: z.base_start, p2: z.proximal, extend: "right", role: z.side, width: 1, style: violated ? "dashed" : "solid" },
                     { t1: z.base_start, p1: z.distal, t2: z.base_start, p2: z.distal, extend: "right", role: z.side, width: 1, style: "dashed" });
     }
@@ -116,19 +122,29 @@ export function toSdLayer(resp: SdZonesResponse): LayerData | null {
   return bands.length ? { asOf: resp.at, bands, segments } : null;
 }
 
-/** A tap's highlight: the leg-in, base and leg-out candles as thick bars over their own range, each named once. */
+/** M98 F1: a tap's highlight - one outlined box per part around exactly its candles: the leg-in candle, the base (all
+ * its candles in one box, from the first one's start to the last one's end) and the leg-out candle, each named once.
+ * Times are the candles' own bar starts from the server, so the box sits on the chart bars of that candle (one bar on
+ * the zone's own timeframe, every lower-timeframe bar inside a higher-timeframe candle). A leg's name goes on its far
+ * side from the base (a drop into a demand base: above it); the base's under a demand base, over a supply base. */
 export function sdFocusLayer(z: SdZone): LayerData {
-  const segments: LayerSegment[] = [];
-  const labels: LayerLabel[] = [];
-  const mark = (c: SdCandle, text: string | null, width: number) => {
+  const marks: LayerMark[] = [];
+  const bars = z.base.bars.filter((b) => b.high != null && b.low != null);
+  const baseHigh = bars.length ? Math.max(...bars.map((b) => b.high as number)) : null;
+  const baseLow = bars.length ? Math.min(...bars.map((b) => b.low as number)) : null;
+  const leg = (c: SdCandle, text: string) => {
     if (c.high == null || c.low == null) return;
-    segments.push({ t1: c.time, p1: c.low, t2: c.time, p2: c.high, role: z.side, width });
-    if (text) labels.push({ time: c.time, price: z.side === "demand" ? c.low : c.high, text, position: z.side === "demand" ? "below" : "above", inside: true });
+    const up = baseHigh == null || baseLow == null ? z.side === "demand" : c.high - baseHigh >= baseLow - c.low;
+    marks.push({ time: c.time, ...(c.end != null ? { end: c.end } : {}), low: c.low, high: c.high, text, position: up ? "above" : "below", role: z.side });
   };
-  mark(z.leg_in, "Leg-in", 4);
-  z.base.bars.forEach((b, i) => mark(b, i === 0 ? "Base" : null, 4));
-  mark(z.leg_out, "Leg-out", 4);
-  return { segments, labels };
+  leg(z.leg_in, "Leg-in");
+  if (bars.length && baseHigh != null && baseLow != null) {
+    const lastEnd = bars[bars.length - 1].end;
+    marks.push({ time: bars[0].time, ...(lastEnd != null ? { end: lastEnd } : {}), low: baseLow, high: baseHigh, text: "Base",
+                 position: z.side === "demand" ? "below" : "above", role: z.side });
+  }
+  leg(z.leg_out, "Leg-out");
+  return { marks };
 }
 
 /** The highlight for the band whose tooltip is open: that zone's candles when the band is one of these zones (by its
@@ -172,12 +188,15 @@ export function saveSdOptions(o: SdOptions): void {
   try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* intentional: storage unavailable */ }
 }
 
-/** Turns one timeframe on or off in the choice (starting from what the chart shows now); never below one, never above
- * SD_MAX_TIMEFRAMES (the newest pick then replaces the last one). Pure. */
-export function toggleSdTimeframe(shown: readonly SdTimeframe[], t: SdTimeframe): SdTimeframe[] {
-  if (shown.includes(t)) return shown.length > 1 ? shown.filter((x) => x !== t) : [...shown];
-  const next = SD_TIMEFRAMES.filter((x) => x === t || shown.includes(x));
-  return next.length > SD_MAX_TIMEFRAMES ? next.filter((x) => x === t || x !== shown[shown.length - 1]).slice(0, SD_MAX_TIMEFRAMES) : next;
+/** M98 T1: one extra chip on or off, from what the chart draws now (`shown`, the chart's own first). Returns the extra
+ * timeframes only (never the chart's own: it follows the chart), finest first, at most SD_MAX_TIMEFRAMES - 1 (the
+ * newest pick then replaces the highest one shown). Pure. */
+export function toggleSdTimeframe(shown: readonly SdTimeframe[], t: SdTimeframe, own: SdTimeframe = shown[0]): SdTimeframe[] {
+  const extras = shown.filter((x) => x !== own);
+  if (t === own) return extras;
+  if (extras.includes(t)) return extras.filter((x) => x !== t);
+  const next = SD_TIMEFRAMES.filter((x) => x === t || extras.includes(x));
+  return next.length > SD_MAX_TIMEFRAMES - 1 ? next.filter((x) => x === t || x !== extras[extras.length - 1]).slice(0, SD_MAX_TIMEFRAMES - 1) : next;
 }
 
 export interface SdZonesState { note: string | null; shown: SdTimeframe[]; options: SdOptions; setOptions: (o: SdOptions) => void; zones: SdZone[] }

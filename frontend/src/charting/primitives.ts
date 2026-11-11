@@ -105,7 +105,7 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
 }
 
 /** M78 (F1): a shape painted above the series - a band label's chip and text - so a candle never covers it. */
-export const onTop = (s: Shape) => (s.type === "chip" || s.type === "text") && s.top === true;
+export const onTop = (s: Shape) => (s.type === "chip" || s.type === "text" || s.type === "rect") && s.top === true;
 
 /** Z7a-3: a layer's shapes (built from the converters at each paint, e.g. `bandShapes`) as one series primitive. The
  * bands, legs and swing texts are drawn under the series; M78 (F1): the band labels (chip + text) in a second view

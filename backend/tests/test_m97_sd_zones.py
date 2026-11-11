@@ -44,7 +44,7 @@ def _mirror(candles: list[tuple[float, float, float, float]], axis: float = 200.
 LEG_DOWN = (100.0, 100.2, 96.8, 97.0)          # range 3.4 (>= 1.5 x ~2.0), body 3.0 = 88 %
 LEG_UP = (97.0, 100.2, 96.8, 100.0)            # the up leg-in of an RBR (body 88 %)
 BASE = [(97.0, 97.6, 96.6, 97.3), (97.3, 97.7, 96.9, 97.1)]     # range 1.0 / 0.8, body 0.3 / 0.2 (<= 50 %)
-OUT_UP = (97.1, 101.0, 97.2, 100.8)            # range 3.8 (>= 1.5 x ~2.1)
+OUT_UP = (97.1, 101.0, 97.0, 100.8)            # range 4.0 (>= 1.5 x ~2.1); a real candle: low <= open (M98)
 AWAY = (100.8, 101.7, 100.5, 101.5)            # wholly above the demand zone (body 58 %: not a base candle)
 
 
@@ -87,7 +87,7 @@ def test_a_base_longer_than_base_max_is_not_a_base():
 
 
 def test_a_weak_leg_out_makes_no_zone():
-    weak = (97.1, 99.4, 97.2, 99.2)            # range 2.2 < 1.5 x ~2.1
+    weak = (97.1, 99.4, 97.0, 99.2)            # range 2.4 < 1.5 x ~2.1
     assert _zones([LEG_DOWN, *BASE, weak])[1] == []
     assert len(_zones([LEG_DOWN, *BASE, weak], out_mult=1.0)[1]) == 1
 
@@ -119,6 +119,48 @@ def test_proximal_and_distal_per_edge_setting():
     assert (s_body.proximal, s_body.distal) == pytest.approx((200 - 97.3, 200 - 96.6))
     low_out = (97.1, 101.0, 96.2, 100.8)       # a leg-out wick below the base: the distal line follows it
     assert _zones([LEG_DOWN, *BASE, low_out])[1][0].distal == 96.2
+
+
+# M98 F2: per formation, hand-computed lines from explicit bars. The leg-in and leg-out extremes are chosen so that
+# counting either of them in the proximal line (or the leg-in in the distal line) would give a different number.
+#   demand: proximal = the highest high (wick) / highest body top (body) of the BASE candles only;
+#           distal   = the lowest low of the base AND the leg-out candle (never the leg-in), whatever the edge setting;
+#   supply: the mirror (proximal = the lowest low / lowest body bottom of the base; distal = the highest high of the
+#           base and the leg-out).
+HAND_LINES = {
+    # formation: (leg-in, [base candles], leg-out, (wick proximal, body proximal, distal))
+    "DBR": ((100.0, 100.2, 96.8, 97.0), [(97.0, 97.6, 96.6, 97.3), (97.2, 97.7, 96.9, 97.4)], (97.1, 101.0, 96.4, 100.8),
+            (97.7, 97.4, 96.4)),         # leg-out low 96.4 < base lows 96.6 / 96.9: the distal line is the leg-out's
+    "RBR": ((93.8, 97.2, 93.6, 97.0), [(97.0, 97.6, 96.6, 97.3), (97.2, 97.7, 96.9, 97.4)], (97.1, 101.0, 96.8, 100.8),
+            (97.7, 97.4, 96.6)),         # leg-in low 93.6 is not in the distal line; the base low 96.6 is
+    "RBD": ((100.0, 103.2, 99.8, 103.0), [(103.0, 103.4, 102.4, 102.7), (102.8, 103.1, 102.3, 102.6)], (102.9, 103.6, 99.0, 99.2),
+            (102.3, 102.6, 103.6)),      # leg-out high 103.6 > base highs 103.4 / 103.1: the distal line is the leg-out's
+    "DBD": ((106.2, 106.4, 103.0, 103.2), [(103.0, 103.4, 102.4, 102.7), (102.8, 103.1, 102.3, 102.6)], (102.9, 103.3, 99.0, 99.2),
+            (102.3, 102.6, 103.4)),      # leg-in high 106.4 is not in the distal line; the base high 103.4 is
+}
+
+
+@pytest.mark.parametrize("formation", list(HAND_LINES))
+@pytest.mark.parametrize("edge", ["wick", "body"])
+def test_hand_computed_proximal_and_distal_per_formation_and_edge(formation, edge):
+    leg_in, base, leg_out, (wick_prox, body_prox, distal) = HAND_LINES[formation]
+    df, zones = _zones([leg_in, *base, leg_out], edge=edge)
+    assert [z.formation for z in zones] == [formation]
+    z = zones[0]
+    last = len(df) - 1
+    # the exact bars: leg-in, the two base candles, the leg-out (the last bar)
+    assert (z.leg_in, z.base_start, z.base_end, z.formed) == (last - 3, last - 2, last - 1, last)
+    assert tuple(df.iloc[z.leg_in][["open", "high", "low", "close"]]) == leg_in
+    assert [tuple(r) for r in df.iloc[z.base_start:z.base_end + 1][["open", "high", "low", "close"]].to_numpy()] == base
+    assert tuple(df.iloc[z.formed][["open", "high", "low", "close"]]) == leg_out
+    assert z.side == sd.FORMATION_SIDE[formation]
+    assert z.proximal == pytest.approx(wick_prox if edge == "wick" else body_prox)
+    assert z.distal == pytest.approx(distal)
+    # the proximal line is never beyond the base candles' own extremes (the owner's check on his chart)
+    if z.side == sd.DEMAND:
+        assert z.proximal <= max(h for _, h, _, _ in base)
+    else:
+        assert z.proximal >= min(lo for _, _, lo, _ in base)
 
 
 # --------------------------------------------------------------------------------------------------- the states

@@ -43,8 +43,8 @@ def split(ast: n.Node) -> List[Dict[str, Any]]:
 
 
 def library_source(screen_id: str) -> Tuple[Optional[Tuple[str, str, Dict[str, Any], str]], Optional[str]]:
-    """A pre-built Legends, breakout or (M94) intraday screen -> ((text, base_tf, params, name), None) or (None, why). An
-    intraday scanner's Not set parameters are left out of `params` (M94-Q2)."""
+    """A pre-built Legends, breakout, (M94) intraday or (M97) Supply & Demand screen -> ((text, base_tf, params, name),
+    None) or (None, why). An intraday or Supply & Demand scanner's Not set parameters are left out of `params` (M94-Q2)."""
     if screen_id.startswith("legends."):
         from app.screener import legends as lg
         card = lg.load().card(screen_id)
@@ -66,7 +66,14 @@ def library_source(screen_id: str) -> Tuple[Optional[Tuple[str, str, Dict[str, A
         if scanner is None:
             return None, "no such intraday scanner"
         return (scanner.text, scanner.base_tf, scanner.defaults(), scanner.name), None
-    return None, "only Legends, breakout and intraday screens are opened from the server (the starters are built in the page)"
+    if screen_id.startswith("supply_demand."):
+        from app.screener import sd_scanners as sds
+        found = sds.scanner(screen_id)
+        if found is None:
+            return None, "no such Supply & Demand scanner"
+        return (found.text, found.base_tf, found.defaults(), found.name), None
+    return None, ("only Legends, breakout, intraday and Supply & Demand screens are opened from the server (the starters are"
+                  " built in the page)")
 
 
 __all__ = ["FLAG", "inline", "split", "library_source"]

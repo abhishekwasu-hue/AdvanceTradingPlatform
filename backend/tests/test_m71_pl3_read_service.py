@@ -178,7 +178,7 @@ def test_last_closed_bar_follows_the_session_never_the_forming_bar():
 def test_intervals_have_one_canonical_name():
     assert M.canonical("60min") == M.canonical("1h") == "1h" and M.canonical("day") == "1d" and M.canonical("week") == "1w"
     with pytest.raises(M.UnknownInterval):
-        M.canonical("2h")
+        M.canonical("4h")                         # M97-Q4: 10m and 2h are served now
 
 
 # --- Daily / Weekly: the NSE files, zero broker calls --------------------------------------------------------------------

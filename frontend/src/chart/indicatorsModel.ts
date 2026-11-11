@@ -37,6 +37,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M97 PR-4: supply / demand zones on the chosen timeframes (the chart's own and higher ones), off until turned on.
+  { id: "sd_zones", group: "layers", label: "Supply & Demand zones", note: "Bases between two strong candles, drawn from where they formed.",
+    flag: "sd_pack", keywords: "supply demand zones dbr rbr rbd dbd base proximal distal" },
 ];
 
 /** What the menu reads and changes. */

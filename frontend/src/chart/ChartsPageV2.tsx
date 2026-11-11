@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { BandRef } from "../charting/geometry";
 import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
@@ -46,6 +47,8 @@ import { ReadChartPanel, useReadChart } from "./ReadChartV2";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
+import { SD_LAYER_ID, useSdZones } from "./sdZones";
+import { SdZonesBar } from "./SdZonesBar";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
 import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
@@ -175,6 +178,10 @@ export default function ChartsPageV2(_props: PageProps) {
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+  // M97 PR-4: Supply & Demand zones (flag sd_pack) - read again when a new bar arrives; a tapped zone's candles highlighted
+  const [tipBand, setTipBand] = useState<BandRef | null>(null);
+  const sdOn = view.layers.includes(SD_LAYER_ID) && features.on("sd_pack") && tab === "chart" && !hubView;
+  const sd = useSdZones(engine, `${exchange}:${symbol}`, timeframe, sdOn, last ? Date.parse(last.timestamp) : null, tipBand);
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
   const readTf = readTimeframe(timeframe);
@@ -337,7 +344,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
                 markers={tpl.markers.length ? [...screen.markers, ...tpl.markers].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers}
-                volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
+                volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} onBandTip={setTipBand} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
             {screenId != null && screenShown && !fs.on && (
@@ -346,6 +353,7 @@ export default function ChartsPageV2(_props: PageProps) {
             {tplAsk && tplShown && !fs.on && (
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
+            {sdOn && !fs.on && <SdZonesBar chartTf={timeframe} shown={sd.shown} options={sd.options} onChange={sd.setOptions} note={sd.note} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

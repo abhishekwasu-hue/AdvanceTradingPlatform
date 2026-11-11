@@ -102,7 +102,7 @@ def test_fuzz_garbage_only_ever_raises_syntax_errors():
 
 
 def test_syntax_errors_carry_positions():
-    for text, pos, words in (("close > ", 8, "expected a value"), ("close >> 1", 7, "expected a value"), ("close@2h > 1", 5, "unknown timeframe"),
+    for text, pos, words in (("close > ", 8, "expected a value"), ("close >> 1", 7, "expected a value"), ("close@4h > 1", 5, "unknown timeframe"),
                              ("SMA(close, 20", 13, "expected )"), ("1 BETWEEN 0 OR 2", 12, "AND"), ("5[1] > 1", 1, "fields and functions only"),
                              ("close # 1", 6, "unexpected character")):
         with pytest.raises(ScreenQLSyntaxError) as info:

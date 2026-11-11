@@ -95,7 +95,7 @@ class ChartIndicators(_Prefs):
 
 # TF-1 (owner 25 Oct): the timeframes a chart can show (the candle route's ids, frontend src/chart/timeframes.ts) and
 # the starred favourites shown as one-click buttons beside the timeframe dropdown (default 5m, 15m, 1H, D).
-ChartTimeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
+ChartTimeframe = Literal["1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month"]   # M97-Q4: 10min, 120min
 DEFAULT_TIMEFRAME_FAVOURITES: Tuple[ChartTimeframe, ...] = ("5min", "15min", "60min", "day")
 
 
@@ -113,7 +113,7 @@ class ChartPrefs(_Prefs):
     indicators: ChartIndicators = Field(default_factory=ChartIndicators)
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
     timeframe_favourites: Annotated[List[ChartTimeframe], AfterValidator(_unique_favourites)] = Field(
-        default_factory=lambda: list(DEFAULT_TIMEFRAME_FAVOURITES), max_length=9,
+        default_factory=lambda: list(DEFAULT_TIMEFRAME_FAVOURITES), max_length=11,
         description="TF-1: the starred timeframes, shown as one-click buttons beside the dropdown (in this order)")
 
 

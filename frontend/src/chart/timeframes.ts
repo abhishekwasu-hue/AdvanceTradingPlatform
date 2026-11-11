@@ -6,7 +6,8 @@
 import type { OHLCVBar } from "../types";
 import { applyLivePrice } from "../utils/indicators";
 
-export const TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"] as const;
+// M97-Q4: 10min and 120min (2 hours) are built on the server from the same one-minute bars, offered when it lists them.
+export const TIMEFRAMES = ["1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month"] as const;
 export type TimeframeId = (typeof TIMEFRAMES)[number];
 
 interface TimeframeSpec { label: string; seconds: number; historyDays: number; olderDays: number }
@@ -17,9 +18,11 @@ const SPEC: Record<TimeframeId, TimeframeSpec> = {
   "1min": { label: "1 min", seconds: 60, historyDays: 5, olderDays: 5 },
   "3min": { label: "3 min", seconds: 180, historyDays: 7, olderDays: 7 },
   "5min": { label: "5 min", seconds: 300, historyDays: 10, olderDays: 10 },
+  "10min": { label: "10 min", seconds: 600, historyDays: 15, olderDays: 15 },
   "15min": { label: "15 min", seconds: 900, historyDays: 20, olderDays: 20 },
   "30min": { label: "30 min", seconds: 1_800, historyDays: 30, olderDays: 30 },
   "60min": { label: "1 hour", seconds: 3_600, historyDays: 30, olderDays: 30 },
+  "120min": { label: "2 hours", seconds: 7_200, historyDays: 30, olderDays: 30 },
   day: { label: "Daily", seconds: 86_400, historyDays: 730, olderDays: 730 },
   week: { label: "Weekly", seconds: 7 * 86_400, historyDays: 1_826, olderDays: 1_826 },
   month: { label: "Monthly", seconds: 30 * 86_400, historyDays: 7_300, olderDays: 7_300 },
@@ -37,7 +40,8 @@ export function isTimeframe(value: unknown): value is TimeframeId {
 export const timeframeLabel = (tf: TimeframeId): string => SPEC[tf].label;
 
 /** UI-H W0-1: the short names a phone's timeframe row shows ("1m 5m 15m 1H D"); the full label stays the accessible name. */
-const SHORT: Record<TimeframeId, string> = { "1min": "1m", "3min": "3m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1H", day: "D", week: "W", month: "M" };
+const SHORT: Record<TimeframeId, string> = { "1min": "1m", "3min": "3m", "5min": "5m", "10min": "10m", "15min": "15m", "30min": "30m", "60min": "1H", "120min": "2H",
+  day: "D", week: "W", month: "M" };
 export const timeframeShort = (tf: TimeframeId): string => SHORT[tf];
 /** Seconds per bar (a month counts as 30 days: only used to tell a closed bar from a forming one). */
 export const timeframeSeconds = (tf: TimeframeId): number => SPEC[tf].seconds;
@@ -75,8 +79,8 @@ export const PHONE_FAVOURITES = 3;
 export interface TimeframeGroup { label: "Minutes" | "Hours" | "Days" | "Weeks" | "Months"; ids: TimeframeId[] }
 
 const GROUP_OF: Record<TimeframeId, TimeframeGroup["label"]> = {
-  "1min": "Minutes", "3min": "Minutes", "5min": "Minutes", "15min": "Minutes", "30min": "Minutes",
-  "60min": "Hours", day: "Days", week: "Weeks", month: "Months",
+  "1min": "Minutes", "3min": "Minutes", "5min": "Minutes", "10min": "Minutes", "15min": "Minutes", "30min": "Minutes",
+  "60min": "Hours", "120min": "Hours", day: "Days", week: "Weeks", month: "Months",
 };
 const GROUP_ORDER: readonly TimeframeGroup["label"][] = ["Minutes", "Hours", "Days", "Weeks", "Months"];
 
@@ -123,7 +127,8 @@ export function servedText(offered: readonly TimeframeId[]): string {
   const mins = offered.filter((tf) => GROUP_OF[tf] === "Minutes").map((tf) => String(timeframeSeconds(tf) / 60));
   const parts: string[] = [];
   if (mins.length) parts.push(`${mins.length > 1 ? `${mins.slice(0, -1).join(", ")} and ${mins[mins.length - 1]}` : mins[0]} minutes`);
-  if (offered.includes("60min")) parts.push("1 hour");
+  const hours = offered.filter((tf) => GROUP_OF[tf] === "Hours").map((tf) => timeframeSeconds(tf) / 3_600);
+  if (hours.length) parts.push(`${hours.length > 1 ? `${hours.slice(0, -1).join(", ")} and ${hours[hours.length - 1]}` : hours[0]} ${hours.length === 1 && hours[0] === 1 ? "hour" : "hours"}`);
   for (const [tf, word] of [["day", "daily"], ["week", "weekly"], ["month", "monthly"]] as const) if (offered.includes(tf)) parts.push(word);
   return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] ?? "";
 }

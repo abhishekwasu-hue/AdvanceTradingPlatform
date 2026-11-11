@@ -1,5 +1,5 @@
 /** U5: the timeframe a stage reads, as a chip. "Scan" means the scan's own timeframe (no `@tf`). SCR-FIX D8: the shared
- * picker (src/ui/Combobox.tsx: keyboard, screen readers and a phone sheet with 44 px rows), all nine timeframes. */
+ * picker (src/ui/Combobox.tsx: keyboard, screen readers and a phone sheet with 44 px rows), every timeframe (M97-Q4: eleven, 10m and 2h among them). */
 import { createContext, useContext } from "react";
 import { Combobox } from "../ui/Combobox";
 import { TIMEFRAMES, timeframeWords, type Timeframe } from "./model";

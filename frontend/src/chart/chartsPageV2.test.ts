@@ -97,7 +97,9 @@ describe("UI2-4b2 Indicators menu", () => {
     expect(menuGroups("", none).map((g) => g.title)).toEqual(["On this chart", "Popular"]);
     expect(menuGroups("", all)[0].items.map((i) => i.label)).toEqual(["Volume", "RSI 14"]);
     expect(menuGroups("", all)[1].items.map((i) => i.label)).toEqual(["EMA 9", "EMA 21", "SMA 50", "VWAP"]);
-    expect(JSON.stringify(menuGroups("", all))).not.toMatch(/reader|zones/i);
+    // no reader overlay (the owner's method areas); M97's generic Supply & Demand zones layer is the only "zones" item
+    expect(JSON.stringify(menuGroups("", all))).not.toMatch(/reader/i);
+    expect(menuGroups("", all).flatMap((g) => g.items).filter((i) => /zones/i.test(JSON.stringify(i))).map((i) => i.flag)).toEqual(["sd_pack"]);
     for (const item of menuGroups("", all)[1].items) expect(item.term, item.label).toBeTruthy();       // each has its "?"
   });
 

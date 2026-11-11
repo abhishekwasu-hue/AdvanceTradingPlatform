@@ -172,7 +172,19 @@ def _candles(df: pd.DataFrame, s: SDSettings) -> dict[str, np.ndarray]:
         leg = known & (rng >= s.leg_mult * avg) & (body_pct >= s.leg_body_pct) & (c != o)
         base = known & (rng <= s.base_mult * avg) & (body_pct <= s.base_body_pct)
         out = np.isfinite(ref) & (rng >= s.out_mult * ref) & (c != o)
-    return {"o": o, "h": h, "l": lo, "c": c, "up": c > o, "leg": leg, "base": base, "out": out}
+    return {"o": o, "h": h, "l": lo, "c": c, "up": c > o, "leg": leg, "base": base, "out": out, "avg": avg, "ref": ref}
+
+
+def candle_numbers(df: pd.DataFrame, settings: SDSettings | None = None) -> dict[str, np.ndarray]:
+    """M97 PR-4 (the chart layer's tap card): per candle, the numbers the detector judged it by - its range, its body as
+    a % of the range, the average range of the `avg_n` candles before it and the leg-out reference (that average, or
+    the ATR known at the candle before, by `out_ref`). The same arrays `detect` uses, nothing recomputed differently."""
+    s = settings or SDSettings()
+    k = _candles(df, s)
+    rng = k["h"] - k["l"]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        body_pct = np.where(rng > 0, np.abs(k["c"] - k["o"]) / rng * 100.0, 0.0)
+    return {"range": rng, "body_pct": body_pct, "avg": k["avg"], "ref": k["ref"]}
 
 
 def detect(df: pd.DataFrame, settings: SDSettings | None = None) -> list[SDZone]:
@@ -334,6 +346,6 @@ def cached_sd_series(df: pd.DataFrame, settings: SDSettings | None = None) -> SD
     return value
 
 
-__all__ = ["SDSettings", "SDZone", "SDSeries", "SETTINGS_TABLE", "REFERENCE_LABEL", "settings_from", "detect", "track",
+__all__ = ["SDSettings", "SDZone", "SDSeries", "SETTINGS_TABLE", "REFERENCE_LABEL", "settings_from", "candle_numbers", "detect", "track",
            "sd_series", "cached_sd_series", "DEMAND", "SUPPLY", "SIDES", "FORMATIONS", "FORMATION_SIDE", "FRESH", "TESTED",
            "VIOLATED", "STATE_CHOICES", "EDGES", "OUT_REFS", "LINES"]

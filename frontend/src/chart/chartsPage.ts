@@ -34,10 +34,11 @@ export function chartsSymbol(fromPath: string | null | undefined, last: string |
   return (fromPath ?? last ?? DEFAULT_SYMBOL).trim().toUpperCase() || DEFAULT_SYMBOL;
 }
 
-/** Week and month need the server's support (UI2-4a2): they are offered only when `/market-data/sources` lists them.
- * Not known yet (or the read failed): the intraday timeframes and D. */
+/** Week and month need the server's support (UI2-4a2), and so do 10 min and 2 hours (M97-Q4): they are offered only
+ * when `/market-data/sources` lists them. Not known yet (or the read failed): the other intraday timeframes and D. */
+const SERVER_LISTED: ReadonlySet<TimeframeId> = new Set<TimeframeId>(["week", "month", "10min", "120min"]);
 export function offeredTimeframes(server: readonly string[] | null | undefined): TimeframeId[] {
-  return TIMEFRAMES.filter((tf) => (tf !== "week" && tf !== "month") || !!server?.includes(tf));
+  return TIMEFRAMES.filter((tf) => !SERVER_LISTED.has(tf) || !!server?.includes(tf));
 }
 
 /** The volume pane's name: an index's volume comes from its near-month future, and says so in words (day-one fix 8:

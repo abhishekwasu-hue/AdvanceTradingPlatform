@@ -9,8 +9,8 @@ const bar = (timestamp: string, close: number, extra: Partial<ChartBar> = {}): C
 
 describe("UI2-4b1 the one timeframe list", () => {
   it("is 1 min ... Monthly in words (day-one fix 8), in that order, with the candle route's ids", () => {
-    expect(TIMEFRAMES.map(timeframeLabel)).toEqual(["1 min", "3 min", "5 min", "15 min", "30 min", "1 hour", "Daily", "Weekly", "Monthly"]);
-    expect([...TIMEFRAMES]).toEqual(["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]);
+    expect(TIMEFRAMES.map(timeframeLabel)).toEqual(["1 min", "3 min", "5 min", "10 min", "15 min", "30 min", "1 hour", "2 hours", "Daily", "Weekly", "Monthly"]);
+    expect([...TIMEFRAMES]).toEqual(["1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month"]);   // M97-Q4
     const seconds = TIMEFRAMES.map(timeframeSeconds);
     expect([...seconds].sort((a, b) => a - b)).toEqual(seconds);                  // shortest to longest
     expect([...DAILY_OR_LONGER]).toEqual(["day", "week", "month"]);
@@ -21,7 +21,8 @@ describe("UI2-4b1 the one timeframe list", () => {
     expect(stepTimeframe("week", 1)).toBe("month");
     expect(stepTimeframe("month", 1)).toBe("month");
     expect(stepTimeframe("1min", -1)).toBe("1min");
-    expect(stepTimeframe("60min", 1)).toBe("day");
+    expect(stepTimeframe("60min", 1)).toBe("120min");                              // M97-Q4
+    expect(stepTimeframe("120min", 1)).toBe("day");
     expect(stepTimeframe("5min", -2)).toBe("1min");
   });
 

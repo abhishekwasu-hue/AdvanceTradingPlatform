@@ -12,8 +12,8 @@
  */
 import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
-import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, StudyLine, StudySpec } from "./engine";
-import { DEFAULT_COLOR, layerShapes, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
+import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerSegment, StudyLine, StudySpec } from "./engine";
+import { DEFAULT_COLOR, bandLeft, layerShapes, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -194,15 +194,26 @@ export class LightweightEngine implements ChartEngine {
     for (const layer of this.layers.values()) {
       const size = layer.bands?.paneSize();
       if (!size || x < 0 || y < 0 || x > size.width || y > size.height) continue;
+      let conv: Converters | null | undefined;
       for (const b of layer.data) {
         if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
+        if (b.start !== undefined) {                                  // M97 PR-4: a time-anchored band starts at its time
+          if (conv === undefined) conv = this.paneConverters();
+          const left = conv ? bandLeft(b, conv) : null;
+          if (left === null || x < left) continue;
+        }
         const low = Math.min(b.low, b.high), high = Math.max(b.low, b.high);
         const y1 = this.candles.priceToCoordinate(high), y2 = this.candles.priceToCoordinate(low);
         if (y1 == null || y2 == null) continue;
         const [top, bottom] = [Math.min(y1, y2), Math.max(y1, y2)];
         const slack = bottom - top < 6 ? 3 : 0;                     // a line or a thin band is still easy to hit
         if (y < top - slack || y > bottom + slack) continue;
-        if (!best || bottom - top < best.span) best = { ref: { low, high, label: b.label ?? "" }, span: bottom - top };
+        if (!best || bottom - top < best.span) {
+          const ref: BandRef = { low, high, label: b.label ?? "" };
+          if (b.id !== undefined) ref.id = b.id;
+          if (b.tip !== undefined) ref.tip = b.tip;
+          best = { ref, span: bottom - top };
+        }
       }
     }
     return best ? best.ref : null;
@@ -215,6 +226,12 @@ export class LightweightEngine implements ChartEngine {
   private themedBand = (b: LayerBand): LayerBand => {
     const color = b.role ? this.zoneColors[b.role] : undefined;
     return color ? { ...b, color } : b;
+  };
+
+  /** M97 PR-4: a segment with a `role` in the theme's buyer / seller colour, as a band's. */
+  private themedSegment = (s: LayerSegment): LayerSegment => {
+    const color = s.role ? this.zoneColors[s.role] : undefined;
+    return color ? { ...s, color } : s;
   };
 
   /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
@@ -308,7 +325,7 @@ export class LightweightEngine implements ChartEngine {
     let bands: LayerPrimitive | null = null;
     if (data.bands?.length || data.segments?.length || data.labels?.length) {
       const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])] };
-      bands = new LayerPrimitive((c) => layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand) },
+      bands = new LayerPrimitive((c) => layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand), segments: shapes.segments.map(this.themedSegment) },
                                                     { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle }),
                                  (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);

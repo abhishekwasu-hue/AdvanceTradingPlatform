@@ -20,6 +20,10 @@ from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, M
 MAX_OFFSET = 500
 DEFAULT_COST_CAP = 200.0
 ANY_UNIT = "any"                      # a literal or a parameter: takes the other side's unit
+# M97-Q4: the timeframes built from finer bars only - a read is refused on a screen timeframe that does not divide it
+BUILT_TFS: dict[str, int] = {tf: n.TF_MINUTES[tf] for tf in ("10m", "2h")}
+BUILT_FROM: dict[str, tuple[str, ...]] = {tf: tuple(t for t in n.TIMEFRAMES if n.TF_MINUTES[t] <= m and m % n.TF_MINUTES[t] == 0 and t != tf)
+                                          for tf, m in BUILT_TFS.items()}
 
 
 @dataclass
@@ -85,6 +89,10 @@ class _Checker:
         if n.TF_MINUTES[tf] < n.TF_MINUTES[self.base_tf]:
             self.err(f"@{tf} is finer than the screen's timeframe @{self.base_tf}; a {tf} value has no single value per {self.base_tf} bar", node,
                      "timeframe_finer", tf=tf, base_tf=self.base_tf)
+        elif tf in BUILT_TFS and tf != self.base_tf and BUILT_TFS[tf] % n.TF_MINUTES[self.base_tf]:
+            # M97-Q4: a 10m / 2h bar is built from whole bars of the screen's timeframe (5m into 10m, 1h into 2h)
+            self.err(f"@{tf} is built from whole {self.base_tf} bars only when {self.base_tf} divides it; use a screen timeframe "
+                     f"of {', '.join('@' + t for t in BUILT_FROM[tf])}", node, "timeframe_finer", tf=tf, base_tf=self.base_tf)
         return tf
 
     def _need(self, tf: str, bars: int) -> None:

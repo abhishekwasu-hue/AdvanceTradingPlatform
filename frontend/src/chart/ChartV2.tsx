@@ -60,6 +60,8 @@ export interface ChartV2Props {
   drawingTools?: boolean;
   onEngine?: (engine: LightweightEngine | null) => void;
   onTools?: (tools: ReturnType<typeof useDrawingTools>) => void;
+  /** M97 PR-4: the band whose tooltip opened (null when it closed) - a layer highlights what the band is made of. */
+  onBandTip?: (band: BandRef | null) => void;
   /** PR 2: the floating Auto / Reset / Latest controls (default on; a Multi-chart cell shows them while it is active). */
   viewControls?: boolean;
   /** PR 2: a one-finger vertical drag moves the chart instead of the page (the Charts page in full screen). Off, a
@@ -89,6 +91,8 @@ export function labelAvoidRects(plot: Element, root: Element): { x: number; y: n
                    w: Math.round(r.width + 2 * AVOID_PAD), h: Math.round(r.height + 2 * AVOID_PAD) }));
 }
 
+/** M97 PR-4: below this chart width (px) a tooltip with rows spans the chart instead of sitting beside the tap. */
+const NARROW_TIP = 560;
 /** M78 (F5): a tap that moved less than this (px) is a tap, not a pan. */
 const TAP_SLOP = 8;
 /** M78 (F5): the open band tooltip - the band and the plot point it was asked at. */
@@ -98,21 +102,33 @@ interface BandTipState { band: BandRef; x: number; y: number }
  * tapped (phone) or hovered (desktop), turned towards the middle of the chart so it never runs off it. */
 export function BandTip({ tip, width }: { tip: BandTipState; width: number }) {
   const left = tip.x <= width / 2;
-  const style = { top: Math.max(0, tip.y + 12), boxShadow: "var(--shadow)", ...(left ? { left: tip.x + 12 } : { right: Math.max(0, width - tip.x + 12) }) };
+  // M97 PR-4: a tooltip with the layer's rows is wider - on a narrow chart (a phone) it spans the chart with a small
+  // margin and wraps, so it never runs off the screen
+  const rows = !!tip.band.tip?.length;
+  const narrow = rows && width < NARROW_TIP;
+  const style = { top: Math.max(0, tip.y + 12), boxShadow: "var(--shadow)",
+    ...(narrow ? { left: 8, right: 8 } : left ? { left: tip.x + 12 } : { right: Math.max(0, width - tip.x + 12) }) };
   return (
-    <div role="tooltip" data-band-tip className="pointer-events-none absolute z-20 rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t12 text-fg tabular-nums whitespace-nowrap" style={style}>
+    <div role="tooltip" data-band-tip className={`pointer-events-none absolute z-20 rounded-control border border-border bg-surface-1 px-space-2 py-space-1 text-t12 text-fg tabular-nums ${narrow ? "whitespace-normal" : "whitespace-nowrap"}`} style={style}>
       {tip.band.label && <p className="font-semibold">{tip.band.label}</p>}
-      <dl className="grid grid-cols-[auto_auto] gap-x-space-2">
-        <dt>Top</dt><dd className="text-right" data-band-top>{formatNumber(tip.band.high, 2)}</dd>
-        <dt>Bottom</dt><dd className="text-right" data-band-bottom>{formatNumber(tip.band.low, 2)}</dd>
-      </dl>
+      {tip.band.tip?.length ? (
+        // M97 PR-4: the layer's own rows (a supply / demand zone: formation, state, its lines, the leg / base numbers)
+        <dl className="grid grid-cols-[auto_auto] gap-x-space-2" data-band-rows>
+          {tip.band.tip.map(([k, v]) => <div key={k} className="contents"><dt>{k}</dt><dd className="text-right">{v}</dd></div>)}
+        </dl>
+      ) : (
+        <dl className="grid grid-cols-[auto_auto] gap-x-space-2">
+          <dt>Top</dt><dd className="text-right" data-band-top>{formatNumber(tip.band.high, 2)}</dd>
+          <dt>Bottom</dt><dd className="text-right" data-band-bottom>{formatNumber(tip.band.low, 2)}</dd>
+        </dl>
+      )}
     </div>
   );
 }
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, viewControls = true, captureTouch = false, rememberViewFor = null, className = "h-[480px]",
+  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, onBandTip, viewControls = true, captureTouch = false, rememberViewFor = null, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -123,8 +139,8 @@ export default function ChartV2({
   const [bandTip, setBandTip] = useState<BandTipState | null>(null);
   const [, , appTheme] = useAppearance();
   const theme = resolveChartTheme(prefs.theme, appTheme);
-  const callbacks = useRef({ onLoadOlder, onEngine, onTools });
-  callbacks.current = { onLoadOlder, onEngine, onTools };
+  const callbacks = useRef({ onLoadOlder, onEngine, onTools, onBandTip });
+  callbacks.current = { onLoadOlder, onEngine, onTools, onBandTip };
   const display = useMemo(() => foldLive(candles, live?.ltp, live?.timestamp ?? live?.fetched_at, timeframe), [candles, live, timeframe]);
 
   // Built once per mount (and per venue: the time axis zone); everything else changes in place below.
@@ -226,6 +242,9 @@ export default function ChartV2({
   }, [core]);
   // the chart's own areas changed (another answer): an open tooltip would name a band that may be gone
   useEffect(() => { setBandTip(null); }, [areaKey]);
+  // M97 PR-4: the page hears which band's tooltip is open (by its band, the same object while it stays open)
+  const tipBand = bandTip?.band ?? null;
+  useEffect(() => { callbacks.current.onBandTip?.(tipBand); }, [tipBand]);
 
   const tools = useDrawingTools(core?.engine ?? null, core ? plotRef.current : null, symbol, exchange, drawingTools, timeframe);
   useEffect(() => { callbacks.current.onTools?.(tools); }, [tools.view, tools.controller]);  // eslint-disable-line react-hooks/exhaustive-deps

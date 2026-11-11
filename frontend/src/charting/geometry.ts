@@ -41,8 +41,9 @@ export type Shape =
    * band it names (its prices for the tooltip, F5). An empty `fill` paints nothing (the box still counts). */
   | { type: "chip"; x: number; y: number; w: number; h: number; r: number; fill: string; top: true; band: BandRef };
 
-/** M78 (F5): the band a label or a hit belongs to - its bottom / top prices and its label. */
-export interface BandRef { low: number; high: number; label: string }
+/** M78 (F5): the band a label or a hit belongs to - its bottom / top prices and its label. M97 PR-4: its own id and
+ * tooltip rows, when the layer gave them. */
+export interface BandRef { low: number; high: number; label: string; id?: string; tip?: readonly (readonly [string, string])[] }
 
 export const DEFAULT_COLOR = "#2962ff";
 export const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
@@ -294,7 +295,8 @@ export function labelInk(color: string, style: BandLabelStyle | undefined): stri
 /** M78 (F1): the height of a band label's chip at a font size. */
 export const chipHeight = (fontPx: number) => fontPx + 2 * CHIP_PAD_Y;
 
-export interface BandLabelItem { top: number; bottom: number; text: string; color: string; band?: BandRef }
+/** `left` (M97 PR-4): a time-anchored band's left edge in pane pixels - its label is tried just inside that edge first. */
+export interface BandLabelItem { top: number; bottom: number; text: string; color: string; band?: BandRef; left?: number }
 
 /** M75 W-1 (W3) + M78 (F1, F4): where each band's label goes, as a chip (a box the text's width plus padding) with
  * the text inside it. Tried in order at the left of the pane - inside the band (when the band is tall enough), on a
@@ -327,7 +329,8 @@ export function placeBandLabels(items: readonly BandLabelItem[], c: Converters):
         if (Math.max(it.top - (y + h), y - it.bottom) <= near) ys.push(y);
       }
     }
-    const xs = [LABEL_PAD, c.width - LABEL_PAD - w, ...avoid.map((a) => a.x - LABEL_PAD - w)];
+    const inside = it.left !== undefined && it.left > 0 ? [it.left + LABEL_PAD] : [];
+    const xs = [...inside, LABEL_PAD, c.width - LABEL_PAD - w, ...avoid.map((a) => a.x - LABEL_PAD - w)];
     let spot: Rect | null = null;
     for (const x of xs) {
       for (const y of ys) {
@@ -357,9 +360,21 @@ export function areaLabelText(a: { role?: string | null; timeframe?: string | nu
   return [side, a.timeframe, a.state].filter((p): p is string => typeof p === "string" && p.trim() !== "").map((p) => p.trim()).join(" · ");
 }
 
+/** M97 PR-4: where a band starts in pane pixels - 0 for a full-width band; a time-anchored band from its start time
+ * (clamped to the pane's left edge when it began before the first bar shown); null when it cannot be placed (no bars
+ * yet) or starts past the right edge. */
+export function bandLeft(b: Pick<LayerBand, "start">, c: Pick<Converters, "x" | "width">): number | null {
+  if (b.start === undefined) return 0;
+  if (!Number.isFinite(b.start)) return null;
+  const x = c.x(b.start);
+  if (x == null || !Number.isFinite(x) || x >= c.width) return null;
+  return Math.max(0, x);
+}
+
 /** Z7a-3: layer bands as shapes - a filled, translucent rectangle across the pane (a line when low == high, or when
  * the band is thinner than a pixel), then every label on top, placed by `placeBandLabels`. Bands off the price scale
- * are skipped. */
+ * are skipped. M97 PR-4: a band with a `start` time begins there and runs to the right edge (its label just inside
+ * its left edge); a band without one is drawn exactly as before. */
 export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] {
   const out: Shape[] = [];
   const labels: BandLabelItem[] = [];
@@ -368,17 +383,21 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
     const yHigh = c.y(Math.max(b.low, b.high));
     const yLow = c.y(Math.min(b.low, b.high));
     if (yHigh == null || yLow == null) continue;
+    const left = bandLeft(b, c);
+    if (left === null) continue;
     const color = b.color ?? DEFAULT_COLOR;
     const top = Math.min(yHigh, yLow);
     const height = Math.abs(yLow - yHigh);
     if (b.low === b.high || height < 1) {
-      out.push({ type: "segment", x1: 0, y1: top, x2: c.width, y2: top, color, width: 1, dash: b.style ?? "solid" });
+      out.push({ type: "segment", x1: left, y1: top, x2: c.width, y2: top, color, width: 1, dash: b.style ?? "solid" });
     } else {
-      out.push({ type: "rect", x: 0, y: top, w: c.width, h: height, fill: withAlpha(color, b.opacity ?? 0.15), stroke: withAlpha(color, 0.5) });
+      out.push({ type: "rect", x: left, y: top, w: c.width - left, h: height, fill: withAlpha(color, b.opacity ?? 0.15), stroke: withAlpha(color, 0.5) });
     }
     if (b.label) {
-      labels.push({ top, bottom: top + height, text: b.label, color,
-                    band: { low: Math.min(b.low, b.high), high: Math.max(b.low, b.high), label: b.label } });
+      const band: BandRef = { low: Math.min(b.low, b.high), high: Math.max(b.low, b.high), label: b.label };
+      if (b.id !== undefined) band.id = b.id;
+      if (b.tip !== undefined) band.tip = b.tip;
+      labels.push({ top, bottom: top + height, text: b.label, color, band, ...(b.start !== undefined ? { left } : {}) });
     }
   }
   return [...out, ...placeBandLabels(labels, c)];
@@ -388,10 +407,14 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
 export function segmentShapes(segments: readonly LayerSegment[], c: Converters): Shape[] {
   const out: Shape[] = [];
   for (const s of segments) {
-    const x1 = c.x(s.t1), y1 = c.y(s.p1), x2 = c.x(s.t2), y2 = c.y(s.p2);
+    const x1 = c.x(s.t1), y1 = c.y(s.p1), y2 = c.y(s.p2);
+    // M97 PR-4: `extend: "right"` - a horizontal line from its start on to the right edge (the start clamped to the left edge)
+    const x2 = s.extend === "right" ? c.width : c.x(s.t2);
     if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
+    if (s.extend === "right" && x1 >= c.width) continue;
     const color = s.color ?? DEFAULT_COLOR;
-    out.push({ type: "segment", x1, y1, x2, y2, color, width: Math.min(4, Math.max(1, s.width ?? 1)), dash: s.style ?? "solid" });
+    out.push({ type: "segment", x1: s.extend === "right" ? Math.max(0, x1) : x1, y1, x2, y2: s.extend === "right" ? y1 : y2, color,
+               width: Math.min(4, Math.max(1, s.width ?? 1)), dash: s.style ?? "solid" });
     if (s.label) out.push({ type: "text", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 3, text: s.label, color, align: "center", baseline: "bottom" });
   }
   return out;

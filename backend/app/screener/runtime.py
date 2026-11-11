@@ -59,10 +59,11 @@ from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
 
-_RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "1D", "1w": "W-MON", "1M": "MS"}
-_DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "15m": timedelta(minutes=15),
-                             "30m": timedelta(minutes=30), "1h": timedelta(hours=1), "1d": timedelta(days=1), "1w": timedelta(days=7),
-                             "1M": DateOffset(months=1)}
+_RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "10m": "10min", "15m": "15min", "30m": "30min", "1h": "60min", "2h": "120min",
+             "1d": "1D", "1w": "W-MON", "1M": "MS"}
+_DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "10m": timedelta(minutes=10),
+                             "15m": timedelta(minutes=15), "30m": timedelta(minutes=30), "1h": timedelta(hours=1), "2h": timedelta(hours=2),
+                             "1d": timedelta(days=1), "1w": timedelta(days=7), "1M": DateOffset(months=1)}
 
 
 EXCHANGE_TZ = "Asia/Kolkata"

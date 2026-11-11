@@ -20,7 +20,7 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import Iterable, List, Sequence, Set
+from typing import Any, Iterable, List, Sequence, Set
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +58,31 @@ def _seed() -> Set[str]:
 
 _NAMES: Set[str] = _seed()
 _FROM_MASTER: Set[str] = set()
+
+
+def _seed_symbols() -> dict[str, str]:
+    """COP-2 B: the seed's names, aliases and symbols (lower-cased) -> the symbol they name ("reliance" -> "RELIANCE")."""
+    out: dict[str, str] = {}
+    try:
+        data = json.loads(SEED_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return out
+    for row in data.get("instruments", []):
+        symbol = str(row.get("symbol", "")).strip().upper()
+        if not symbol:
+            continue
+        for name in [symbol if len(symbol) >= 3 else "", *row.get("names", []), *row.get("aliases", [])]:
+            n = norm_name(str(name))
+            if n:
+                out.setdefault(n, symbol)
+    return out
+
+
+# COP-2 B (owner 11 Nov): a symbol written in any case ("read the reliance chart") is understood when it names a known
+# instrument - the seed always, the instrument master once `refresh_symbols` has read it. Kept apart from `_NAMES` (the
+# output filter's index), so reading the master here never changes what the filter withholds.
+_SYMBOLS: dict[str, str] = _seed_symbols()
+_LAST_SYMBOLS = {"at": 0.0}
 
 
 def add(names: Iterable[str]) -> int:
@@ -115,6 +140,55 @@ async def refresh_if_stale(session) -> int:  # type: ignore[no-untyped-def]
     if time.monotonic() - _LAST_REFRESH["at"] < REFRESH_SECONDS:
         return 0
     return await refresh(session)
+
+
+def add_symbols(rows: Iterable[tuple[Any, Any]]) -> int:
+    """(symbol, company name) rows into the symbol index: the symbol itself when it has five letters or more and is not an
+    ordinary word, and the company name (a one-word name only with five letters or more, not an ordinary word). Returns how
+    many were new. The seed's own entries are never replaced."""
+    before = len(_SYMBOLS)
+    for symbol, company in rows:
+        sym = str(symbol or "").strip().upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9&-]{1,19}", sym):
+            continue
+        for name in (sym if len(sym) >= 5 else "", str(company or "")):
+            n = norm_name(name)
+            if n and len(n.split()) <= MAX_WORDS and (" " in n or (len(n) >= 5 and n not in ORDINARY_WORDS)):
+                _SYMBOLS.setdefault(n, sym)
+    return len(_SYMBOLS) - before
+
+
+async def refresh_symbols_if_stale(session) -> int:  # type: ignore[no-untyped-def]
+    """COP-2 B: the instrument master's listed securities into the symbol index, at most every REFRESH_SECONDS (after a
+    failed read, again in RETRY_SECONDS). Never raises; a failed read is rolled back so the caller's session stays usable."""
+    import time
+    if _LAST_SYMBOLS["at"] and time.monotonic() - _LAST_SYMBOLS["at"] < REFRESH_SECONDS:
+        return 0
+    try:
+        from sqlalchemy import select
+
+        from app.db.models import SecurityRecord
+        rows = (await session.execute(select(SecurityRecord.symbol, SecurityRecord.name).where(SecurityRecord.status != "DELISTED"))).all()
+    except Exception:  # noqa: BLE001 - the seed still applies
+        log.warning("instrument symbols: master not loaded", exc_info=True)
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001 - nothing more to undo
+            pass
+        _LAST_SYMBOLS["at"] = time.monotonic() - REFRESH_SECONDS + RETRY_SECONDS
+        return 0
+    _LAST_SYMBOLS["at"] = time.monotonic()
+    return add_symbols([(symbol, name) for symbol, name in rows])
+
+
+def symbol_named(words: Sequence[str]) -> str | None:
+    """COP-2 B: the symbol the leading words name, in any case (the longest match, at most MAX_WORDS words), else None."""
+    cleaned = [norm_word(w) for w in words[:MAX_WORDS]]
+    for n in range(len(cleaned), 0, -1):
+        hit = _SYMBOLS.get(" ".join(cleaned[:n]))
+        if hit:
+            return hit
+    return None
 
 
 def known(name: str) -> bool:

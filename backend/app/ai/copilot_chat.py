@@ -271,7 +271,7 @@ _NOT_SYMBOLS = frozenset(grounding.ACRONYMS | {"I", "ME", "MY", "WHAT", "HOW", "
 
 def named_symbol(message: str, exclude: frozenset[str] = frozenset()) -> str | None:
     """The index the message names (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX), else an upper-case symbol
-    it writes (not a common word, nor one in `exclude`), else None."""
+    it writes (not a common word, nor one in `exclude`), else a known instrument it writes in any case, else None."""
     q = _norm(message)
     for name, pattern in _INDEX_WORDS:
         if re.search(pattern, q):
@@ -280,6 +280,16 @@ def named_symbol(message: str, exclude: frozenset[str] = frozenset()) -> str | N
         bare = token.split(":")[-1]
         if bare not in _NOT_SYMBOLS and bare not in exclude:
             return bare
+    # COP-2 B (owner 11 Nov): a known instrument written in lower or mixed case ("read the reliance chart", "Tata Motors")
+    # - only names the instrument index knows, never an ordinary word or a word above.
+    from app.ai import instrument_names
+    words = re.findall(r"[A-Za-z0-9&]+", message or "")
+    for i, word in enumerate(words):
+        if word.upper() in _NOT_SYMBOLS:
+            continue
+        hit = instrument_names.symbol_named(words[i:i + instrument_names.MAX_WORDS])
+        if hit and hit not in _NOT_SYMBOLS and hit not in exclude:
+            return hit
     return None
 
 
@@ -827,7 +837,9 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult, liv
     state = d.get("chart_state") or {}
     row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
     raw = state.get("direction") or (row or {}).get("direction")
-    trend = trend_words(raw) if raw and not (row or {}).get("short") else None
+    # COP-2 C (owner 11 Nov): the same trend word as the structure card ("up (weak)" -> up, weak); not known only when
+    # the direction is none / empty or the history is short.
+    trend, weak = _card_trend(raw) if raw and not (row or {}).get("short") else (None, False)
     bands = (zones.data or {}).get("bands") or [] if zones.ok else []
     extra = _live_fields(live)
     # DATA-FIX D1: where the price is against the area is said from the live price when there is one (the reading
@@ -836,7 +848,7 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult, liv
     area = nearest_area(float(ref), bands) if isinstance(ref, (int, float)) and ref > 0 else None
     label = "Provisional close" if oc.get("provisional") and oc.get("close") is not None else "Last close"
     return {"symbol": symbol, "price": price, "price_label": label, **extra, "as_of": oc.get("date") or d.get("as_of"),
-            "trend": trend if trend in ("up", "down", "sideways") else None, "timeframe": TF_LABELS.get(tf, tf), "area": area,
+            "trend": trend, "weak": bool(weak and trend), "timeframe": TF_LABELS.get(tf, tf), "area": area,
             "chart": {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol), "timeframe": CHART_TF.get(tf, "day")}}
 
 

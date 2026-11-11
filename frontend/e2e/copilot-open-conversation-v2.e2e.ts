@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { mockCopilotNumbers } from "./copilotMocks";
+import { mockCopilotNumbers, readChart } from "./copilotMocks";
 import { mockApi } from "./mockApi";
 
 /**
@@ -61,7 +61,7 @@ test("a question in an open conversation shows its own turn at once; kept turns 
   await expect.soft(page.locator("[data-turn='1'] [data-turn-at]")).toContainText("Asked earlier");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${TAG}-open-390-dark.png` });
 
-  await page.locator("[data-quick='chart']").click();
+  await readChart(page);
   await expect.poll(() => asked.length).toBe(1);
   expect(JSON.parse(asked[0])).toMatchObject({ message: "Read the NIFTY chart", session_id: CONVO.id });
   if (SHOTS) { await page.waitForTimeout(1000); await page.screenshot({ path: `${SHOTS}/${TAG}-wait-390-dark.png` }); }
@@ -106,7 +106,7 @@ test("owner 9 Nov: a conversation from an earlier day does not open by itself; t
   await expect(page.locator("[data-quick]")).toHaveCount(4);
   await page.waitForTimeout(300);                                                  // the kept conversation has been read
   await expect(page.locator("[data-turn]")).toHaveCount(0);                        // the old answer is not on screen
-  await page.locator("[data-quick='chart']").click();
+  await readChart(page);
   await expect.poll(() => asked.length).toBe(1);
   expect(JSON.parse(asked[0])).toMatchObject({ message: "Read the NIFTY chart", new_chat: true });
   await expect(page.locator("[data-turn]")).toHaveCount(1);

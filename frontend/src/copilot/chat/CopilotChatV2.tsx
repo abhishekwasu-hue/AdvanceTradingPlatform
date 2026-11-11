@@ -11,7 +11,7 @@ import { Skeleton } from "../../components/primitives/Feedback";
 import { LevelChip } from "../../ui/LevelChip";
 import { Signed } from "../../ui/numbersFirst";
 import { EMPTY, formatPrice } from "../../ui/format";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { useInPanel } from "../../inplace/inPanel";
 import { useAuth } from "../../auth/AuthContext";
@@ -32,8 +32,8 @@ import { useAiPrefs } from "../language/model";
 import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
-  chartQuestion, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  hybridPick, keptIsToday, restoredTurns, settled, stampText, withChart, withTurn,
+  CHART_SUGGESTIONS, chartPickable, chartQuestion, chartQuestionFor, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
+  hybridPick, keptIsCurrent, restoredTurns, settled, stampText, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -41,6 +41,8 @@ import { engineAudience } from "../../chartAnalyze/engineWords";
 import type { AnalyzeStatus } from "../../chartAnalyze/types";
 import { friendlyError as apiFriendlyError } from "../../api/errors";
 import { Details } from "../../ui/Details";
+import { recentKeyFor, SymbolPicker } from "../../ui/SymbolPicker";
+import { watchIstDate } from "./istDate";
 
 // M59 CR-2: the attached chart's turn (the chart drawing and the reading) loads in its own chunk, only when used.
 const ChartTurnV2 = lazy(() => import("./ChartTurnV2"));
@@ -86,6 +88,8 @@ export interface ChatViewProps {
   /** CH-1b: the chat bubble's compact chat - the conversation and the ask box only (no numbers strip, job buttons or
    * Advanced), the ask box kept at the foot of the sheet. */
   compact?: boolean;
+  /** COP-2 B: this user's recent-symbols key for the Read chart picker (`recentKeyFor(user.id)`); null: none kept. */
+  recentKey?: string | null;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
@@ -170,8 +174,17 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false, recentKey = null }: ChatViewProps) {
   const t = useCopilotT();
+  // COP-2 B (owner 11 Nov): "Read chart" asks which chart first - any share or index the chart reader reads.
+  const [picking, setPicking] = useState(false);
+  const pickerId = useId();
+  useEffect(() => {
+    if (!picking) return;
+    const field = document.getElementById(pickerId);
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center", behavior: "smooth" });              // room for the list above the phone's ask box
+  }, [picking, pickerId]);
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;
@@ -217,11 +230,29 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       {!compact && chips.length > 0 && (
         <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="grid grid-cols-2 gap-space-2 sm:flex sm:flex-wrap">
           {chips.map((c) => (
-            <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>
-              {c.label}
-            </button>
+            c.id === "chart" ? (
+              <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} aria-expanded={picking}
+                onClick={() => setPicking((p) => !p)} data-quick={c.id}>
+                {c.label}
+              </button>
+            ) : (
+              <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>
+                {c.label}
+              </button>
+            )
           ))}
         </nav>
+      )}
+      {!compact && picking && (
+        <div className="flex min-w-0 flex-wrap items-end gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-3" data-chart-picker>
+          <div className="min-w-0 flex-1 space-y-space-1">
+            <label htmlFor={pickerId} className="block text-t13 font-medium text-fg">{t("chat.pickChart")}</label>
+            <SymbolPicker id={pickerId} label={t("chat.pickChart")} value="" exchange="NSE" storageKey={recentKey} suggestions={CHART_SUGGESTIONS}
+              rowFilter={chartPickable} placeholder={t("chat.pickChartPlaceholder")} className="min-w-0 w-full"
+              onPick={(p) => { setPicking(false); onAsk(chartQuestionFor(p.symbol)); }} />
+          </div>
+          <button type="button" className={SMALL_CHIP} onClick={() => setPicking(false)} data-chart-picker-close>{t("chat.pickChartClose")}</button>
+        </div>
       )}
 
       {about}
@@ -355,7 +386,7 @@ export function AboutChip({ ctx, onClear }: { ctx: AskContext; onClear: () => vo
   );
 }
 
-export function CopilotChatV2({ context = null, starters = [], compact = false }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean }) {
+export function CopilotChatV2({ context = null, starters = [], compact = false, recentKey = null }: { context?: AskContext | null; starters?: readonly string[]; compact?: boolean; recentKey?: string | null }) {
   const t = useCopilotT();
   // M72 PR-3 (F8): the context the page was opened with rides on every question until the user drops it
   const contextKey = JSON.stringify(context);
@@ -407,13 +438,14 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
   useEffect(() => () => { for (const url of images.current) URL.revokeObjectURL(url); }, []);
 
   // CU6: the conversation the server kept for this person comes back after a reload (read once, before any new turn) -
-  // owner 9 Nov: only when it is from today (keptIsToday); an older one stays under "Earlier conversation" and the first
-  // question starts a new chat.
+  // owner 9 Nov: only when it is from today (keptIsToday); COP-2 A (owner 11 Nov): and only while its newest chart
+  // answer is current (no newer close stored, said by the server). Otherwise the screen starts fresh, the first question
+  // starts a new chat, and the conversation stays in the Conversations list (it opens from there as it was).
   useEffect(() => {
     let live = true;
     chatApi.history().then((h) => {
       if (!live) return;
-      if (h.turns.length > 0 && !keptIsToday(h)) {                  // nothing kept: as before (no new_chat sent)
+      if (h.turns.length > 0 && !keptIsCurrent(h)) {                  // nothing kept: as before (no new_chat sent)
         setKeep(h.keep);
         if (!convoRef.current) fresh.current = true;
         return;
@@ -426,6 +458,14 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
     }).catch(() => { /* intentional: nothing kept or not reachable: the page starts empty */ });
     return () => { live = false; };
   }, [t]);
+
+  // COP-2 A (owner 11 Nov): when the India date changes while the page stays open (midnight, or the tab coming back on a
+  // later date), the conversation on screen goes away and the next question starts a new chat; it stays in the list.
+  useEffect(() => watchIstDate(() => {
+    fresh.current = true;
+    setConvo(null);
+    setTurns([]);
+  }), []);
 
   const loadHome = useCallback(() => {
     chatApi.home().then((h) => { setHome(h); setHomeError(null); }).catch((e: unknown) => setHomeError(friendlyError(e, t)));
@@ -539,7 +579,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false }
           ))}
         </div>
       )}
-      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} onDraft={setDraft} onAsk={(q) => void ask(q)}
+      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} recentKey={recentKey} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
         about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
@@ -557,5 +597,5 @@ export default function CopilotChatGate({ context = null, starters = [], compact
   const t = useCopilotT();
   const { user } = useAuth();
   if (!user) return <p className="text-t14 text-fg-muted">{t("shell.signIn")}</p>;
-  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} compact={compact} /></FirstUseModal>;
+  return <FirstUseModal placeholder={<Waiting />}><CopilotChatV2 context={context} starters={starters} compact={compact} recentKey={recentKeyFor(user.id)} /></FirstUseModal>;
 }

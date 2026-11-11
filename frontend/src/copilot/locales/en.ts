@@ -132,6 +132,10 @@ export const COPILOT_EN = {
     details: "Details",
     trend: "Trend",
     trendUnknown: "Not known yet",
+    // COP-2 B: the Read chart chip opens a symbol picker (indices and shares).
+    pickChart: "Which chart?",
+    pickChartPlaceholder: "Search a share or an index",
+    pickChartClose: "Close",
     nearestArea: "Nearest area",
     openChart: "Open chart",
     rules: "Your rules",

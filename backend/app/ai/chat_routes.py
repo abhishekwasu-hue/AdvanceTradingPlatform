@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import ask_context, chat_history, platform_key
+from app.ai import ask_context, chat_history, instrument_names, platform_key
 from app.ai import copilot_chat as chat
 from app.ai import resolve as ai_resolve
 from app.ai.ask_context import ChatContext
@@ -214,6 +214,7 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
 async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     tenant_id, user_id, admin = int(user.tenant_id), int(user.id), user.role == UserRole.SUPER_ADMIN.value   # read before any tool runs
+    await instrument_names.refresh_symbols_if_stale(session)          # COP-2 B: "reliance" read as RELIANCE (never raises)
     context = await ask_context.resolve(session, tenant_id, user_id, body.context)      # 404: an object that is not his
     if body.session_id is not None and not body.new_chat:
         try:
@@ -299,7 +300,9 @@ async def _remember(session: AsyncSession, tenant_id: int, user_id: int, body: C
 async def chat_history_read(session_id: int | None = None, user: User = Depends(get_current_user),
                             session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """CU6: the person's own conversation, oldest turn first (at most `keep` turns). CH-2: `?session_id=` one of his
-    conversations (404 otherwise); none = the most recently used one. `session` names it once there is one."""
+    conversations (404 otherwise); none = the most recently used one. `session` names it once there is one. COP-2 A: each
+    turn's `stale` says whether its chart answer's close has been overtaken by a newer stored close (the page then opens
+    on a fresh chat; the conversation stays in the list)."""
     await _flags(session, user)
     tenant_id, user_id = int(user.tenant_id), int(user.id)
     try:
@@ -307,6 +310,7 @@ async def chat_history_read(session_id: int | None = None, user: User = Depends(
         turns = await chat_history.recent(session, tenant_id, user_id, convo["id"]) if convo else []
     except chat_history.NotYours:
         raise _not_found() from None
+    await chat_history.mark_stale(session, user, turns)    # COP-2 A: a chart answer a newer stored close has overtaken
     await session.commit()                            # loose turns adopted into "Earlier conversation"
     out: dict[str, Any] = {"turns": turns, "keep": chat_history.keep()}
     if convo:

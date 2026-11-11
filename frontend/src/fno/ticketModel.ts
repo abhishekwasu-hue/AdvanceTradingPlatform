@@ -31,6 +31,8 @@ export interface Draft {
   price: string;
   trigger: string;
   stopLoss: string;
+  /** M96 Q2: his own optional target (premium); "" = none. Never prefilled by the platform (no saved target field exists). */
+  target: string;
 }
 
 /** M63 I-7: `term` names the glossary entry behind the (?) the ticket shows for a trading term (no effect on the order). */
@@ -72,7 +74,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "", target: "" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
@@ -132,6 +134,8 @@ export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] 
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
+  // M96 Q2: the server checks the target is on the profitable side of the entry (it knows the fill price).
+  if ((d.target ?? "").trim() !== "" && num(d.target) === null) out.push("The target is not a price");
   return out;
 }
 
@@ -142,6 +146,7 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
     // draftProblems asks for missing lots / order type / product first; the server asks again if one is still missing.
     lots: (d.lots === null ? d.lots : clampLots(d.lots)) as number, order_type: d.orderType as OrderType, product: d.product as Product,
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
+    target: num(d.target ?? ""),
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
   };
 }
@@ -166,7 +171,8 @@ export function resultText(r: OrderResult): string {
   if (r.status === "PLACED" && r.filled) {
     const lots = r.filled.lots;
     return `Placed in practice mode: ${sideWord(r.side, true)} ${formatNumber(lots, lots % 1 ? 2 : 0)} lot${lots === 1 ? "" : "s"} `
-      + `(${formatNumber(r.filled.quantity, 0)} qty) of ${r.label} at ${formatPrice(r.filled.price)}.`;
+      + `(${formatNumber(r.filled.quantity, 0)} qty) of ${r.label} at ${formatPrice(r.filled.price)}.`
+      + (r.target_order ? ` ${r.target_order.text}` : "");
   }
   return r.reasons.length ? `Not placed: ${r.reasons[0]}` : "Not placed.";
 }

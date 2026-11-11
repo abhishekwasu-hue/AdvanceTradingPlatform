@@ -75,7 +75,7 @@ GATED: Dict[str, str] = {
 ADAPTER_FACTORIES = frozenset({"app.brokers.registry.get_broker_adapter", "app.brokers.token_lifecycle.build_adapter"})
 
 # API routes allowed to reach a broker ENTRY (rule 2), each with the owner order. Nothing else may.
-ROUTES_REACHING_BROKER_ENTRY: Dict[Tuple[str, str], str] = {
+ROUTES_REACHING_BROKER_ENTRY: dict[tuple[str, str], str] = {
     ("POST", "/api/paper/fno/order"):
         "M96-Q1 (owner, changed): the F&O order ticket's LIVE choice - the user's own Market order to his own broker "
         "session (fno_ticket.live_broker, behind RateLimitedBroker), refused while phase0_paper_only is on or "

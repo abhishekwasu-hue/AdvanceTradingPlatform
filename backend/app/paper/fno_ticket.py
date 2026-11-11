@@ -667,7 +667,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
                 now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
                 journal_source: str = "MANUAL", margin_reader: Optional[MarginReader] = None, broker: Any = None,
-                account_id: Optional[int] = None) -> Dict[str, Any]:
+                account_id: int | None = None) -> Dict[str, Any]:
     """Checks the ticket again at the live price and places ONE order through the ordinary pipeline, or says why not.
     PAPER never reaches a broker. M75 W-8: a trigger plan's fire comes here too (journal source PLAN; an approved plan
     order with its proposal id) - the same checks, PAPER.
@@ -773,15 +773,15 @@ async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id:
 @dataclass
 class LiveRoute:
     """M96-Q1: where a LIVE ticket order would go - his own broker session behind the order chokepoint - or why not."""
-    refusals: List[str]
+    refusals: list[str]
     broker: Any = None
-    account_id: Optional[int] = None
-    broker_name: Optional[str] = None
+    account_id: int | None = None
+    broker_name: str | None = None
 
 
-def live_ask_errors(ask: OrderAsk) -> List[str]:
+def live_ask_errors(ask: OrderAsk) -> list[str]:
     """What the ticket itself cannot send LIVE from here (said plainly; nothing about the trade is decided)."""
-    errors: List[str] = []
+    errors: list[str] = []
     if ask.order_type is not None and ask.order_type != "MARKET":
         errors.append(LIVE_MARKET_ONLY)
     if ask.rest_if_waiting:
@@ -791,7 +791,7 @@ def live_ask_errors(ask: OrderAsk) -> List[str]:
     return errors
 
 
-async def _own_session(session: AsyncSession, user: User) -> Tuple[LiveRoute, Any]:
+async def _own_session(session: AsyncSession, user: User) -> tuple[LiveRoute, Any]:
     from app.brokers import token_lifecycle
     from app.market_data import entitlement
     from app.platform import live_owner

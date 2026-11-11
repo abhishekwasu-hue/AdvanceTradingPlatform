@@ -169,7 +169,7 @@ async def held(underlying: str = Query(pattern=SYMBOL), expiry: date = Query(), 
 
 
 @router.get("/live-status")
-async def live_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def live_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """M96-Q1: whether the ticket's LIVE choice can be placed for the caller now (the owner's switches, his own broker
     session), with the plain sentence why not. Reads only; changes nothing."""
     await _enabled(session, user)

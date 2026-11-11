@@ -129,7 +129,8 @@ def test_the_listing_says_the_live_switches_are_owner_only(monkeypatch):
     assert body["live_trading"]["owner_only"] is True and body["live_trading"]["can_switch_live"] is False
     assert "owner_only" not in body["terminal"]
     # LIVE-1: one switch in the list - the derived lock is not offered (nor the former organisation grant list).
-    assert "phase0_paper_only" not in body and "live_orgs" not in body["live_trading"]
+    assert body["phase0_paper_only"]["follows"] == "live_trading" and "owner_only" not in body["phase0_paper_only"]
+    assert "live_orgs" not in body["live_trading"]
     monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", me["id"])
     body = client.get(FLAGS, headers=headers).json()
     assert body["live_trading"]["can_switch_live"] is True and body["live_trading"]["confirm_text"] == "ENABLE LIVE"

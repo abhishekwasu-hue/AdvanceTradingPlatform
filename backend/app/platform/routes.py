@@ -200,12 +200,13 @@ async def put_agent_limits(body: AgentLimitsBody, user: User = Depends(require_r
 
 async def _flag_listing_for(session: AsyncSession, user: User) -> dict:
     """The flag listing; the LIVE switch also says it is owner-only and whether this admin is the owner (M55 S1).
-    LIVE-1 (owner order: ONE live switch): `live_trading` is the only LIVE switch in the list. The derived PAPER-only lock
-    (`phase0_paper_only`, it follows live_trading) and the former "LIVE for organisations" grant list are not offered:
-    neither decides anything any more (app/platform/live_switch.py)."""
+    LIVE-1 (owner order: ONE live switch): `live_trading` is the only LIVE switch. The derived PAPER-only lock
+    (`phase0_paper_only`) is marked `follows: live_trading` (the admin list shows no switch for it; setting it is refused)
+    and the former "LIVE for organisations" grant list is not offered: neither decides anything (app/platform/live_switch.py)."""
     from app.platform import live_owner
     flags = await controls.flag_listing(session, user)
-    flags.pop(controls.PAPER_ONLY_FLAG, None)
+    if controls.PAPER_ONLY_FLAG in flags:
+        flags[controls.PAPER_ONLY_FLAG]["follows"] = live_owner.LIVE_TRADING     # not a switch: the list hides it
     owner = live_owner.is_owner(user)
     if live_owner.LIVE_TRADING in flags:
         flags[live_owner.LIVE_TRADING].update(owner_only=True, can_switch_live=owner, confirm_text=live_owner.CONFIRM_TEXT,

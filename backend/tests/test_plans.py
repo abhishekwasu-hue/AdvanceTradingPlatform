@@ -95,7 +95,8 @@ def test_free_plan_refuses_live_and_pro_allows_it():
     _store_broker(headers)
     # A stock: since Phase F2 an index can only be deployed through its options or future.
     refused = _deploy(headers, "RELIANCE", mode="LIVE")
-    assert refused.status_code == 402 and "paper trading only" in refused.json()["detail"]
+    # LIVE-1: the refusal is the one switch's sentence (this module's posture makes the plan stand in for the switch).
+    assert refused.status_code == 402 and "only paper orders can be placed" in refused.json()["detail"]
     _set_tenant(me["tenant_id"], plan="pro")
     assert _deploy(headers, "RELIANCE", mode="LIVE").status_code == 201
 
@@ -190,7 +191,7 @@ def test_worker_skips_entries_for_suspended_tenant_and_live_without_entitlement(
     _set_tenant(t["tenant_id"], plan="free")
     report = _run(worker.run_cycle(now=w.OPEN_NOW))
     assert report.signals_executed == 0 and broker.placed == []
-    assert "live trading" in w._get(StrategyDeploymentRecord, live_id).last_error
+    assert "live trading" in w._get(StrategyDeploymentRecord, live_id).last_error.lower()
 
     # Suspended: no entries at all, but the row explains why.
     _set_tenant(t["tenant_id"], plan="pro", status="suspended")

@@ -19,6 +19,7 @@ from app.db.models import TriggerPlanRecord, User
 from app.execution import broker_gtt, trigger_plans
 from app.kill_switch import checks
 from app.platform import phase0_lock
+from tests.live_switch_helpers import set_live
 from tests.test_auth_api import _session_factory, client
 from tests.test_m75_w8_trigger_plans import SPOT, _body, _create, _orders, _pass, _plan
 from tests.test_m75_w8_trigger_plans import setup as w8_setup
@@ -221,7 +222,7 @@ def test_a_gtt_the_broker_ended_returns_the_plan_to_atps_engine(setup, broker, m
 def test_the_phase0_lock_refuses_the_create(setup, broker, monkeypatch):
     t, expiry, strike, symbol = setup
     plan = _ready(t, expiry, strike, symbol, monkeypatch)
-    _flag(phase0_lock.FLAG, t["tenant_id"])
+    set_live(False)                        # LIVE-1: the lock follows live_trading
     _pass(t["tenant_id"], {SPOT[0]: 24650.0, symbol: 100.0})
     assert broker.calls == [] and "waits in ATP's trigger engine" in _plan(plan["id"]).note
     # the wrapper refuses it as well (a GTT's order is always a new entry)
@@ -231,7 +232,7 @@ def test_the_phase0_lock_refuses_the_create(setup, broker, monkeypatch):
         out = _run(wrapped.place_gtt(broker_gtt._request(_plan(plan["id"]), trigger_plans.orders_of(_plan(plan["id"]))[0], 0,  # noqa: SLF001
                                                           type("C", (), {"tradingsymbol": symbol, "exchange": "NFO", "lot_size": 75})(), 100.0)))
     finally:
-        phase0_lock.reset_cache()
+        set_live(None)
     assert out.status == "REJECTED" and "phase0_paper_only" in (out.message or "") and broker.calls == []
 
 

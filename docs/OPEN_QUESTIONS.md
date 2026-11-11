@@ -572,3 +572,12 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M95-Q5 | One og:description: how to make it Marathi-friendly | English + the same sentence in Marathi |
 | M95-Q6 | FAQ "cost" with no price decided | "Free during the beta." until Abhi sets a price |
 | M95-Q7 | WhatsApp / Telegram preview proof before deploy | Render at their sizes now; Abhi's real screenshot after deploy |
+
+## M96-Q1 (changed): the F&O ticket's LIVE path (PR `claude/m96-ticket-live`)
+| ID | Question | Default (provisional, built) | Where | Status |
+|---|---|---|---|---|
+| M96-L1 | The Phase 0 static guard (tests/test_z10c_order_paths.py rule 2, "no API route reaches a broker ENTRY") vs the order to build the ticket's LIVE path now | One named exception, `POST /api/paper/fno/order` (ROUTES_REACHING_BROKER_ENTRY), with this order as its reason; `fno_ticket.place` is GATED (no other caller can obtain a broker); runtime: live_trading OFF / the lock ON refuse | tests/test_z10c_order_paths.py | open - owner's ✅ before merge |
+| M96-L2 | Limit / SL / SL-M and "wait for my price" on LIVE (the shared LIVE router sends MARKET / a protected limit only) | A LIVE ticket order is a Market order; the others are refused in a plain sentence | app/paper/fno_ticket.py `live_ask_errors` | open (default stated) |
+| M96-L3 | Which broker when he has several signed in (the ticket has no account picker) | Exactly one signed-in own session; more than one is refused in a plain sentence | app/paper/fno_ticket.py `_own_session` | open (default stated) |
+| M96-L4 | "LIVE never pre-selected unless he saved it as his own default" - no such saved setting exists | PAPER always pre-selected; no new setting added | frontend/src/fno/ticketModel.ts `newDraft` | open (default stated) |
+| M96-L5 | A bought option with no stop of his own: the pipeline sizes against a one-tick stop, which LIVE would send as a broker stop | No broker stop unless he entered one (`protective_stop`) | app/execution/signal_execution.py | open (default stated) |

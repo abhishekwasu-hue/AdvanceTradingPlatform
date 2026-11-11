@@ -1,4 +1,5 @@
-"""M99 B1-b: the flag gate of the M99 shared primitives in ScreenQL (FibLevel, FibDistancePct, ClusterDistancePct).
+"""M99 B1: the flag gate of the M99 shared primitives in ScreenQL - every function with Spec.flag `m99_primitives`
+(FibLevel, FibDistancePct, ClusterDistancePct, StructureEventSeries, RegimeTag).
 
 Flag `m99_primitives` (off by default), the U6 BK1 / Z7a-3 pattern: the functions stay in the one registry; while the
 flag is off the registry endpoint hides them (Spec.flag) and a screen or a chart study using one is refused with the

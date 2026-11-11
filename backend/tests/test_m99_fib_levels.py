@@ -212,7 +212,7 @@ def test_the_screenql_functions_read_the_causal_series():
     centre = fc.cluster_series(bars, 0.5, "atr")["centre"]
     np.testing.assert_allclose(np.asarray(_ev('ClusterDistancePct(0.5, "atr")', bars), float),
                                (close - centre) / centre * 100, equal_nan=True)
-    assert set(M99_FUNCTIONS) == {"FibLevel", "FibDistancePct", "ClusterDistancePct"}
+    assert {"FibLevel", "FibDistancePct", "ClusterDistancePct"} <= set(M99_FUNCTIONS)
     assert all(FUNCTIONS[name].flag == M99_FLAG == "m99_primitives" for name in M99_FUNCTIONS)
 
 

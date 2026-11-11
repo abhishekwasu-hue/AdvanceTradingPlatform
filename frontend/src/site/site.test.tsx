@@ -59,13 +59,17 @@ describe("the pages", () => {
 
   it("M95 F7: three steps, the trust lines and the FAQ in folds", () => {
     const how = PAGES.find((p) => p.slug === "how-it-works")!;
-    expect(how.sections.map((s) => s.heading)).toEqual(["Continue with Google", "Connect your broker if you want live prices", "Practise on paper"]);
+    expect(how.sections.map((s) => s.heading)).toEqual([
+      "Continue with Google", "Connect your own broker for live prices and real trading", "Practise on paper first, then trade for real when you choose"]);
     const about = PAGES.find((p) => p.slug === "about")!;
     const out = html(about);
     for (const line of ["No order is placed without you", "Your broker data stays yours", "Paper by default"]) expect(readable(out)).toContain(line);
-    expect(about.faq?.map((q) => q.question)).toEqual(["What does it cost?", "Which brokers can I connect?", "Is my money safe?", "What is paper trading?"]);
+    expect(about.faq?.map((q) => q.question)).toEqual([
+      "What does it cost?", "Which brokers can I connect?", "Is my money safe?", "What is paper trading?", "Can I trade for real?"]);
+    // M95-Q8 (owner, 11 Nov): real trading through the user's own broker, every order placed by the user, paper the default.
+    expect(about.faq?.[4].answer).toBe("Yes, through your own broker account, and you place every order yourself. Paper is the default.");
     expect(about.faq?.[0].answer).toBe("Free during the beta.");
-    expect(out.match(/<details/g)).toHaveLength(4);
+    expect(out.match(/<details/g)).toHaveLength(5);
     expect(out).not.toMatch(/<details[^>]*\bopen\b/);
     for (const q of about.faq!) { expect(readable(out)).toContain(q.question); expect(readable(out)).toContain(q.answer); }
   });

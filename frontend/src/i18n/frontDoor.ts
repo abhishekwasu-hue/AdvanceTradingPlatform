@@ -8,11 +8,13 @@
  * src/auth/FrontDoor.tsx (and tests) may import this file.
  * Text rules (CLAUDE.md §3, M95 §4): no profit or accuracy claims, no testimonials, no trade-call words; the answers say
  * only what the code does. `{brokers}` and `{title}` are filled in by FrontDoor.tsx.
+ * M95-Q8 (owner, 11 Nov): the headline, the steps and one FAQ name both paper and real trading - real trading goes
+ * through the user's own broker and the user places every order; "Paper by default" stays (it is still true).
  */
 export const FRONT_EN = {
   langName: "English",
   langLabel: "Language",
-  headline: "Learn, analyse and practise trading on paper, for Indian markets.",
+  headline: "Paper & Real Trading for Indian markets: practise on paper, and trade for real with your own broker.",
   benefitsTitle: "What you get",
   copilotTitle: "AI Copilot",
   copilotText: "Ask about a chart or an idea in plain words. It explains; you decide.",
@@ -30,8 +32,8 @@ export const FRONT_EN = {
   stepsTitle: "Start in 3 steps",
   step1Google: "Continue with Google",
   step1Email: "Sign in with your email",
-  step2: "Connect your broker if you want live prices",
-  step3: "Practise on paper",
+  step2: "Connect your own broker for live prices and real trading",
+  step3: "Practise on paper first, then trade for real when you choose",
   trust1: "No order is placed without you",
   trust2: "Your broker data stays yours",
   trust3: "Paper by default",
@@ -45,6 +47,8 @@ export const FRONT_EN = {
   faqSafeA: "AiAlgoDesk does not hold your trading money; it stays in your own broker account. Your broker keys are stored encrypted. The AI never places, changes or blocks an order, and paper trading is the default.",
   faqPaperQ: "What is paper trading?",
   faqPaperA: "Practice trading with pretend money on market prices. The trades are recorded in the app only; no order goes to your broker.",
+  faqRealQ: "Can I trade for real?",
+  faqRealA: "Yes, through your own broker account, and you place every order yourself. Paper is the default.",
   videoLabel: "Watch the 60-second intro",
   footer: "Information and education only, not investment advice.",
 } as const;
@@ -52,7 +56,7 @@ export const FRONT_EN = {
 export const FRONT_MR = {
   langName: "मराठी",
   langLabel: "भाषा",
-  headline: "भारतीय बाजारासाठी: ट्रेडिंग शिका, चार्टचे विश्लेषण करा आणि paper वर सराव करा.",
+  headline: "भारतीय बाजारासाठी Paper & Real Trading: paper वर सराव करा, आणि तुमच्या स्वतःच्या broker मार्फत खरे ट्रेडिंग करा.",
   benefitsTitle: "तुम्हाला काय मिळते",
   copilotTitle: "AI Copilot",
   copilotText: "चार्ट किंवा कल्पनेबद्दल साध्या शब्दांत विचारा. तो समजावून सांगतो; निर्णय तुमचा.",
@@ -70,8 +74,8 @@ export const FRONT_MR = {
   stepsTitle: "3 पायऱ्यांत सुरुवात",
   step1Google: "Google ने पुढे जा",
   step1Email: "तुमच्या email ने sign in करा",
-  step2: "Live किमती हव्या असल्यास तुमचा broker जोडा",
-  step3: "Paper वर सराव करा",
+  step2: "Live किमती आणि खऱ्या ट्रेडिंगसाठी तुमचा स्वतःचा broker जोडा",
+  step3: "आधी paper वर सराव करा, मग हवे तेव्हा खरे ट्रेडिंग करा",
   trust1: "तुमच्याशिवाय कोणतीही order दिली जात नाही",
   trust2: "तुमचा broker data तुमचाच राहतो",
   trust3: "Paper हीच मूळ निवड",
@@ -85,6 +89,8 @@ export const FRONT_MR = {
   faqSafeA: "AiAlgoDesk तुमचे ट्रेडिंगचे पैसे ठेवत नाही; ते तुमच्या स्वतःच्या broker खात्यातच राहतात. तुमच्या broker keys encrypted ठेवल्या जातात. AI कधीही order देत, बदलत किंवा अडवत नाही, आणि paper ट्रेडिंग हीच मूळ निवड आहे.",
   faqPaperQ: "Paper trading म्हणजे काय?",
   faqPaperA: "बाजारभावावर काल्पनिक पैशांनी ट्रेडिंगचा सराव. हे trades फक्त app मध्ये नोंदवले जातात; broker कडे कोणतीही order जात नाही.",
+  faqRealQ: "खरे ट्रेडिंग करता येते का?",
+  faqRealA: "हो, तुमच्या स्वतःच्या broker खात्यातून, आणि प्रत्येक order तुम्ही स्वतः देता. Paper हीच मूळ निवड आहे.",
   videoLabel: "60 सेकंदांचा परिचय पाहा",
   footer: "फक्त माहिती आणि शिक्षणासाठी, गुंतवणुकीचा सल्ला नाही.",
 } as const;
@@ -92,7 +98,7 @@ export const FRONT_MR = {
 export const FRONT_HI = {
   langName: "हिन्दी",
   langLabel: "भाषा",
-  headline: "भारतीय बाज़ार के लिए: ट्रेडिंग सीखें, चार्ट का विश्लेषण करें और paper पर अभ्यास करें।",
+  headline: "भारतीय बाज़ार के लिए Paper & Real Trading: paper पर अभ्यास करें, और अपने ख़ुद के broker से असली ट्रेडिंग करें।",
   benefitsTitle: "आपको क्या मिलता है",
   copilotTitle: "AI Copilot",
   copilotText: "चार्ट या किसी विचार के बारे में आसान शब्दों में पूछें। वह समझाता है; फ़ैसला आपका।",
@@ -110,8 +116,8 @@ export const FRONT_HI = {
   stepsTitle: "3 कदमों में शुरुआत",
   step1Google: "Google से आगे बढ़ें",
   step1Email: "अपने email से sign in करें",
-  step2: "Live कीमतें चाहिए तो अपना broker जोड़ें",
-  step3: "Paper पर अभ्यास करें",
+  step2: "Live कीमतों और असली ट्रेडिंग के लिए अपना ख़ुद का broker जोड़ें",
+  step3: "पहले paper पर अभ्यास करें, फिर जब चाहें असली ट्रेडिंग करें",
   trust1: "आपके बिना कोई order नहीं दिया जाता",
   trust2: "आपका broker data आपका ही रहता है",
   trust3: "Paper ही मूल चुनाव है",
@@ -125,6 +131,8 @@ export const FRONT_HI = {
   faqSafeA: "AiAlgoDesk आपका ट्रेडिंग का पैसा नहीं रखता; वह आपके अपने broker खाते में ही रहता है। आपकी broker keys encrypted रखी जाती हैं। AI कभी order नहीं देता, नहीं बदलता और नहीं रोकता, और paper ट्रेडिंग ही मूल चुनाव है।",
   faqPaperQ: "Paper trading क्या है?",
   faqPaperA: "बाज़ार भाव पर काल्पनिक पैसों से ट्रेडिंग का अभ्यास। ये trades सिर्फ़ app में दर्ज होते हैं; broker को कोई order नहीं जाता।",
+  faqRealQ: "क्या असली ट्रेडिंग कर सकते हैं?",
+  faqRealA: "हाँ, अपने ख़ुद के broker खाते से, और हर order आप ख़ुद देते हैं। Paper ही मूल चुनाव है।",
   videoLabel: "60 सेकंड का परिचय देखें",
   footer: "सिर्फ़ जानकारी और शिक्षा के लिए, निवेश सलाह नहीं।",
 } as const;

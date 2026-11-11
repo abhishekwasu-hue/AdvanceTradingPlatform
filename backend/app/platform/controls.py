@@ -376,6 +376,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # pennant arguments; later the intraday scanners, templates and risk tools. Needs `screener_breakouts` too. OFF: the
     # functions and arguments are hidden and refused, and alert rules using them pause. Signals only - places no orders.
     "intraday_pack": "Intraday pack: session high / low / volume so far, bars counted in the session, the pre-open levels and named flag settings in screens (needs screener_breakouts; signals only, places no orders)",
+    # M99 B1-a: the per-bar classifier (app/price_action/bar_class.py) - relative range, spread class, close position,
+    # bar direction and volume class as ScreenQL functions (RelRange, SpreadClass, ClosePosition, BarDirection,
+    # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and
+    # alert rules using them pause. Signals only - places no orders.
+    "m99_primitives": "Bar classes: relative range, spread class, close position, bar direction and volume class in screens (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
     # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint
@@ -396,7 +401,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # M99 B1 (owner order M99): the shared primitives the M99 packs build on - bar classifier, Fibonacci, clusters and
     # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
     # functions are hidden and refused.
-    "m99_primitives": "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,

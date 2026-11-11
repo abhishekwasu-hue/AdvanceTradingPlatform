@@ -382,6 +382,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (no demand / supply, test, failed test, up-thrust, reverse up-thrust, stopping volume, selling / buying climax,
     # shake-out, falling pressure, absorption, effort vs result), the "Volume spread" library screens, the chart layer
     # with "Why?" and the J templates. OFF: hidden and refused, alert rules pause. Signals only - places no orders.
+    # M99 P4: the Wyckoff pack (app/price_action/wyckoff.py) - the ScreenQL functions Wyckoff(...) / WyckoffLevel(...): a
+    # trading-range reader (climax, automatic reaction, secondary test, Phase A-E, spring / upthrust after distribution
+    # and their tests, signs of strength / weakness and the back-up, the significant bar, the larger structure's lean),
+    # the "Wyckoff" library screens, the chart layer with "Why?" and the K templates. OFF: hidden and refused, alert
+    # rules pause. Signals only - places no orders.
+    "wyckoff_pack": "Wyckoff pack: trading ranges read in phases A-E - climax, automatic reaction, secondary test, spring / upthrust after distribution, signs of strength / weakness and the back-up - in screens, on the chart and in templates (signals only, places no orders)",
     "vsa_pack": "Volume spread pack: bar readings from spread, volume and close (no demand, no supply, test, climaxes, up-thrust and more) in screens, on the chart and in templates (signals only, places no orders)",
     "m99_primitives": "Bar classes: relative range, spread class, close position, bar direction and volume class in screens (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
@@ -401,10 +407,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
-    # M99 B1 (owner order M99): the shared primitives the M99 packs build on - bar classifier, Fibonacci, clusters and
-    # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
-    # functions are hidden and refused.
-    "m99_primitives": "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,

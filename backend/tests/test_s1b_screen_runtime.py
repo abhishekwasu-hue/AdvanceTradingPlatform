@@ -617,6 +617,19 @@ def test_m99_p3_volume_spread_function():
     assert np.isnan(_ev('VSA("no_demand")', SymbolData("S", {"1d": f.assign(volume=0.0)}), base_tf="1d").iloc[-1])
 
 
+def test_m99_p4_wyckoff_functions():
+    """M99 P4: Wyckoff(...) / WyckoffLevel(...) (the full fixtures: tests/test_m99_p4_wyckoff.py) - a range shape reads its
+    shake and the range's top; the same bars without volume data read no range."""
+    from tests.wyckoff_shapes import accumulation
+    f, at = accumulation()
+    d = SymbolData("S", {"15m": f})
+    got = _ev('Wyckoff("shake", "strength")', d, base_tf="15m")
+    assert got.iloc[at["shake"]] == 1.0 and np.isnan(got.iloc[0])
+    top = _ev('WyckoffLevel("range_top")', d, base_tf="15m")
+    assert np.isnan(top.iloc[at["climax"]]) and top.iloc[-1] > f["low"].iloc[at["climax"]]
+    assert np.isnan(_ev('Wyckoff("shake")', SymbolData("S", {"15m": f.assign(volume=0.0)}), base_tf="15m").iloc[at["shake"]])
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

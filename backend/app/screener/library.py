@@ -114,6 +114,12 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         if found is None:
             return None, "no such volume spread scanner"
         text, base_tf, params = found.text, found.base_tf, found.defaults()      # M99 P3: every value a reference value
+    elif screen.source == "wyckoff":
+        from app.screener import wyckoff_scanners as wys
+        found_wy = wys.scanner(screen.id)
+        if found_wy is None:
+            return None, "no such Wyckoff scanner"
+        text, base_tf, params = found_wy.text, found_wy.base_tf, found_wy.defaults()   # M99 P4: every value a reference value
     else:
         return None, f"the {screen.source!r} source has no ScreenQL text"
     return Resolved(screen.id, screen.name, screen.method, screen.setup, str(screen.tags.get("direction", "long")), screen.source,

@@ -201,7 +201,8 @@ def test_the_flag_is_registered_off_with_catalog_state_and_pack_entries():
     assert flag_catalog.FLAG_INFO[M99_FLAG].status == "unfinished" and flag_catalog.FLAG_GROUP[M99_FLAG] == "screen_library"
     assert "M99" in flag_catalog.FINISH[M99_FLAG] and "M99" in str(flag_state.FLAG_STATUS[M99_FLAG])
     assert M99_FLAG in trader_pack.EXCLUDED_REASONS
-    assert set(M99_FUNCTIONS) == {"RelRange", "SpreadClass", "ClosePosition", "BarDirection", "VolumeClass"}
+    assert set(M99_FUNCTIONS) == {"RelRange", "SpreadClass", "ClosePosition", "BarDirection", "VolumeClass",
+                                  "StructureEventSeries", "RegimeTag"}       # B1-c structure functions share the flag
     ast = parse('SpreadClass(20) == "WIDE" AND VolumeClass(20) == "HIGH" AND close > open')
     assert m99_gate.flagged_calls(ast) == ["SpreadClass", "VolumeClass"]
     assert M99_FLAG in m99_gate.refusal(["SpreadClass"]) and "bar close only" in m99_gate.intrabar_refusal(["SpreadClass"])

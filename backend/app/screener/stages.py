@@ -72,8 +72,14 @@ def library_source(screen_id: str) -> Tuple[Optional[Tuple[str, str, Dict[str, A
         if found is None:
             return None, "no such volume spread scanner"
         return (found.text, found.base_tf, found.defaults(), found.name), None          # M99 P3
-    return None, ("only Legends, breakout, intraday and volume spread screens are opened from the server (the starters are built"
-                  " in the page)")
+    if screen_id.startswith("wyckoff."):
+        from app.screener import wyckoff_scanners as wys
+        found_wy = wys.scanner(screen_id)
+        if found_wy is None:
+            return None, "no such Wyckoff scanner"
+        return (found_wy.text, found_wy.base_tf, found_wy.defaults(), found_wy.name), None   # M99 P4
+    return None, ("only Legends, breakout, intraday, volume spread and Wyckoff screens are opened from the server (the starters"
+                  " are built in the page)")
 
 
 __all__ = ["FLAG", "inline", "split", "library_source"]

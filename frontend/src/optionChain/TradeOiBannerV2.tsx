@@ -1,0 +1,169 @@
+import { useEffect, useRef, useState } from "react";
+import { api } from "../api/client";
+import { useMarketStatus } from "../chart/useMarketStatus";
+import { cx } from "../components/primitives/cx";
+import type { OiBannerResponse, OiHistoryResponse } from "../oi/types";
+import { formatLakhs, formatNumber, formatTimeIST } from "../ui/format";
+import { OI_POLL_MS, shouldPoll } from "./oiTab";
+import {
+  PCR_ZONE_LABEL, PCR_ZONE_TONE, bannerTone, calendarDte, classText, expiryLine, pcrZone, signalTone, todayIst, type BannerTone,
+} from "./oiDiff";
+import type { LiveChain } from "./types";
+
+/**
+ * M96 L1 (owner, 11 Nov: "taken from the Trade repo AS IS"): the Trade dashboard's OI banner on top of the chain view,
+ * with ATP's port values (the day's stored readings replayed by app/option_chain/oi_regime.py, served by
+ * /option-chain/{u}/banner and /history):
+ * - the colour by direction (green / red / amber / grey);
+ * - the message: Trade's meaning in neutral fact words with the symbol's name (owner defaults 1 and 4; the server's
+ *   `fact_message`); "Market closed" while the market is closed (Trade);
+ * - "Put: <class> · Call: <class>" in English (default 2);
+ * - the PCR over ATM ± 6 (the OI-difference table's window, the same number) with Trade's five zones in English;
+ * - the expiry with CALENDAR days left (Trade compute_dte), "Expiry today" at 0, in red at one day or less;
+ * - Trade's caption while this is the day's first reading ("Not enough data" until the history builds), and the time;
+ * - under it Trade's History table: Time, Total Call OI, Total Put OI, Diff, Δ Diff and the stable Signal (the
+ *   hysteresis-confirmed one) in 5 / 10 / 15 minute buckets, newest first, lakhs.
+ * The spot / future, ATM and max pain (whole chain, as Trade) are the summary cards right above (SummaryStripV2).
+ */
+type Interval = 5 | 10 | 15;
+
+export interface TradeBannerState { banner: OiBannerResponse | null; history: OiHistoryResponse | null; loaded: boolean }
+
+/** The banner and the history together; again every minute only while the market is open. */
+export function useTradeBanner(underlying: string, interval: Interval): TradeBannerState {
+  const market = useMarketStatus();
+  const nse = market.status?.sessions?.NSE;
+  const statusOpen = nse ? nse.is_open : null;
+  const [state, setState] = useState<TradeBannerState>({ banner: null, history: null, loaded: false });
+  const [tick, setTick] = useState(0);
+  const shown = useRef(underlying);
+  useEffect(() => {
+    let live = true;
+    if (shown.current !== underlying) {           // another symbol: never show the old one's reading
+      shown.current = underlying;
+      setState({ banner: null, history: null, loaded: false });
+    }
+    Promise.allSettled([api.oiBanner(underlying), api.oiHistory(underlying, interval)]).then(([b, h]) => {
+      if (!live) return;
+      setState((prev) => ({ banner: b.status === "fulfilled" ? b.value : prev.banner, history: h.status === "fulfilled" ? h.value : prev.history,
+        loaded: true }));
+    });
+    return () => { live = false; };
+  }, [underlying, interval, tick]);
+  const poll = shouldPoll(state.banner?.market_open, statusOpen);
+  useEffect(() => {
+    if (!poll) return undefined;
+    const id = window.setInterval(() => setTick((t) => t + 1), OI_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [poll]);
+  return state;
+}
+
+export default function TradeOiBannerV2({ symbol, live }: { symbol: string; live: LiveChain | null }) {
+  const [interval, setMinutes] = useState<Interval>(5);
+  const state = useTradeBanner(symbol, interval);
+  return <TradeOiBannerView symbol={symbol} live={live} state={state} interval={interval} onInterval={setMinutes} />;
+}
+
+const BORDER: Record<BannerTone, string> = { up: "border-l-up", down: "border-l-down", warn: "border-l-warn", neutral: "border-l-border" };
+const TINT: Record<BannerTone, string> = { up: "bg-up-tint", down: "bg-down-tint", warn: "bg-warn-tint", neutral: "bg-surface-1" };
+const TEXT = { up: "text-up", down: "text-down", warn: "text-warn", muted: "text-fg-muted" } as const;
+
+export interface BannerLines {
+  tone: BannerTone;
+  message: string;
+  classes: string;
+  pcr: string;
+  pcrZone: string | null;
+  pcrTone: "up" | "down" | "warn" | null;
+  expiry: string | null;
+  expiryNear: boolean;
+  readingAt: string | null;
+  /** The day's first reading (Trade's caption: it shows "Not enough data", the reading needs history). */
+  firstReading: boolean;
+}
+
+/** What the banner shows, line by line (pure). */
+export function bannerLines(symbol: string, banner: OiBannerResponse | null, live: LiveChain | null, today: string): BannerLines {
+  const b = banner?.banner ?? null;
+  const closed = banner?.market_open === false;
+  const tone = closed || !b ? "neutral" : bannerTone(b.direction);
+  const message = closed ? "Market closed" : b ? (b.fact_message ?? "No clear movement") : `No OI reading of ${symbol} yet today`;
+  const classes = closed || !b ? "Put: Not enough data · Call: Not enough data" : `Put: ${classText(b.put_class)} · Call: ${classText(b.call_class)}`;
+  const pcr = live?.summary.pcr_oi_atm ?? null;
+  const zone = pcrZone(pcr);
+  const expiry = live?.expiry ?? null;
+  const dte = calendarDte(expiry, today);
+  return {
+    tone, message, classes,
+    pcr: pcr === null ? "PCR (ATM ± 6): not available" : `PCR (ATM ± 6): ${formatNumber(pcr, 2)}`,
+    pcrZone: zone ? PCR_ZONE_LABEL[zone] : null, pcrTone: zone ? PCR_ZONE_TONE[zone] : null,
+    expiry: expiryLine(expiry, dte), expiryNear: dte !== null && dte <= 1,
+    readingAt: b ? formatTimeIST(b.data_as_of) : null,
+    firstReading: !closed && (!b || b.first_of_day),
+  };
+}
+
+/** The banner for data already in hand (pure: no reads, no timers) - tests and screenshots render it directly. */
+export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now() }: {
+  symbol: string; live: LiveChain | null; state: TradeBannerState; interval: Interval; onInterval: (i: Interval) => void; now?: number;
+}) {
+  const l = bannerLines(symbol, state.banner, live, todayIst(now));
+  const rows = state.history?.rows ?? [];
+  return (
+    <section aria-label="OI banner" data-block="oi-banner" className="space-y-space-2">
+      <div data-banner-tone={l.tone} className={cx("rounded-panel border border-l-4 border-subtle px-space-3 py-space-3 md:px-space-4", BORDER[l.tone], TINT[l.tone])}>
+        <div className="text-t16 font-semibold text-fg" data-banner-message>{l.message}</div>
+        <div className="mt-space-1 text-t12 text-fg-muted" data-banner-classes>{l.classes}</div>
+        <div className="mt-space-1 text-t14 font-semibold text-fg" data-banner-pcr>
+          {l.pcr}{l.pcrZone && <> <span aria-hidden>-</span> <span className={l.pcrTone ? TEXT[l.pcrTone] : undefined}>{l.pcrZone}</span></>}
+        </div>
+        {l.expiry && <div className={cx("mt-space-1 text-t13 font-semibold", l.expiryNear ? "text-down" : "text-fg")} data-banner-expiry>{l.expiry}</div>}
+        <div className="mt-space-1 text-t12 text-fg-muted" data-banner-time>{l.readingAt ? `OI reading at ${l.readingAt}` : "No OI reading yet"}</div>
+      </div>
+      {l.firstReading && <p className="text-t12 text-fg-muted" data-banner-caption>The first reading of the day shows "Not enough data": the reading needs history.</p>}
+      <details className="rounded-panel border border-subtle bg-surface-1" data-oi-history-trade>
+        <summary className="flex min-h-11 cursor-pointer items-center px-space-3 text-t14 font-semibold text-fg md:min-h-9">OI history (Signal)</summary>
+        <div className="space-y-space-2 px-space-3 pb-space-3">
+          <div role="radiogroup" aria-label="View interval" className="flex gap-space-2">
+            {([5, 10, 15] as const).map((n) => (
+              <button key={n} type="button" role="radio" aria-checked={interval === n} onClick={() => onInterval(n)}
+                className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 md:min-h-8",
+                  interval === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
+                {n} min
+              </button>
+            ))}
+          </div>
+          {rows.length === 0 ? (
+            <p className="text-t13 text-fg-muted">No OI reading is stored for today yet.</p>
+          ) : (
+            <div className="max-h-[22rem] overflow-auto" data-oi-history-trade-scroll>
+              <table className="w-full min-w-[34rem] whitespace-nowrap text-t12" aria-label={`${symbol} OI history`}>
+                <thead className="sticky top-0 bg-surface-1 text-fg-muted">
+                  <tr>{["Time", "Total Call OI", "Total Put OI", "Diff", "Δ Diff", "Signal"].map((h) => (
+                    <th key={h} scope="col" className={cx("px-space-1 py-space-1 font-medium", h === "Time" || h === "Signal" ? "text-left" : "text-right")}>{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.slot} className="border-t border-subtle font-tabular font-semibold" data-history-slot={r.slot}>
+                      <td className="px-space-1 py-space-1 text-left text-fg">{formatTimeIST(r.slot, { suffix: false })}</td>
+                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_call_oi)}</td>
+                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_put_oi)}</td>
+                      <td className={cx("px-space-1 py-space-1 text-right", r.diff > 0 ? "text-up" : r.diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.diff, { signed: true })}</td>
+                      <td className={cx("px-space-1 py-space-1 text-right", r.delta_diff > 0 ? "text-up" : r.delta_diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.delta_diff, { signed: true })}</td>
+                      <td className={cx("px-space-1 py-space-1 text-left", TEXT[signalTone(r.signal)])} data-history-signal>{r.signal}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-t12 text-fg-muted">Diff = Total Put OI − Total Call OI over ATM ± 6 (a level). Δ Diff = the change from the
+            reading before. "Weakening": the side is not confirmed yet (a change of side needs three readings in a row and a real
+            opposite move of call and put OI).</p>
+        </div>
+      </details>
+    </section>
+  );
+}

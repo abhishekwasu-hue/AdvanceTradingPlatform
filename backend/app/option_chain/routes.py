@@ -15,6 +15,8 @@
   `POST /api/market-data/option-chains`), the spot and near-month future prices, the summary (ATM, PCR, max pain,
   ATM IV, days to expiry, highest OI strikes), IV and Greeks per leg and the OI-change state. Reads only. Both are
   behind the `ui_v2` flag (404 while it is off), like the other v2-only reads (app/signals_feed/routes.py).
+  M96 L1 (Trade port): `/live` also carries `net_diff` - the Trade chain table's "Net Diff" over ATM +- 6 against the
+  app's first reading of the day (app/option_chain/net_diff.py) - and `summary.pcr_oi_atm`, that window's PCR.
 
 Every reading is recomputed from the stored strikes with the caller's tenant settings (app/option_chain/snapshots.py).
 B1: with the own-broker data tier on, the banner / history / strikes reads use the caller's OWN session snapshots
@@ -32,13 +34,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
 from app.brokers.models import OptionChain
+from app.cache.client import cache_get, cache_set
 from app.core.enums import UserRole
 from app.db.models import OIAlertLogRecord, OIBannerSettingRecord, User
 from app.db.session import get_session
 from app.market_data.calendar import family_holidays, market_session_status
 from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
 from app.market_lake import chain_store
-from app.option_chain import as_of, chain_view, oi_regime, own_snapshots, snapshots
+from app.option_chain import as_of, chain_view, net_diff, oi_regime, own_snapshots, snapshots
 from app.option_chain.snapshots import IST
 from app.platform.controls import flag_enabled
 
@@ -374,9 +377,55 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     view["market_open"] = status.is_open
     view["summary"]["spot_source"] = spot_source
     view["data_as_of"] = when.at.isoformat()
-    if await _byob(session, user):              # B1: his own read becomes his session snapshot (same 5-minute slots)
+    byob = await _byob(session, user)
+    # M96 L1: Trade's chain table "Net Diff" (ATM +- 6, the app's first reading of the day) and that window's PCR.
+    view["net_diff"] = await _net_diff(session, user, name, chain, spot, view["expiry"], now, byob)
+    view["summary"]["pcr_oi_atm"] = view["net_diff"].get("pcr")
+    if byob:                                     # B1: his own read becomes his session snapshot (same 5-minute slots)
         await _store_own_read(session, user, name, chain, source, now)
     return view
+
+
+NET_DIFF_TTL_SECONDS = 3600                     # the cache's cap; renewed on every read, re-seeded from the stored reads
+
+
+async def _net_diff(session: AsyncSession, user: User, name: str, chain: OptionChain, spot: float | None, expiry: str | None,
+                    now: datetime, byob: bool) -> dict[str, Any]:
+    """M96 L1: the Trade "Net Diff" table for this read. The day's baseline per strike (Trade: the app's first reading of
+    the day, never the exchange's previous-day change) is kept in the cache, renewed on every read; when the cache has
+    none it is rebuilt from the day's stored readings of the same expiry, oldest first, with Trade's rule (the
+    collector's slots; the user's own with the own-broker tier) - then this read is applied. `building` while the only
+    reading is this one (every change is 0 until the next)."""
+    step = net_diff.trade_step(name, [r.strike for r in chain.rows])
+    atm = net_diff.trade_atm(spot, step)
+    if atm is None or step is None or not expiry:
+        return {"status": "none", "since": None, "pcr": None, "rows": []}
+    day = chain_view.today_ist(now)
+    underlying = snapshots.normalise_underlying(name)
+    key = f"m96:net_diff:{'u' + str(user.id) if byob else 't' + str(user.tenant_id)}:{underlying}:{expiry[:10]}:{day.isoformat()}"
+    raw = await cache_get(key)
+    held = net_diff.baseline_from_text(raw)
+    baseline: net_diff.Baseline = {}
+    first: datetime | None = None
+    if held is not None:
+        first, baseline = datetime.fromisoformat(held[0]), held[1]
+    else:
+        stored = (own_snapshots.as_slots(await own_snapshots.day(session, user, underlying, day)) if byob
+                  else await snapshots.day_chains(session, underlying, day, tenant_id=user.tenant_id))
+        for s in sorted(stored, key=lambda s: s.captured_at):
+            if (s.chain.expiry or "")[:10] != expiry[:10]:
+                continue
+            s_step = net_diff.trade_step(name, [r.strike for r in s.chain.rows])
+            s_atm = net_diff.trade_atm(s.chain.underlying_ltp, s_step)
+            if s_atm is None or s_step is None:
+                continue
+            if net_diff.update_baseline(baseline, net_diff.window(s.chain.rows, s_atm, s_step)) and first is None:
+                first = s.captured_at if s.captured_at.tzinfo else s.captured_at.replace(tzinfo=timezone.utc)
+    since = first or now
+    net_diff.update_baseline(baseline, net_diff.window(chain.rows, atm, step))
+    await cache_set(key, json.dumps(net_diff.baseline_json(baseline, since.isoformat())), NET_DIFF_TTL_SECONDS)
+    out = net_diff.table_json(net_diff.table(chain.rows, atm, step, baseline))
+    return {"status": "building" if since >= now else "ready", "since": since.isoformat(), **out}
 
 
 async def _store_own_read(session: AsyncSession, user: User, name: str, chain: OptionChain, source: Dict[str, Any], now: datetime) -> None:

@@ -107,5 +107,56 @@ def alert_state_words(alert_type: str, state: Optional[str]) -> str:
     return state
 
 
-__all__ = ["DIRECTION_WORDS", "LEAD_WORDS", "PCR_BAND_WORDS", "CLASS_WORDS", "CHAIN_READ_WORDS", "direction_words", "lead_words",
+# ---------------------------------------------------------------- M96 L1: the Trade banner (owner: "AS IS")
+
+# Trade's activity phrases (oi_analysis.generate_oi_price_signal), in English, with the side each one counts for.
+TRADE_ACTIVITY = {
+    ("Put", "WRITING"): ("up", "Put writing rising"),
+    ("Put", "BUYING"): ("down", "Put buying rising"),
+    ("Put", "SHORT COVERING"): ("down", "Put short covering (support weakening)"),
+    ("Put", "LONG UNWINDING"): ("up", "Put unwinding (bears stepping back)"),
+    ("Call", "WRITING"): ("down", "Call writing rising"),
+    ("Call", "BUYING"): ("up", "Call buying rising"),
+    ("Call", "SHORT COVERING"): ("up", "Call short covering (resistance weakening)"),
+    ("Call", "LONG UNWINDING"): ("down", "Call unwinding (bulls stepping back)"),
+}
+TRADE_LEAN = {"BULLISH": "up", "BEARISH": "down"}
+
+
+def _lakhs(value: float) -> str:
+    return f"{value / 1e5:+.1f}L"                      # Trade: f"{current_diff/1e5:+.1f}L"
+
+
+def trade_fact_message(state: object, underlying: str) -> str:
+    """The Trade banner's message (oi_analysis.generate_oi_price_signal + reconcile_with_diff_level) with its meaning
+    kept in neutral fact words (owner default 1): the activity phrases as Trade lists them, then where the readings lean
+    instead of Trade's "Don't Short Call, Nifty is Bullish" / "Don't Short Put, Nifty is Bearish", the symbol's own name
+    instead of the hard-coded "Nifty" (default 4), and no "be cautious". `state` is an oi_regime.BannerState."""
+    put_class, call_class = _key(getattr(state, "put_class")), _key(getattr(state, "call_class"))
+    up: list = []
+    down: list = []
+    for side, cls in (("Put", put_class), ("Call", call_class)):
+        found = TRADE_ACTIVITY.get((side, cls))
+        if found:
+            (up if found[0] == "up" else down).append(found[1])
+    momentum = " + ".join(up or down) if bool(up) != bool(down) else ""
+    reason = getattr(state, "mixed_reason", None)
+    if reason == "stable":
+        lean = TRADE_LEAN.get(_key(getattr(getattr(state, "stable_signal"), "direction", "")), "flat")
+        return f"Mixed readings: the recent momentum ({momentum}) and the confirmed trend ({lean}) disagree"
+    if reason == "level":
+        diff = float(getattr(state, "diff"))
+        side = "Put" if diff > 0 else "Call"
+        return f"Mixed readings: the recent momentum ({momentum}) and the overall level (Diff: {side} OI higher, {_lakhs(diff)}) disagree"
+    name = (underlying or "").strip().upper()
+    if up and not down:
+        return f"{momentum} → {name} OI readings lean up"
+    if down and not up:
+        return f"{momentum} → {name} OI readings lean down"
+    if up and down:
+        return "Mixed readings: no clear direction"
+    return "No clear movement"
+
+
+__all__ = ["TRADE_ACTIVITY", "trade_fact_message", "DIRECTION_WORDS", "LEAD_WORDS", "PCR_BAND_WORDS", "CLASS_WORDS", "CHAIN_READ_WORDS", "direction_words", "lead_words",
            "pcr_band_words", "chain_read_words", "class_words", "oi_read", "alert_state_words"]

@@ -6,7 +6,7 @@
   (margin, max loss) are there before anything is placed; the risk checks speak plain words;
 - placing gives ONE PAPER order through the ordinary pipeline, the position shows on the chain ("P"), only to its holder;
 - under the Phase 0 lock every order is PAPER: the ticket asserts it at the chokepoint, a LIVE entry is refused and never
-  reaches a broker, and exits still run (ADR-0004)."""
+  reaches a broker, and exits still run (ADR-0004). M96-Q1: the ticket's LIVE choice is tests/test_m96_ticket_live.py."""
 import asyncio
 import json
 import random
@@ -331,9 +331,12 @@ def test_under_the_lock_the_ticket_places_paper_and_a_live_entry_never_reaches_a
         _lock(t["tenant_id"], False)
 
 
-def test_the_ticket_has_no_mode_and_no_live_path():
+def test_the_ticket_mode_defaults_to_paper():
+    """M96-Q1 (changed, owner): the ticket now has a LIVE path on this same code path. This test replaces "no mode and no
+    LIVE path": the mode is PAPER unless the user picks LIVE, and LIVE is covered by tests/test_m96_ticket_live.py
+    (refused under the owner's switches without reaching a broker, sent once to his own broker when they are open)."""
     from app.paper.fno_routes import OrderBody
-    assert "mode" not in OrderBody.model_fields
+    assert OrderBody.model_fields["mode"].default == "PAPER"
     assert fno_ticket.MODE == "PAPER"
     bad = client.post("/api/paper/fno/order", json={"mode": "LIVE"})
     assert bad.status_code in (401, 422)

@@ -28,6 +28,9 @@ export interface ChainLeg {
   gamma: number | null;
   theta: number | null;
   vega: number | null;
+  /** M96 L1 (optional): the contract's price change since the previous close, when the server sends it. Without it the
+   *  OI-difference table's interpretation word is "–" (nothing is worked out from another baseline). */
+  ltp_change?: number | null;
 }
 
 export interface ChainRow { strike: number; call: ChainLeg; put: ChainLeg }

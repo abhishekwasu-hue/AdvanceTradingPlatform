@@ -1,12 +1,12 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import {
-  CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatCount, formatCountChange, formatGreek,
-  formatIv, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnKey, type ColumnPrefs,
+  CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatGreek,
+  formatIv, formatOi, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnKey, type ColumnPrefs, type OiUnits,
 } from "./model";
 import type { ChainLeg, ChainRow, LiveChain } from "./types";
 
@@ -33,6 +33,11 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  *   (`ITM_SHADE`, both sides, as with the flag off); the OI bars are red for calls and green for puts (a soft fill under
  *   the number and a solid edge, 3 : 1); the ATM row is a brand-blue tint. Text stays the plain text colours (AA,
  *   tokens.test.ts). Colour-blind mode the same, with orange call bars and blue put bars.
+ * - M96 (owner, audit issues 7): OI, OI change and volume in lakhs ("0.50 L") or, by the Columns menu, as the broker's
+ *   whole number; a table wider than its box opens with the strike column in the middle, the strike column stays at
+ *   the edge it reaches when scrolled (it never sits over cells that have not scrolled past), a fade marks the side
+ *   with more columns, every row is a 44 px target on a phone, the "ATM" label is body text (AA), and the box lets
+ *   the page scroll on at its ends (no scroll trap inside the Terminal's panel).
  */
 const ITM_SHADE = "bg-surface-2";
 const OI_BAR = {
@@ -40,11 +45,11 @@ const OI_BAR = {
   put: { bar: "border-b-2 border-oi-put bg-oi-put/25", top: "border-b-2 border-oi-put bg-oi-put/40" },
 } as const;
 
-function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false): string {
+function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false, units?: OiUnits): string {
   switch (key) {
-    case "oi": return formatCount(leg.oi);
-    case "oi_change": return pct ? formatOiChangePct(leg.oi, leg.oi_change) : formatCountChange(leg.oi_change);
-    case "volume": return formatCount(leg.volume);
+    case "oi": return formatOi(leg.oi, units);
+    case "oi_change": return pct ? formatOiChangePct(leg.oi, leg.oi_change) : formatOi(leg.oi_change, units, true);
+    case "volume": return formatOi(leg.volume, units);
     case "iv": return formatIv(leg.iv);
     case "ltp": case "bid": case "ask": return formatPrice(leg[key]);
     default: return formatGreek(key, leg[key]);
@@ -101,7 +106,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
     return cols.map((c) => {
       const shown = SHOWN_CLASS[columnShown(c, prefs)];
       const tint = itm ? ITM_SHADE : null;   // the one neutral step, flag on or off (CV-3)
-      const base = cx("relative whitespace-nowrap px-space-2 py-space-2 font-tabular", side === "call" ? "text-right" : "text-left",
+      const base = cx("relative whitespace-nowrap px-space-1 py-space-2 font-tabular md:px-space-2", side === "call" ? "text-right" : "text-left",
         marked ? "bg-brand/15" : tint, shown);
       if (c.key === "oi") {
         const top = highest[side] === row.strike;
@@ -114,7 +119,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
               style={{ width: `${barPercent(leg.oi, max[side])}%` }} />
             <span className="relative inline-flex items-center gap-space-1">
               {top && side === "put" && <MaxMark />}
-              <span>{cellText("oi", leg)}</span>
+              <span>{cellText("oi", leg, false, prefs.units)}</span>
               {top && side === "call" && <MaxMark />}
             </span>
             {top && <span className="sr-only">{` (highest ${side} OI)`}</span>}
@@ -124,19 +129,40 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
       return (
         <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined} data-setup={marked ? side : undefined} onClick={pick}
           data-col={`${side}-${c.key}`} data-cell={c.key === "ltp" ? `${side}-${row.strike}` : undefined}>
-          {cellText(c.key, leg, prefs.pct === true)}
+          {cellText(c.key, leg, prefs.pct === true, prefs.units)}
         </td>
       );
     });
   };
 
-  // The strike column stays in the middle of the visible table when the table is wider than its box and scrolls
-  // sideways (sticky on both edges). A table that fits keeps every column where it is, the strike already central.
+  // M96: a table wider than its box opens with the strike column in the middle; scrolled sideways, the strike column
+  // stays at the edge it reaches (sticky at both edges), so it only covers cells that are leaving the box - never the
+  // cells beside it. A fade marks each side that has more columns. A table that fits keeps every column where it is.
   const [wide, setWide] = useState(false);
+  const [more, setMore] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+  const edges = useCallback(() => {
+    const el = box.current;
+    if (!el) return;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setMore((m) => (m.left === left && m.right === right ? m : { left, right }));
+  }, []);
+  const sideCentred = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !wide || sideCentred.current === centreKey) return;
+    const head = el.querySelector<HTMLElement>("[data-strike-col]");
+    if (!head) return;
+    let natural = 0;                                          // the strike column's place without sticky offsets
+    for (let p = head.previousElementSibling; p; p = p.previousElementSibling) natural += (p as HTMLElement).offsetWidth;
+    el.scrollLeft = Math.max(0, Math.round(natural + head.offsetWidth / 2 - el.clientWidth / 2));
+    sideCentred.current = centreKey;
+    edges();
+  }, [wide, centreKey, edges]);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return undefined;
-    const measure = () => setWide(el.scrollWidth > el.clientWidth + 1);
+    const measure = () => { setWide(el.scrollWidth > el.clientWidth + 1); edges(); };
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
@@ -144,22 +170,23 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
     const table = el.querySelector("table");
     if (table) ro.observe(table);
     return () => ro.disconnect();
-  }, [calls.length, puts.length]);
-  const strikeSticky = cx(wide && "sticky left-[calc(50%-2.75rem)] right-[calc(50%-2.75rem)] z-[1]", "w-[5.5rem] min-w-[5.5rem] text-center");
+  }, [calls.length, puts.length, edges]);
+  const strikeSticky = cx(wide && "sticky left-0 right-0 z-[1]", "w-[4.5rem] min-w-[4.5rem] text-center md:w-[5.5rem] md:min-w-[5.5rem]");
   return (
-    <div ref={box} data-chain-scroll data-wide={wide || undefined}
-      className="max-h-[60vh] overflow-auto overscroll-contain rounded-panel border border-subtle bg-surface-1 md:max-h-[min(70vh,44rem)]">
+    <div className="relative">
+    <div ref={box} data-chain-scroll data-wide={wide || undefined} onScroll={edges}
+      className="max-h-[60vh] overflow-auto rounded-panel border border-subtle bg-surface-1 md:max-h-[min(70vh,44rem)]">
       <table className="w-full border-separate border-spacing-0 text-t13" aria-label={`Option chain for ${live.underlying}`}>
         <thead className="sticky top-0 z-[2] bg-surface-1">
           <tr className="text-t12 font-medium text-fg-muted">
             {calls.map((c) => (
-              <th key={c.key} scope="col" className={cx("whitespace-nowrap border-b border-subtle bg-surface-1 px-space-2 py-space-2 text-right font-medium", SHOWN_CLASS[columnShown(c, prefs)])}>
+              <th key={c.key} scope="col" className={cx("whitespace-nowrap border-b border-subtle bg-surface-1 px-space-1 py-space-2 text-right font-medium md:px-space-2", SHOWN_CLASS[columnShown(c, prefs)])}>
                 <span className="sr-only">Call </span>{c.label}{termOf(c.key)}
               </th>
             ))}
-            <th scope="col" className={cx(strikeSticky, "border-b border-subtle bg-surface-2 px-space-2 py-space-2 font-semibold text-fg")}>Strike</th>
+            <th scope="col" data-strike-col className={cx(strikeSticky, "border-b border-subtle bg-surface-2 px-space-1 py-space-2 font-semibold text-fg md:px-space-2")}>Strike</th>
             {puts.map((c) => (
-              <th key={c.key} scope="col" className={cx("whitespace-nowrap border-b border-subtle bg-surface-1 px-space-2 py-space-2 text-left font-medium", SHOWN_CLASS[columnShown(c, prefs)])}>
+              <th key={c.key} scope="col" className={cx("whitespace-nowrap border-b border-subtle bg-surface-1 px-space-1 py-space-2 text-left font-medium md:px-space-2", SHOWN_CLASS[columnShown(c, prefs)])}>
                 <span className="sr-only">Put </span>{c.label}
               </th>
             ))}
@@ -176,14 +203,14 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
                   else if (onPickLeg && (e.key === "c" || e.key === "p")) { e.preventDefault(); onPickLeg(row, e.key === "c" ? "call" : "put"); }
                 }}
                 aria-keyshortcuts={onPickLeg ? "C P" : undefined}
-                className={cx("cursor-pointer hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand [&>td]:border-b [&>td]:border-subtle",
+                className={cx("h-11 cursor-pointer hover:bg-surface-2 md:h-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand [&>td]:border-b [&>td]:border-subtle",
                   isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
                 {legCells("call", calls, row, isAtm)}
-                <th scope="row" className={cx(strikeSticky, "px-space-2 py-space-2 font-tabular font-semibold text-fg border-b border-subtle", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-1")}>
+                <th scope="row" className={cx(strikeSticky, "px-space-1 py-space-2 font-tabular font-semibold text-fg border-b border-subtle md:px-space-2", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-1")}>
                   {held?.has(`${row.strike}|CE`) && <HeldMark side="call" />}
                   {formatStrike(row.strike)}
                   {held?.has(`${row.strike}|PE`) && <HeldMark side="put" />}
-                  {isAtm && <span className={cx("block text-t12", colour ? "font-semibold text-fg" : "font-medium text-brand")}>ATM<span className="sr-only">, at the money</span></span>}
+                  {isAtm && <span className="block text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
                   {setup && <SetupMark call={setup.get(`${row.strike}|CE`)} put={setup.get(`${row.strike}|PE`)} />}
                   {areaMarks && <AreaMark call={areaMarks.get(`${row.strike}|CE`)} put={areaMarks.get(`${row.strike}|PE`)} />}
                 </th>
@@ -193,6 +220,10 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
           })}
         </tbody>
       </table>
+    </div>
+    {/* M96: the side with more columns fades out (a phone sees the put OI is there). */}
+    {more.left && <span aria-hidden data-scroll-hint="left" className="pointer-events-none absolute inset-y-px left-px w-space-6 rounded-l-panel bg-gradient-to-r from-surface-1 to-transparent" />}
+    {more.right && <span aria-hidden data-scroll-hint="right" className="pointer-events-none absolute inset-y-px right-px w-space-6 rounded-r-panel bg-gradient-to-l from-surface-1 to-transparent" />}
     </div>
   );
 }

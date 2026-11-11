@@ -23,7 +23,9 @@ import {
   chainNotes, initialSymbol, readColumns, writeColumns, type ColumnKey, type ColumnPrefs,
 } from "./model";
 import RowDetailsV2 from "./RowDetailsV2";
-import { ChainLadderV2, Note } from "./ChainLadderV2";
+import { ChainLadderV2, Note, StrikeChips } from "./ChainLadderV2";
+import OiDiffTableV2 from "./OiDiffTableV2";
+import { rowsAround } from "./spotChange";
 import SummaryStripV2 from "./SummaryStripV2";
 import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
@@ -59,6 +61,11 @@ import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
  *   once, when exactly one of his deployments gives strikes on the expiry on screen. Nothing is placed by either: he
  *   reviews it and places it himself.
  * - MO4 slice 2: with `markets_view` on, "What the chain shows" on top (ChainDishV2): five plain lines from the analyses.
+ * - M96 L1 / O1 (owner): the chain view top to bottom - the banner (SummaryStripV2), the view toggle, the "Strikes" chips,
+ *   the OI-difference table (OiDiffTableV2: a tap on a call or put cell opens the same actions and ticket as the chain
+ *   table), the chain's key figures strip, then the chain table and the rest as before. In the Terminal (`embedded`) the
+ *   panel title is the heading (no h1 of its own), the pickers row fits the panel, the banner is one compact block, and
+ *   on a phone the banner leaves out what the context bar shows (`omitFacts`).
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 
@@ -128,7 +135,7 @@ export default function OptionChainPageV2(_props: PageProps) {
 import { expiryComboOptions, symbolOptions } from "./model";
 export { expiryComboOptions, symbolOptions };
 
-export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false, onTicket, areaMarks, hide }: {
+export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false, onTicket, areaMarks, hide, embedded = false, omitFacts }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -147,11 +154,17 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   areaMarks?: ReadonlyMap<string, string>;
   /** M58 T4-5 (in the Terminal): the columns a narrow chain panel leaves out. */
   hide?: readonly ColumnKey[];
+  /** M96 L1: inside the Terminal's panel (its title is the heading; the pickers row fits the panel; a compact banner). */
+  embedded?: boolean;
+  /** M96 L1 (the Terminal on a phone): banner figures its context bar already shows (summaryCards keys). */
+  omitFacts?: readonly string[];
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const phone = useMediaQuery(PHONE_QUERY);
   const [view, setView] = useState<ChainView>("chain");
+  // M96 L1: one "Strikes" choice for the OI-difference table and the chain table (UI-28 U7.1: kept for the visit).
+  const [range, setRange] = useState<number>(0);
   const symbolId = useId();
   const expiryId = useId();
 
@@ -177,6 +190,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const marks = useMemo(() => setupMarks(setupData, live?.expiry ?? chain.expiry), [setupData, live?.expiry, chain.expiry]);
   // 8b-b: "Trade this setup" - the existing ticket / basket pre-filled from one item (only with the PAPER account on).
   const tradeSetup = trading.tradeSetup;
+  const hasRows = !!live && live.rows.length > 0;
+  const shownRows = useMemo(() => (live && range ? rowsAround(live.rows, live.summary?.atm_strike, range) : live?.rows ?? []), [live, range]);
   const tradeOf = live && tradeSetup ? (item: SetupItem) => setupTrade(item, symbol, live.expiry, live.rows) : undefined;
   const autoDone = useRef(false);
   useEffect(() => {
@@ -189,16 +204,17 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
       <PageIntro id="option-chain" lines={["Pick an index or stock: the strike nearest the price is in the middle. Tap a row to see all its figures."]} />
-      <header className="flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between">
-        <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>
-        <div data-tour="oc-pickers" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2 md:flex md:gap-space-3">
-          <div className="min-w-0 md:w-48">
+      <header className={embedded ? "block" : "flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between"}>
+        {/* M96 L1: inside the Terminal the panel's own title is the heading - no second "Option chain". */}
+        {!embedded && <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>}
+        <div data-tour="oc-pickers" className={cx("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2", !embedded && "md:flex md:gap-space-3")}>
+          <div className={cx("min-w-0", !embedded && "md:w-48")}>
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
             {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
             <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange={symbol === "SENSEX" ? "BSE" : "NSE"} universe="optionable"
               storageKey={recentKeyFor(auth?.user?.id)} onPick={(p) => { if (p.symbol !== symbol) { setPicked(null); onSymbol(p.symbol); } }} className="w-full min-w-0" />
           </div>
-          <div className="min-w-0 md:w-56">
+          <div className={cx("min-w-0", !embedded && "md:w-56")}>
             <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
               <CalendarDays size={12} aria-hidden /> Expiry
             </label>
@@ -222,7 +238,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       )}
 
       {/* OC-1 (owner, 25 Oct): header -> status -> summary cards -> the chain -> the compact reading -> the tables. */}
-      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} prevClose={prevClose} />
+      <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} prevClose={prevClose}
+        asOf={live?.data_as_of ?? live?.fetched_at ?? null} dense={embedded && !omitFacts?.length} omit={omitFacts} />
 
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
@@ -243,14 +260,19 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       {/* M86 D2: no broker stored - the last end-of-day chain from NSE's F&O file (read only), or one plain line. */}
       {view === "chain" && noBroker && <section aria-label="Chain" data-block="chain"><EodChainV2 symbol={symbol} /></section>}
-      {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="relative">
-        {/* The toggle sits in the gap above the chain, centred over the strike column, so the chain does not move. */}
-        <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
-          onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} areaMarks={areaMarks} hide={hide}
-          toggle={(placed) => placed === "empty"
-            ? <div className="mb-space-3 flex justify-center"><ViewToggle view={view} onView={setView} /></div>
-            : <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />} />
+      {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="space-y-space-3">
+        {/* M96 L1: the view toggle, then the one "Strikes" choice, the OI-difference table, the key figures strip and the
+            chain table - in the page's flow, so nothing sits over the chips or the rows. */}
+        <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+        {hasRows && <StrikeChips range={range} onRange={setRange} />}
+        {hasRows && live && <OiDiffTableV2 live={live} rows={shownRows} units={prefs.units} onPickLeg={trading.onPickLeg}
+          centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}|${range}`} />}
         {trading.strip}
+        <div>
+          <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
+            onPick={(row) => setPicked(row.strike)} onPickLeg={trading.onPickLeg} held={trading.held} setup={marks.size ? marks : undefined} areaMarks={areaMarks} hide={hide}
+            range={range} chips={false} />
+        </div>
       </section>}
       {trading.layer}
 
@@ -263,7 +285,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         <AskAi symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? undefined} />
       </Sheet>}
 
-      <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} onClose={() => setPicked(null)} />
+      <RowDetailsV2 row={pickedRow} atm={live?.summary.atm_strike ?? null} underlying={symbol} units={prefs.units} onClose={() => setPicked(null)} />
     </div>
   );
 }

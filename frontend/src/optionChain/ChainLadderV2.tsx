@@ -15,7 +15,7 @@ import type { ChainRow, LiveChain } from "./types";
  * Greeks and quotes from the columns menu, the "ATM ± N" strike range and the tick flash (ChainTableV2). The Option chain
  * page and the Terminal place this one component; neither keeps a table of its own.
  */
-export function ChainLadderV2({ symbol, live, loading, problem, problemReason = "", prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks, hide }: {
+export function ChainLadderV2({ symbol, live, loading, problem, problemReason = "", prefs, centreSuffix = "", onPick, onPickLeg, held, setup, toggle, areaMarks, hide, range: ownRange, chips = true }: {
   symbol: string;
   live: LiveChain | null;
   loading: boolean;
@@ -35,10 +35,16 @@ export function ChainLadderV2({ symbol, live, loading, problem, problemReason = 
   toggle?: (placed: "empty" | "above") => ReactNode;
   /** M58 T4-5 (optional): columns left out for a narrow panel (the Terminal's chain: IV, then OI change). */
   hide?: readonly ColumnKey[];
+  /** M96 L1: the strikes range chosen by the page's own chips (the OI-difference table follows the same chips); absent,
+   * the ladder keeps its own choice. */
+  range?: number;
+  /** M96 L1: false when the page shows the "Strikes" chips itself (above the OI-difference table). */
+  chips?: boolean;
 }) {
   const colour = useColourV2();          // colour v2: the Calls / Puts headings in their side's colour
   // UI-28 U7.1: every strike, or ATM ± N (the choice is kept for the visit).
-  const [range, setRange] = useState<number>(0);
+  const [localRange, setRange] = useState<number>(0);
+  const range = ownRange ?? localRange;
   const shownLive = useMemo(() => (live && range ? { ...live, rows: rowsAround(live.rows, live.summary?.atm_strike, range) } : live), [live, range]);
   return (
     <>
@@ -60,22 +66,30 @@ export function ChainLadderV2({ symbol, live, loading, problem, problemReason = 
           {/* UI-28 polish (owner 30 Oct): one row on a phone - "All / ± 5 / ± 10 / ± 15" after a quiet Strikes label;
               the full names stay in each chip's aria-label. CT-1: a chip never breaks inside; in a narrower place (the
               F&O desk's card on a 360 phone) the chips go to a second row instead. */}
-          <div role="group" aria-label="Strikes shown" data-strike-range className="mb-space-2 flex flex-wrap items-center gap-space-2">
-            <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
-            {STRIKE_RANGES.map((n) => (
-              <button key={n} type="button" aria-pressed={range === n} onClick={() => setRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
-                className={cx("inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
-                  range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
-                {n === 0 ? "All" : `± ${n}`}
-              </button>
-            ))}
-          </div>
+          {chips && <StrikeChips range={range} onRange={setRange} className="mb-space-2" />}
           <ChainTableV2 live={shownLive ?? live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${centreSuffix}`} onPick={onPick}
             onPickLeg={onPickLeg} held={held} setup={setup} areaMarks={areaMarks} hide={hide} />
           {problem && <p data-chain-stale className="mt-space-2 text-t12 text-warn">{staleText(live, problem, problemReason)}</p>}
         </>
       )}
     </>
+  );
+}
+
+/** UI-28 U7.1: the "Strikes" chips - every strike, or ATM ± N. M96 L1: the page places them once, above the
+ * OI-difference table, and both tables follow them. */
+export function StrikeChips({ range, onRange, className }: { range: number; onRange: (n: number) => void; className?: string }) {
+  return (
+    <div role="group" aria-label="Strikes shown" data-strike-range className={cx("flex flex-wrap items-center gap-space-2", className)}>
+      <span aria-hidden className="text-t12 text-fg-muted">Strikes</span>
+      {STRIKE_RANGES.map((n) => (
+        <button key={n} type="button" aria-pressed={range === n} onClick={() => onRange(n)} aria-label={n === 0 ? "All strikes" : `ATM ± ${n} strikes`}
+          className={cx("inline-flex min-h-11 items-center whitespace-nowrap rounded-pill border px-space-3 text-t13 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
+            range === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
+          {n === 0 ? "All" : `± ${n}`}
+        </button>
+      ))}
+    </div>
   );
 }
 

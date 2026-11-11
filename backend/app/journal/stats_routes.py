@@ -60,8 +60,13 @@ async def journal_stats(f: stats.Filters = Depends(_common), user: User = Depend
     """Win rate, profit factor, expectancy, average win / loss, average R and MAE / MFE (where stored) - in total and
     by setup, by timeframe and by weekday (IST). A multi-leg structure counts once. Numbers only."""
     loaded = await _load(session, user, f)
-    return {**stats.stats_payload(loaded.decisions), "filters": f.to_dict(), "truncated": loaded.truncated,
-            "setups": loaded.setups, "tags": loaded.tags}
+    out = {**stats.stats_payload(loaded.decisions), "filters": f.to_dict(), "truncated": loaded.truncated,
+           "setups": loaded.setups, "tags": loaded.tags}
+    from app.risk_engine import risk_options
+    if await risk_options.flag_on(session, user.tenant_id):
+        # M99 P7: max drawdown, streaks and the breach count (counted only, never blocking)
+        out["risk_metrics"] = stats.risk_metrics(loaded.decisions)
+    return out
 
 
 @router.get("/export")

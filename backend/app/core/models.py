@@ -156,6 +156,20 @@ class RiskConfig(BaseModel):
     # M94 R3 (app/risk_engine/giveback.py): the profit give-back stop - once today's P&L falls back this % of its peak
     # profit, no new entry for the rest of the trading day. None = not set (off); exits are never checked (ADR-0004).
     giveback_pct: float | None = None
+    # M99 P7 (app/risk_engine/risk_options.py; flag `risk_options`, each option OFF until the trader switches it on):
+    # `daily_loss_lock` - once the daily loss limit is reached, new entries stay refused for the rest of the Indian trading
+    # day even if the P&L recovers (exits are never checked). The size step-down after `step_down_losses` losses in a row:
+    # the size becomes `step_down_size_pct` % of the trader's own size (never above it), back to full size after
+    # `step_down_wins` wins in a row ("wins") or at the next trading day ("next_day"), as `step_down_reset` says. The
+    # stagnation flag (`stagnation_*`) is information only: it never places, blocks or closes anything.
+    daily_loss_lock: bool = False
+    step_down_losses: int | None = None
+    step_down_size_pct: float | None = None
+    step_down_wins: int | None = None
+    step_down_reset: Literal["wins", "next_day"] | None = None
+    stagnation_bars: int | None = None
+    stagnation_move_pct: float | None = None
+    stagnation_bar_minutes: int | None = None
 
     def with_capital(self, balance: Optional[float]) -> "RiskConfig":
         """DEF-0 D1: the trader's own capital when set, else `balance` (the PAPER account balance) - never a built-in

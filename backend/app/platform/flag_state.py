@@ -129,6 +129,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "paper_account": _ready(),
     "risk_by_default": _ready(),
     "vix_gate": _ready(),
+    "risk_options": _ready("Settings › Risk limits (options), the scale-out in exits, the not-moving flag and the journal numbers"),
     "screener_gallery": _ready(),
     "screener_vectorized": _behind(),
     "screenql_amw_functions": _ready(),

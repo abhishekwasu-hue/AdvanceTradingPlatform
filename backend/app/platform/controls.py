@@ -395,6 +395,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
     # functions are hidden and refused.
     "m99_primitives": "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished",
+    # M99 P7 (app/risk_engine/risk_options.py): the trader's own risk and management options - keep the daily loss lock
+    # all day, a smaller size after losses in a row, a scale-out at his own level, a flag on a position that is not
+    # moving (information only) and the journal's drawdown / streak / breach numbers. Each option is his own switch, OFF
+    # until he turns it on; exits are never checked. OFF: none of them is shown or read.
+    "risk_options": "Risk options: daily loss lock all day, smaller size after losses in a row, scale-out, not-moving flag, journal discipline numbers (each the user's own switch; exits never checked)",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,

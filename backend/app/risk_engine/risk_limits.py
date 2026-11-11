@@ -55,7 +55,7 @@ class Check:
     label: str
     help: str                 # one line, shown behind the (?)
     fields: tuple[Field, ...]
-    group: str = "main"       # "main" (the owner's list) or "more" (the guardian's rules)
+    group: str = "main"       # "main" (the owner's list), "more" (the guardian's rules) or "options" (M99 P7, flag risk_options)
     any_field: bool = False   # on with at least one of its fields set (a % or a rupee amount)
 
 
@@ -94,11 +94,30 @@ CHECKS: tuple[Check, ...] = (
            Field("dd_level_2_pct", "Pause at", "%", 0, 100, optional=True)), group="more", any_field=True),
     Check("event_rules", "Market event days", "Event days you or your admin listed pause or cut new entries.",
           (Field("event_size_cut_pct", "Size cut when an event names none", "%", 0, 100, optional=True),), group="more"),
+    # M99 P7 (app/risk_engine/risk_options.py): the trader's own risk options, shown and read only with the flag
+    # `risk_options` ON; each OFF until he switches it on, every number his own.
+    Check("daily_loss_lock", "Keep the daily loss lock all day",
+          "Once your daily loss limit is reached, new entries stay off for the rest of the trading day, even if the P&L "
+          "recovers. It ends at 00:00 IST. Exits always work.", (), group="options"),
+    Check("loss_step_down", "Smaller size after losses in a row",
+          "After this many losses in a row, new entries use this share of your own size (whole lots, at least one). It never "
+          "raises your size. Full size returns as you choose below.",
+          (Field("step_down_losses", "Losses in a row", "losses", 1, BIG, whole=True, low_open=False),
+           Field("step_down_size_pct", "Size then", "% of your size", 0, 100),
+           Field("step_down_wins", "Wins in a row to go back", "wins", 1, BIG, whole=True, optional=True, low_open=False)),
+          group="options"),
+    Check("stagnation_flag", "Flag a position that is not moving",
+          "Shows an open position whose last bars since its entry moved less than this share of its entry price. "
+          "It only shows: nothing is closed or blocked by it.",
+          (Field("stagnation_bars", "Bars", "bars", 1, BIG, whole=True, low_open=False),
+           Field("stagnation_move_pct", "Moved at most", "% of entry", 0, 100),
+           Field("stagnation_bar_minutes", "Bar size", "minutes", 1, 60, whole=True, low_open=False)), group="options"),
 )
 BY_ID: dict[str, Check] = {c.id: c for c in CHECKS}
 FIELD_CHECK: dict[str, str] = {f.key: c.id for c in CHECKS for f in c.fields}
 # A check with no value that still means something when on: the event rules apply the events' own cut / block.
-VALUELESS_OK = frozenset({"event_rules"})
+VALUELESS_OK = frozenset({"event_rules", "daily_loss_lock"})
+OPTION_CHECKS = frozenset(c.id for c in CHECKS if c.group == "options")
 
 
 # --- switches -----------------------------------------------------------------------------------------------------------
@@ -170,12 +189,14 @@ def migrated_notice(record: Any) -> bool:
 def apply_switches(cfg: RiskConfig, enabled: list[str] | set[str]) -> RiskConfig:
     """The config the engine checks with: every field of a switched-off check reads as not set (None; the minimum
     reward:risk as 0 = no minimum). Pure."""
-    update: dict[str, Any] = {"event_rules": "event_rules" in enabled}
+    update: dict[str, Any] = {"event_rules": "event_rules" in enabled, "daily_loss_lock": "daily_loss_lock" in enabled}
     for check in CHECKS:
         if check.id in enabled:
             continue
         for f in check.fields:
             update[f.key] = 0.0 if f.key == "min_risk_reward" else None
+    if "loss_step_down" not in enabled:
+        update["step_down_reset"] = None
     return cfg.model_copy(update=update)
 
 
@@ -240,9 +261,20 @@ def open_positions_block(held: int, limit: int) -> dict[str, Any]:
                  "Exit one before a new entry.", numbers={"held": held, "limit": limit})
 
 
-def daily_loss_block(loss: float, limit: float) -> dict[str, Any]:
-    return block("daily_loss", f"Today's loss {_fmt_money(loss)} has reached your daily loss limit of {_fmt_money(limit)}. "
-                 "No new entries today; exits still work.", numbers={"loss": round(loss, 2), "limit": round(limit, 2)})
+def daily_loss_block(loss: float, limit: float, *, locked: bool = False) -> dict[str, Any]:
+    """`locked` (M99 P7, the daily loss lock on): the sentence says the lock holds all day, even if the P&L recovers."""
+    rest = ("New entries stay off for the rest of today (until 00:00 IST), even if the P&L recovers; exits still work."
+            if locked else "No new entries today; exits still work.")
+    return block("daily_loss", f"Today's loss {_fmt_money(loss)} has reached your daily loss limit of {_fmt_money(limit)}. {rest}",
+                 numbers={"loss": round(loss, 2), "limit": round(limit, 2)})
+
+
+def daily_lock_block(pnl: float, limit: float) -> dict[str, Any]:
+    """M99 P7: the daily loss limit was reached earlier today and the trader keeps the lock all day."""
+    now = f"{'-' if pnl < 0 else ''}{_fmt_money(abs(pnl))}"
+    return block("daily_loss_lock", f"Your daily loss limit of {_fmt_money(limit)} was reached earlier today (today's P&L is {now} now). "
+                 "You keep the lock all day: new entries stay off until 00:00 IST; exits still work.",
+                 numbers={"pnl": round(pnl, 2), "limit": round(limit, 2)})
 
 
 def entries_block(made: int, limit: int) -> dict[str, Any]:
@@ -316,12 +348,15 @@ async def log_block(session: Any, *, tenant_id: int, user_id: int | None, item: 
 
 # --- the page (GET / PUT /api/risk-limits) -------------------------------------------------------------------------------
 
-def view(record: Any, ceilings: dict[str, float]) -> dict[str, Any]:
-    """What Settings > Risk limits shows: every check with its switch, values, unit, bounds and one-line help."""
+def view(record: Any, ceilings: dict[str, float], *, options: bool = False) -> dict[str, Any]:
+    """What Settings > Risk limits shows: every check with its switch, values, unit, bounds and one-line help. `options`
+    (M99 P7, the `risk_options` flag ON): the risk options too, with the step-down's reset choice."""
     values = values_of(record)
     sw = switches_of(record)
     checks = []
     for c in CHECKS:
+        if c.id in OPTION_CHECKS and not options:
+            continue
         checks.append({
             "id": c.id, "label": c.label, "help": c.help, "group": c.group, "enabled": c.id in sw["enabled"], "saved": c.id in sw["saved"],
             "fields": [{"key": f.key, "label": f.label, "unit": f.unit, "min": f.low, "max": min(f.high, _ceiling(f.key, ceilings)),
@@ -332,7 +367,10 @@ def view(record: Any, ceilings: dict[str, float]) -> dict[str, Any]:
             # M68 PR-5 (TS1-051 / 052): null = Not set (no built-in choice is shown as if it were his).
             "loss_streak_pause": _pick(getattr(record, "loss_streak_pause", None) if record is not None else None, ("next_session", "until_resume")),
             "opposite_positions": _pick(getattr(record, "opposite_positions", None) if record is not None else None, ("allow", "deny")),
-            "on": len(sw["enabled"]), "exits": "Exits are never checked: stops, targets and Exit now always work.", "page": PAGE_PATH}
+            **({"step_down_reset": _pick(getattr(record, "step_down_reset", None) if record is not None else None, ("wins", "next_day")),
+                "step_down_resets": [{"value": "wins", "label": "After wins in a row"}, {"value": "next_day", "label": "At the next trading day"}]}
+               if options else {}),
+            "on": len([i for i in sw["enabled"] if options or i not in OPTION_CHECKS]), "exits": "Exits are never checked: stops, targets and Exit now always work.", "page": PAGE_PATH}
 
 
 def _pick(value: Any, allowed: tuple[str, ...]) -> str | None:
@@ -346,7 +384,8 @@ def _ceiling(key: str, ceilings: dict[str, float]) -> float:
     return float(ceilings[mapped]) if mapped and mapped in ceilings else math.inf
 
 
-def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> tuple[dict[str, Any], dict[str, list[str]], list[str]]:
+def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float], *,
+              options: bool = False) -> tuple[dict[str, Any], dict[str, list[str]], list[str]]:
     """(the field values to store, the new switches, the problems in plain words) for a PUT. Pure.
 
     `body["checks"]` maps a check id to `{"enabled": bool, "values": {field: number | null}}`; checks left out keep
@@ -361,6 +400,8 @@ def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> 
         return {}, sw, ["The limits could not be read. Reload the page and try again."]
     for check_id, item in sent.items():
         check = BY_ID.get(check_id)
+        if check is not None and check.id in OPTION_CHECKS and not options:
+            check = None                        # M99 P7: the risk options only with the `risk_options` flag ON
         if check is None or not isinstance(item, dict):
             problems.append("One of the limits is not known. Reload the page and try again.")
             continue
@@ -402,6 +443,9 @@ def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> 
     lvl1, lvl2 = values.get("dd_level_1_pct"), values.get("dd_level_2_pct")
     if _has(lvl1) and _has(lvl2) and lvl1 > lvl2:
         problems.append("Drawdown steps: the cut-size level must not be beyond the pause level.")
+    if options:
+        problems.extend(option_problems(values, enabled, body.get("step_down_reset", getattr(record, "step_down_reset", None)
+                                                                  if record is not None else None)))
     stored = {k: values[k] for k in values}
     if "min_risk_reward" in stored:
         from app.risk_engine.routes import org_min_rr_to_store
@@ -409,9 +453,28 @@ def plan_save(record: Any, body: dict[str, Any], ceilings: dict[str, float]) -> 
     return stored, {"enabled": sorted(enabled), "saved": sorted(saved)}, problems
 
 
+def option_problems(values: dict[str, Any], enabled: set[str] | list[str], reset: Any) -> list[str]:
+    """M99 P7: what a switched-on risk option still needs - the step-down's reset choice (and its wins for "wins"), the
+    daily loss limit under the all-day lock, a bar size the stored bars have. Pure."""
+    from app.risk_engine import risk_options
+    out: list[str] = []
+    if "loss_step_down" in enabled:
+        if reset not in risk_options.RESETS:
+            out.append(risk_options.STEP_NEEDS_RESET)
+        elif reset == risk_options.RESET_WINS and not _has(values.get("step_down_wins")):
+            out.append(risk_options.STEP_NEEDS_WINS)
+    if "daily_loss_lock" in enabled and "daily_loss" not in enabled:
+        out.append(risk_options.LOCK_NEEDS_LIMIT)
+    minutes = values.get("stagnation_bar_minutes")
+    if "stagnation_flag" in enabled and minutes not in risk_options.BAR_MINUTES:
+        out.append(risk_options.STAGNATION_BAR_WORDS)
+    return out
+
+
 def switches_json(switches: dict[str, list[str]]) -> str:
     return json.dumps({"enabled": sorted(switches.get("enabled", [])), "saved": sorted(switches.get("saved", []))}, sort_keys=True)
 
 
 __all__ = ["needs_settings", "needs_settings_of", "PAUSE_NEEDED", "DD_CUT_NEEDED", "BIG", "CHECKS", "BY_ID", "FIELD_CHECK", "PAGE_PATH", "ADMIN_TEXT", "switches_of", "apply_switches", "derived_switches", "values_of",
-           "events_on", "block", "as_text", "log_block", "view", "plan_save", "switches_json", "NO_STOP_WARNING"]
+           "events_on", "block", "as_text", "log_block", "view", "plan_save", "switches_json", "NO_STOP_WARNING", "OPTION_CHECKS",
+           "option_problems", "daily_lock_block"]

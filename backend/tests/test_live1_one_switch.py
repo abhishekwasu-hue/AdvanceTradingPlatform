@@ -261,6 +261,10 @@ def test_on_a_live_deployment_and_a_live_template_are_created_paper_stays_the_de
                        json={"strategy_id": STRATEGY, "symbol": "reliance", "mode": "LIVE", "broker_name": "upstox"})
     assert live.status_code == 201, live.text
     assert live.json()["mode"] == "LIVE"
+    # The v2 bot form names no broker: his one stored broker is the one LIVE goes through.
+    unnamed = client.post("/api/deployments", headers=t["headers"], json={"strategy_id": STRATEGY, "symbol": "hdfcbank", "mode": "LIVE"})
+    assert unnamed.status_code == 201, unnamed.text
+    assert unnamed.json()["mode"] == "LIVE" and unnamed.json()["broker_name"] == "upstox"
     paper = client.post("/api/deployments", headers=t["headers"], json={"strategy_id": STRATEGY, "symbol": "tcs"})
     assert paper.status_code == 201 and paper.json()["mode"] == "PAPER"              # nothing sent = PAPER
     # A strategy template runs LIVE like any strategy now (the former "paper only for now" refusal is folded).

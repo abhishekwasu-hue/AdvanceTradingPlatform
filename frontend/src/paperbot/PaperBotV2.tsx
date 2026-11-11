@@ -650,11 +650,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
       setResult({ kind: "done", text: `${live ? "Started live" : "Started on paper"}: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
-      if (live && isStepUpError(e)) { setFormStepUp(String(e)); return; }     // LIVE: a two-factor check first, then Start again
+      if (live && isStepUpError(e)) { setFormStepUp(errorSentence(e)); return; }     // LIVE: a two-factor check first, then Start again
       // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
       // sentence for that reason, never one guess for all of them.
       setResult({ kind: "warn", text: e instanceof ApiError && e.status === 503 && live ? LIVE_OFF_TEXT
-        : e instanceof ApiError && (e.status === 409 || (live && e.status === 400)) ? errorSentence(e)
+        : e instanceof ApiError && live && e.status === 400 ? errorSentence(e)
+        : e instanceof ApiError && e.status === 409 ? errorSentence(e)
         : e instanceof ApiError && e.status === 403 ? "Your role cannot start a bot. Ask your organisation's owner."
         : "The bot could not be started just now. Try again in a moment." });
     } finally {

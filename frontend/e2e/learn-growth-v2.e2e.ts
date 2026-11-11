@@ -10,7 +10,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * Readiness C13 (learning and growth), on the server's own payloads (e2e/fixtures/learn_v2.json and site_v2.json, pinned
  * by backend/tests/test_c13_learning.py):
  * - the Learn page at /learn (`ui_v2` + `learn`), one lesson open, with one video link and the course link set;
- * - the public Features page at /features (no sign-in; `marketing_site`), its SEO tags;
+ * - the public Features page at /features (no sign-in; `marketing_site`), its SEO tags; M95 F7: the six benefits with
+ *   their picture boxes (placeholders while the files are missing), the three steps and the FAQ;
  * - "Invite a friend" on Settings > Account & plan (`referrals`);
  * - Admin > Users & business: the growth funnel and the Learn videos / Invite a friend settings.
  * Baselines (NEW): `learn-v2-`, `site-features-v2-`, `invite-v2-` and `admin-growth-v2-<360|390|1440>-<light|dark>.png`.
@@ -66,6 +67,7 @@ async function openSite(page: Page, theme: Theme, path = "/features", on = true)
   await page.addInitScript((t) => { try { localStorage.setItem("atp_appearance", JSON.stringify({ theme: t })); } catch { /* none */ } }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await page.route("**/api/**", (r) => r.fulfill({ status: 401, json: { detail: "Not signed in" } }));
+  await page.route(/\/front\/[a-z-]+\.png$/, (r) => r.fulfill({ status: 404, body: "" }));
   await page.route(/\/api(?:\/v1)?\/site\/pages$/, (r) => (on ? r.fulfill({ json: SITE }) : r.fulfill({ status: 404, json: { detail: "Not found" } })));
   await page.goto(path);
   await settle(page);
@@ -86,6 +88,9 @@ for (const size of SIZES) {
       test(`the public Features page looks the same (${theme})`, async ({ page }) => {
         await openSite(page, theme);
         await expect(page.locator("[data-site-page='features']")).toBeVisible();
+        // M95 F7: the six pictures are not in the repo yet - each box shows its placeholder (the same on every run).
+        await page.locator("img[loading='lazy']").evaluateAll((imgs) => imgs.forEach((i) => { (i as HTMLImageElement).loading = "eager"; }));
+        await expect(page.locator("[data-site-image][data-missing]")).toHaveCount(6);
         await expect(page).toHaveScreenshot(`site-features-v2-${size.name}-${theme}.png`, { ...SHOT, fullPage: true });
       });
 
@@ -171,6 +176,11 @@ test.describe("C13 behaviour", () => {
     await expect(page.locator("meta[property='og:title']")).toHaveAttribute("content", "How it works · AiAlgoDesk");
     await page.getByRole("link", { name: "About" }).first().click();
     await expect(page.locator("[data-site-page='about']")).toBeVisible();
+    // M95 F7: the FAQ answers sit in folds; the footer is the M94 sentence.
+    await expect(page.getByText("Free during the beta.")).toBeHidden();
+    await page.getByText("What does it cost?").click();
+    await expect(page.getByText("Free during the beta.")).toBeVisible();
+    await expect(page.locator("[data-site-footer]")).toHaveText("Information and education only, not investment advice.");
     const off = await page.context().newPage();
     await openSite(off, "light", "/features", false);
     await expect(off.getByText("This page does not exist.")).toBeVisible();

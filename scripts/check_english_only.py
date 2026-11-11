@@ -44,6 +44,8 @@ ALLOWED_FILES: Dict[str, str] = {
     "backend/tests/test_phase_ap_interview.py": "interview test fixture (Marathi prompts and plan lines)",
     "backend/tests/test_phase_aq_advisor.py": "interview test fixture (the options round in Marathi)",
     "frontend/e2e/fixtures/interview_plan.json": "interview e2e fixture (a plan with its Marathi lines)",
+    # M95 F1: the link preview reads static tags (crawlers run no scripts); og:description is English + Marathi
+    "frontend/index.html": "M95-Q5 owner approval 10 Nov: the link preview's Marathi line",
 }
 
 # The interview namespace of the frontend: Devanagari only as the value of a key of these objects.

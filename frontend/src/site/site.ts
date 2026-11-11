@@ -10,8 +10,18 @@ export const SITE_LABELS: Record<SiteSlug, string> = { features: "Features", "ho
 export const SITE_ORIGIN = "https://aialgodesk.tech";
 export const SITE_NAME = "AiAlgoDesk";
 
-export interface SiteSection { heading: string; lines: string[] }
-export interface SitePageData { slug: SiteSlug; title: string; description: string; intro: string; sections: SiteSection[] }
+/** M95 F7: `image` is the slug of the section's picture (`/front/<slug>.png`, the same file the front door shows). */
+export interface SiteSection { heading: string; lines: string[]; image?: string | null }
+export interface SiteQuestion { question: string; answer: string }
+export interface SitePageData { slug: SiteSlug; title: string; description: string; intro: string; sections: SiteSection[]; faq?: SiteQuestion[] }
+
+/** M95 F6 / F7: the footer sentence of the public pages (the M94 wording). */
+export const SITE_FOOTER = "Information and education only, not investment advice.";
+
+/** M95 F7: the address of one front-door picture. Served from public/front/ - the front door reads the same files. */
+export function frontImagePath(slug: string): string {
+  return `/front/${slug}.png`;
+}
 
 export function isSiteSlug(value: string | undefined): value is SiteSlug {
   return !!value && (SITE_SLUGS as readonly string[]).includes(value);

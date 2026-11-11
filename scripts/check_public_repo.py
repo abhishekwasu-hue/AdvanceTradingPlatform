@@ -163,7 +163,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/ideas_v2.json": "e0c3b0beb07514a1063758737cb17d3ebc8fd021f67f1c89efb9dd054bbca013",
     # Readiness C13: the Learn page and the marketing pages, the server's own hand-written payloads (backend/tests/test_c13_learning.py).
     "frontend/e2e/fixtures/learn_v2.json": "9564cccb9a93d0a6fbfea3f607e1b4cb2225bcbbf9e60ed7a6fb99415a454cf3",
-    "frontend/e2e/fixtures/site_v2.json": "3b03dcd1d4b2995aa43919e4c6244943d389a7cef949c8a4b81d32f9d8c82bed",
+    "frontend/e2e/fixtures/site_v2.json": "dcd8352b7bd41c89558f1512a0ba90ed541957d933065da89976b969215f6c70",
     # made-up rows in NSE's file layouts (the universe importer's tests)
     "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
     "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",

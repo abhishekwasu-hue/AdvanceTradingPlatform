@@ -6,7 +6,7 @@ import { callWords } from "../signals/language";
 import appSource from "../App.tsx?raw";
 import signInSource from "../auth/SignInScreen.tsx?raw";
 import { SiteView } from "./SitePage";
-import { SITE_SLUGS, isSiteSlug, resetSitePages, seoFor, sitePages, siteSlugFromPath, type SitePageData } from "./site";
+import { SITE_FOOTER, SITE_SLUGS, frontImagePath, isSiteSlug, resetSitePages, seoFor, sitePages, siteSlugFromPath, type SitePageData } from "./site";
 import siteSource from "./SitePage.tsx?raw";
 import seoSource from "./site.ts?raw";
 
@@ -31,11 +31,48 @@ describe("the pages", () => {
   it.each(PAGES.map((p) => [p.slug, p] as const))("%s shows its sections, a sign-in button and the legal links", (_slug, page) => {
     const out = html(page);
     for (const s of page.sections) { expect(readable(out)).toContain(s.heading); for (const l of s.lines) expect(readable(out)).toContain(l); }
+    for (const q of page.faq ?? []) { expect(readable(out)).toContain(q.question); expect(readable(out)).toContain(q.answer); }
     expect(out).toContain(">Sign in<");
     expect(out).toContain('href="/legal/privacy"');
     expect(out).toContain('aria-current="page"');
     expect(callWords(readable(out))).toEqual([]);
     expect(readable(out)).not.toMatch(/win rate|accuracy|guarantee|₹|nifty|sensex|\b\d{3,}\b/i);
+  });
+
+  it("M95 F7: the six benefits each have a lazy picture of a fixed size, the same file the front door shows", () => {
+    const features = PAGES.find((p) => p.slug === "features")!;
+    expect(features.sections.map((s) => s.heading)).toEqual([
+      "AI Copilot", "Option chain with OI", "Find setups", "AI Trading Bot on paper", "Journal", "Daily report on Telegram"]);
+    const out = html(features);
+    for (const s of features.sections) {
+      expect(s.image).toBeTruthy();
+      expect(out).toContain(`src="${frontImagePath(s.image!)}"`);
+    }
+    expect(frontImagePath("copilot")).toBe("/front/copilot.png");
+    const imgs = out.match(/<img [^>]*>/g) ?? [];
+    expect(imgs).toHaveLength(6);
+    for (const img of imgs) { expect(img).toContain('loading="lazy"'); expect(img).toContain('width="640"'); expect(img).toContain('height="400"'); }
+    // The box keeps its size while the picture loads or when the file is missing (onError drops the img).
+    expect(out.match(/data-site-image="[a-z-]+"[^>]*/g)).toHaveLength(6);
+    expect(siteSource).toContain("onError={() => setMissing(true)}");
+  });
+
+  it("M95 F7: three steps, the trust lines and the FAQ in folds", () => {
+    const how = PAGES.find((p) => p.slug === "how-it-works")!;
+    expect(how.sections.map((s) => s.heading)).toEqual(["Continue with Google", "Connect your broker if you want live prices", "Practise on paper"]);
+    const about = PAGES.find((p) => p.slug === "about")!;
+    const out = html(about);
+    for (const line of ["No order is placed without you", "Your broker data stays yours", "Paper by default"]) expect(readable(out)).toContain(line);
+    expect(about.faq?.map((q) => q.question)).toEqual(["What does it cost?", "Which brokers can I connect?", "Is my money safe?", "What is paper trading?"]);
+    expect(about.faq?.[0].answer).toBe("Free during the beta.");
+    expect(out.match(/<details/g)).toHaveLength(4);
+    expect(out).not.toMatch(/<details[^>]*\bopen\b/);
+    for (const q of about.faq!) { expect(readable(out)).toContain(q.question); expect(readable(out)).toContain(q.answer); }
+  });
+
+  it("M95: every page ends with the footer sentence", () => {
+    expect(SITE_FOOTER).toBe("Information and education only, not investment advice.");
+    for (const page of [...PAGES, null]) expect(readable(html(page, "features"))).toContain(SITE_FOOTER);
   });
 
   it("an unpublished page says it does not exist", () => {

@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- M95 F1: the link-preview card (1200 x 630), filled in by make-og-image.ts. Colours are the app's dark tokens
+     (src/styles/tokens.css: surface 9 12 18, brand 59 130 246, up 34 197 94); the font is the app's (Inter). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: "Inter", sans-serif; color: #f1f5f9; position: relative;
+    background: radial-gradient(900px 520px at 85% 15%, rgba(59,130,246,0.22), transparent 60%), #090c12; }
+  .left { position: absolute; left: 64px; top: 58px; width: 470px; }
+  .brand { display: flex; align-items: center; gap: 16px; font-size: 34px; font-weight: 700; letter-spacing: -0.5px; }
+  .brand img { width: 60px; height: 60px; }
+  h1 { margin-top: 38px; font-size: 44px; line-height: 1.14; font-weight: 700; letter-spacing: -1px; }
+  h1 em { font-style: normal; color: #60a5fa; }
+  ul { list-style: none; margin-top: 34px; display: grid; gap: 16px; }
+  li { display: flex; align-items: center; gap: 14px; font-size: 25px; font-weight: 600; color: #e2e8f0; }
+  li i { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: rgba(34,197,94,0.16); color: #22c55e; font-style: normal; font-size: 19px; font-weight: 800; }
+  .site { position: absolute; left: 64px; bottom: 44px; font-size: 22px; font-weight: 600; color: #93c5fd; }
+  .shot { position: absolute; left: 574px; top: 54px; width: 660px; border-radius: 18px; overflow: hidden;
+    border: 1px solid rgba(148,163,184,0.28); box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 6px rgba(59,130,246,0.08); }
+  .shot img { display: block; width: 100%; }
+  .note { position: absolute; left: 578px; bottom: 16px; font-size: 15px; color: #94a3b8; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand"><img src="{{LOGO}}" alt="" />AiAlgoDesk</div>
+    <h1>Learn to read the market and <em>practise trading on paper</em></h1>
+    <ul>
+      <li><i>&#10003;</i>AI Copilot</li>
+      <li><i>&#10003;</i>Option chain with OI</li>
+      <li><i>&#10003;</i>Paper trading - no money needed</li>
+    </ul>
+  </div>
+  <div class="site">aialgodesk.tech</div>
+  <div class="shot"><img src="{{SCREEN}}" alt="" /></div>
+  <div class="note">App screen · index daily chart as of {{AS_OF}}</div>
+</body>
+</html>

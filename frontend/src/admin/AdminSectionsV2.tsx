@@ -170,7 +170,7 @@ export function Phase0Notice() {
       <div className="min-w-0">
         <h2 className="text-t15 font-semibold text-fg">{paperOnly ? "Phase 0: PAPER only - LIVE is locked" : "Live trading is on: each user picks Paper or Live"}</h2>
         <p className="mt-space-1 text-t12 text-fg-muted">
-          LIVE trading (the one switch): <strong className="text-fg">{live ? "on" : "off"}</strong> · Paper only: <strong className="text-fg">{paperOnly ? "on" : "off"}</strong>.
+          Phase 0 paper only: <strong className="text-fg">{paperOnly ? "on" : "off"}</strong> · LIVE trading: <strong className="text-fg">{live ? "on" : "off"}</strong>.
         </p>
         <Details id="console.phase0" className="mt-space-1">LIVE changes only on the owner's explicit word. Exits are never blocked by any switch here.</Details>
       </div>

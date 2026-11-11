@@ -211,8 +211,13 @@ describe("B3: nothing about LIVE in Phase 0", () => {
     expect(liveHiddenFrom({ answered: false, on: () => false })).toBe(true);
     expect(liveHiddenFrom({ answered: true, on: (f) => f === "phase0_paper_only" })).toBe(true);
     expect(liveHiddenFrom({ answered: true, on: () => false })).toBe(false);
+  });
+
+  it("LIVE-1: a mode picker offers Live only while the one switch is on (and paper only, derived from it, is off)", () => {
     expect(liveAvailableFrom({ answered: true, on: (f) => f === "live_trading" })).toBe(true);
-    expect(liveAvailableFrom({ answered: false, on: () => false })).toBe(false);
+    expect(liveAvailableFrom({ answered: true, on: () => false })).toBe(false);
+    expect(liveAvailableFrom({ answered: true, on: () => true })).toBe(false);
+    expect(liveAvailableFrom({ answered: false, on: (f) => f === "live_trading" })).toBe(false);
   });
 
   it("the index, the Advanced page and the Setup page gate their LIVE parts on it", () => {

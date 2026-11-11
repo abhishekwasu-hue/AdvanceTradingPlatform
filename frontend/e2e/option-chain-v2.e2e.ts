@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { DEMO_ANALYSES } from "../src/optionChain/analyses.fixture";
+import { DEMO_ANALYTICS } from "../src/optionChain/chainAnalytics.fixture";
 import { mockApi, type MockOptions } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -70,7 +71,7 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   // OC4: the analyses below the chain (the OC2 fixture, renamed to the symbol on screen) and no saved analyses yet.
   await page.route(/\/api(?:\/v1)?\/option-chain\/analyses/, (r) => {
     const symbol = new URL(r.request().url()).searchParams.get("symbol") ?? "NIFTY";
-    return r.fulfill({ json: { ...DEMO_ANALYSES, symbol } });
+    return r.fulfill({ json: { ...DEMO_ANALYSES, symbol, analytics: DEMO_ANALYTICS } });   // M96 N1: the chain analytics too
   });
   await page.route(/\/api(?:\/v1)?\/me\/prefs$/, (r) => r.fulfill({ json: {
     prefs: { chart: {}, setup: {}, oc_analyses: { items: {} }, appearance: { text_size: "normal" } },

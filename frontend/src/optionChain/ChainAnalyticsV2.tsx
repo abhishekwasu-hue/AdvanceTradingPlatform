@@ -141,6 +141,8 @@ interface Col<T> {
   key: string; label: string; cell: (r: T) => ReactNode; figure?: boolean; tone?: (r: T) => "up" | "down" | "muted"; mark?: (r: T) => boolean;
   /** A mirrored chain table's side: on a phone only the chosen side shows, after the strike. */
   side?: "call" | "put";
+  /** The phone's label (one side shows at a time there, so "Call" / "Put" is left off). */
+  short?: string;
 }
 
 const PHONE_SIDES = [{ key: "call", label: "Calls" }, { key: "put", label: "Puts" }] as const;
@@ -173,8 +175,8 @@ function Table<T extends { strike?: number; time?: string }>({ title, rows, cols
             <tr className="border-b border-subtle">
               {shown.map((c) => (
                 <th key={c.key} scope="col" data-col={c.key}
-                  className={cx("px-space-2 py-space-1 font-normal text-fg-muted", c.figure === false ? "text-left" : "text-right", c.cls, pinned(c) && "bg-surface-1")}>
-                  {c.label}
+                  className={cx("px-space-1 py-space-1 font-normal text-fg-muted md:px-space-2", c.figure === false ? "text-left" : "text-right", c.cls, pinned(c) && "bg-surface-1")}>
+                  {c.short && mirrored ? <><span className="md:hidden">{c.short}</span><span className="hidden md:inline">{c.label}</span></> : c.label}
                 </th>
               ))}
             </tr>
@@ -188,7 +190,7 @@ function Table<T extends { strike?: number; time?: string }>({ title, rows, cols
                     const marked = c.mark?.(r) ?? false;
                     return (
                       <td key={c.key} data-unusual={marked || undefined} data-col={c.key}
-                        className={cx("px-space-2 py-space-1", c.figure === false ? "text-left" : "text-right font-tabular",
+                        className={cx("px-space-1 py-space-1 md:px-space-2", c.figure === false ? "text-left" : "text-right font-tabular",
                           c.tone ? TONE_TEXT[c.tone(r)] : "text-fg", marked && "bg-warn/10 font-semibold", c.cls,
                           pinned(c) && (isAtm ? "bg-surface-2" : "bg-surface-1"))}>
                         {c.cell(r)}
@@ -226,13 +228,13 @@ function BuildUp({ s, spot, each }: { s: BuildUpSection; spot: number | null; ea
             { key: "call", label: "Call OI change", tone: "down", value: (r) => r.call_oi_change },
           ], spot, "OI change")} />
           <Table title="Build-up per strike" atm={atmOf(s.rows, spot)} rows={rows} cols={[
-            { key: "cp", side: "call", label: "Call price chg", cell: (r) => signed(r.call_price_change), tone: (r) => signTone(r.call_price_change) },
-            { key: "co", side: "call", label: "Call OI chg", cell: (r) => lakhsChange(r.call_oi_change), tone: (r) => signTone(r.call_oi_change) },
-            { key: "ct", side: "call", label: "Call", figure: false, cell: (r) => r.call_label, tone: (r) => buildUpTone(r.call_class) },
+            { key: "cp", side: "call", label: "Call price chg", short: "Price chg", cell: (r) => signed(r.call_price_change), tone: (r) => signTone(r.call_price_change) },
+            { key: "co", side: "call", label: "Call OI chg", short: "OI chg", cell: (r) => lakhsChange(r.call_oi_change), tone: (r) => signTone(r.call_oi_change) },
+            { key: "ct", side: "call", label: "Call", short: "Reading", figure: false, cell: (r) => r.call_label, tone: (r) => buildUpTone(r.call_class) },
             { key: "k", label: "Strike", cell: (r) => strikeText(r.strike) },
-            { key: "pt", side: "put", label: "Put", figure: false, cell: (r) => r.put_label, tone: (r) => buildUpTone(r.put_class) },
-            { key: "po", side: "put", label: "Put OI chg", cell: (r) => lakhsChange(r.put_oi_change), tone: (r) => signTone(r.put_oi_change) },
-            { key: "pp", side: "put", label: "Put price chg", cell: (r) => signed(r.put_price_change), tone: (r) => signTone(r.put_price_change) },
+            { key: "pt", side: "put", label: "Put", short: "Reading", figure: false, cell: (r) => r.put_label, tone: (r) => buildUpTone(r.put_class) },
+            { key: "po", side: "put", label: "Put OI chg", short: "OI chg", cell: (r) => lakhsChange(r.put_oi_change), tone: (r) => signTone(r.put_oi_change) },
+            { key: "pp", side: "put", label: "Put price chg", short: "Price chg", cell: (r) => signed(r.put_price_change), tone: (r) => signTone(r.put_price_change) },
           ]} />
         </>
       )}
@@ -246,7 +248,7 @@ function BuildUp({ s, spot, each }: { s: BuildUpSection; spot: number | null; ea
               <Tile label="OI chg" value={lakhsChange(f.latest.oi_change)} tone={signTone(f.latest.oi_change)} />
               <Tile label="Futures OI" value={lakhs(f.latest.oi)} sub={f.since ? `since ${formatTimeIST(f.since)}` : undefined} />
             </div>
-            <MiniChart title="Futures OI" chart={timeLines(f.points, [{ key: "oi", label: "Futures OI", tone: "warn", value: (p) => p.oi }], "Futures OI")} />
+            <MiniChart title="Futures OI change" chart={timeLines(f.points, [{ key: "oi_change", label: "Futures OI change", tone: "warn", value: (p) => p.oi_change }], "OI change")} />
           </>
         )}
       </div>
@@ -345,11 +347,11 @@ function Iv({ s, spot, each }: { s: IvSection; spot: number | null; each: number
             ], spot, "IV points")} />
           )}
           <Table title={s.reference_time ? `IV per strike, change since ${formatTimeIST(s.reference_time)}` : "IV per strike"} atm={atmOf(per, spot)} rows={rows} cols={[
-            { key: "ci", side: "call", label: "Call IV %", cell: (x) => plain(x.call_iv) },
-            { key: "cc", side: "call", label: "Call IV chg", cell: (x) => signed(x.call_iv_change), tone: (x) => signTone(x.call_iv_change) },
+            { key: "ci", side: "call", label: "Call IV %", short: "IV %", cell: (x) => plain(x.call_iv) },
+            { key: "cc", side: "call", label: "Call IV chg", short: "IV chg", cell: (x) => signed(x.call_iv_change), tone: (x) => signTone(x.call_iv_change) },
             { key: "k", label: "Strike", cell: (x) => strikeText(x.strike) },
-            { key: "pc", side: "put", label: "Put IV chg", cell: (x) => signed(x.put_iv_change), tone: (x) => signTone(x.put_iv_change) },
-            { key: "pi", side: "put", label: "Put IV %", cell: (x) => plain(x.put_iv) },
+            { key: "pc", side: "put", label: "Put IV chg", short: "IV chg", cell: (x) => signed(x.put_iv_change), tone: (x) => signTone(x.put_iv_change) },
+            { key: "pi", side: "put", label: "Put IV %", short: "IV %", cell: (x) => plain(x.put_iv) },
           ]} />
         </>
       )}
@@ -404,13 +406,13 @@ function VolOi({ s, spot, each, threshold }: { s: VolOiSection; spot: number | n
             { key: "call", label: "Call volume / OI", tone: "down", value: (r) => r.call_ratio },
           ], spot, "Volume / OI")} />
           <Table title="Volume / OI per strike" atm={atmOf(all, spot)} rows={rows} cols={[
-            { key: "cv", side: "call", label: "Call vol", cell: (r) => lakhs(r.call_volume) },
-            { key: "co", side: "call", label: "Call OI", cell: (r) => lakhs(r.call_oi) },
-            { key: "cr", side: "call", label: "Call vol/OI", cell: (r) => plain(r.call_ratio), mark: (r) => r.call_unusual },
+            { key: "cv", side: "call", label: "Call vol", short: "Volume", cell: (r) => lakhs(r.call_volume) },
+            { key: "co", side: "call", label: "Call OI", short: "OI", cell: (r) => lakhs(r.call_oi) },
+            { key: "cr", side: "call", label: "Call vol/OI", short: "Vol/OI", cell: (r) => plain(r.call_ratio), mark: (r) => r.call_unusual },
             { key: "k", label: "Strike", cell: (r) => strikeText(r.strike) },
-            { key: "pr", side: "put", label: "Put vol/OI", cell: (r) => plain(r.put_ratio), mark: (r) => r.put_unusual },
-            { key: "po", side: "put", label: "Put OI", cell: (r) => lakhs(r.put_oi) },
-            { key: "pv", side: "put", label: "Put vol", cell: (r) => lakhs(r.put_volume) },
+            { key: "pr", side: "put", label: "Put vol/OI", short: "Vol/OI", cell: (r) => plain(r.put_ratio), mark: (r) => r.put_unusual },
+            { key: "po", side: "put", label: "Put OI", short: "OI", cell: (r) => lakhs(r.put_oi) },
+            { key: "pv", side: "put", label: "Put vol", short: "Volume", cell: (r) => lakhs(r.put_volume) },
           ]} />
         </>
       )}

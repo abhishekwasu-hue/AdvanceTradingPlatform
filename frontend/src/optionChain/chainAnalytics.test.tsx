@@ -144,9 +144,10 @@ describe("M96 N1 chain analytics: the view", () => {
       expect(html, key).toContain("data-phone-sides");
       const head = html.match(/<thead>[\s\S]*?<\/thead>/)![0];
       expect(head.match(/data-col="([^"]+)"/)![1], key).toBe("k-phone");                 // the strike is the first column
-      expect(head, key).toMatch(/class="[^"]*sticky left-0[^"]*md:hidden[^"]*"[^>]*data-col="k-phone"|data-col="k-phone"/);
-      expect(head, key).toMatch(/class="[^"]*hidden md:table-cell[^"]*"[^>]*>Strike</);   // the middle strike: from md only
-      expect(head, key).toMatch(/hidden md:table-cell[^"]*"[^>]*>Put/);                   // puts wait for the toggle on a phone
+      expect(head, key).toMatch(/data-col="k-phone" class="[^"]*sticky left-0[^"]*md:hidden/);   // pinned, phone only
+      expect(head, key).toMatch(/data-col="k" class="[^"]*hidden md:table-cell/);                  // the middle strike: from md only
+      expect(head, key).toMatch(/data-col="p[a-z]" class="[^"]*hidden md:table-cell/);             // puts wait for the toggle
+      expect(head, key).toContain('<span class="md:hidden">');                                     // short phone labels
     }
     for (const key of ["walls", "pcr", "exposure"] as const) {
       const html = view(key);

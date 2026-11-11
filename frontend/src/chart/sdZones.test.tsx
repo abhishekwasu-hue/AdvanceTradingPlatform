@@ -144,12 +144,12 @@ describe("the layer", () => {
 });
 
 describe("timeframe choice", () => {
-  it("a chart offers its own timeframe and higher ones; the choice is cut to them, at most four", () => {
-    expect(sdTimeframesFor("60min")).toEqual(["1h", "2h", "1d", "1w", "1M"]);
+  it("a chart offers its own timeframe first, then every other; the choice keeps the list's order, at most four", () => {
+    expect(sdTimeframesFor("60min")).toEqual(["1h", "1m", "3m", "5m", "10m", "15m", "30m", "2h", "1d", "1w", "1M"]);
     expect(sdTimeframesFor("10min")[0]).toBe("10m");
     expect(shownSdTimeframes(null, "15min")).toEqual(["15m"]);
-    expect(shownSdTimeframes(["5m", "1h", "1d"], "15min")).toEqual(["1h", "1d"]);          // a lower one is not shown
-    expect(shownSdTimeframes(["5m"], "15min")).toEqual(["15m"]);
+    expect(shownSdTimeframes(["1d", "10m", "1h"], "15min")).toEqual(["10m", "1h", "1d"]);   // a higher and a lower one
+    expect(shownSdTimeframes(["7m"], "15min")).toEqual(["15m"]);
     expect(shownSdTimeframes(["15m", "30m", "1h", "2h", "1d"], "15min")).toHaveLength(4);
     expect(toggleSdTimeframe(["15m"], "1d")).toEqual(["15m", "1d"]);
     expect(toggleSdTimeframe(["15m", "1d"], "15m")).toEqual(["1d"]);
@@ -159,7 +159,8 @@ describe("timeframe choice", () => {
 
   it("the options bar: one chip per offered timeframe (pressed when shown) and Show violated off by default", () => {
     const html = renderToStaticMarkup(<SdZonesBar chartTf="60min" shown={["1h", "1d"]} options={{ timeframes: ["1h", "1d"], showViolated: false }} onChange={() => {}} note={null} />);
-    expect(html.match(/data-sd-tf=/g)).toHaveLength(5);
+    expect(html.match(/data-sd-tf=/g)).toHaveLength(11);
+    expect(html.indexOf('data-sd-tf="1h"')).toBeLessThan(html.indexOf('data-sd-tf="1m"'));     // the chart's own first
     expect(html).toMatch(/aria-pressed="true" data-sd-tf="1h"/);
     expect(html).toMatch(/aria-pressed="false" data-sd-tf="2h"/);
     expect(html).toContain("Show violated");

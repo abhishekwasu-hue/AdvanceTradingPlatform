@@ -38,16 +38,17 @@ const OF_CHART: Record<TimeframeId, SdTimeframe> = {
 /** The chart's timeframe as the layer names it. */
 export const sdTimeframeOf = (tf: TimeframeId): SdTimeframe => OF_CHART[tf];
 
-/** The timeframes a chart at `tf` can show zones of: its own and every higher one (a lower one has no single place). */
+/** The timeframes a chart at `tf` can show zones of: every one - a higher timeframe's zones on a lower-timeframe chart
+ * (the usual case), and a lower one too (a style preset such as intraday 15m / 10m on a 15 min chart); each zone is
+ * placed by its own times. The chart's own timeframe first. */
 export function sdTimeframesFor(tf: TimeframeId): SdTimeframe[] {
-  const own = SD_TIMEFRAMES.indexOf(sdTimeframeOf(tf));
-  return SD_TIMEFRAMES.slice(Math.max(0, own));
+  const own = sdTimeframeOf(tf);
+  return [own, ...SD_TIMEFRAMES.filter((t) => t !== own)];
 }
 
-/** The user's choice cut to what this chart can show, in order, at most SD_MAX_TIMEFRAMES; none left: the chart's own. */
+/** The user's choice in the list's order, at most SD_MAX_TIMEFRAMES; none chosen: the chart's own. */
 export function shownSdTimeframes(chosen: readonly string[] | null | undefined, tf: TimeframeId): SdTimeframe[] {
-  const allowed = sdTimeframesFor(tf);
-  const picked = allowed.filter((t) => chosen?.includes(t)).slice(0, SD_MAX_TIMEFRAMES);
+  const picked = SD_TIMEFRAMES.filter((t) => chosen?.includes(t)).slice(0, SD_MAX_TIMEFRAMES);
   return picked.length ? picked : [sdTimeframeOf(tf)];
 }
 

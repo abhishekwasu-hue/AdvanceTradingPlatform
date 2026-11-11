@@ -69,7 +69,7 @@ async function open(page: Page, formation: Formation, width: number) {
     return r.fulfill({ json: { schema: "sd-layer/1", symbol: q.get("symbol"), at: "2026-10-19T05:30:00Z", note: "", include_violated: q.get("include_violated") === "1",
       settings: {}, settings_note: "reference - edit before use", timeframes: rows } });
   });
-  await page.goto("/charts");
+  await page.goto("/charts?tf=15min");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
   await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
@@ -77,23 +77,22 @@ async function open(page: Page, formation: Formation, width: number) {
 }
 
 async function turnOn(page: Page) {
-  await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15 min", exact: true }).click().catch(async () => {
-    await page.getByRole("combobox", { name: /Timeframe/ }).first().click();
-    await page.getByRole("option", { name: "15 min", exact: true }).click();
-  });
   await page.getByRole("button", { name: /^Indicators/ }).click();
   await page.getByRole("switch", { name: /Supply & Demand zones/ }).click();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sd-zones-bar")).toBeVisible();
 }
 
-/** Moves the pointer down the chart at `xFrac` of its width until a band tooltip opens. */
-async function hoverZone(page: Page, xFrac: number) {
+/** Moves the pointer down the price pane (left of the price axis) at a few widths until a zone's tooltip opens. */
+async function hoverZone(page: Page) {
   const box = await page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first().boundingBox();
   if (!box) throw new Error("no chart");
-  for (let y = box.y + 20; y < box.y + box.height - 20; y += 4) {
-    await page.mouse.move(box.x + box.width * xFrac, y);
-    if (await page.locator("[data-band-tip] [data-band-rows]").count()) return true;
+  const plot = box.width - 90;                                   // the price axis takes the right edge
+  for (const frac of [0.97, 0.9, 0.8]) {
+    for (let y = box.y + 30; y < box.y + box.height * 0.8; y += 3) {
+      await page.mouse.move(box.x + plot * frac, y);
+      if (await page.locator("[data-band-tip] [data-band-rows]").count()) return true;
+    }
   }
   return false;
 }
@@ -110,7 +109,7 @@ test.describe("M97 Supply & Demand zones layer", () => {
     await page.getByLabel("Show violated").check();
     await expect.poll(() => asks.at(-1)?.get("include_violated")).toBe("1");
     await page.getByLabel("Show violated").uncheck();
-    expect(await hoverZone(page, 0.93)).toBe(true);
+    expect(await hoverZone(page)).toBe(true);
     const tip = page.locator("[data-band-tip]");
     await expect(tip).toContainText("Formation");
     await expect(tip).toContainText("Proximal");
@@ -126,7 +125,7 @@ test.describe("M97 Supply & Demand zones layer", () => {
         await turnOn(page);
         await page.getByTestId("sd-zones-bar").getByRole("button", { name: "D", exact: true }).click();
         await page.waitForLoadState("networkidle");
-        await hoverZone(page, width < 600 ? 0.8 : 0.93);
+        await hoverZone(page);
         await page.waitForTimeout(150);
         await page.locator("[data-page='charts-v2']").screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css" });
       });

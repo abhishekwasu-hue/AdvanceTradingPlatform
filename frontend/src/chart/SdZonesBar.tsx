@@ -1,6 +1,6 @@
 /**
  * M97 PR-4: the "Supply & Demand zones" options under the chart while the layer is on - which timeframes' zones to
- * draw (the chart's own and higher ones: a higher timeframe on a lower-timeframe chart) and "Show violated" (off by
+ * draw (the chart's own first; a higher timeframe on a lower-timeframe chart, or any other) and "Show violated" (off by
  * default). Numbers first: one row of chips, the explanation behind Details.
  */
 import { cx } from "../components/primitives/cx";

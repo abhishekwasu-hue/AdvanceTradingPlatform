@@ -230,11 +230,13 @@ def test_every_pre_built_screen_resolves_to_valid_screenql():
     import app.main  # noqa: F401 - registers the breakouts and Legends sources
     from app.screener import compile_screen
     from app.screener import intraday as itd
+    from app.screener import sd_scanners as sds
     for screen in tx.load().screens:
         resolved, why = lib.resolve(screen)
         assert resolved is not None, f"{screen.id}: {why}"
         # M94-Q2: an intraday scanner's Not set values are his to give (here 1 each) - the run asks for them
-        unset = {u: 1 for u in itd.scanner(screen.id).unset()} if screen.source == "intraday" else {}
+        own = itd.scanner(screen.id) or sds.scanner(screen.id)        # M97 PR-2: the Supply & Demand scanners the same way
+        unset = {u: 1 for u in own.unset()} if own is not None else {}
         _, validated = compile_screen(resolved.text, base_tf=resolved.base_tf, params={**resolved.params, **unset})
         assert validated.ok, (screen.id, [p.message for p in validated.problems])
 

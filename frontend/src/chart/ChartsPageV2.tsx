@@ -173,7 +173,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const screen = useScreenOverlay(engine, { screenId, symbol, exchange, timeframe, candles: data.candles,
     on: screenShown && tab === "chart" && !hubView });
   // M94 F16: the template overlay from the address - read and drawn only on demand (its toolbar button; off at first)
-  const tplAsk = features.on("intraday_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
+  const tplAsk = features.on("intraday_pack") || features.on("sd_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
   const [tplShown, setTplShown] = useState(false);
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });

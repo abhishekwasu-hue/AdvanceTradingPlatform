@@ -30,6 +30,7 @@ import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { INTRADAY_SOURCE, isIntradayLibrary, scannersById, type IntradayLibrary } from "../screener/intraday";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
+import { SD_SOURCE } from "../screener/supplyDemand";
 import { stagesFromServer, type ServerStage } from "../screener/importStages";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
 import { LibraryTools } from "../screener/LibraryTools";
@@ -125,6 +126,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // M94 PR-2 (flag `intraday_pack`): the intraday scanners' settings, read only when the taxonomy serves one of them -
   // while the flag is off it serves none, nothing is asked and nothing changes.
   const [intraday, setIntraday] = useState<IntradayLibrary | null>(null);
+  // M97 PR-2 (flag `sd_pack`): the Supply & Demand scanners' settings, the same way (same payload shape).
+  const [sdLib, setSdLib] = useState<IntradayLibrary | null>(null);
   // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
   // UI2-0: this page's flags come from the app's single /system/features read.
   const features = useFeatures();
@@ -198,7 +201,13 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     if (!hasIntraday) { setIntraday(null); return; }
     screenerApi.intraday().then((l) => setIntraday(isIntradayLibrary(l) ? l : null)).catch(() => setIntraday(null));
   }, [hasIntraday]);
-  const intradayMap = useMemo(() => scannersById(intraday), [intraday]);
+  const hasSd = !!taxonomy?.screens.some((s) => s.source === SD_SOURCE);
+  useEffect(() => {
+    if (!hasSd) { setSdLib(null); return; }
+    screenerApi.supplyDemand().then((l) => setSdLib(isIntradayLibrary(l) ? l : null)).catch(() => setSdLib(null));
+  }, [hasSd]);
+  // the gallery's scanner settings by screen id: the intraday and the Supply & Demand scanners (ids never overlap)
+  const intradayMap = useMemo(() => ({ ...scannersById(intraday), ...scannersById(sdLib) }), [intraday, sdLib]);
 
   useEffect(() => {
     if (!universeV2) return undefined;
@@ -253,7 +262,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
-    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE))), [registry, builderU2]);
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE
+      || s.source === SD_SOURCE))), [registry, builderU2]);
   // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
   const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
   // M49 U6: "Ready scan" leads with the library's other screens this page can open (the templates are the starters, so
@@ -326,7 +336,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
 
   // M94 F15 (flag intraday_pack): a strategy template's "Setup scanner" opens `/screener?template=H6&side=long` - the
   // template's own setup with its default settings as builder blocks, validated and gated by the server as any screen.
-  const templateAsk = useMemo(() => (features.on("intraday_pack") ? templateScanFromSearch(location.search) : null), [features, location.search]);
+  const templateAsk = useMemo(() => (features.on("intraday_pack") || features.on("sd_pack") ? templateScanFromSearch(location.search) : null), [features, location.search]);
   useEffect(() => {
     if (!registry || !templateAsk) return undefined;
     let alive = true;

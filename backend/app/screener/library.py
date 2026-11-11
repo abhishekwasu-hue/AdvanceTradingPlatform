@@ -108,6 +108,13 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
             return None, "no such intraday scanner"
         # M94: the set values only - a Not set parameter stays a $parameter, so a run asks for it (M94-Q2)
         text, base_tf, params = scanner.text, scanner.base_tf, scanner.defaults()
+    elif screen.source == "supply_demand":
+        from app.screener import sd_scanners as sds
+        found = sds.scanner(screen.id)
+        if found is None:
+            return None, "no such Supply & Demand scanner"
+        # M97 PR-2: as the intraday source - the set values only; a Not set parameter stays a $parameter
+        text, base_tf, params = found.text, found.base_tf, found.defaults()
     else:
         return None, f"the {screen.source!r} source has no ScreenQL text"
     return Resolved(screen.id, screen.name, screen.method, screen.setup, str(screen.tags.get("direction", "long")), screen.source,

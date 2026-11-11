@@ -13,7 +13,7 @@ stored on the deployment row (migration d7f9b1c3e5a8):
   `target_ratio` x the finished `target_base_wave`, read on the signal bar; no projection there = no target, never a
   refusal) / TEMPLATE_LEVEL (M94 F10: at one level the template offers - `target_level`: the session VWAP, the session
   high / low, the previous close, the opening range's far side - read on the signal bar; a level that is not beyond the
-  entry on the winning side = no target, never a refusal).
+  entry on the winning side = no target, never a refusal; M97 PR-3: family I, the opposing zone's near line).
 
 NULL in every column is exactly the behaviour before this module (every existing deployment): the template's invalidation
 as the stop and no target; a structure keeps its credit levels. The premium stop and the credit levels are independent
@@ -33,7 +33,8 @@ The precedence per instrument (R4; docs/design/STRATEGY_TEMPLATES_IMPL.md, "Exit
 
 TEMPLATE_EXIT needs a template (with the user's settings) that has an exit signal; WAVE_PROJECTION a wave template (it
 counts waves on its wave timeframe); TEMPLATE_LEVEL a template that offers levels (`LEVELS`: family H, the intraday
-templates - each level whose expression compiles with the user's settings). Not built here (OPEN_QUESTIONS TPL-X1..X3): stop_source NONE (on an option the
+templates; M97 PR-3: family I, the Supply & Demand templates - each level whose expression compiles with the user's
+settings; `FAMILY_LEVELS` says which levels each family offers). Not built here (OPEN_QUESTIONS TPL-X1..X3): stop_source NONE (on an option the
 premium / credit safety net always stays, so "none" would still have a stop), target_rule NEXT_AREA (market zones are
 stored snapshots behind their own flag, R10), and the template's invalidation as an exit of a structure.
 
@@ -50,6 +51,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.strategy_templates.language import _WAVE_NAME_WORDS
+
+# M97 PR-3: the Supply & Demand zone settings of a family I template, as ScreenQL named arguments (its own $settings)
+SD_ZONE_KWARGS = ("avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, "
+                  "base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars")
 
 # The spec's full lists (section 5 + WAVE section 4) and what this build offers
 STOP_SOURCES: Tuple[str, ...] = ("TEMPLATE_INVALIDATION", "PREMIUM_PCT", "CREDIT_PCT", "NONE")
@@ -83,17 +88,24 @@ LEVELS: dict[str, tuple[str, str]] = {
     "SESSION_EXTREME": ("SessionHigh()", "SessionLow()"),
     "PREV_CLOSE": ("PDC()", "PDC()"),
     "OR_FAR_SIDE": ("ORHigh($minutes)", "ORLow($minutes)"),
+    # M97 PR-3: the near (proximal) line of the nearest fresh zone on the other side - a supply zone for an upward idea, a
+    # demand zone for a downward one - with the template's own zone settings (so only family I offers it)
+    "OPPOSING_ZONE": (f'SDZoneEdge("supply", "proximal", {SD_ZONE_KWARGS})', f'SDZoneEdge("demand", "proximal", {SD_ZONE_KWARGS})'),
 }
 LEVEL_WORDS: dict[str, str] = {
     "VWAP": "The session VWAP",
     "SESSION_EXTREME": "The session high (its low for a downward idea)",
     "PREV_CLOSE": "The previous close",
     "OR_FAR_SIDE": "The far side of the opening range (its high for an upward idea, its low for a downward one)",
+    "OPPOSING_ZONE": "The opposing zone's near line (the nearest fresh supply zone for an upward idea, demand for a downward one)",
 }
 # The same levels in a sentence ("target at the session VWAP"; the "how it works" exit options line)
 LEVEL_SHORT_WORDS: dict[str, str] = {"VWAP": "the session VWAP", "SESSION_EXTREME": "the session high / low",
-                                     "PREV_CLOSE": "the previous close", "OR_FAR_SIDE": "the far side of the opening range"}
-LEVEL_FAMILIES = frozenset({"H"})         # the intraday templates (their functions are session functions)
+                                     "PREV_CLOSE": "the previous close", "OR_FAR_SIDE": "the far side of the opening range",
+                                     "OPPOSING_ZONE": "the opposing zone's near line"}
+# The levels each family offers: H the intraday templates (session functions), I (M97 PR-3) the Supply & Demand templates
+FAMILY_LEVELS: dict[str, tuple[str, ...]] = {"H": ("VWAP", "SESSION_EXTREME", "PREV_CLOSE", "OR_FAR_SIDE"), "I": ("OPPOSING_ZONE",)}
+LEVEL_FAMILIES = frozenset(FAMILY_LEVELS)
 
 
 def base_waves() -> Tuple[str, ...]:
@@ -125,7 +137,7 @@ def level_parts(template: Any, settings: Any, level: str) -> dict[str, Any]:
     """The compiled expressions of one level, per side the settings trade (`level:long` / `level:short`); raises
     TemplateError when the level does not compile for this template and these settings."""
     from app.strategy_templates.compile import TemplateError, compile_part
-    if template.family not in LEVEL_FAMILIES or level not in LEVELS:
+    if level not in FAMILY_LEVELS.get(template.family, ()):
         raise TemplateError(["This template offers no such level"])
     out: dict[str, Any] = {}
     for side in settings.side_list():
@@ -138,10 +150,8 @@ def offered_levels(template: Any, settings: Any) -> tuple[str, ...]:
     """M94 F10: the levels this template offers with these settings - each one whose expressions compile (the opening
     range's far side needs the template's own opening-range setting)."""
     from app.strategy_templates.compile import TemplateError
-    if template.family not in LEVEL_FAMILIES:
-        return ()
     out = []
-    for level in LEVELS:
+    for level in FAMILY_LEVELS.get(template.family, ()):
         try:
             level_parts(template, settings, level)
         except TemplateError:
@@ -327,5 +337,5 @@ def underlying_stop_on(exits: TemplateExits, instrument_kind: Optional[str], opt
 
 __all__ = ["TemplateExitsBody", "checked", "STOP_SOURCES", "TARGET_RULES", "NOT_BUILT", "PRECEDENCE", "TemplateExits", "Capabilities", "capabilities",
            "instrument_class", "target_level", "projection_text", "underlying_stop_on", "base_waves", "base_wave_words",
-           "EXIT_REASON", "DEFAULT", "TARGET_R_BOUNDS", "RATIO_BOUNDS", "LEVELS", "LEVEL_WORDS", "LEVEL_SHORT_WORDS", "LEVEL_FAMILIES", "level_parts",
+           "EXIT_REASON", "DEFAULT", "TARGET_R_BOUNDS", "RATIO_BOUNDS", "LEVELS", "LEVEL_WORDS", "LEVEL_SHORT_WORDS", "LEVEL_FAMILIES", "FAMILY_LEVELS", "SD_ZONE_KWARGS", "level_parts",
            "offered_levels", "level_words"]

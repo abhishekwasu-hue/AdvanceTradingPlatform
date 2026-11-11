@@ -44,6 +44,7 @@ from app.screener import legends as lg
 from app.screener import ownership as ownership_gate
 from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
 from app.screener import reference as reference_gate
+from app.screener import sd_scanners as sds  # registers the `supply_demand` template source (M97 PR-2)
 from app.screener import taxonomy as tx
 from app.screener import venues as venue_gate
 from app.screener import waves as waves_gate
@@ -321,7 +322,8 @@ async def screen_stages(body: StagesBody, user: User = Depends(get_current_user)
     await _gate(session, user, ast, validated, params)        # main: params resolve RankScore($name) (N3 S7a)
     # M94-Q2: an intraday scanner opens with its Not set parameters still as $parameters - the builder shows them and the
     # run asks for their values (validation refuses "parameter $name has no value" until he sets them)
-    scanner = itd.scanner(body.library_id) if body.library_id else None
+    # (M97 PR-2: a Supply & Demand scanner the same way)
+    scanner = (itd.scanner(body.library_id) or sds.scanner(body.library_id)) if body.library_id else None
     unset = scanner.unset() if scanner is not None else []
     blocking = [p for p in validated.problems if not (p.kind == "parameter" and any(f"${u} " in p.message for u in unset))]
     if ast is None or blocking:
@@ -343,6 +345,18 @@ async def intraday_scanners(user: User = Depends(get_current_user), session: Asy
     for f in (itd.FLAG, *itd.ALSO):
         await require_flag(session, f, user.tenant_id)
     return itd.payload()
+
+
+@router.get("/supply-demand")
+async def supply_demand_scanners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M97 PR-2: the Supply & Demand scanners - each one's text, base timeframe, editable parameters (a reference value,
+    the ATP default or Not set) and the footer. Behind `screener_gallery` and `sd_pack` (404 / 503 while off, as the
+    gallery hides them). Nothing runs here."""
+    await _flag(session, user)
+    await require_flag(session, GALLERY_FLAG, user.tenant_id)
+    for f in (sds.FLAG, *sds.ALSO):
+        await require_flag(session, f, user.tenant_id)
+    return sds.payload()
 
 
 @router.post("/validate")

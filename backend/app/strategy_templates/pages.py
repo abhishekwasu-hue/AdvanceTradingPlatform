@@ -9,6 +9,9 @@ its chart overlay, behind `intraday_pack` (family H, the intraday templates; gen
   walks the template tests use (`app.quality.lookahead.synthetic_bars`, the PR-4 tests' `_walk` sizes), and the first
   signal found drawn as candles with its setup bar, its trigger bar and its invalidation. The prices are rescaled to
   0-100: the drawing carries no real market, no symbol, no date and no price (CLAUDE.md section 3: education surfaces).
+  Family I (M97 PR-3, the Supply & Demand templates) draws on `sd_schematic_bars` instead: a random walk rarely forms a
+  zone with the reference settings, so the drawing uses hand-built candles (a supply zone above, a demand zone below, and
+  the first visit of the demand zone; mirrored for a downward idea) - made-up prices, rescaled the same way.
 * `overlay_parts(recipe)` - each compiled part (setup, trigger, invalidation) as a condition the screener can evaluate:
   the setup and trigger exactly as compiled; the invalidation as "the close is beyond the level" (long: below, short:
   above). The overlay route runs each through the ONE shared M91 evaluation (`watch_screen.screen_marks`), so the chart
@@ -25,7 +28,9 @@ from functools import lru_cache
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
+from app.screener.nodes import TF_MINUTES
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates import language
 from app.strategy_templates.compile import SIDES, Part, Recipe, TemplateError, compile_part, compile_recipe, resolve_settings
@@ -33,7 +38,8 @@ from app.strategy_templates.schema import Setup, Template, leaves
 
 # M94-Q10: the order's sentence, exactly, on every M94 surface (the older line stays where it is, F14)
 FOOTER = "Information and education only, not investment advice."
-PAGE_FAMILIES = frozenset({"H"})        # the families with a "how it works" screen and the template overlay (M94)
+PAGE_FAMILIES = frozenset({"H", "I"})   # the families with a "how it works" screen and the template overlay (M94, M97 PR-3)
+SD_FAMILIES = frozenset({"I"})          # M97 PR-3: drawn on hand-built zone candles (sd_schematic_bars), not on random walks
 # The bars of the synthetic random walk per timeframe - the PR-4 template tests' own `_walk` sizes (tests/test_m94_pr4_templates.py)
 WALK_BARS: dict[str, int] = {"1m": 9000, "3m": 4000, "5m": 3000, "15m": 1500}
 WALK_SEEDS = 12                         # the seeds the tests search (`_seed_with_signals`)
@@ -70,6 +76,33 @@ def _pick(series: Any, has_trigger: bool, size: int) -> int | None:
     return bars[0] if bars else None
 
 
+# M97 PR-3: the hand-built candles of a family I drawing, as (open, high, low, close). Neutral candles (range 2, body 60 %) are
+# neither leg nor base candles with the reference settings; the zones are the PR-1 test shapes (tests/test_m97_sd_zones.py).
+SD_AXIS = 201.0                                  # mirror axis of the supply zone (and of the whole drawing, downward)
+_SD_NEUTRAL = ((99.4, 101.0, 99.0, 100.6), (100.6, 101.0, 99.0, 99.4))
+_SD_DBR = ((100.0, 100.2, 96.8, 97.0), (97.0, 97.6, 96.6, 97.3), (97.3, 97.7, 96.9, 97.1), (97.1, 101.0, 97.2, 100.8))
+_SD_AWAY = (100.8, 101.7, 100.5, 101.5)
+_SD_VISIT = (101.0, 101.2, 97.5, 98.5)
+SD_PRELUDE = 110                                 # neutral candles first: the zone functions' warm-up (min bars 100)
+
+
+def sd_schematic_bars(tf: str, side: str = "long", after: int = AFTER + 2) -> Any:
+    """Made-up bars with a fresh supply zone (an RBD), a fresh demand zone below it (a DBR) and the first visit of the
+    demand zone; for `side` "short" the whole picture mirrored (a demand zone below, a supply zone visited)."""
+    def mirror(c: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+        return (SD_AXIS - c[0], SD_AXIS - c[2], SD_AXIS - c[1], SD_AXIS - c[3])
+    neutral = [_SD_NEUTRAL[i % 2] for i in range(SD_PRELUDE)]
+    rows = neutral + [mirror(c) for c in _SD_DBR] + [_SD_NEUTRAL[i % 2] for i in range(5)] + list(_SD_DBR) + [_SD_AWAY, _SD_VISIT]
+    rows += [_SD_AWAY] * after
+    if side == "short":
+        rows = [mirror(c) for c in rows]
+    minutes = TF_MINUTES.get(tf, 1440)
+    freq = "D" if minutes >= 1440 else f"{minutes}min"
+    idx = pd.date_range("2025-01-01 03:45", periods=len(rows), freq=freq, tz="UTC")
+    o, h, lw, c = (np.array(col, dtype=float) for col in zip(*rows))
+    return pd.DataFrame({"open": o, "high": h, "low": lw, "close": c, "volume": 1000.0}, index=idx)
+
+
 def schematic(template: Template) -> dict[str, Any] | None:
     """The drawing of one signal of the template (module docstring), or None when no walk gives one."""
     return _schematic_cached(template.id, template.version)
@@ -88,8 +121,10 @@ def _schematic_cached(template_id: str, version: int) -> dict[str, Any] | None:
         recipe = compile_recipe(template, resolve_settings(template, tf))
     except TemplateError:
         return None
-    for seed in range(WALK_SEEDS):
-        df = synthetic_bars(WALK_BARS.get(tf, 900), tf=tf, seed=seed)
+    sd_family = template.family in SD_FAMILIES
+    for seed in range(1 if sd_family else WALK_SEEDS):
+        df = (sd_schematic_bars(tf, "short" if recipe.settings.sides == "short" else "long") if sd_family
+              else synthetic_bars(WALK_BARS.get(tf, 900), tf=tf, seed=seed))
         series = engine.compute(recipe, {tf: df})
         t = _pick(series, recipe.has_trigger, len(df))
         if t is None:
@@ -219,5 +254,5 @@ def signals_in(series: Any, index: Any, bars: int) -> list[dict[str, Any]]:
     return out
 
 
-__all__ = ["FOOTER", "PAGE_FAMILIES", "WALK_BARS", "WALK_SEEDS", "has_page", "schematic", "lines", "scanner", "OverlayPart",
+__all__ = ["FOOTER", "PAGE_FAMILIES", "SD_FAMILIES", "sd_schematic_bars", "WALK_BARS", "WALK_SEEDS", "has_page", "schematic", "lines", "scanner", "OverlayPart",
            "overlay_parts", "loading_part", "signals_in", "PART_WORDS", "SIDE_WORDS"]

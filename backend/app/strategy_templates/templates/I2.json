@@ -1,0 +1,235 @@
+{
+  "schema": "atp.template/1",
+  "id": "I2",
+  "version": 1,
+  "name": "Supply zone short",
+  "family": "I",
+  "idea": "Price comes back to a fresh supply zone: a base of small candles that an explosive move down left behind. The signal is the first touch of the zone's near line, with your optional confirmation. The idea is wrong on a close beyond the zone's far line by your buffer.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "30m",
+    "15m",
+    "5m",
+    "3m",
+    "1m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "avg_n",
+      "label": "Average range (candles)",
+      "help": "The candles of the average range each candle is measured against. Reference value - edit before use.",
+      "type": "int",
+      "default": 20,
+      "min": 5,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "leg_mult",
+      "label": "Leg candle size",
+      "help": "A leg candle's range is at least this many times the average range. Reference value - edit before use.",
+      "type": "float",
+      "default": 1.0,
+      "min": 1.0,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "base_mult",
+      "label": "Base candle size",
+      "help": "A base candle's range is at most this many times the average range. Reference value - edit before use.",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "out_mult",
+      "label": "Leg-out size",
+      "help": "The leg-out candle's range is at least this many times the average range (or ATR). Reference value - edit before use.",
+      "type": "float",
+      "default": 1.5,
+      "min": 1.0,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "leg_body_pct",
+      "label": "Leg candle body (%)",
+      "help": "A leg candle's body is at least this percent of its range. Reference value - edit before use.",
+      "type": "float",
+      "default": 50.0,
+      "min": 50.0,
+      "max": 100.0,
+      "step": 1
+    },
+    {
+      "key": "base_body_pct",
+      "label": "Base candle body (%)",
+      "help": "A base candle's body is at most this percent of its range. Reference value - edit before use.",
+      "type": "float",
+      "default": 50.0,
+      "min": 5.0,
+      "max": 90.0,
+      "step": 1
+    },
+    {
+      "key": "base_max",
+      "label": "Base candles at most",
+      "help": "At most this many base candles in a row. Reference value - edit before use.",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "out_ref",
+      "label": "Leg-out measured against",
+      "help": "What the leg-out candle's range is compared with.",
+      "type": "enum",
+      "default": "average",
+      "choices": [
+        "average",
+        "atr"
+      ],
+      "choice_labels": [
+        "Average range",
+        "ATR"
+      ]
+    },
+    {
+      "key": "edge",
+      "label": "Zone near line",
+      "help": "The near line of a zone: the base's wick, or its candle bodies. Reference value - edit before use.",
+      "type": "enum",
+      "default": "wick",
+      "choices": [
+        "wick",
+        "body"
+      ],
+      "choice_labels": [
+        "Wick",
+        "Body"
+      ]
+    },
+    {
+      "key": "skip_flat_bars",
+      "label": "Skip flat candles",
+      "help": "On: a flat candle (high equals low) is never counted as a base candle. Reference value - edit before use.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "confirm",
+      "label": "Confirmation",
+      "help": "Optional: what must also hold on the bar that reaches the zone. None by default.",
+      "type": "enum",
+      "default": "none",
+      "choices": [
+        "none",
+        "close_back",
+        "candle"
+      ],
+      "choice_labels": [
+        "None",
+        "Close back outside the zone",
+        "Reversal candle"
+      ]
+    },
+    {
+      "key": "atr_n",
+      "label": "ATR period",
+      "help": "The bars of the average true range the buffer is measured in.",
+      "type": "int",
+      "default": 14,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "buf",
+      "label": "Buffer beyond the far line (ATR)",
+      "help": "How many average true ranges beyond the zone's far line the idea is wrong (0 means not set: the far line itself).",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 10.0,
+      "step": 0.1
+    },
+    {
+      "key": "min_rr",
+      "label": "Minimum reward:risk (off)",
+      "help": "Optional and off by default (0). When you set it, a signal whose reward to the opposing zone's near line is less than this many times its risk is skipped; with no opposing zone nothing is measured. Reference 2 (2:1) - reference, edit before use.",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.1
+    }
+  ],
+  "constraints": [
+    {
+      "left": "base_mult",
+      "op": "<",
+      "right": "leg_mult",
+      "message": "The base candle size must be below the leg candle size"
+    },
+    {
+      "left": "base_mult",
+      "op": "<",
+      "right": "out_mult",
+      "message": "The base candle size must be below the leg-out size"
+    }
+  ],
+  "sides_default": "short",
+  "setup": {
+    "kind": "event",
+    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+    "same_bar": true
+  },
+  "trigger": {
+    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) AND ($min_rr <= 0 OR NOT (SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) - close < $min_rr * (close - (SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] - $buf * ATR($atr_n)[1]))))",
+    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) AND ($min_rr <= 0 OR NOT (close - SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) < $min_rr * ((SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] + $buf * ATR($atr_n)[1]) - close)))"
+  },
+  "confirmations": [
+    {
+      "by": "confirm",
+      "variants": {
+        "none": null,
+        "close_back": {
+          "long": "close > SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1]",
+          "short": "close < SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1]"
+        },
+        "candle": {
+          "long": "Pattern(\"hammer\") OR Pattern(\"bullish_engulfing\")",
+          "short": "Pattern(\"shooting_star\") OR Pattern(\"bearish_engulfing\")"
+        }
+      }
+    }
+  ],
+  "invalidation": {
+    "long": "SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] - $buf * ATR($atr_n)[1]",
+    "short": "SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] + $buf * ATR($atr_n)[1]"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "demand_zone_reached"
+      }
+    ],
+    "short": [
+      {
+        "token": "supply_zone_reached"
+      }
+    ]
+  }
+}

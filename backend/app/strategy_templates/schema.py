@@ -33,6 +33,10 @@ existing template: the family letter H (ids `H<n>`), listed only while the flag 
 FAMILY_FLAGS), and `reference_values`: the template's defaults are reference values from a study, shown with the label
 "Reference values - edit before use" (a label only: nothing is enforced; every value stays the user's own setting). A
 template that leaves it out (every A-G template) reads exactly as before.
+
+Family I "Supply & Demand" (M97 PR-3, docs/design/M97_SUPPLY_DEMAND.md Z5), still `atp.template/1` and without changing
+any existing template: the family letter I (ids `I<n>`), listed only while the flag `sd_pack` is on (routes.py
+FAMILY_FLAGS).
 """
 from __future__ import annotations
 
@@ -261,10 +265,10 @@ def leaves(part: object) -> List[object]:
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-H][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-I][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F", "G", "H"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "I"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -367,6 +371,8 @@ class Template(_Strict):
             raise ValueError("evidence names must be unique")
         if (self.family == "H") != self.id.startswith("H"):
             raise ValueError("an Intraday (family H) template has an H id, and only it")
+        if (self.family == "I") != self.id.startswith("I"):
+            raise ValueError("a Supply & Demand (family I) template has an I id, and only it")
         return self
 
     @classmethod

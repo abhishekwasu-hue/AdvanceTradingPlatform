@@ -6,8 +6,9 @@ import type { StrategyTemplate } from "./api";
 export type TemplateValue = number | string | boolean;
 export interface TemplateLink { template: string; timeframe: string | null; params: Record<string, TemplateValue> }
 
-// M94: family H (Intraday) ids too - before, an H template's "Use on the trading bot" link was dropped here
-const TEMPLATE_ID = /^[A-H][0-9]{1,2}$/;
+// M94: family H (Intraday) ids too - before, an H template's "Use on the trading bot" link was dropped here; M97 PR-3:
+// family I (Supply & Demand)
+const TEMPLATE_ID = /^[A-I][0-9]{1,2}$/;
 const TIMEFRAME = /^[0-9]{1,2}[mhdw]$/;
 const KEY = /^[a-z][a-z0-9_]{0,31}$/;
 const SET = "set.";

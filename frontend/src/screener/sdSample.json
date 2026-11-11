@@ -1,0 +1,433 @@
+{
+ "scanners": [
+  {
+   "id": "supply_demand.demand_enter",
+   "name": "Price entering a fresh demand zone",
+   "definition": "The bar's low first touches the near line of a demand zone no candle has visited since it formed.",
+   "text": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.supply_enter",
+   "name": "Price entering a fresh supply zone",
+   "definition": "The bar's high first touches the near line of a supply zone no candle has visited since it formed.",
+   "text": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_formed",
+   "name": "New zone formed",
+   "definition": "A leg-out candle closes after a small-candle base, forming a new zone of the chosen formation.",
+   "text": "SDZoneFormed($formation, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "formation",
+     "value": "any",
+     "doc": "DBR, RBR (demand), RBD, DBD (supply) or any.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_violated",
+   "name": "Zone violated",
+   "definition": "The bar closes beyond the far line of a demand or a supply zone; the zone is then violated.",
+   "text": "SDZoneViolated(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) OR SDZoneViolated(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.near_fresh_zone",
+   "name": "Near a fresh zone",
+   "definition": "The close is within your percent of the near line of the nearest fresh demand or supply zone.",
+   "text": "SDZoneDistancePct(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) <= $within_pct OR SDZoneDistancePct(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) <= $within_pct",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "within_pct",
+     "value": null,
+     "doc": "Distance from the close to the zone's near line, in percent of the close.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [
+    "within_pct"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  }
+ ],
+ "footer": "Information and education only, not investment advice.",
+ "ref_label": "Reference value - edit before use",
+ "not_set": "Not set"
+}

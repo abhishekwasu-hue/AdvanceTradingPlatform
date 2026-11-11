@@ -169,15 +169,25 @@ export function sdNote(resp: SdZonesResponse | null, failed: boolean): string | 
 
 // --- the user's options (M97 PR-5: the server prefs, `ChartPrefs.sd_overlay`; sdStyles.ts) ----------------------------------
 
-/** M98 T1: one extra chip on or off, from what the chart draws now (`shown`, the chart's own first). Returns the extra
- * timeframes only (never the chart's own: it follows the chart), finest first, at most SD_MAX_TIMEFRAMES - 1 (the
- * newest pick then replaces the highest one shown). Pure. */
-export function toggleSdTimeframe(shown: readonly SdTimeframe[], t: SdTimeframe, own: SdTimeframe = shown[0]): SdTimeframe[] {
+/** M98 T1: one extra chip on or off. Works on the user's stored choice (`chosen`), so a chip that is not drawn on this
+ * chart (lower than or equal to its timeframe) stays stored and comes back on a lower chart; the chart's own timeframe
+ * is never toggled (it is always drawn). Adding a chip when the chart already draws SD_MAX_TIMEFRAMES timeframes
+ * replaces the highest one drawn; the stored list keeps at most SD_MAX_TIMEFRAMES, dropping a not-drawn one first.
+ * Finest first. Pure. */
+export function toggleSdTimeframe(chosen: readonly SdTimeframe[] | null | undefined, t: SdTimeframe, tf: TimeframeId): SdTimeframe[] {
+  const own = sdTimeframeOf(tf);
+  const base = SD_TIMEFRAMES.filter((x) => chosen?.includes(x));
+  const shown = shownSdTimeframes(base, tf);
+  if (t === own) return base;
+  if (shown.includes(t)) return base.filter((x) => x !== t);
   const extras = shown.filter((x) => x !== own);
-  if (t === own) return extras;
-  if (extras.includes(t)) return extras.filter((x) => x !== t);
-  const next = SD_TIMEFRAMES.filter((x) => x === t || extras.includes(x));
-  return next.length > SD_MAX_TIMEFRAMES - 1 ? next.filter((x) => x === t || x !== extras[extras.length - 1]).slice(0, SD_MAX_TIMEFRAMES - 1) : next;
+  const full = extras.length >= SD_MAX_TIMEFRAMES - 1 ? extras[extras.length - 1] : null;
+  let next = SD_TIMEFRAMES.filter((x) => x === t || (base.includes(x) && x !== full));
+  while (next.length > SD_MAX_TIMEFRAMES) {
+    const drop = next.find((x) => x !== t && !shown.includes(x)) ?? next.find((x) => x !== t);
+    next = next.filter((x) => x !== drop);
+  }
+  return next;
 }
 
 export interface SdZonesState { note: string | null; shown: SdTimeframe[]; zones: SdZone[] }

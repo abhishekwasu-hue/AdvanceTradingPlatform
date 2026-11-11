@@ -162,7 +162,7 @@ describe("FNO-4 positions: Add / Adjust / Exit and legs placed together", () => 
     expect(render(trade(), facts()).html).not.toContain('data-testid="fno-add"');
   });
 
-  it("Add opens the one ticket on the same contract and side; its order carries no mode (PAPER at the server)", () => {
+  it("Add opens the one ticket on the same contract and side; its order is PAPER unless he picks LIVE (M96-Q1)", () => {
     const p = option({ direction: "SHORT" });
     expect(addSide(p)).toBe("SELL");
     expect(addSide(option())).toBe("BUY");
@@ -170,7 +170,7 @@ describe("FNO-4 positions: Add / Adjust / Exit and legs placed together", () => 
     expect(target).toEqual({ underlying: "NIFTY", expiry: "2026-10-28", strike: 22800, right: "CE", label: "NIFTY 28 OCT 22800 CE", lotSize: 75,
       ltp: 120.5, bid: null, ask: null });
     const ask = askOf(target!, newDraft(addSide(p)), "ref-12345678");
-    expect(ask).not.toHaveProperty("mode");
+    expect(ask.mode).toBe("PAPER");
     expect(ask.side).toBe("SELL");
     expect(apiSource).toContain('place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order"');
     // A future: no strike; Adjust opens the futures chain.

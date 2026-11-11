@@ -10,7 +10,7 @@ import LegalConsentField from "../legal/LegalConsentField";
 import { acceptanceFor, type LegalSummary } from "../legal/legal";
 import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
-import { GoogleButton } from "./GoogleSignInButton";
+import { FRONT_BUNDLES, FrontDoorDetails, FrontHeadline, LanguageSwitch, useFrontDoorData, useFrontLang } from "./FrontDoor";
 import { InviteRequestSlot } from "./InviteRequest";
 import { OrUseEmail, SignInOptionsList, brokerOptions, useSignInProviders } from "./SocialButtons";
 import { takeSocialReturn } from "./social";
@@ -34,6 +34,11 @@ import LookInsideLink from "../lookInside/LookInsideLink";
  * team, then "or use email"; 48 px controls; no intro paragraph on Sign in / Create account. Without `ui_v2` the page
  * is exactly GS-1's. Either way, back from a provider: the two-factor step, "link" (an account uses this e-mail -
  * its password confirms) or "complete" (finish a new account: an e-mail, the beta code, the terms).
+ * M95 F2 / F4 / F5 (the front door, docs/design/M95_FRONT_DOOR.md): in "Sign in" mode the same card sits inside the
+ * front door (FrontDoor.tsx): one line saying what the app is, the language switch, then - under the card on a phone,
+ * beside it on a desktop - the benefit cards, "Start in 3 steps", the trust lines and the FAQ. The provider buttons
+ * (the large "Continue with Google", only when the server lists Google) are on top of Sign in with or without `ui_v2`,
+ * email below them. Every other mode (invite, reset, verify, two-factor ...) keeps the single card.
  */
 export type SignInMode = "signin" | "register" | "invite" | "forgot" | "reset" | "mfa" | "link" | "complete" | "confirm";
 
@@ -109,6 +114,11 @@ export default function SignInScreen() {
   const { providers, v2 } = useSignInProviders();
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [pendingInfo, setPendingInfo] = useState<SocialPendingInfo | null>(null);
+  // M95: the front door around the "Sign in" card (its strings in the visitor's language; the form stays English).
+  const frontDoor = mode === "signin";
+  const [lang, setLang] = useFrontLang();
+  const ft = FRONT_BUNDLES[lang];
+  const { brokers, videoUrl } = useFrontDoorData(frontDoor);
   const needsLegal = mode === "register" || mode === "invite" || (mode === "complete" && pendingInfo?.legal === true);
 
   useEffect(() => {
@@ -259,20 +269,11 @@ export default function SignInScreen() {
   // SL-5: under ui_v2, no intro paragraph where the heading says it all (Sign in, Create account).
   const showIntro = !(v2 && (mode === "signin" || mode === "register"));
   const providerIntent = mode === "register" ? "signup" : mode === "invite" ? "invite" : "signin";
-  const showProviders = v2 && providers.length > 0 && (mode === "signin" || mode === "register" || (mode === "invite" && !!invite?.valid));
+  // M95 F2: on Sign in the provider list (the large "Continue with Google") is on top with or without ui_v2.
+  const showProviders = providers.length > 0 && (mode === "signin" || (v2 && (mode === "register" || (mode === "invite" && !!invite?.valid))));
   const controlH = v2 ? "h-12" : "h-11";      // the submit Button's own size (h-9) needs "!" to give way under v2
 
-  return (
-    <div className="flex min-h-screen flex-col bg-surface text-fg" data-screen="sign-in">
-      <div className="flex justify-end px-space-4 pt-[max(var(--space-2),env(safe-area-inset-top))]">
-        <ThemeToggle />
-      </div>
-      <main className="flex flex-1 items-start justify-center px-space-4 pb-space-10 pt-space-4 sm:items-center sm:pt-0">
-        <div className="w-full max-w-[420px] space-y-space-6">
-          <div className="flex flex-col items-center gap-space-3 text-center">
-            <LogoMark size={48} />
-            <p className="text-t20 font-bold tracking-wide text-fg">AiAlgoDesk</p>
-          </div>
+  const card = (
           <section aria-labelledby="sign-in-heading" className="rounded-panel border border-subtle bg-surface-1 p-space-5 shadow-card sm:p-space-6">
             <h1 id="sign-in-heading" className="text-t20 font-semibold text-fg">{HEADINGS[mode]}</h1>
             {showIntro && <p className="mt-space-1 text-t14 text-fg-muted">{intro}</p>}
@@ -338,7 +339,6 @@ export default function SignInScreen() {
                 {busy ? "Please wait…" : ACTIONS[mode]}
               </Button>
             </form>
-            {mode === "signin" && !v2 && <GoogleButton show={providers.some((p) => p.id === "google")} />}
             <div className="mt-space-5 flex flex-wrap items-center justify-center gap-x-space-4 gap-y-space-2 border-t border-subtle pt-space-4 text-t14 text-fg-muted">
               {mode === "signin" ? (
                 signUpOpen ? (
@@ -353,10 +353,56 @@ export default function SignInScreen() {
               )}
             </div>
           </section>
-          <p className="text-center text-t12 text-fg-muted">Information and education, not investment advice.</p>
-          <footer className="-mt-space-4 flex flex-col items-center gap-space-2 empty:hidden" data-sign-in-footer><StatusLink /><SiteLinks /><LookInsideLink /></footer>
-        </div>
-      </main>
+  );
+  const brand = frontDoor ? (
+    <div className="flex flex-col items-center gap-space-3 text-center lg:items-start lg:text-left">
+      <div className="flex flex-col items-center gap-space-3 lg:flex-row">
+        <LogoMark size={48} />
+        <p className="text-t20 font-bold tracking-wide text-fg">AiAlgoDesk</p>
+      </div>
+      <FrontHeadline t={ft} />
+    </div>
+  ) : (
+    <div className="flex flex-col items-center gap-space-3 text-center">
+      <LogoMark size={48} />
+      <p className="text-t20 font-bold tracking-wide text-fg">AiAlgoDesk</p>
+    </div>
+  );
+  const footer = (
+    <>
+      {/* M94 / M95 F6: the one footer sentence (English, exactly); the visitor's language under it */}
+      <p className="text-center text-t12 text-fg-muted" data-front-footer>Information and education only, not investment advice.</p>
+      {frontDoor && lang !== "en" && <p lang={lang} className="-mt-space-4 text-center text-t12 text-fg-muted">{ft.footer}</p>}
+      <footer className="-mt-space-4 flex flex-col items-center gap-space-2 empty:hidden" data-sign-in-footer><StatusLink /><SiteLinks /><LookInsideLink /></footer>
+    </>
+  );
+
+  return (
+    <div className="flex min-h-screen flex-col bg-surface text-fg" data-screen="sign-in" data-front-door={frontDoor ? "" : undefined}>
+      <div className="flex items-center justify-end gap-space-2 px-space-4 pt-[max(var(--space-2),env(safe-area-inset-top))]">
+        {frontDoor && <LanguageSwitch lang={lang} onChange={setLang} />}
+        <ThemeToggle />
+      </div>
+      {frontDoor ? (
+        <main className="flex flex-1 justify-center px-space-4 pb-space-10 pt-space-4">
+          <div lang={lang} className="grid w-full max-w-[420px] grid-cols-1 content-start gap-space-6 lg:max-w-[1120px] lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-x-space-10">
+            <div className="lg:col-start-1 lg:row-start-1">{brand}</div>
+            <div className="lg:sticky lg:top-space-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start" lang="en">{card}</div>
+            <div className="lg:col-start-1 lg:row-start-2">
+              <FrontDoorDetails t={ft} googleOn={providers.some((p) => p.id === "google")} brokers={brokers} videoUrl={videoUrl} />
+            </div>
+            <div className="flex flex-col gap-space-6 lg:col-span-2">{footer}</div>
+          </div>
+        </main>
+      ) : (
+        <main className="flex flex-1 items-start justify-center px-space-4 pb-space-10 pt-space-4 sm:items-center sm:pt-0">
+          <div className="w-full max-w-[420px] space-y-space-6">
+            {brand}
+            {card}
+            {footer}
+          </div>
+        </main>
+      )}
     </div>
   );
 }

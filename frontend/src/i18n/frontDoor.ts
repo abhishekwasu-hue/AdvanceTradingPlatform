@@ -1,0 +1,137 @@
+/**
+ * M95 F5: the front door's language switch (English / Marathi / Hindi) - the ONLY strings of the signed-out front door
+ * (the headline, the six benefit cards, "Start in 3 steps", the trust lines, the FAQ and the video link). Same content in
+ * each language; the sign-in form itself stays English.
+ *
+ * Allowed by the English-only check (scripts/check_english_only.py, FRONT_DOOR_NAMESPACE_FILE) on the owner's approval
+ * M95-Q4 (10 Nov): Devanagari only as the value of a key of FRONT_MR / FRONT_HI, one `key: "value",` per line, and only
+ * src/auth/FrontDoor.tsx (and tests) may import this file.
+ * Text rules (CLAUDE.md §3, M95 §4): no profit or accuracy claims, no testimonials, no trade-call words; the answers say
+ * only what the code does. `{brokers}` and `{title}` are filled in by FrontDoor.tsx.
+ */
+export const FRONT_EN = {
+  langName: "English",
+  langLabel: "Language",
+  headline: "Learn, analyse and practise trading on paper, for Indian markets.",
+  benefitsTitle: "What you get",
+  copilotTitle: "AI Copilot",
+  copilotText: "Ask about a chart or an idea in plain words. It explains; you decide.",
+  chainTitle: "Option chain + OI in lakhs",
+  chainText: "The full chain with open interest in lakhs, easy to read.",
+  setupsTitle: "Find setups",
+  setupsText: "Scan the market for the chart setups you pick.",
+  botTitle: "AI Trading Bot on paper",
+  botText: "A bot follows your own rules with practice money first.",
+  journalTitle: "Journal",
+  journalText: "Every practice trade with your notes, to learn from.",
+  reportTitle: "Daily report on Telegram",
+  reportText: "A short market summary in your Telegram.",
+  screenOf: "{title}: a screen of the app",
+  stepsTitle: "Start in 3 steps",
+  step1Google: "Continue with Google",
+  step1Email: "Sign in with your email",
+  step2: "Connect your broker if you want live prices",
+  step3: "Practise on paper",
+  trust1: "No order is placed without you",
+  trust2: "Your broker data stays yours",
+  trust3: "Paper by default",
+  faqTitle: "Questions",
+  faqCostQ: "What does it cost?",
+  faqCostA: "Free during the beta.",
+  faqBrokersQ: "Which brokers can I connect?",
+  faqBrokersA: "{brokers}. You can also practise on paper without a broker.",
+  faqBrokersNone: "The broker list shows after you sign in. You can also practise on paper without a broker.",
+  faqSafeQ: "Is my money safe?",
+  faqSafeA: "AiAlgoDesk does not hold your trading money; it stays in your own broker account. Your broker keys are stored encrypted. The AI never places, changes or blocks an order, and paper trading is the default.",
+  faqPaperQ: "What is paper trading?",
+  faqPaperA: "Practice trading with pretend money on market prices. The trades are recorded in the app only; no order goes to your broker.",
+  videoLabel: "Watch the 60-second intro",
+  footer: "Information and education only, not investment advice.",
+} as const;
+
+export const FRONT_MR = {
+  langName: "मराठी",
+  langLabel: "भाषा",
+  headline: "भारतीय बाजारासाठी: ट्रेडिंग शिका, चार्टचे विश्लेषण करा आणि paper वर सराव करा.",
+  benefitsTitle: "तुम्हाला काय मिळते",
+  copilotTitle: "AI Copilot",
+  copilotText: "चार्ट किंवा कल्पनेबद्दल साध्या शब्दांत विचारा. तो समजावून सांगतो; निर्णय तुमचा.",
+  chainTitle: "Option chain + OI लाखांत",
+  chainText: "संपूर्ण chain, open interest लाखांत - वाचायला सोपे.",
+  setupsTitle: "Setups शोधा",
+  setupsText: "तुम्ही निवडलेले chart setups बाजारात शोधा.",
+  botTitle: "Paper वर AI Trading Bot",
+  botText: "Bot आधी सरावाच्या पैशांवर तुमचेच नियम पाळतो.",
+  journalTitle: "Journal",
+  journalText: "प्रत्येक सराव trade तुमच्या नोंदींसह - शिकण्यासाठी.",
+  reportTitle: "Telegram वर रोजचा report",
+  reportText: "बाजाराचा छोटा सारांश तुमच्या Telegram वर.",
+  screenOf: "{title}: app ची एक स्क्रीन",
+  stepsTitle: "3 पायऱ्यांत सुरुवात",
+  step1Google: "Google ने पुढे जा",
+  step1Email: "तुमच्या email ने sign in करा",
+  step2: "Live किमती हव्या असल्यास तुमचा broker जोडा",
+  step3: "Paper वर सराव करा",
+  trust1: "तुमच्याशिवाय कोणतीही order दिली जात नाही",
+  trust2: "तुमचा broker data तुमचाच राहतो",
+  trust3: "Paper हीच मूळ निवड",
+  faqTitle: "प्रश्न",
+  faqCostQ: "किती खर्च येतो?",
+  faqCostA: "Beta च्या काळात मोफत.",
+  faqBrokersQ: "कोणते brokers जोडता येतात?",
+  faqBrokersA: "{brokers}. Broker शिवायही paper वर सराव करता येतो.",
+  faqBrokersNone: "Brokers ची यादी sign in केल्यावर दिसते. Broker शिवायही paper वर सराव करता येतो.",
+  faqSafeQ: "माझे पैसे सुरक्षित आहेत का?",
+  faqSafeA: "AiAlgoDesk तुमचे ट्रेडिंगचे पैसे ठेवत नाही; ते तुमच्या स्वतःच्या broker खात्यातच राहतात. तुमच्या broker keys encrypted ठेवल्या जातात. AI कधीही order देत, बदलत किंवा अडवत नाही, आणि paper ट्रेडिंग हीच मूळ निवड आहे.",
+  faqPaperQ: "Paper trading म्हणजे काय?",
+  faqPaperA: "बाजारभावावर काल्पनिक पैशांनी ट्रेडिंगचा सराव. हे trades फक्त app मध्ये नोंदवले जातात; broker कडे कोणतीही order जात नाही.",
+  videoLabel: "60 सेकंदांचा परिचय पाहा",
+  footer: "फक्त माहिती आणि शिक्षणासाठी, गुंतवणुकीचा सल्ला नाही.",
+} as const;
+
+export const FRONT_HI = {
+  langName: "हिन्दी",
+  langLabel: "भाषा",
+  headline: "भारतीय बाज़ार के लिए: ट्रेडिंग सीखें, चार्ट का विश्लेषण करें और paper पर अभ्यास करें।",
+  benefitsTitle: "आपको क्या मिलता है",
+  copilotTitle: "AI Copilot",
+  copilotText: "चार्ट या किसी विचार के बारे में आसान शब्दों में पूछें। वह समझाता है; फ़ैसला आपका।",
+  chainTitle: "Option chain + OI लाख में",
+  chainText: "पूरी chain, open interest लाख में - पढ़ने में आसान।",
+  setupsTitle: "Setups खोजें",
+  setupsText: "आपके चुने हुए chart setups बाज़ार में खोजें।",
+  botTitle: "Paper पर AI Trading Bot",
+  botText: "Bot पहले अभ्यास के पैसों पर आपके ही नियम मानता है।",
+  journalTitle: "Journal",
+  journalText: "हर अभ्यास trade आपके नोट्स के साथ - सीखने के लिए।",
+  reportTitle: "Telegram पर रोज़ की report",
+  reportText: "बाज़ार का छोटा सारांश आपके Telegram पर।",
+  screenOf: "{title}: app की एक स्क्रीन",
+  stepsTitle: "3 कदमों में शुरुआत",
+  step1Google: "Google से आगे बढ़ें",
+  step1Email: "अपने email से sign in करें",
+  step2: "Live कीमतें चाहिए तो अपना broker जोड़ें",
+  step3: "Paper पर अभ्यास करें",
+  trust1: "आपके बिना कोई order नहीं दिया जाता",
+  trust2: "आपका broker data आपका ही रहता है",
+  trust3: "Paper ही मूल चुनाव है",
+  faqTitle: "सवाल",
+  faqCostQ: "इसका ख़र्च कितना है?",
+  faqCostA: "Beta के दौरान मुफ़्त।",
+  faqBrokersQ: "कौन-से brokers जोड़ सकते हैं?",
+  faqBrokersA: "{brokers}। Broker के बिना भी paper पर अभ्यास कर सकते हैं।",
+  faqBrokersNone: "Brokers की सूची sign in के बाद दिखती है। Broker के बिना भी paper पर अभ्यास कर सकते हैं।",
+  faqSafeQ: "क्या मेरा पैसा सुरक्षित है?",
+  faqSafeA: "AiAlgoDesk आपका ट्रेडिंग का पैसा नहीं रखता; वह आपके अपने broker खाते में ही रहता है। आपकी broker keys encrypted रखी जाती हैं। AI कभी order नहीं देता, नहीं बदलता और नहीं रोकता, और paper ट्रेडिंग ही मूल चुनाव है।",
+  faqPaperQ: "Paper trading क्या है?",
+  faqPaperA: "बाज़ार भाव पर काल्पनिक पैसों से ट्रेडिंग का अभ्यास। ये trades सिर्फ़ app में दर्ज होते हैं; broker को कोई order नहीं जाता।",
+  videoLabel: "60 सेकंड का परिचय देखें",
+  footer: "सिर्फ़ जानकारी और शिक्षा के लिए, निवेश सलाह नहीं।",
+} as const;
+
+export type FrontLang = "en" | "mr" | "hi";
+export type FrontStrings = { readonly [K in keyof typeof FRONT_EN]: string };
+
+/** Every bundle has every key (the type checks it). */
+export const FRONT_BUNDLES: Readonly<Record<FrontLang, FrontStrings>> = { en: FRONT_EN, mr: FRONT_MR, hi: FRONT_HI };
+export const FRONT_LANGS: readonly FrontLang[] = ["en", "mr", "hi"];

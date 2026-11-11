@@ -78,6 +78,10 @@ for (const size of SIZES) {
         await expect(page.locator("[data-screen='sign-in']")).toBeVisible();
         await expect(page.locator("[data-sign-in-footer] [data-status-link]")).toHaveAttribute("href", "/status");
         await noSidewaysScroll(page);
+        // M95: the front door's benefit images are lazy - load every one (or its placeholder) before the full-page shot.
+        for (const img of await page.locator("img[data-front-image]").all()) await img.scrollIntoViewIfNeeded();
+        await page.waitForFunction(() => [...document.querySelectorAll("img[data-front-image]")].every((i) => (i as HTMLImageElement).complete));
+        await page.evaluate(() => window.scrollTo(0, 0));
         await expect(page).toHaveScreenshot(`sign-in-status-v2-${size.name}-${theme}.png`, { ...SHOT, fullPage: true });
       });
     }

@@ -57,7 +57,8 @@ describe("M73 SL-1: which buttons", () => {
   });
 
   it("the sign-in page puts the list on top of Sign in, Create account and Join team under ui_v2", () => {
-    expect(screenSource).toContain('const showProviders = v2 && providers.length > 0 && (mode === "signin" || mode === "register" || (mode === "invite" && !!invite?.valid));');
+    // M95 F2: Sign in shows the list without ui_v2 too (the front door's large Google button on top).
+    expect(screenSource).toContain('const showProviders = providers.length > 0 && (mode === "signin" || (v2 && (mode === "register" || (mode === "invite" && !!invite?.valid))));');
     expect(screenSource.indexOf("<SignInOptionsList")).toBeLessThan(screenSource.indexOf("<form onSubmit"));
     expect(screenSource).toContain("Forgot password?");
   });

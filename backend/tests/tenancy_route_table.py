@@ -76,6 +76,7 @@ P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
 P_SITE_PAGES = "public: the marketing pages of the front page (static product text; 404 while marketing_site is off)"
+P_INTRO_VIDEO = "public: the front door's intro video link (one operator-set https address or null; M95 F4)"
 P_GUEST_DEMO = ("public: the stored \"Look inside\" snapshot of one past market day (two indices, no prices, no per-user "
                 "data; per-IP limited; 404 while guest_demo is off or nothing is stored)")
 P_ONBOARDING_UNSUBSCRIBE = "public: the first-week e-mails' signed unsubscribe link (the token is the authority)"
@@ -560,6 +561,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # Readiness C13: the Learn section (ui_v2 + learn), the public marketing pages, the operator's video links
     ("GET", "/api/learn"): "member",
     ("GET", "/api/site/pages"): P_SITE_PAGES,
+    ("GET", "/api/site/intro-video"): P_INTRO_VIDEO,
     ("GET", "/api/guest-demo"): P_GUEST_DEMO,
     ("GET", "/api/admin/learn/settings"): "admin",
     ("PUT", "/api/admin/learn/settings"): "admin",

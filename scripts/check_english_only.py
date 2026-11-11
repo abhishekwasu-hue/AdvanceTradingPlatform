@@ -6,7 +6,8 @@ Copilot STRATEGY INTERVIEW, which is trilingual (English + Marathi + Hindi). Thi
 repository - backend, frontend, templates, notification texts, docs, scripts, configs - and fails on any Devanagari
 character (U+0900-U+097F, U+A8E0-U+A8FF) outside the allow-list below.
 
-The allow-list is explicit and narrow: the interview's own files and named test fixtures of the interview, nothing else.
+The allow-list is explicit and narrow: the interview's own files and named test fixtures of the interview, and (M95-Q4,
+owner approval 10 Nov) the front door's one Marathi / Hindi namespace file, nothing else.
 A test that needs non-English text (to prove it is withheld or answered in English) writes it with \\u escapes, which
 this check does not flag. To add an entry, the owner's approval is needed (docs/journal/PLAN.md OD-2).
 
@@ -54,6 +55,18 @@ NAMESPACE_USERS = frozenset({"frontend/src/copilot/i18n.ts", "frontend/src/stori
 # import ... from "../i18n/interviewSecondary(.ts)", import "...", import("..."), require("...") - as the old .mjs did.
 _NAMESPACE_IMPORT = re.compile(r"""(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'][^"']*interviewSecondary(?:\.[cm]?[jt]sx?)?["']""")
 _TEST_FILE = re.compile(r"\.test\.tsx?$")              # the namespace's own tests may import it
+# M95 F5 (owner approval M95-Q4, 10 Nov: "the order approves one allow-listed front-door MR / HI namespace"): the
+# signed-out front door's Marathi / Hindi strings - the same rule as the interview namespace (Devanagari only as the value
+# of a key of these objects), imported only by the front door itself.
+FRONT_DOOR_NAMESPACE_FILE = "frontend/src/i18n/frontDoor.ts"
+FRONT_DOOR_NAMESPACE_OBJECTS = ("FRONT_MR", "FRONT_HI")
+FRONT_DOOR_NAMESPACE_USERS = frozenset({"frontend/src/auth/FrontDoor.tsx"})
+_FRONT_DOOR_IMPORT = re.compile(r"""(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'][^"']*/frontDoor(?:\.[cm]?[jt]sx?)?["']""")
+# Every namespace file: (its objects, the files that may import it, the import pattern).
+NAMESPACES: Dict[str, Tuple[Tuple[str, ...], frozenset, "re.Pattern[str]"]] = {
+    NAMESPACE_FILE: (NAMESPACE_OBJECTS, NAMESPACE_USERS, _NAMESPACE_IMPORT),
+    FRONT_DOOR_NAMESPACE_FILE: (FRONT_DOOR_NAMESPACE_OBJECTS, FRONT_DOOR_NAMESPACE_USERS, _FRONT_DOOR_IMPORT),
+}
 _KEY_VALUE = re.compile(r"""^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*"[^"]*",?\s*(//.*)?$""")
 
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".pytest_cache",
@@ -126,7 +139,8 @@ def _read(path: Path, rel: str, problems: List[str], notices: List[str]) -> Opti
 
 
 def _namespace_problems(rel: str, text: str) -> List[str]:
-    """Inside the namespace file: Devanagari only as the value of a key of an allowed object."""
+    """Inside a namespace file: Devanagari only as the value of a key of an allowed object."""
+    objects = NAMESPACES[rel][0]
     problems: List[str] = []
     inside: Optional[str] = None
     for n, line in enumerate(text.splitlines(), 1):
@@ -139,8 +153,8 @@ def _namespace_problems(rel: str, text: str) -> List[str]:
             continue
         if not DEVANAGARI.search(line):
             continue
-        if inside not in NAMESPACE_OBJECTS or not _KEY_VALUE.match(line):
-            problems.append(f"{rel}:{n}: Devanagari outside a key of {' / '.join(NAMESPACE_OBJECTS)}: {line.strip()[:100]}")
+        if inside not in objects or not _KEY_VALUE.match(line):
+            problems.append(f"{rel}:{n}: Devanagari outside a key of {' / '.join(objects)}: {line.strip()[:100]}")
     return problems
 
 
@@ -153,18 +167,20 @@ def scan(root: Path) -> Tuple[List[str], List[str]]:
         text = _read(root / rel, rel, problems, notices)
         if text is None:
             continue
-        if (rel.startswith("frontend/") and rel not in NAMESPACE_USERS and rel != NAMESPACE_FILE and not _TEST_FILE.search(rel)
-                and _NAMESPACE_IMPORT.search(text)):
-            problems.append(f"{rel}: imports the interview namespace ({NAMESPACE_FILE}); only {', '.join(sorted(NAMESPACE_USERS))} may")
+        for ns_file, (_objects, users, pattern) in NAMESPACES.items():
+            if (rel.startswith("frontend/") and rel not in users and rel not in NAMESPACES and not _TEST_FILE.search(rel)
+                    and pattern.search(text)):
+                name = "the interview namespace" if ns_file == NAMESPACE_FILE else "the front-door namespace"
+                problems.append(f"{rel}: imports {name} ({ns_file}); only {', '.join(sorted(users))} may")
         if rel in ALLOWED_FILES:
             continue
-        if not _ESCAPES_ALLOWED.search(rel) and rel != NAMESPACE_FILE:
+        if not _ESCAPES_ALLOWED.search(rel) and rel not in NAMESPACES:
             for n, line in enumerate(text.splitlines(), 1):
                 if _ESCAPED.search(_RANGE.sub(" ", line)):
                     problems.append(f"{rel}:{n}: Devanagari written as an escape or an HTML entity: {line.strip()[:110]}")
         if not DEVANAGARI.search(text):
             continue
-        if rel == NAMESPACE_FILE:
+        if rel in NAMESPACES:
             problems.extend(_namespace_problems(rel, text))
             continue
         for n, line in enumerate(text.splitlines(), 1):
@@ -192,8 +208,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         for p in problems:
             print("  " + p, file=sys.stderr)
         return 1
-    print(f"check_english_only: OK - Devanagari only in the interview allow-list ({len(ALLOWED_FILES)} files) and the "
-          f"{' / '.join(NAMESPACE_OBJECTS)} keys of {NAMESPACE_FILE}")
+    print(f"check_english_only: OK - Devanagari only in the interview allow-list ({len(ALLOWED_FILES)} files), the "
+          f"{' / '.join(NAMESPACE_OBJECTS)} keys of {NAMESPACE_FILE} and the "
+          f"{' / '.join(FRONT_DOOR_NAMESPACE_OBJECTS)} keys of {FRONT_DOOR_NAMESPACE_FILE}")
     return 0
 
 

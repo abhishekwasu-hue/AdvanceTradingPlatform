@@ -4,7 +4,9 @@
   either is off).
 * `GET /api/site/pages` - the public marketing pages (Features, How it works, About) for the front page; no sign-in. The
   flag `marketing_site` is read globally (a visitor has no organisation); 404 while it is off.
-* `GET` / `PUT /api/admin/learn/settings` - the video links and the course link (SUPER_ADMIN + two-factor; audited
+* `GET /api/site/intro-video` - M95 F4: the front door's 60-second intro video link (`{"url": null}` while none is set);
+  no sign-in, no flag (the sign-in page is always there).
+* `GET` / `PUT /api/admin/learn/settings` - the video links, the course link and the intro video link (SUPER_ADMIN + two-factor; audited
   without the addresses).
 
 Education only (the content guard runs over every line in the tests). Nothing here reads positions or places an order.
@@ -43,6 +45,12 @@ async def site_pages(session: AsyncSession = Depends(get_session)) -> Dict[str, 
     if not await flag_enabled(session, SITE_FLAG, None):
         raise HTTPException(status_code=404, detail="Not found")
     return content.site_payload(content.load_site())
+
+
+@router.get("/api/site/intro-video")
+async def site_intro_video(session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    stored = await settings.read(session)
+    return {"url": stored["intro_video_url"] or None}
 
 
 @router.get("/api/admin/learn/settings", dependencies=[Depends(require_role()), Depends(require_mfa_session)])

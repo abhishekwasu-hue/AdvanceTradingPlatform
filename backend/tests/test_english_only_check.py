@@ -119,6 +119,46 @@ def test_the_allow_list_is_narrow():
         "frontend/e2e/fixtures/interview_plan.json"}
     assert check_english_only.NAMESPACE_FILE == "frontend/src/i18n/interviewSecondary.ts"
     assert check_english_only.NAMESPACE_OBJECTS == ("INTERVIEW_MR", "INTERVIEW_HI")
+    # M95-Q4 (owner approval, 10 Nov): the front door's one Marathi / Hindi namespace, and nothing more
+    assert set(check_english_only.NAMESPACES) == {"frontend/src/i18n/interviewSecondary.ts", "frontend/src/i18n/frontDoor.ts"}
+    assert check_english_only.FRONT_DOOR_NAMESPACE_OBJECTS == ("FRONT_MR", "FRONT_HI")
+    assert check_english_only.FRONT_DOOR_NAMESPACE_USERS == frozenset({"frontend/src/auth/FrontDoor.tsx"})
+
+
+FRONT = (
+    "/** the front-door namespace */\n"
+    "export const FRONT_EN = {\n"
+    '  start: "Start",\n'
+    "} as const;\n"
+    "export const FRONT_MR = {\n"
+    f'  start: "{MR}",\n'
+    "} as const;\n"
+    "export const FRONT_HI = {\n"
+    f'  start: "{HI}",\n'
+    "} as const;\n"
+)
+FRONT_ALLOWED = {**ALLOWED, "frontend/src/i18n/frontDoor.ts": FRONT,
+                 "frontend/src/auth/FrontDoor.tsx": 'import { FRONT_MR } from "../i18n/frontDoor";\nexport default FRONT_MR;\n'}
+
+
+def test_the_front_door_namespace_allows_devanagari_only_as_a_key_value_of_its_objects(tmp_path):
+    assert check_english_only.check(_tree(tmp_path / "ok", FRONT_ALLOWED)) == []
+    outside = FRONT.replace('  start: "Start",', f'  start: "{MR}",')                  # in the English bundle
+    problems = check_english_only.check(_tree(tmp_path / "a", {**FRONT_ALLOWED, "frontend/src/i18n/frontDoor.ts": outside}))
+    assert len(problems) == 1 and "outside a key of FRONT_MR / FRONT_HI" in problems[0]
+    # the interview objects are not allowed in the front-door file, nor the front-door objects in the interview file
+    swapped = FRONT.replace("FRONT_MR", "INTERVIEW_MR")
+    assert check_english_only.check(_tree(tmp_path / "b", {**FRONT_ALLOWED, "frontend/src/i18n/frontDoor.ts": swapped}))
+    other = NAMESPACE.replace("INTERVIEW_MR", "FRONT_MR")
+    assert check_english_only.check(_tree(tmp_path / "c", {**FRONT_ALLOWED, "frontend/src/i18n/interviewSecondary.ts": other}))
+
+
+def test_only_the_front_door_imports_its_namespace(tmp_path):
+    importer = 'import { FRONT_MR } from "../i18n/frontDoor";\nexport default FRONT_MR;\n'
+    problems = check_english_only.check(_tree(tmp_path / "a", {**FRONT_ALLOWED, "frontend/src/pages/SettingsPage.tsx": importer}))
+    assert problems == ["frontend/src/pages/SettingsPage.tsx: imports the front-door namespace (frontend/src/i18n/frontDoor.ts); "
+                        "only frontend/src/auth/FrontDoor.tsx may"]
+    assert check_english_only.check(_tree(tmp_path / "b", {**FRONT_ALLOWED, "frontend/src/auth/frontDoor.test.tsx": importer})) == []
 
 
 BS = "\\"                                             # one backslash: escapes below are built, never typed

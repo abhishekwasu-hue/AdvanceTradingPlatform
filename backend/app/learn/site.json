@@ -3,8 +3,8 @@
     {
       "slug": "features",
       "title": "What AiAlgoDesk does",
-      "description": "An AI Copilot, an option chain with OI, setups, a paper trading bot, a journal and a daily report for Indian markets.",
-      "intro": "AiAlgoDesk is one place to read the market, practise your own ideas on paper and keep a record of how you trade.",
+      "description": "Paper and real trading for Indian markets: an AI Copilot, an option chain with OI, setups, a paper trading bot, a journal and a daily report.",
+      "intro": "AiAlgoDesk is one place to read the market, practise your own ideas on paper, trade for real through your own broker and keep a record of how you trade.",
       "sections": [
         {
           "heading": "AI Copilot",
@@ -55,7 +55,7 @@
     {
       "slug": "how-it-works",
       "title": "How it works",
-      "description": "Start in three steps: continue with Google, connect your broker if you want live prices, and practise on paper.",
+      "description": "Start in three steps: continue with Google, connect your own broker for live prices and real trading, and practise on paper first.",
       "intro": "Start in three steps.",
       "sections": [
         {
@@ -65,13 +65,14 @@
           ]
         },
         {
-          "heading": "Connect your broker if you want live prices",
+          "heading": "Connect your own broker for live prices and real trading",
           "lines": [
-            "This step is optional. ATP reads prices through your own broker account. Your broker login stays with your broker."
+            "This step is optional. ATP reads prices through your own broker account. Your broker login stays with your broker.",
+            "Real trading goes through your own broker, and you place every order yourself."
           ]
         },
         {
-          "heading": "Practise on paper",
+          "heading": "Practise on paper first, then trade for real when you choose",
           "lines": [
             "Pick an idea, set your own settings and practise with pretend money. Every paper trade lands in your journal."
           ]
@@ -81,7 +82,7 @@
     {
       "slug": "about",
       "title": "About AiAlgoDesk",
-      "description": "A trading workspace for retail traders in India: education, analysis and paper practice. Questions and answers.",
+      "description": "A trading workspace for retail traders in India: education, analysis, paper practice and real trading through your own broker.",
       "intro": "AiAlgoDesk is built for traders who want to learn to read the market by its structure and practise with discipline.",
       "sections": [
         {
@@ -99,7 +100,8 @@
         {
           "heading": "Paper by default",
           "lines": [
-            "You practise with pretend money. No order reaches your broker."
+            "You practise with pretend money. No order reaches your broker.",
+            "Real trading is your own choice, through your own broker."
           ]
         },
         {
@@ -117,7 +119,7 @@
         },
         {
           "question": "Which brokers can I connect?",
-          "answer": "Zerodha, Upstox, Angel One, Dhan, Fyers, Groww, Shoonya and more. A broker is needed only for live prices."
+          "answer": "Zerodha, Upstox, Angel One, Dhan, Fyers, Groww, Shoonya and more. A broker is needed only for live prices and real trading."
         },
         {
           "question": "Is my money safe?",
@@ -126,6 +128,10 @@
         {
           "question": "What is paper trading?",
           "answer": "Practice with pretend money: you follow the market and see how your idea would do, and no order goes to your broker."
+        },
+        {
+          "question": "Can I trade for real?",
+          "answer": "Yes, through your own broker account, and you place every order yourself. Paper is the default."
         }
       ]
     }

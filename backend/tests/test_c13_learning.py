@@ -213,6 +213,12 @@ def test_site_pages_are_public_and_follow_the_global_flag():
             s["heading"] for s in pages["about"]["sections"]}
         faq = {q["question"]: q["answer"] for q in pages["about"]["faq"]}
         assert faq["What does it cost?"] == "Free during the beta."
+        # M95-Q8 (owner, 11 Nov): the pages name both paper and real trading; real trading is through the user's own broker,
+        # the user places every order, and paper stays the default.
+        assert faq["Can I trade for real?"] == "Yes, through your own broker account, and you place every order yourself. Paper is the default."
+        assert "Paper and real trading" in pages["features"]["description"]
+        assert [s["heading"] for s in pages["how-it-works"]["sections"]][1:] == [
+            "Connect your own broker for live prices and real trading", "Practise on paper first, then trade for real when you choose"]
     finally:
         _global("marketing_site", False)
     assert client.get("/api/site/pages").status_code == 404

@@ -163,7 +163,7 @@ export function FrontDoorDetails({ t, googleOn, brokers, videoUrl }: {
       <section aria-labelledby="front-faq">
         <h2 id="front-faq" className="text-t15 font-semibold text-fg">{t.faqTitle}</h2>
         <div className="mt-space-3 divide-y divide-subtle overflow-hidden rounded-panel border border-subtle bg-surface-1" data-front-faq>
-          {[[t.faqCostQ, t.faqCostA], [t.faqBrokersQ, brokersAnswer(t, brokers)], [t.faqSafeQ, t.faqSafeA], [t.faqPaperQ, t.faqPaperA]].map(([q, a]) => (
+          {[[t.faqCostQ, t.faqCostA], [t.faqBrokersQ, brokersAnswer(t, brokers)], [t.faqSafeQ, t.faqSafeA], [t.faqPaperQ, t.faqPaperA], [t.faqRealQ, t.faqRealA]].map(([q, a]) => (
             <details key={q} className="group">
               <summary className={`flex min-h-12 cursor-pointer list-none items-center justify-between gap-space-3 px-space-4 text-t14 font-medium text-fg ${FOCUS}`}>
                 <span>{q}</span>

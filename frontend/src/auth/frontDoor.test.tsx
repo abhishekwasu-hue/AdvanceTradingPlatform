@@ -48,7 +48,7 @@ describe("M95 F2: the front door on Sign in", () => {
     const out = html();
     expect(out).toContain('data-front-door=""');
     expect(out).toContain(">Sign in</h1>");                                         // the heading still works
-    expect(out).toContain(FRONT_EN.headline);
+    expect(text(out)).toContain(FRONT_EN.headline);
     expect(out.match(/data-front-benefit="/g)?.length).toBe(6);
     for (const title of [FRONT_EN.copilotTitle, FRONT_EN.chainTitle, FRONT_EN.setupsTitle, FRONT_EN.botTitle, FRONT_EN.journalTitle, FRONT_EN.reportTitle]) {
       expect(text(out)).toContain(title);
@@ -74,16 +74,27 @@ describe("M95 F2: the front door on Sign in", () => {
     expect(screenSource).not.toContain("Information and education, not investment advice.");
   });
 
-  it("the FAQ: four questions, each folded inside <details>", () => {
+  it("the FAQ: five questions, each folded inside <details>", () => {
     const out = html();
     const faq = out.match(/<div[^>]*data-front-faq[^>]*>[\s\S]*?<\/div>/)?.[0] ?? "";
-    expect(faq.match(/<details/g)?.length).toBe(4);
+    expect(faq.match(/<details/g)?.length).toBe(5);
     expect(faq).not.toMatch(/<details[^>]*\bopen\b/);
     expect(faq).toContain("What does it cost?");
     expect(faq).toContain("Free during the beta.");
     expect(faq).toContain("Which brokers can I connect?");
     expect(faq).toContain("Is my money safe?");
     expect(faq).toContain("What is paper trading?");
+    // M95-Q8 (owner, 11 Nov): real trading goes through the user's own broker, the user places every order, paper is the default.
+    expect(faq).toContain("Can I trade for real?");
+    expect(faq).toContain("Yes, through your own broker account, and you place every order yourself. Paper is the default.");
+  });
+
+  it("M95-Q8: the headline and the steps name both paper and real trading, in every language", () => {
+    expect(FRONT_EN.headline).toBe("Paper & Real Trading for Indian markets: practise on paper, and trade for real with your own broker.");
+    for (const t of [FRONT_EN, FRONT_MR, FRONT_HI]) expect(t.headline).toContain("Paper & Real Trading");
+    const out = html();
+    expect(out).toContain("Connect your own broker for live prices and real trading");
+    expect(out).toContain("Practise on paper first, then trade for real when you choose");
   });
 
   it("the broker answer reads the server's list, else a plain sentence", () => {
@@ -170,14 +181,14 @@ describe("M95 F5: English / Marathi / Hindi", () => {
   it("a stored Marathi choice shows the same content in Marathi; the form and the footer sentence stay English", () => {
     vi.stubGlobal("window", { localStorage: storage({ [FRONT_LANG_KEY]: "mr" }) });
     const out = html();
-    expect(out).toContain(FRONT_MR.headline);
+    expect(text(out)).toContain(FRONT_MR.headline);
     expect(out).toContain(FRONT_MR.trust1);
     expect(out).toContain(FRONT_MR.faqCostA);
     expect(out).toContain(FRONT_MR.footer);
     expect(out).toContain('lang="mr"');
     expect(out).toContain(">Sign in</h1>");
     expect(out).toContain(">Information and education only, not investment advice.</p>");
-    expect(out).not.toContain(FRONT_EN.headline);
+    expect(text(out)).not.toContain(FRONT_EN.headline);
   });
 });
 

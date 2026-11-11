@@ -48,8 +48,8 @@ SCHEMA_VERSION = "atp.template/1"
 SIGNAL_TIMEFRAME = "signal_timeframe"        # the reserved name a constraint uses for the user's chosen signal timeframe
 # M97-Q4: 10m / 2h are ScreenQL and chart timeframes only (built from finer closed bars); a template runs on the strategy
 # engine's timeframes (adapter.ENGINE_LABEL + weekly / monthly reads), so they stay out of a template's timeframes
-TEMPLATE_EXCLUDED_TFS: Tuple[str, ...] = ("10m", "2h")
-TIMEFRAMES: Tuple[str, ...] = tuple(tf for tf in n.TIMEFRAMES if tf not in TEMPLATE_EXCLUDED_TFS)
+TEMPLATE_EXCLUDED_TFS: tuple[str, ...] = ("10m", "2h")
+TIMEFRAMES: tuple[str, ...] = tuple(tf for tf in n.TIMEFRAMES if tf not in TEMPLATE_EXCLUDED_TFS)
 MA_TYPES: Tuple[str, ...] = ("EMA", "SMA", "WMA", "HMA")
 SOURCES: Tuple[str, ...] = ("close", "open", "high", "low")
 _KEY = r"^[a-z][a-z0-9_]{0,31}$"

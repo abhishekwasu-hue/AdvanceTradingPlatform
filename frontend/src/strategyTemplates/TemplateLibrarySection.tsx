@@ -26,7 +26,9 @@ export default function TemplateLibrarySection() {
   const [templates, setTemplates] = useState<StrategyTemplate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [family, setFamily] = useState<string>(ALL);
-  const intradayPackOn = useFeatures().on("intraday_pack");
+  const features = useFeatures();
+  const intradayPackOn = features.on("intraday_pack");
+  const sdPackOn = features.on("sd_pack");                       // M97 PR-3: family I
   const routed = useInRouterContext();
 
   useEffect(() => {
@@ -35,8 +37,9 @@ export default function TemplateLibrarySection() {
 
   return (
     <>
-      <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} intradayPackOn={intradayPackOn} />
-      {intradayPackOn && routed && <HowItWorksFromAddress />}
+      <TemplateLibraryView templates={templates} error={error} family={family} onFamily={setFamily} intradayPackOn={intradayPackOn}
+                           sdPackOn={sdPackOn} />
+      {(intradayPackOn || sdPackOn) && routed && <HowItWorksFromAddress />}
     </>
   );
 }
@@ -54,8 +57,10 @@ function HowItWorksFromAddress() {
   return <HowItWorksSheet id={id} onClose={close} />;
 }
 
-/** M94 F15: a template that has a "how it works" screen (family H, while `intraday_pack` is on). */
-export const hasHowItWorks = (t: Pick<StrategyTemplate, "family">, intradayPackOn: boolean): boolean => intradayPackOn && t.family === "H";
+/** M94 F15: a template that has a "how it works" screen (family H, while `intraday_pack` is on; M97 PR-3: family I, while
+ * `sd_pack` is on). */
+export const hasHowItWorks = (t: Pick<StrategyTemplate, "family">, intradayPackOn: boolean, sdPackOn = false): boolean =>
+  (intradayPackOn && t.family === "H") || (sdPackOn && t.family === "I");
 
 /** M94: the reference-values label (behind `intraday_pack`): the template's defaults come from a study; nothing is enforced. */
 export function ReferenceLabel() {
@@ -74,10 +79,12 @@ export function templateRows(t: Pick<StrategyTemplate, "params">): SettingRow[] 
   return t.params.map((p) => ({ key: p.key, label: p.label, value: valueWords(p.default, p.choices) }));
 }
 
-export function TemplateLibraryView({ templates, error, family, onFamily, intradayPackOn = false }: {
+export function TemplateLibraryView({ templates, error, family, onFamily, intradayPackOn = false, sdPackOn = false }: {
   templates: StrategyTemplate[] | null; error: string | null; family: string; onFamily: (f: string) => void;
   /** M94: the reference-values label shows only while the flag `intraday_pack` is on. */
   intradayPackOn?: boolean;
+  /** M97 PR-3: the same for family I (Supply & Demand) while the flag `sd_pack` is on. */
+  sdPackOn?: boolean;
 }) {
   const all = templates ?? [];
   const families = [...new Map(all.map((t) => [t.family, t.family_name])).entries()];
@@ -96,7 +103,8 @@ export function TemplateLibraryView({ templates, error, family, onFamily, intrad
       )}
       <div className="grid gap-space-3 lg:grid-cols-2" aria-busy={templates === null}>
         {templates === null && <Skeleton className="h-40" panel label="Loading templates" />}
-        {shown.map((t) => <TemplateCard key={t.id} t={t} reference={showsReferenceLabel(t, intradayPackOn)} how={hasHowItWorks(t, intradayPackOn)} />)}
+        {shown.map((t) => <TemplateCard key={t.id} t={t} reference={showsReferenceLabel(t, intradayPackOn, sdPackOn)}
+                                               how={hasHowItWorks(t, intradayPackOn, sdPackOn)} />)}
       </div>
     </section>
   );

@@ -93,16 +93,18 @@ def slot(df, day, k, minutes=5):
 # ================================================================================= the schema and the library
 def test_family_h_is_a_schema_change_and_families_a_to_g_are_unchanged():
     for t in library.templates():
+        if t.family == "I":                       # M97 PR-3 (tests/test_m97_pr3_templates.py)
+            continue
         if t.family == "H":
             assert t.id in FAMILY_H and t.reference_values and t.style == "Intraday (session-based)"
         else:
             assert t.family in "ABCDEFG" and t.id[0] in "ABCDEFG" and t.reference_values is False, t.id
-    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack"}
-    assert {k: v for k, v in FAMILY_NAMES.items() if k != "H"} == {
+    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack", "I": "sd_pack"}   # M97: I
+    assert {k: v for k, v in FAMILY_NAMES.items() if k not in ("H", "I")} == {
         "A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
         "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves"}
     data = T["H6"].model_dump(by_alias=True)
-    for bad in ({"id": "B99"}, {"family": "B"}, {"id": "I1"}, {"family": "I"}):
+    for bad in ({"id": "B99"}, {"family": "B"}, {"id": "I1"}, {"family": "I"}):   # (I1 / family I: M97 - an H template is still H)
         with pytest.raises(ValueError):
             Template.model_validate({**data, **bad})
     # an A-G template without the new field reads exactly as before (the field defaults to off)
@@ -110,7 +112,7 @@ def test_family_h_is_a_schema_change_and_families_a_to_g_are_unchanged():
     b10.pop("reference_values")
     assert Template.model_validate(b10) == library.get("B10")
     # the ids of families A-F are written as before (G and H: choices by position)
-    assert ids.COMPACT_FAMILIES == {"G", "H"}
+    assert ids.COMPACT_FAMILIES == {"G", "H", "I"}                   # M97 PR-3: family I the same way
 
 
 @pytest.mark.parametrize("tid", H_IDS)

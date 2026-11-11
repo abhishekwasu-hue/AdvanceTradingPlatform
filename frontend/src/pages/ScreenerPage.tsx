@@ -336,7 +336,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
 
   // M94 F15 (flag intraday_pack): a strategy template's "Setup scanner" opens `/screener?template=H6&side=long` - the
   // template's own setup with its default settings as builder blocks, validated and gated by the server as any screen.
-  const templateAsk = useMemo(() => (features.on("intraday_pack") ? templateScanFromSearch(location.search) : null), [features, location.search]);
+  const templateAsk = useMemo(() => (features.on("intraday_pack") || features.on("sd_pack") ? templateScanFromSearch(location.search) : null), [features, location.search]);
   useEffect(() => {
     if (!registry || !templateAsk) return undefined;
     let alive = true;

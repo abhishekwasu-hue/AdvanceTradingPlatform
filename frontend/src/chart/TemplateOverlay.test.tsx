@@ -66,6 +66,6 @@ describe("M94 F16: the legend", () => {
   it("is on demand: the chart reads the overlay only once its toolbar button is pressed", () => {
     expect(chartsSource).toContain('const [tplShown, setTplShown] = useState(false);');
     expect(chartsSource).toContain("on: tplShown && tplAsk !== null");
-    expect(chartsSource).toContain('features.on("intraday_pack") ? overlayFromSearch(');
+    expect(chartsSource).toContain('features.on("intraday_pack") || features.on("sd_pack") ? overlayFromSearch(');   // M97 PR-3: family I
   });
 });

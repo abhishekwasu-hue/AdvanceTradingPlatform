@@ -271,6 +271,33 @@ _WLDOC = (" - read from the main count known at the bar (the alternate is eviden
           " does not apply")
 
 
+# M97 PR-1 (docs/design/M97_SUPPLY_DEMAND.md, flag `sd_pack`, off by default): the generic Supply & Demand zones
+# (app/price_action/sd_zones.py - a separate detector; Z7a, A1 and the AreaGate are unchanged). Every detector number is a
+# named setting read once (a literal or a $parameter) within its bounds; left out, the reference value (M97-Q2,
+# "reference - edit before use"; tests/test_m97_sd_zones.py checks these against sd_zones.SETTINGS_TABLE). Close-only in
+# alerts: a zone forms, is visited or is violated at a bar's close.
+SD_FLAG = "sd_pack"
+SD_SIDES: tuple[str, ...] = ("demand", "supply")
+SD_STATES: tuple[str, ...] = ("fresh", "tested", "any")
+SD_FORMATIONS: tuple[str, ...] = ("DBR", "RBR", "RBD", "DBD", "demand", "supply", "any")
+SD_MIN_BARS = 100                       # the average range (up to 200 candles by avg_n) plus room for a few zones
+SD_KWARGS: tuple[Arg, ...] = (
+    Arg("avg_n", "window", 20, False, bounds=(5, 200)),
+    Arg("leg_mult", NUM, 1.5, False, literal_only=True, bounds=(1.0, 5.0)),
+    Arg("base_mult", NUM, 0.7, False, literal_only=True, bounds=(0.1, 1.0)),
+    Arg("out_mult", NUM, 1.5, False, literal_only=True, bounds=(1.0, 5.0)),
+    Arg("leg_body_pct", NUM, 75.0, False, literal_only=True, bounds=(50.0, 100.0)),
+    Arg("base_body_pct", NUM, 50.0, False, literal_only=True, bounds=(5.0, 90.0)),
+    Arg("base_max", "window", 5, False, bounds=(1, 10)),
+    Arg("out_ref", STR, "average", False, choices=("average", "atr")),
+    Arg("edge", STR, "wick", False, choices=("wick", "body")),
+)
+_SD_SIDE = Arg("side", STR, choices=SD_SIDES)
+_SD_ORDER: tuple[tuple[str, str, bool], ...] = (("base_mult", "leg_mult", False), ("base_mult", "out_mult", False))
+_SD_DOC = (" - zones from a base of 1..base_max small candles between a leg-in candle and an explosive leg-out candle,"
+           " known from the leg-out candle's close; settings (reference values, edit before use): avg_n, leg_mult, base_mult,"
+           " out_mult, leg_body_pct, base_body_pct, base_max, out_ref (average / atr), edge (wick / body)")
+
 # TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
 # factors of the parabolic SAR are read once for the whole series (literal_only) within their bounds.
 SUPERTREND_K_BOUNDS = (0.1, 20.0)
@@ -836,6 +863,26 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the level gate's invalidation on its entry candles (missing elsewhere): beyond the area's far edge (and the lowest"
              " low / highest high since the visit) by sl_buffer_mr median ranges - the same entries as AreaGate with the same"
              " settings"),
+    # M97 PR-1 (flag sd_pack): the generic Supply & Demand zones as causal per-bar series (app/price_action/sd_zones.py)
+    Spec("SDZoneDistancePct", "factor", NUM, "pct", (_SD_SIDE, Arg("state", STR, "any", False, choices=SD_STATES)), kwargs=SD_KWARGS,
+         cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="% distance from the close to the proximal line of the nearest live zone of that side and state (fresh / tested"
+             " / any; a violated zone is never read): positive while the close is outside the zone, negative inside it;"
+             " missing when there is none" + _SD_DOC),
+    Spec("SDZoneEnter", "filter", BOOL, None, (_SD_SIDE,), kwargs=SD_KWARGS, cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG,
+         ordered_args=_SD_ORDER,
+         doc="true on the bar whose wick first touches the proximal line of a FRESH zone of that side (its first visit)" + _SD_DOC),
+    Spec("SDZoneFormed", "filter", BOOL, None, (Arg("formation", STR, choices=SD_FORMATIONS),), kwargs=SD_KWARGS, cost=4.0,
+         min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="true on the leg-out bar of a new zone of that formation (DBR / RBR demand, RBD / DBD supply; or demand / supply /"
+             " any)" + _SD_DOC),
+    Spec("SDZoneViolated", "filter", BOOL, None, (_SD_SIDE,), kwargs=SD_KWARGS, cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG,
+         ordered_args=_SD_ORDER,
+         doc="true on the bar whose close goes beyond the distal line of a zone of that side (the zone is then violated)" + _SD_DOC),
+    Spec("SDZoneEdge", "factor", NUM, "price", (_SD_SIDE, Arg("line", STR, choices=("proximal", "distal"))), kwargs=SD_KWARGS,
+         cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="the proximal or distal line of the nearest FRESH zone of that side (for a stop or target the user sets); missing"
+             " when there is none" + _SD_DOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -853,6 +900,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
                            "TMA", "SessionCount"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
+SD_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == SD_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
@@ -884,4 +932,5 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "PATTERN_SHAPE_KWARGS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
-           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec"]
+           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
+           "SD_FLAG", "SD_FUNCTIONS", "SD_KWARGS", "SD_SIDES", "SD_STATES", "SD_FORMATIONS"]

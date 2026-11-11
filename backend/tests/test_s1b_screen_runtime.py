@@ -586,6 +586,26 @@ def test_m94_session_functions():
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
 
+def test_m97_supply_demand_zone_functions():
+    """M97 PR-1: a DBR demand zone (the full fixtures: tests/test_m97_sd_zones.py) - formed on its leg-out bar, entered once
+    while fresh, violated by a close below its distal line; the distance and the fresh edge until then."""
+    neutral = [(99.4, 101.0, 99.0, 100.6)] * 21                        # range 2, body 60 %: neither leg nor base
+    path = [(100.0, 100.2, 96.8, 97.0), (97.0, 97.6, 96.6, 97.3), (97.3, 97.7, 96.9, 97.1), (97.1, 101.0, 97.2, 100.8),
+            (100.8, 101.7, 100.5, 101.5), (101.0, 101.2, 97.5, 98.5), (101.0, 101.2, 95.8, 96.0)]
+    o, h, lo, c = (np.array(col, dtype=float) for col in zip(*(neutral + path)))
+    f = pd.DataFrame({"open": o, "high": h, "low": lo, "close": c, "volume": 100.0},
+                     index=pd.date_range("2026-03-02 03:45", periods=len(o), freq="5min", tz="UTC"))
+    d, formed = SymbolData("S", {"5m": f}), 24
+    assert list(np.flatnonzero(_ev('SDZoneFormed("DBR")', d).to_numpy())) == [formed]
+    assert list(np.flatnonzero(_ev('SDZoneEnter("demand")', d).to_numpy())) == [formed + 2]
+    assert list(np.flatnonzero(_ev('SDZoneViolated("demand")', d).to_numpy())) == [formed + 3]
+    edge = _ev('SDZoneEdge("demand", "proximal")', d)
+    assert edge.iloc[formed:formed + 2].tolist() == [97.7, 97.7] and edge.iloc[formed + 2:].isna().all()
+    dist = _ev('SDZoneDistancePct("demand")', d)
+    assert dist.iloc[formed] == pytest.approx((100.8 - 97.7) / 100.8 * 100) and np.isnan(dist.iloc[-1])
+    assert _ev('SDZoneEdge("demand", "proximal", edge="body")', d).iloc[formed] == 97.3
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

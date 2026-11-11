@@ -374,6 +374,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # pennant arguments; later the intraday scanners, templates and risk tools. Needs `screener_breakouts` too. OFF: the
     # functions and arguments are hidden and refused, and alert rules using them pause. Signals only - places no orders.
     "intraday_pack": "Intraday pack: session high / low / volume so far, bars counted in the session, the pre-open levels and named flag settings in screens (needs screener_breakouts; signals only, places no orders)",
+    # M97 (docs/design/M97_SUPPLY_DEMAND.md): the Supply & Demand pack - PR-1 a generic zone detector (DBR / RBR / RBD /
+    # DBD, proximal / distal lines, Fresh / Tested / Violated, app/price_action/sd_zones.py) and its ScreenQL functions
+    # (SDZoneDistancePct, SDZoneEnter, SDZoneFormed, SDZoneViolated, SDZoneEdge); later the scanners, templates, chart
+    # layer, presets and Copilot facts. OFF: the functions are hidden and refused, and alert rules using them pause.
+    # Signals only - places no orders.
+    "sd_pack": "Supply & Demand pack: demand and supply zones (DBR / RBR / RBD / DBD) with their proximal / distal lines and Fresh / Tested / Violated states in screens (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
     # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint

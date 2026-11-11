@@ -683,6 +683,12 @@ class _Eval:
             # M55 T5: the ported level gate as a series (app/price_action/level_gate/series.py), strategy template A1
             "AreaGate": lambda: _area_gate(f, tf, "entry", str(self.ev(args[0], tf)), gate_settings()),
             "AreaGateRef": lambda: _area_gate(f, tf, _text(0, "invalidation"), str(self.ev(args[1], tf)), gate_settings()),
+            # M97 PR-1 (flag sd_pack): the generic Supply & Demand zones (app/price_action/sd_zones.py), settings as named arguments
+            "SDZoneDistancePct": lambda: _sd(f, "distance", _text(0, "demand"), _text(1, "any"), gate_settings()),
+            "SDZoneEnter": lambda: _sd(f, "enter", _text(0, "demand"), "", gate_settings()),
+            "SDZoneFormed": lambda: _sd(f, "formed", _text(0, "any"), "", gate_settings()),
+            "SDZoneViolated": lambda: _sd(f, "violated", _text(0, "demand"), "", gate_settings()),
+            "SDZoneEdge": lambda: _sd(f, "edge", _text(0, "demand"), _text(1, "proximal"), gate_settings()),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
                 "retest_of": _text(2, _bkd("retest_of")), "retest_max_bars": num(3, _bkd("retest_max_bars")),
@@ -1377,6 +1383,22 @@ def _area_gate(f: pd.DataFrame, tf: str, what: str, side: str, settings: dict[st
     if what == "entry":
         return pd.Series(s.long if up else s.short, index=f.index, dtype=bool)
     return pd.Series(s.long_stop if up else s.short_stop, index=f.index, dtype=float)
+
+
+def _sd(f: pd.DataFrame, what: str, arg: str, extra: str, settings: dict[str, Any]) -> pd.Series:
+    """M97 PR-1: one Supply & Demand read per bar - computed once per frame and settings for every SD function of a
+    screen (sd_zones.cached_sd_series). Distance / edge: NaN where no zone applies; the events: FALSE elsewhere."""
+    from app.price_action import sd_zones as sd
+    try:
+        series = sd.cached_sd_series(f, sd.settings_from(settings))
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what in ("distance", "edge"):
+        dist, prox, distal = series.nearest(arg, extra if what == "distance" else sd.FRESH)
+        values = dist if what == "distance" else prox if extra == "proximal" else distal
+        return pd.Series(values, index=f.index, dtype=float)
+    flags = series.formed(arg) if what == "formed" else series.entered(arg) if what == "enter" else series.violated(arg)
+    return pd.Series(flags, index=f.index, dtype=bool)
 
 
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:

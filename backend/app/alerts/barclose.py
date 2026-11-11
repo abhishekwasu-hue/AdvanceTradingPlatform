@@ -59,6 +59,7 @@ BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4", "int
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
 AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 function / v2 candle / confirmation status pause too
 WAVES_FLAG = "screener_waves"                  # Wave templates W1: rules using a wave count function pause too
+SD_FLAG = "sd_pack"                            # M97 PR-1: rules using a Supply & Demand zone function pause too
 # (and a confirmation status, RsiDivergence or SwingLabel never fires intrabar: amw_functions.intrabar_calls)
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 STORE_FLAG = "market_store_reads"              # M71 W2-D: rules read the own store first (app/market_store)
@@ -321,7 +322,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                         breakouts_enabled: bool = False, zones_enabled: bool = False, per_user: bool = False,
                         vectorized: bool = False, evidence_enabled: bool = False,
                         breakout_extra_flags: Optional[Dict[str, bool]] = None, amw_enabled: bool = False,
-                        waves_enabled: bool = False, store_reads: bool = False) -> Tuple[str, int]:
+                        waves_enabled: bool = False, store_reads: bool = False, sd_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
     argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in.
@@ -377,6 +378,12 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if wave_calls and (not waves_enabled or intrabar):
             # Wave templates W1: the rule stays active and resumes when the flag is back; wave rules fire on bar close only
             rule.last_problem = waves_gate.refusal(wave_calls) if not waves_enabled else waves_gate.intrabar_refusal(wave_calls)
+            return "unsupported", 0
+        from app.screener import sd_gate
+        sd_calls = sd_gate.flagged_calls(ast)
+        if sd_calls and (not sd_enabled or intrabar):
+            # M97 PR-1: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
+            rule.last_problem = sd_gate.refusal(sd_calls) if not sd_enabled else sd_gate.intrabar_refusal(sd_calls)
             return "unsupported", 0
         from app.screener import fundamentals as fundamentals_gate
         fund_calls = fundamentals_gate.flagged_calls(ast)
@@ -494,6 +501,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     zones_on: Dict[int, bool] = {}
     amw_on: Dict[int, bool] = {}
     waves_on: Dict[int, bool] = {}
+    sd_on: dict[int, bool] = {}              # M97 PR-1: sd_pack per organisation
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
@@ -522,6 +530,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             amw_on[rule.tenant_id] = await flag_enabled(session, AMW_FLAG, rule.tenant_id)
         if rule.tenant_id not in waves_on:
             waves_on[rule.tenant_id] = await flag_enabled(session, WAVES_FLAG, rule.tenant_id)
+        if rule.tenant_id not in sd_on:
+            sd_on[rule.tenant_id] = await flag_enabled(session, SD_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         if rule.tenant_id not in vectorized_on:
@@ -534,7 +544,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
                                            breakout_extra_flags=extra_on[rule.tenant_id], amw_enabled=amw_on[rule.tenant_id],
-                                           waves_enabled=waves_on[rule.tenant_id],
+                                           waves_enabled=waves_on[rule.tenant_id], sd_enabled=sd_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id], store_reads=store_on[rule.tenant_id])
         out.evaluated += state == "done"

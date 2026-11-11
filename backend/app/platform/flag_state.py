@@ -144,6 +144,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_breakouts_bk3": _ready(),
     "screener_breakouts_bk4": _ready(),
     "intraday_pack": _not_built("Only the screen functions are built; the intraday scanners, templates and risk tools come next", "M94"),
+    "sd_pack": _not_built("Only the zone detector and the screen functions are built; the scanners, templates, chart layer, presets and Copilot facts come next", "M97"),
     "screener_breakouts_fitness": _ready(),
     "evidence_context": _ready(),
     "evidence_charts": _ready(),

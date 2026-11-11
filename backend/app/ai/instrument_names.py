@@ -20,7 +20,7 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence, Set
+from typing import Any, Iterable, List, Sequence, Set
 
 log = logging.getLogger(__name__)
 
@@ -60,9 +60,9 @@ _NAMES: Set[str] = _seed()
 _FROM_MASTER: Set[str] = set()
 
 
-def _seed_symbols() -> Dict[str, str]:
+def _seed_symbols() -> dict[str, str]:
     """COP-2 B: the seed's names, aliases and symbols (lower-cased) -> the symbol they name ("reliance" -> "RELIANCE")."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     try:
         data = json.loads(SEED_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -81,7 +81,7 @@ def _seed_symbols() -> Dict[str, str]:
 # COP-2 B (owner 11 Nov): a symbol written in any case ("read the reliance chart") is understood when it names a known
 # instrument - the seed always, the instrument master once `refresh_symbols` has read it. Kept apart from `_NAMES` (the
 # output filter's index), so reading the master here never changes what the filter withholds.
-_SYMBOLS: Dict[str, str] = _seed_symbols()
+_SYMBOLS: dict[str, str] = _seed_symbols()
 _LAST_SYMBOLS = {"at": 0.0}
 
 

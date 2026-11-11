@@ -72,6 +72,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | LIVE-1 | One live switch: audit every PAPER / LIVE gate and fold them into the single `live_trading` flag; when ON every order path offers PAPER and LIVE, the user chooses | owner 11 Nov (binding) | DECISIONS 11 Nov |
 | M97 | Supply & Demand pack: zone detector (Z1), states (Z2), chart overlay (Z3), scanners (Z4), templates (Z5), style presets (Z6), Copilot facts (Z7) | owner 11 Nov | INBOX 11 Nov (M97) |
 | COP-2 | Copilot: stale answers leave the screen (A), Read chart for any symbol (B), headline trend = card trend (C), EOD timing audit (D) | owner 11 Nov | INBOX / DECISIONS 11 Nov |
+| M96 | Terminal option chain: audit (A1), banner + OI-difference table on top (L1), order from the OI-difference table (O1), trader analysis features (N1), tests (T1) | owner 11 Nov | INBOX 11 Nov (M96) |
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
 | UI-STD | UI standards audit fix pack: A1-A8 remove what no mainstream tool shows (+ user-string lint), B1-B13 standards floor (NN/g, WCAG 2.2 AA, Material, HIG); extends UX-11 / UX-11b / UX-14 / SCR-FIX | ATP_ORDER_UI_STD.md, UI_STANDARDS_AUDIT.md | first report per item; PR 1 = A, PR 2 = B1-B4, PR 3 = B5-B13; before / after page per PR; owner ✅ |
 | UI-28 | Consolidated UI order (owner 28 Oct; supersedes UI-STD / UI-STD-C and the UI parts of UX-11, UX-11b, UX-14, Screener UI, Telegram in place, OI view, PX-1 P5/P6): U1 remove what no mainstream tool shows, U2 numbers first + logical colour, U3 standards floor, U4 palette, U5 Screener + chart + Telegram UI, U6 OI view in v2, U7 beyond the best; UI only | ATP_ORDER_UI_28OCT.md, UI_STANDARDS_AUDIT.md | first report per item; one PR per U group in order; comparison page per PR; final summary page with word counts + contrast table; owner ✅ |
@@ -307,9 +308,10 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | SCR-AUDIT | waiting for owner (9 Nov) | report done: 48 screens on real data (17 OK, 13 problem, 9 bug, 5 data limit, 4 not run); private report + charts in trade-data review/atp_scanner_audit_2026-11-09; fixes wait for M93-Q1..Q3 | DECISIONS 9 Nov (M93) |
 | M94 | merged (#972-#982); deploy 4a6ff0e2 given, waits for deploy + flag decision + owner ✅ | intraday_pack OFF; proof ZIP sent 10 Nov | DECISIONS 10 Nov (M94) |
 | M95 | merged (#983-#990); waits for deploy (migration a3c5e7f9b1d4) + guest-demo build on the server + flag decisions (guest_demo, marketing_site) + the owner's real WhatsApp preview screenshot + ✅ | proof ZIP sent 11 Nov; left before marketing_site ON: docs/design/M95_MARKETING_SITE_LEFT.md | DECISIONS 10 Nov (M95) |
+| COP-2 | merged (#993, #994); deploy 11081161 given, waits for deploy + owner ✅ | proof ZIP sent 11 Nov; D: no bug (10 Nov NSE holiday) | DECISIONS 11 Nov (COP-2) |
+| M96 | in progress (owner 11 Nov) | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
 | LIVE-1 | in progress (owner 11 Nov) | audit of all gates, then one PR | DECISIONS 11 Nov |
 | M97 | in progress (owner 11 Nov) | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
-| COP-2 | in progress (owner 11 Nov) | A+B+C one PR; D audit | DECISIONS 11 Nov (COP-2) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

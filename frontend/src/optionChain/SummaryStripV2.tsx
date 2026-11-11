@@ -18,9 +18,15 @@ import { spotChange } from "./spotChange";
  *
  * UX3 (UX audit P05, U9 "no sideways scrolling"): a phone shows the four a trader reads first (PHONE_FIRST: spot, ATM,
  * PCR, max pain) as two rows of two, and the other three under "More" - nothing scrolls sideways any more.
+ *
+ * M96 L1 (owner; audit issues 3, 8): the chain's banner on top - spot / future, ATM, expiry, PCR, max pain and the data
+ * time, every figure from the same /live answer as the table. M96 (owner: Trade AS IS): the PCR is Trade's, over ATM ± 6
+ * (the OI-difference table's window and the banner's PCR - one definition), the max pain over the whole chain. From md
+ * the cards fill the width they get (as many columns as fit, never a fixed four), and no label, value or caption is cut:
+ * a long one wraps. `omit` (the Terminal on a phone) leaves out the figures its context bar already shows.
  */
 /** From md the cards keep the server's order (literal classes, so the stylesheet has them). */
-const DESKTOP_ORDER = ["md:order-1", "md:order-2", "md:order-3", "md:order-4", "md:order-5", "md:order-6", "md:order-7", "md:order-8"] as const;
+const DESKTOP_ORDER = ["md:order-1", "md:order-2", "md:order-3", "md:order-4", "md:order-5", "md:order-6", "md:order-7", "md:order-8", "md:order-9"] as const;
 
 /** The cards a phone shows before "More". */
 export const PHONE_FIRST: ReadonlySet<string> = new Set(["spot", "atm", "pcr", "max-pain"]);
@@ -57,7 +63,8 @@ function MiniGauge({ label, value, max }: { label: string; value: number | null 
  * LTP read - src/terminal/spot.ts) the spot card shows THAT value and its time, the same as the chart; only without one
  * does the chain's own spot (or the last close) stand.
  */
-export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null, prevClose: number | null = null): Card[] {
+export function summaryCards(s: ChainSummary | null, expiry: string | null, spot: TerminalSpot | null = null, prevClose: number | null = null,
+  asOf?: string | null): Card[] {
   const future = s?.futures ?? null;
   const live = spot && spot.source !== "chain" ? spot : null;
   // UI-28 U7.1: the spot's signed change and % against the previous close (the number on screen minus that close).
@@ -74,8 +81,9 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : s ? "Near-month price: waiting for the feed" : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },
-    { key: "pcr", label: "PCR (OI)", term: "pcr", value: formatNumber(s?.pcr_oi, 2),
-      extra: <MiniGauge label={`PCR on a 0 to ${PCR_GAUGE_MAX} scale`} value={s?.pcr_oi} max={PCR_GAUGE_MAX} /> },
+    // M96 (Trade AS IS): the PCR over ATM ± 6 (Trade's banner and Net Diff table window); max pain over the whole chain.
+    { key: "pcr", label: "PCR (OI)", term: "pcr", value: formatNumber(s?.pcr_oi_atm, 2), caption: "ATM ± 6",
+      extra: <MiniGauge label={`PCR on a 0 to ${PCR_GAUGE_MAX} scale`} value={s?.pcr_oi_atm ?? null} max={PCR_GAUGE_MAX} /> },
     { key: "max-pain", label: "Max pain", term: "max-pain", value: formatStrike(s?.max_pain),
       extra: maxPainDistance(s, live ? live.ltp : s?.spot) == null ? undefined
         : <span className="text-t12 text-fg-muted"><Signed value={maxPainDistance(s, live ? live.ltp : s?.spot)} kind="count" /> pts from spot</span> },
@@ -85,6 +93,10 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
     // OC-4: the OI walls - the put and the call strike with the most open interest (the chain marks the same rows).
     { key: "oi-walls", label: "OI walls", value: s?.max_put_oi_strike == null && s?.max_call_oi_strike == null ? "–"
       : `${formatStrike(s?.max_put_oi_strike)} / ${formatStrike(s?.max_call_oi_strike)}`, caption: "put / call" },
+    // M96 L1: the time of the figures on screen (the chain's capture time; the last close while the market is closed).
+    // Only where the caller offers it (the F&O desk's compact row does not).
+    ...(asOf === undefined ? [] : [{ key: "as-of", label: "Data time", value: asOf ? formatTimeIST(asOf) : "–",
+      caption: asOf ? formatDateIST(asOf).replace(/ \d{4}$/, "") : undefined }]),
   ];
 }
 
@@ -92,10 +104,10 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   // UX-7: the spot card's number shows a short up / down tint when the price changes.
   const flash = useTickFlash(loading ? null : num);
   if (loading) return <Skeleton className="mt-space-2 h-6 w-20" />;
-  return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base md:text-t20 ${flashClass(flash)}`}>{children}</div>;
+  return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 break-words rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit, drop }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
   /** TERM-2: the same figures as one compact row (the Terminal's chain panel), so the chain stays in view. */
   dense?: boolean;
@@ -103,14 +115,21 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
   prevClose?: number | null;
   /** The page's one spot (the chart's too, T1-3); without it the chain's own. */
   spot?: TerminalSpot | null;
+  /** M96 L1: the time of the chain's figures (data_as_of, else fetched_at). */
+  asOf?: string | null;
+  /** M96 L1 (the Terminal on a phone): figures its context bar already shows, left out here (no fact twice). */
+  omit?: readonly string[];
+  /** M96 L1: cards a block right below already shows (the Trade banner's expiry line), left out with no other change. */
+  drop?: readonly string[];
 }) {
-  const all = summaryCards(summary, expiry, spot, prevClose);
+  const all = summaryCards(summary, expiry, spot, prevClose, asOf).filter((c) => !omit?.includes(c.key) && !drop?.includes(c.key));
   const [more, setMore] = useState(false);
-  // Phone order: the four first cards, then the rest; from md the server's order (one row).
-  const cards = [...all.filter((c) => PHONE_FIRST.has(c.key)), ...all.filter((c) => !PHONE_FIRST.has(c.key))];
+  // Phone order: the four first cards, then the rest; from md the server's order. With `omit` every card left shows.
+  const first = (key: string) => PHONE_FIRST.has(key) || !!omit?.length;
+  const cards = [...all.filter((c) => first(c.key)), ...all.filter((c) => !first(c.key))];
   if (dense) {
     return (
-      <section aria-label="Summary" data-block="chain-summary" data-dense className="flex flex-wrap items-end gap-x-space-4 gap-y-space-1 text-t12">
+      <section aria-label="Summary" data-block="chain-summary" data-dense className="flex flex-wrap items-end gap-x-space-4 gap-y-space-2 text-t12">
         {all.map((c) => (
           <div key={c.key} data-summary={c.key} className="min-w-0">
             <div className="text-fg-muted">{c.label}</div>
@@ -125,24 +144,25 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
   }
   return (
     <section aria-label="Summary" data-block="chain-summary" data-tour="oc-summary"
-      className="grid grid-cols-2 gap-space-3 md:grid-cols-4">
+      className="grid grid-cols-2 gap-space-2 md:grid-cols-[repeat(auto-fill,minmax(9rem,1fr))]">
       {cards.map((c) => (
         <div key={c.key} data-summary={c.key}
-          className={`min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-3 shadow-card md:p-space-4 ${DESKTOP_ORDER[all.indexOf(c)] ?? ""} ${PHONE_FIRST.has(c.key) || more ? "" : "hidden md:block"}`}>
+          className={`min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-3 shadow-card ${DESKTOP_ORDER[all.indexOf(c)] ?? ""} ${first(c.key) || more ? "" : "hidden md:block"}`}>
           <div className="flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
-            <span className="truncate">{c.label}</span>
+            <span className="min-w-0 break-words">{c.label}</span>
             {c.term && <TermHint term={c.term} floating align={c.key === "dte" ? "end" : "start"} />}
           </div>
           <Value loading={loading} num={c.num}>{c.value}</Value>
           {/* The caption line keeps its height when empty, so every card is the same size; OC-4 visuals take its place. */}
-          {!loading && c.extra ? <div className="mt-space-1 min-h-4 truncate">{c.extra}</div>
-            : <div className="mt-space-1 truncate text-t12 text-fg-muted">{!loading && c.caption ? c.caption : " "}</div>}
+          {!loading && c.extra ? <div className="mt-space-1 min-h-4 break-words">{c.extra}</div> : null}
+          {!loading && c.extra && c.caption ? <div className="mt-space-1 break-words text-t12 text-fg-muted">{c.caption}</div> : null}
+          {(loading || !c.extra) && <div className="mt-space-1 break-words text-t12 text-fg-muted">{!loading && c.caption ? c.caption : " "}</div>}
         </div>
       ))}
-      <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more} data-summary-more
+      {!omit?.length && <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more} data-summary-more
         className="order-last col-span-2 inline-flex min-h-11 items-center justify-center rounded-control text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
-        {more ? "Show less" : "More: futures, IV, expiry, OI walls"}
-      </button>
+        {more ? "Show less" : `More: futures, IV, ${drop?.includes("dte") ? "" : "expiry, "}OI walls, data time`}
+      </button>}
     </section>
   );
 }

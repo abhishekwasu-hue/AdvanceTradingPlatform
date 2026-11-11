@@ -168,7 +168,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/(expiries|live)/, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/expiries")) return route.fulfill({ json: DATA.expiries });
-    return route.fulfill({ json: { ...DATA.live, market_open: true } });
+    // M96: the server's ATM ± 6 PCR (Trade's banner window), what the context bar shows; made up like the rest.
+    return route.fulfill({ json: { ...DATA.live, summary: { ...(DATA.live.summary as Record<string, unknown>), pcr_oi_atm: 0.91 }, market_open: true } });
   });
   // T1-6: live prices for P&L on every card (the My trades read), the two legs as one basket group.
   await page.route(/\/api(?:\/v1)?\/portfolio\/exposure/, (r) => r.fulfill({ json: {

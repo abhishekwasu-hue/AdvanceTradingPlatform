@@ -262,8 +262,8 @@ WAVES_FLAG = "screener_waves"
 # per-bar series from CONFIRMED swings (app/price_action/fib_causal.py). A ratio and a band are always the caller's
 # setting (a literal or a $parameter read once); the functions hold none of their own.
 M99_FLAG = "m99_primitives"
-FIB_KINDS: Tuple[str, ...] = ("retrace", "extend", "golden")
-CLUSTER_BAND_MODES: Tuple[str, ...] = ("pct", "atr")
+FIB_KINDS: tuple[str, ...] = ("retrace", "extend", "golden")
+CLUSTER_BAND_MODES: tuple[str, ...] = ("pct", "atr")
 _FIB_KIND = Arg("kind", STR, choices=FIB_KINDS)
 _FIB_RATIO = Arg("ratio", NUM, None, True, literal_only=True, bounds=(0.0, 10.0))
 _FIB_DOC = (" - from the pivots CONFIRMED by the bar (P1 the latest): retrace = P1 - ratio x (P1 - P2); extend = P1 + ratio x"
@@ -878,7 +878,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
                            "TMA", "SessionCount"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
-M99_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
+M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 

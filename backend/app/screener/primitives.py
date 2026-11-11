@@ -7,7 +7,7 @@ the primitives are unfinished. Information only - places no orders.
 """
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +15,10 @@ from app.screener import nodes
 from app.screener.registry import M99_FLAG as FLAG
 
 
-def flagged_calls(ast: Any) -> List[str]:
+def flagged_calls(ast: Any) -> list[str]:
     """The M99 primitive functions a screen uses (each name once, in order)."""
     from app.screener.registry import FUNCTIONS
-    out: List[str] = []
+    out: list[str] = []
     for node in nodes.walk(ast) if ast is not None else ():
         spec = FUNCTIONS.get(node.name) if isinstance(node, nodes.Call) else None
         if spec is not None and spec.flag == FLAG and spec.name not in out:
@@ -26,11 +26,11 @@ def flagged_calls(ast: Any) -> List[str]:
     return out
 
 
-def refusal(names: List[str]) -> str:
+def refusal(names: list[str]) -> str:
     return f"{', '.join(n + '()' for n in names)}: the shared primitives are not enabled for this organisation (flag {FLAG})"
 
 
-def alert_refusal(names: List[str]) -> str:
+def alert_refusal(names: list[str]) -> str:
     return f"{', '.join(n + '()' for n in names)}: alert rules do not read the shared primitives yet - run the screen instead"
 
 
@@ -39,7 +39,7 @@ async def enabled(session: AsyncSession, tenant_id: Any) -> bool:
     return await flag_enabled(session, FLAG, tenant_id)
 
 
-async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> List[str]:
+async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> list[str]:
     names = flagged_calls(ast)
     if not names or await enabled(session, tenant_id):
         return []

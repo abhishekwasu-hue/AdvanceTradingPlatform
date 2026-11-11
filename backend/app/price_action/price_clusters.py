@@ -18,12 +18,12 @@ Pure functions; causality is the caller's - the levels fed in must be known at t
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
 
 PCT = "pct"
 ATR = "atr"
-BAND_MODES: Tuple[str, ...] = (PCT, ATR)
+BAND_MODES: tuple[str, ...] = (PCT, ATR)
 
 
 @dataclass(frozen=True)
@@ -39,11 +39,11 @@ class Cluster:
     low: float
     high: float
     count: int
-    labels: Tuple[str, ...]
-    sources: Tuple[str, ...]      # distinct, in order of first appearance (low to high)
+    labels: tuple[str, ...]
+    sources: tuple[str, ...]      # distinct, in order of first appearance (low to high)
 
 
-def _joins(price: float, last: float, band: float, mode: str, atr: Optional[float]) -> bool:
+def _joins(price: float, last: float, band: float, mode: str, atr: float | None) -> bool:
     if mode == PCT:
         if last == 0:
             return price == last
@@ -51,8 +51,8 @@ def _joins(price: float, last: float, band: float, mode: str, atr: Optional[floa
     return abs(price - last) <= band * float(atr)                         # type: ignore[arg-type]
 
 
-def find_clusters(levels: Iterable[PriceLevel], band: float, mode: str = PCT, atr: Optional[float] = None,
-                  min_members: int = 2) -> List[Cluster]:
+def find_clusters(levels: Iterable[PriceLevel], band: float, mode: str = PCT, atr: float | None = None,
+                  min_members: int = 2) -> list[Cluster]:
     """Clusters of `levels` (low to high). Levels with a non-finite price are skipped. In "atr" mode a missing or
     non-positive ATR gives no cluster (nothing to measure the band in)."""
     if mode not in BAND_MODES:
@@ -67,18 +67,18 @@ def find_clusters(levels: Iterable[PriceLevel], band: float, mode: str = PCT, at
     ordered = sorted((lv for lv in levels if math.isfinite(float(lv.price))), key=lambda lv: (float(lv.price), lv.label, lv.source))
     if not ordered:
         return []
-    groups: List[List[PriceLevel]] = [[ordered[0]]]
+    groups: list[list[PriceLevel]] = [[ordered[0]]]
     for lv in ordered[1:]:
         if _joins(float(lv.price), float(groups[-1][-1].price), band, mode, atr):
             groups[-1].append(lv)
         else:
             groups.append([lv])
-    out: List[Cluster] = []
+    out: list[Cluster] = []
     for g in groups:
         if len(g) < min_members:
             continue
         prices = [float(lv.price) for lv in g]
-        sources: List[str] = []
+        sources: list[str] = []
         for lv in g:
             if lv.source not in sources:
                 sources.append(lv.source)
@@ -86,9 +86,9 @@ def find_clusters(levels: Iterable[PriceLevel], band: float, mode: str = PCT, at
     return out
 
 
-def nearest_cluster(clusters: Iterable[Cluster], price: float) -> Optional[Cluster]:
+def nearest_cluster(clusters: Iterable[Cluster], price: float) -> Cluster | None:
     """The cluster whose centre is nearest `price` (a tie: the lower centre); None when there is none."""
-    best: Optional[Cluster] = None
+    best: Cluster | None = None
     for c in clusters:
         if best is None or abs(c.centre - price) < abs(best.centre - price):
             best = c

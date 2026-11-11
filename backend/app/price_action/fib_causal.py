@@ -21,7 +21,8 @@ NaN where it does not apply (too few confirmed pivots, no cluster, no ATR yet). 
 from __future__ import annotations
 
 from bisect import bisect_right
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -35,7 +36,7 @@ SOURCE_FIB = "fib"
 SOURCE_SWING = "swing"
 
 
-def _settings(settings: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+def _settings(settings: Mapping[str, Any] | None) -> dict[str, Any]:
     from app.price_action import pa_settings
     return dict(settings) if settings is not None else pa_settings.settings()
 
@@ -47,7 +48,7 @@ def swing_frame(bars: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def confirmed_pivots(bars: pd.DataFrame, degree: int, settings: Optional[Mapping[str, Any]] = None) -> List[cs.Pivot]:
+def confirmed_pivots(bars: pd.DataFrame, degree: int, settings: Mapping[str, Any] | None = None) -> list[cs.Pivot]:
     """The degree's confirmed pivots in confirmation order."""
     s = _settings(settings)
     if not 0 <= degree < len(s["swing_atr_mult"]):
@@ -74,10 +75,10 @@ def fib_value(known: Sequence[cs.Pivot], kind: str, ratio: float) -> float:
     return float("nan")
 
 
-def level_set(known: Sequence[cs.Pivot], retrace_ratios: Optional[Sequence[float]] = None,
-              extend_ratios: Optional[Sequence[float]] = None, golden_ratios: Optional[Sequence[float]] = None) -> List[pc.PriceLevel]:
+def level_set(known: Sequence[cs.Pivot], retrace_ratios: Sequence[float] | None = None,
+              extend_ratios: Sequence[float] | None = None, golden_ratios: Sequence[float] | None = None) -> list[pc.PriceLevel]:
     """The labelled levels a cluster is read over, from the known pivots (the latest last)."""
-    out: List[pc.PriceLevel] = []
+    out: list[pc.PriceLevel] = []
     if len(known) >= 2:
         p2, p1 = known[-2].price, known[-1].price
         out += [pc.PriceLevel(x.price, x.label, SOURCE_FIB) for x in fl.retracement_levels(p2, p1, retrace_ratios, "last swing")]
@@ -92,12 +93,12 @@ def level_set(known: Sequence[cs.Pivot], retrace_ratios: Optional[Sequence[float
 
 
 def fib_series(bars: pd.DataFrame, kind: str, ratio: float, degree: int = 0,
-               settings: Optional[Mapping[str, Any]] = None) -> np.ndarray:
+               settings: Mapping[str, Any] | None = None) -> np.ndarray:
     """The `kind` level at `ratio` on every bar, from the pivots confirmed by that bar."""
     pivots = confirmed_pivots(bars, degree, settings)
     counts = known_counts(pivots, len(bars))
     out = np.full(len(bars), np.nan)
-    memo: Dict[int, float] = {}
+    memo: dict[int, float] = {}
     for t, m in enumerate(counts):
         if m not in memo:
             memo[m] = fib_value(pivots[:m], kind, ratio)
@@ -106,9 +107,9 @@ def fib_series(bars: pd.DataFrame, kind: str, ratio: float, degree: int = 0,
 
 
 def cluster_series(bars: pd.DataFrame, band: float, mode: str = pc.PCT, degree: int = 0,
-                   settings: Optional[Mapping[str, Any]] = None, min_members: int = 2,
-                   retrace_ratios: Optional[Sequence[float]] = None, extend_ratios: Optional[Sequence[float]] = None,
-                   golden_ratios: Optional[Sequence[float]] = None) -> Dict[str, np.ndarray]:
+                   settings: Mapping[str, Any] | None = None, min_members: int = 2,
+                   retrace_ratios: Sequence[float] | None = None, extend_ratios: Sequence[float] | None = None,
+                   golden_ratios: Sequence[float] | None = None) -> dict[str, np.ndarray]:
     """The cluster nearest the close on every bar, over the level set known at that bar:
     {"centre", "low", "high", "count"} (NaN / 0 where there is none) and "labels" (a tuple per bar, empty where none)."""
     if mode not in pc.BAND_MODES:
@@ -123,8 +124,8 @@ def cluster_series(bars: pd.DataFrame, band: float, mode: str = pc.PCT, degree: 
     count = np.zeros(n, dtype=int)
     labels = np.empty(n, dtype=object)
     labels[:] = [()] * n
-    sets: Dict[int, List[pc.PriceLevel]] = {}
-    pct_clusters: Dict[int, List[pc.Cluster]] = {}
+    sets: dict[int, list[pc.PriceLevel]] = {}
+    pct_clusters: dict[int, list[pc.Cluster]] = {}
     for t in range(n):
         m = int(counts[t])
         if m < 2:

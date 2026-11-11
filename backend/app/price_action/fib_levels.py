@@ -20,14 +20,14 @@ the wave count's own points; those stay as they are (tests/test_m99_fib_levels.p
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
 
 REFERENCE_LABEL = "reference - edit before use"
 # Reference ratios (REFERENCE_LABEL): a starting list for the user's own settings, never a rule
-REFERENCE_RETRACEMENT_RATIOS: Tuple[float, ...] = (0.382, 0.5, 0.618, 0.786)
-REFERENCE_EXTENSION_RATIOS: Tuple[float, ...] = (0.618, 1.0, 1.272, 1.618, 2.0, 2.618)
-REFERENCE_GOLDEN_RATIOS: Tuple[float, ...] = (0.382, 0.5, 0.618)
+REFERENCE_RETRACEMENT_RATIOS: tuple[float, ...] = (0.382, 0.5, 0.618, 0.786)
+REFERENCE_EXTENSION_RATIOS: tuple[float, ...] = (0.618, 1.0, 1.272, 1.618, 2.0, 2.618)
+REFERENCE_GOLDEN_RATIOS: tuple[float, ...] = (0.382, 0.5, 0.618)
 # The golden ratio itself (a constant of mathematics, (1 + sqrt 5) / 2), for callers that build their own lists
 GOLDEN_RATIO = (1.0 + math.sqrt(5.0)) / 2.0
 
@@ -35,7 +35,7 @@ RETRACE = "retrace"
 EXTEND = "extend"
 GOLDEN_SPLIT = "golden_split"
 GOLDEN_PROJECTION = "golden_projection"
-KINDS: Tuple[str, ...] = (RETRACE, EXTEND, GOLDEN_SPLIT, GOLDEN_PROJECTION)
+KINDS: tuple[str, ...] = (RETRACE, EXTEND, GOLDEN_SPLIT, GOLDEN_PROJECTION)
 
 
 @dataclass(frozen=True)
@@ -91,22 +91,22 @@ def golden_projection(start: float, mid: float, ratio: float) -> float:
 
 
 # ------------------------------------------------------------------------------------------------------- level sets
-def retracement_levels(a: float, b: float, ratios: Optional[Sequence[float]] = None, tag: str = "") -> List[FibLevel]:
+def retracement_levels(a: float, b: float, ratios: Sequence[float] | None = None, tag: str = "") -> list[FibLevel]:
     rs = REFERENCE_RETRACEMENT_RATIOS if ratios is None else tuple(ratios)
     return [FibLevel(RETRACE, float(r), retracement(a, b, r), _label(RETRACE, float(r), tag)) for r in rs]
 
 
-def extension_levels(a: float, b: float, c: float, ratios: Optional[Sequence[float]] = None, tag: str = "") -> List[FibLevel]:
+def extension_levels(a: float, b: float, c: float, ratios: Sequence[float] | None = None, tag: str = "") -> list[FibLevel]:
     rs = REFERENCE_EXTENSION_RATIOS if ratios is None else tuple(ratios)
     return [FibLevel(EXTEND, float(r), extension(a, b, c, r), _label(EXTEND, float(r), tag)) for r in rs]
 
 
-def golden_split_levels(start: float, end: float, ratios: Optional[Sequence[float]] = None, tag: str = "") -> List[FibLevel]:
+def golden_split_levels(start: float, end: float, ratios: Sequence[float] | None = None, tag: str = "") -> list[FibLevel]:
     rs = REFERENCE_GOLDEN_RATIOS if ratios is None else tuple(ratios)
     return [FibLevel(GOLDEN_SPLIT, float(g), golden_split(start, end, g), _label(GOLDEN_SPLIT, float(g), tag)) for g in rs]
 
 
-def golden_projection_levels(start: float, mid: float, ratios: Optional[Sequence[float]] = None, tag: str = "") -> List[FibLevel]:
+def golden_projection_levels(start: float, mid: float, ratios: Sequence[float] | None = None, tag: str = "") -> list[FibLevel]:
     rs = REFERENCE_GOLDEN_RATIOS if ratios is None else tuple(ratios)
     return [FibLevel(GOLDEN_PROJECTION, float(g), golden_projection(start, mid, g), _label(GOLDEN_PROJECTION, float(g), tag))
             for g in rs]

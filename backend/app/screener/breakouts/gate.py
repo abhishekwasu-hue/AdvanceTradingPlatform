@@ -69,7 +69,9 @@ def flagged_calls(ast: Any) -> List[str]:
 # U6 BK2: functions that read the exchange session (open, VWAP from the open, time-of-day slots)
 SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP", "GapBreakout", "GapType",
                      # M94 PR-1: the session's running values and the pre-open levels
-                     "SessionHigh", "SessionLow", "SessionVolume", "SessionCount", "PreOpenHigh", "PreOpenLow", "PreOpenVolume")
+                     "SessionHigh", "SessionLow", "SessionVolume", "SessionCount", "PreOpenHigh", "PreOpenLow", "PreOpenVolume",
+                     # M99 P2: the key-level grade reads the session's levels
+                     "LevelGrade")
 
 
 def session_calls(ast: Any) -> List[str]:

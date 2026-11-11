@@ -204,6 +204,21 @@ def _exit_choices(strategy: TemplateStrategy) -> Dict[str, Any]:
         "ratio": {"min": exit_settings.RATIO_BOUNDS[0], "max": exit_settings.RATIO_BOUNDS[1]},
         # M94 F10: the levels a TEMPLATE_LEVEL target may sit at (empty: the rule is not offered)
         "levels": [{"value": lv, "label": exit_settings.LEVEL_WORDS[lv]} for lv in caps.levels],
+        # M99 P2: the trade-management options (None: not offered by this template); all off by default
+        "management": _management_choices() if caps.management else None,
+    }
+
+
+def _management_choices() -> Dict[str, Any]:
+    from app.strategy_templates import management as mg
+    return {
+        "classes": sorted(exit_settings.MANAGEMENT_CLASSES),
+        "trails": [{"value": "SWING", "label": "By the swings"}, {"value": "ATR", "label": "By average true ranges from the best price"},
+                   {"value": "MA", "label": "At a moving average"}],
+        "averages": list(mg.AVERAGES),
+        "bounds": {"trail_degree": list(mg.DEGREE_BOUNDS),
+                   "trail_n": list(mg.N_BOUNDS), "trail_k": list(mg.K_BOUNDS), "bars": list(mg.BARS_BOUNDS)},
+        "reference": dict(mg.REFERENCE), "reference_label": mg.REF_LABEL,
     }
 
 

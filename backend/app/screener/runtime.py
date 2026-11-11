@@ -298,6 +298,30 @@ class _Eval:
             self._session_bars[key] = b
         return self._session_bars[key]
 
+    def level_grade(self, tf: str, level: str, what: str, near: float, look: int, touches: float, recent: int, tier: float,
+                    step: float) -> pd.Series:
+        """M99 P2: `LevelGrade` - the key levels of this frame (previous session, pre-open, the session so far) and the grade
+        or one part of it (app/screener/level_grade.py) on every bar; the ATR of 14 bars is the band's unit."""
+        from app.price_action import level_strength as ls
+        from app.screener import level_grade as lg
+        f = self.frame(tf)
+        levels = {"PDC": _operand(f, "PDC"), "PDH": _operand(f, "PDH"), "PDL": _operand(f, "PDL"),
+                  "PREOPEN_HIGH": self.session_series(tf, "pre_high"), "PREOPEN_LOW": self.session_series(tf, "pre_low"),
+                  "SESSION_HIGH": self.session_series(tf, "high"), "SESSION_LOW": self.session_series(tf, "low")}
+        arrays = {k: v.reindex(f.index).to_numpy(dtype=float) for k, v in levels.items()}
+        if step > 0:
+            steps: list[float] = [float(step)]
+        else:
+            by = ls._s(None)["zone_round_steps"]
+            steps = [float(x) for x in by.get(str(self.data.symbol).upper(), by["DEFAULT"])]
+        try:
+            values = lg.grade_series(arrays, level, f["high"].to_numpy(float), f["low"].to_numpy(float), _atr(f, 14).to_numpy(float),
+                                     what=what, near=near, look=look, touches=int(touches), recent=recent, tier=int(tier),
+                                     round_steps=steps)
+        except ValueError as exc:
+            raise ScreenRuntimeError(str(exc)) from exc
+        return pd.Series(values, index=f.index, dtype=float)
+
     def session_series(self, tf: str, what: str) -> pd.Series:
         """M94: one of the session's running values (high / low / volume so far) or the pre-open bars' levels (pre_high /
         pre_low / pre_volume) on the exchange clock - the session map of `session_bars`, cached per frame and value."""
@@ -647,6 +671,9 @@ class _Eval:
             "PreOpenHigh": lambda: self.session_series(tf, "pre_high"),
             "PreOpenLow": lambda: self.session_series(tf, "pre_low"),
             "PreOpenVolume": lambda: self.session_series(tf, "pre_volume"),
+            # M99 P2: the information grade of a key level (app/screener/level_grade.py)
+            "LevelGrade": lambda: self.level_grade(tf, _text(0, ""), _text(1, "grade"), num(2, 0.0), win(3, 400), num(4, 2.0), win(5, 200),
+                                                   num(6, 2.0), num(7, 0.0)),
             # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
             "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
                 "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),

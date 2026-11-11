@@ -190,6 +190,8 @@ PATTERN_SHAPE_DOC = ("; named arguments (flag / pennant only): pole= the pole's 
                      " flag_min= / flag_max= the consolidation's fewest / most bars, retrace= the most of the pole the consolidation"
                      " gives back (left out: the breakout parameters' defaults)")
 _INTRADAY = (INTRADAY_FLAG,)
+_LEVEL_NAMES = ("PDC", "PDH", "PDL", "PREOPEN_HIGH", "PREOPEN_LOW", "SESSION_HIGH", "SESSION_LOW")   # level_grade.LEVEL_TIERS
+_LEVEL_WHATS = ("grade", "touches", "bars_since", "source", "round", "confluence")
 _SESSION_NOTE = (" - on the exchange calendar's session (pre-open bars left out); missing on a pre-open bar and outside the"
                  " session")
 _PREOPEN_NOTE = (" - the bars of the session's date before its open, known from the session's first bar on; missing (never 0) when"
@@ -629,6 +631,18 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the low of the pre-open bars" + _PREOPEN_NOTE),
     Spec("PreOpenVolume", "factor", NUM, "volume", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
          doc="the volume of the pre-open bars" + _PREOPEN_NOTE),
+    # M99 P2 (app/screener/level_grade.py): the information grade of a key level - a count of qualities, never a gate
+    Spec("LevelGrade", "factor", NUM, "count",
+         (Arg("level", STR, choices=_LEVEL_NAMES), Arg("what", STR, "grade", False, choices=_LEVEL_WHATS),
+          Arg("near", NUM, 0.0, False, literal_only=True, bounds=(0.0, 5.0)), Arg("look", "window", 400, False),
+          Arg("touches", NUM, 2, False, literal_only=True, bounds=(1.0, 50.0)), Arg("recent", "window", 200, False),
+          Arg("tier", NUM, 2, False, choices=(1, 2, 3)), Arg("step", NUM, 0.0, False, literal_only=True, bounds=(0.0, 1_000_000.0))),
+         cost=2.0, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the information grade (0-5) of a key level as of each bar - one point each for: at least `touches` separate visits"
+             " of its band (near x ATR either side; 0 = the level itself) in the last `look` bars; the last visit within `recent`"
+             " bars; its kind at or above `tier` (1 previous close, 2 previous high / low, 3 pre-open and session high / low); a"
+             " round number in the band (multiples of `step`; 0 = the symbol's own round steps); another key level in the band."
+             " `what` returns one part instead: touches / bars_since / source / round / confluence. Information only"),
     # U6 BK3: B3 VCP and the indicator breakouts B10 / B11 / B12 / B15 (app/screener/breakouts/vcp.py, indicator_breaks.py) -
     # closed bars, one signal per leg (VCPReady: a state); behind `screener_breakouts` AND `screener_breakouts_bk3`.
     Spec("VCPBreakout", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),

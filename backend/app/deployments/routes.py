@@ -9,7 +9,7 @@ deployment would only discover the problem at 09:15 with real money on the line.
 import json
 import logging
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date, datetime
 from typing import List, Literal, Optional
 
@@ -402,7 +402,12 @@ class DeploymentResponse(BaseModel):
 def _exits_answer(record: StrategyDeploymentRecord) -> Optional[dict]:
     """Section 5: the deployment's exit choice as stored (None: none chosen - the behaviour before)."""
     choice = TemplateExits.from_record(record)
-    return None if choice.is_default else {k: v for k, v in choice.columns().items() if v is not None}
+    if choice.is_default:
+        return None
+    out = {k: v for k, v in choice.columns().items() if v is not None}
+    if "management" in out:                       # M99 P2: the options as their fields, not the stored text
+        out["management"] = {k: v for k, v in asdict(choice.manage()).items() if v is not None}
+    return out
 
 
 def _holds_spread(request: "DeploymentCreateRequest", written_overnight: bool = False) -> bool:

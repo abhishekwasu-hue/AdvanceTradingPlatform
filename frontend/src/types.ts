@@ -1238,6 +1238,19 @@ export interface TemplateExitsRequest {
   target_ratio?: number | null;
   /** M94 F10: TEMPLATE_LEVEL's level (VWAP / SESSION_EXTREME / PREV_CLOSE / OR_FAR_SIDE), read on the signal bar */
   target_level?: string | null;
+  /** M99 P2: the intraday templates' trade-management options (src/strategyTemplates/management.ts); omitted = none */
+  management?: ManagementRequest | null;
+}
+
+/** M99 P2: the trade-management options of a template bot - every field off / empty unless the user sets it. */
+export interface ManagementRequest {
+  trail?: "SWING" | "ATR" | "MA" | null;
+  trail_degree?: number | null;
+  trail_n?: number | null;
+  trail_k?: number | null;
+  trail_ma?: string | null;
+  stall_bars?: number | null;
+  max_bars?: number | null;
 }
 
 export type RoutingPolicy = "EXPLICIT" | "MOST_MARGIN" | "LEAST_UTILISED" | "FEWEST_POSITIONS";

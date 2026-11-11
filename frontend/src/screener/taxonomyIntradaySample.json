@@ -744,6 +744,27 @@
    },
    "evidence_ready": false,
    "fitness_available": false
+  },
+  {
+   "id": "intraday.graded_levels",
+   "source": "intraday",
+   "name": "Graded Key Levels",
+   "definition": "The close is near a previous-session or pre-open level whose grade - touches, a recent visit, its kind, a round number, a level close by - has the set points.",
+   "method": "price_action",
+   "setup": "mean_reversion",
+   "tags": {
+    "timeframe_family": [
+     "intraday"
+    ],
+    "direction": "both",
+    "data_tier": [
+     "live_per_user"
+    ],
+    "difficulty": "intermediate",
+    "universe_default": "fo_stocks"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
   }
  ],
  "matrix": {
@@ -751,7 +772,7 @@
    "breakout": 12,
    "pullback": 0,
    "reversal": 2,
-   "mean_reversion": 2,
+   "mean_reversion": 3,
    "momentum": 0,
    "options_volatility": 0,
    "events_flow": 1,
@@ -808,7 +829,7 @@
    "internals": 0
   }
  },
- "total": 27,
+ "total": 28,
  "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice.",
  "source_notes": {
   "intraday": "Information and education only, not investment advice."

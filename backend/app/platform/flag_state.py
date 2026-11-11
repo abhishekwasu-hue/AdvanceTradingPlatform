@@ -143,7 +143,6 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_breakouts": _ready(),
     "screener_breakouts_bk3": _ready(),
     "screener_breakouts_bk4": _ready(),
-    "m99_primitives": _not_built("Only the bar classes are built; the other primitives, scanners and templates come next", "M99"),
     "intraday_pack": _not_built("Only the screen functions are built; the intraday scanners, templates and risk tools come next", "M94"),
     "m99_primitives": _not_built("Only the shared primitives are built; the M99 packs that use them come next", "M99"),
     "screener_breakouts_fitness": _ready(),

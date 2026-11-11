@@ -163,7 +163,9 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # confirming bar, phases and levels as known at each close
     "Wyckoff": ['Wyckoff("in_range")', 'Wyckoff("shake", "strength", b_vs_a=0.5)', 'Wyckoff("phase_c")', 'Wyckoff("bias", "strength")',
                 'Wyckoff("significant_bar")@1h'],
-    "WyckoffLevel": ['WyckoffLevel("range_top")', 'WyckoffLevel("range_bottom", k_back=2)', 'WyckoffLevel("range_top", pivot=2)'],
+    # the first case is read against the close: a range level is flat inside a range, so "level > level[1]" (the S6 sweep's
+    # default condition for a factor) would almost never hold
+    "WyckoffLevel": ['WyckoffLevel("range_top") - close', 'WyckoffLevel("range_bottom", k_back=2)', 'WyckoffLevel("range_top", pivot=2)'],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],

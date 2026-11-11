@@ -182,11 +182,12 @@ describe("OC5 Chain | Charts toggle on the page", () => {
       <OptionChainView symbol="NIFTY" onSymbol={noop} chain={chainData(over)} marketOpen prefs={{ greeks: false, quotes: false, more: true }} onPrefs={noop} />
     </AuthProvider></MemoryRouter>);
 
-  it("opens on the chain with the toggle over the strike column, so the chain does not move", () => {
+  it("opens on the chain with the toggle on top of the chain view, in the flow (M96 L1: nothing sits over the rows)", () => {
     const html = page();
     expect(html).toContain('data-block="chain"');
     expect(html).not.toContain('data-block="charts"');
-    expect(html).toMatch(/data-view-toggle[^>]*class="[^"]*absolute[^"]*left-1\/2/);
+    expect(html).not.toMatch(/data-view-toggle[^>]*class="[^"]*absolute/);
+    expect(html.indexOf("data-view-toggle")).toBeLessThan(html.indexOf('data-block="oi-diff"'));
     expect(html.match(/aria-pressed="true"[^>]*>(<svg[\s\S]*?<\/svg>)?Chain</g)).toHaveLength(1);
   });
 

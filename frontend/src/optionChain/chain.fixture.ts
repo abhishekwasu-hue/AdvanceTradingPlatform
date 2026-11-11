@@ -32,7 +32,7 @@ export function liveChain(over: Partial<LiveChain> = {}): LiveChain {
     underlying: "NIFTY", expiry: "2026-11-03", rows: rows(), fetched_at: "2026-10-27T05:00:00+00:00", market_open: true,
     oi_change: { status: "ready", source: "broker", since: null },
     summary: {
-      spot: 24480, futures: { symbol: "NIFTY FUT 24 NOV 26", expiry: "2026-11-24", ltp: 24530.5 }, atm_strike: 24500, pcr_oi: 0.88,
+      spot: 24480, futures: { symbol: "NIFTY FUT 24 NOV 26", expiry: "2026-11-24", ltp: 24530.5 }, atm_strike: 24500, pcr_oi: 0.88, pcr_oi_atm: 0.88,
       max_pain: 24500, atm_iv: 12.5, days_to_expiry: 7, max_call_oi_strike: 24800, max_put_oi_strike: 24200,
       total_call_oi: 2_800_000, total_put_oi: 2_800_000,
     },

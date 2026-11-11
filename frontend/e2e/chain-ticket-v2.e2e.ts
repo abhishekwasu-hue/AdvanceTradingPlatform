@@ -34,7 +34,7 @@ function preview(body: Record<string, unknown>) {
   return {
     mode: "PAPER", practice: "Practice mode (PAPER): no real order is sent and no money moves.", contract: CONTRACT, label: CONTRACT.label,
     side: body.side, lots, lot_size: 75, units, order_type: body.order_type, product: body.product, price: 150, price_source: "live", fill_price: fill,
-    fill_note: `Fills at the live price ${fill.toFixed(2)}`, stop_loss: body.stop_loss ?? null,
+    fill_note: `Fills at the live price ${fill.toFixed(2)}`, stop_loss: body.stop_loss ?? null, target: body.target ?? null,
     margin: { value: fill * units, basis: "Long options only: the premium paid.", estimated: true },
     max_loss: { value: fill * units, basis: "The premium you pay, if the option expires worthless." }, charges: { total: 42.5, estimated: true },
     risk: { risk_per_trade: 50000, allowed_lots: 4 },
@@ -475,3 +475,25 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
     });
   });
 }
+
+test.describe("M96 ticket Target at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("the Target field is empty; his own value is sent with the order and named in the confirm step", async ({ page }) => {
+    const seen = await open(page, "light");
+    await callCell(page).tap();
+    await page.locator("[data-chain-actions] [data-action='buy']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await pickProduct(ticket);
+    const target = ticket.locator("[data-ticket='target']");
+    await expect(target).toHaveValue("");                                     // never a platform value
+    await target.fill("180");
+    await expect(ticket.locator("[data-ticket='advanced-summary']")).toHaveText("NRML · no stop-loss · target 180");
+    await target.scrollIntoViewIfNeeded();
+    if (process.env.M96_PROOF) await ticket.screenshot({ path: process.env.M96_PROOF, animations: "disabled" });
+    await ticket.locator("[data-ticket='review']").tap();
+    await expect(ticket.locator("[data-line='target']")).toContainText("180.00");
+    const ask = seen.posts.find((p) => p.url.endsWith("/order/preview"))?.body as Record<string, unknown>;
+    expect(ask.target).toBe(180);
+  });
+});

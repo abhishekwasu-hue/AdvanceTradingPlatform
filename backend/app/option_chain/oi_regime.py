@@ -738,6 +738,10 @@ class BannerState:
     expiry: Optional[date]
     dte: Optional[int]
     first_of_day: bool
+    # M96 L1 (Trade port): what the message is built from, for the neutral fact words (app/option_chain/oi_words.py):
+    # the activity phrases' classes and, for a reconciled MIXED, which check turned it ("stable" / "level").
+    momentum: str = ""
+    mixed_reason: str | None = None
 
 
 def evaluate_snapshot(underlying: str, current: ChainTotals, previous: Optional[ChainTotals], history: Sequence[SnapshotPoint],
@@ -754,8 +758,12 @@ def evaluate_snapshot(underlying: str, current: ChainTotals, previous: Optional[
                                          prev.total_put_premium if prev else None, settings.oi_threshold_pct, settings.premium_threshold_pct)
     call_class = classify_oi_price_action(current.total_call_oi, prev.total_call_oi if prev else None, current.total_call_premium,
                                           prev.total_call_premium if prev else None, settings.oi_threshold_pct, settings.premium_threshold_pct)
-    signal = reconcile_with_diff_level(generate_oi_price_signal(put_class, call_class, underlying), current.diff,
-                                       current.total_call_oi, current.total_put_oi, stable, settings.reconcile_significance_pct)
+    raw = generate_oi_price_signal(put_class, call_class, underlying)
+    signal = reconcile_with_diff_level(raw, current.diff, current.total_call_oi, current.total_put_oi, stable,
+                                       settings.reconcile_significance_pct)
+    mixed_reason = None
+    if signal.direction == Direction.MIXED and raw.direction != Direction.MIXED:
+        mixed_reason = "stable" if _opposite(raw.direction, stable.direction) else "level"
     message = INSUFFICIENT_HISTORY_MESSAGE if prev is None else signal.message
     pcr, _ = compute_pcr_signal(current.total_put_oi, current.total_call_oi, settings.pcr_bands)
     expiry_day, dte = compute_dte(expiry, today) if today is not None else (None, None)
@@ -764,4 +772,4 @@ def evaluate_snapshot(underlying: str, current: ChainTotals, previous: Optional[
         stable_signal=stable, diff=current.diff, delta_diff=current.diff - recent[-1].diff if recent else 0.0,
         pcr=pcr, pcr_band=pcr_band(pcr, settings.pcr_bands), pcr_label=compute_pcr_zone_label(pcr, settings.pcr_bands),
         atm_strike=current.atm_strike, underlying_price=current.underlying_price, max_pain=max_pain_strike,
-        expiry=expiry_day, dte=dte, first_of_day=prev is None)
+        expiry=expiry_day, dte=dte, first_of_day=prev is None, momentum=raw.momentum, mixed_reason=mixed_reason)

@@ -2,9 +2,9 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { cx } from "../components/primitives/cx";
 import { Combobox } from "../ui/Combobox";
-import { EMPTY, formatCount, formatCountChange, formatDateIST, formatPrice } from "../ui/format";
+import { EMPTY, formatDateIST, formatPrice } from "../ui/format";
 import {
-  FRAME_MS, SPEEDS, clampFrame, hhmm, historyApi, nextFrame, pickerTime, rangeNote, replayRows, replayScale, rowsAround, usedNote,
+  FRAME_MS, SPEEDS, clampFrame, formatLakhs, formatLakhsChange, hhmm, historyApi, nextFrame, pickerTime, rangeNote, replayRows, replayScale, rowsAround, usedNote,
   type CoverageDay, type RangeReply, type ReplayReply, type Speed,
 } from "./history";
 
@@ -21,6 +21,8 @@ const CARD = "min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-3 
 const AROUND = [5, 10, 0] as const;
 const chip = (on: boolean) => cx("min-h-8 rounded-control border px-space-2", on ? "border-brand text-fg" : "border-subtle text-fg-muted");
 const input = "min-h-8 rounded-control border border-subtle bg-surface-2 px-space-2 text-t13 text-fg";
+/** The strike column stays in view while the table scrolls sideways (phone). */
+const STICKY = "sticky left-0 z-10 whitespace-nowrap px-space-2 py-space-1 font-tabular";
 const tone = (v: number | null) => (v === null || v === 0 ? "text-fg-muted" : v > 0 ? "text-up" : "text-down");
 
 type Cover = { status: "loading" } | { status: "off" } | { status: "error" } | { status: "ok"; days: CoverageDay[] };
@@ -130,7 +132,7 @@ function RangeCard({ underlying, day, expiry }: { underlying: string; day: Cover
           <div className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 text-t12 text-fg-muted">
             <span>{hhmm(reply.from?.captured_at)} → {hhmm(reply.to?.captured_at)} IST{[usedNote(reply.start, reply.from), usedNote(reply.end, reply.to)].some(Boolean) ? " (newest readings at or before the times picked)" : ""}</span>
             {reply.to?.spot != null && <span>{underlying} {formatPrice(reply.to.spot)}</span>}
-            {reply.totals && <span>Total: call <b className={tone(reply.totals.ce_change)}>{formatCountChange(reply.totals.ce_change)}</b> · put <b className={tone(reply.totals.pe_change)}>{formatCountChange(reply.totals.pe_change)}</b></span>}
+            {reply.totals && <span>Total: call <b className={tone(reply.totals.ce_change)}>{formatLakhsChange(reply.totals.ce_change)}</b> · put <b className={tone(reply.totals.pe_change)}>{formatLakhsChange(reply.totals.pe_change)}</b></span>}
             <span className="ml-auto inline-flex gap-space-1">
               {AROUND.map((a) => <button key={a} type="button" aria-pressed={around === a} className={chip(around === a)} onClick={() => setAround(a)}>{a ? `±${a}` : "All"}</button>)}
             </span>
@@ -139,28 +141,29 @@ function RangeCard({ underlying, day, expiry }: { underlying: string; day: Cover
             <table className="w-full min-w-[22rem] border-collapse text-t13" data-oi-range-table>
               <thead>
                 <tr className="border-b border-subtle text-t12 text-fg-muted">
-                  <th className={cx(cell, "font-medium")}>Call OI</th>
+                  <th className={cx(STICKY, "bg-surface-1 text-left font-medium")}>Strike</th>
                   <th className={cx(cell, "font-medium")}>Call chg</th>
-                  <th className="px-space-2 py-space-1 text-center font-medium">Strike</th>
                   <th className={cx(cell, "font-medium")}>Put chg</th>
-                  <th className={cx(cell, "font-medium")}>Put OI</th>
                   <th className={cx(cell, "font-medium")}>Put − call</th>
+                  <th className={cx(cell, "font-medium")}>Call OI</th>
+                  <th className={cx(cell, "font-medium")}>Put OI</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.strike} data-oi-range-strike={r.strike} className={cx("border-b border-subtle last:border-b-0", r.strike === reply.atm && "bg-surface-2")}>
-                    <td className={cx(cell, "text-fg-muted")}>{formatCount(r.ce_to)}</td>
-                    <td className={cx(cell, tone(r.ce_change))}>{formatCountChange(r.ce_change)}</td>
-                    <td className="px-space-2 py-space-1 text-center font-tabular font-medium text-fg">{r.strike.toLocaleString("en-IN")}</td>
-                    <td className={cx(cell, tone(r.pe_change))}>{formatCountChange(r.pe_change)}</td>
-                    <td className={cx(cell, "text-fg-muted")}>{formatCount(r.pe_to)}</td>
-                    <td className={cx(cell, tone(r.diff))}>{formatCountChange(r.diff)}</td>
+                    <td className={cx(STICKY, "font-medium text-fg", r.strike === reply.atm ? "bg-surface-2" : "bg-surface-1")}>{r.strike.toLocaleString("en-IN")}</td>
+                    <td className={cx(cell, tone(r.ce_change))}>{formatLakhsChange(r.ce_change)}</td>
+                    <td className={cx(cell, tone(r.pe_change))}>{formatLakhsChange(r.pe_change)}</td>
+                    <td className={cx(cell, tone(r.diff))}>{formatLakhsChange(r.diff)}</td>
+                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.ce_to)}</td>
+                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.pe_to)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-t12 text-fg-muted sm:hidden" data-scroll-hint>Swipe the table sideways for call and put OI →</p>
         </div>
       )}
     </section>
@@ -224,35 +227,42 @@ function ReplayCard({ underlying, day, expiry }: { underlying: string; day: stri
             <table className="w-full min-w-[22rem] border-collapse text-t13" data-oi-replay-table>
               <thead>
                 <tr className="border-b border-subtle text-t12 text-fg-muted">
-                  <th className={cx(cell, "font-medium")}>Call chg</th>
+                  <th className={cx(STICKY, "bg-surface-1 text-left font-medium")}>Strike</th>
                   <th className={cx(cell, "font-medium")}>Call OI</th>
-                  <th className="px-space-2 py-space-1 text-center font-medium">Strike</th>
-                  <th className="px-space-2 py-space-1 text-left font-medium">Put OI</th>
+                  <th className={cx(cell, "font-medium")}>Call chg</th>
+                  <th className={cx(cell, "font-medium")}>Put OI</th>
                   <th className={cx(cell, "font-medium")}>Put chg</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.strike} className="border-b border-subtle last:border-b-0" data-oi-replay-strike={r.strike}>
-                    <td className={cx(cell, tone(r.ceChange))}>{formatCountChange(r.ceChange)}</td>
-                    <td className="relative min-w-[6rem] px-space-2 py-space-1 text-right font-tabular text-fg">
-                      <span aria-hidden className="absolute inset-y-1 right-0 rounded-l bg-oi-call opacity-30" style={{ width: bar(r.ce) }} />
-                      <span className="relative">{formatCount(r.ce)}</span>
-                    </td>
-                    <td className="px-space-2 py-space-1 text-center font-tabular font-medium text-fg">{r.strike.toLocaleString("en-IN")}</td>
-                    <td className="relative min-w-[6rem] px-space-2 py-space-1 text-left font-tabular text-fg">
-                      <span aria-hidden className="absolute inset-y-1 left-0 rounded-r bg-oi-put opacity-30" style={{ width: bar(r.pe) }} />
-                      <span className="relative">{formatCount(r.pe)}</span>
-                    </td>
-                    <td className={cx(cell, tone(r.peChange))}>{formatCountChange(r.peChange)}</td>
+                    <td className={cx(STICKY, "bg-surface-1 font-medium text-fg")}>{r.strike.toLocaleString("en-IN")}</td>
+                    <BarCell value={r.ce} width={bar(r.ce)} fill="bg-oi-call" />
+                    <td className={cx(cell, tone(r.ceChange))}>{formatLakhsChange(r.ceChange)}</td>
+                    <BarCell value={r.pe} width={bar(r.pe)} fill="bg-oi-put" />
+                    <td className={cx(cell, tone(r.peChange))}>{formatLakhsChange(r.peChange)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-t12 text-fg-muted sm:hidden" data-scroll-hint>Swipe the table sideways for more →</p>
           <p className="text-t12 text-fg-muted">Change since the day's first reading ({hhmm(reply.frames[0].captured_at)}). Strikes near each reading's ATM.</p>
         </div>
       )}
     </section>
+  );
+}
+
+/** OI as a readable number with a thin bar UNDER it (never behind the text), scaled to the day's largest OI. */
+function BarCell({ value, width, fill }: { value: number | null; width: string; fill: string }) {
+  return (
+    <td className="min-w-[5.5rem] px-space-2 py-space-1 text-right font-tabular text-fg">
+      <span className="block">{formatLakhs(value)}</span>
+      <span aria-hidden className="mt-0.5 block h-1 w-full rounded bg-surface-2">
+        <span className={cx("ml-auto block h-1 rounded", fill)} style={{ width }} />
+      </span>
+    </td>
   );
 }

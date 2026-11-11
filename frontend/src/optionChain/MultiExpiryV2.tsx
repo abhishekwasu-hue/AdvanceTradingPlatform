@@ -3,10 +3,10 @@ import { api } from "../api/client";
 import { eodApi } from "../api/eod";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { cx } from "../components/primitives/cx";
-import { EMPTY, formatCount, formatCountChange, formatDateIST, formatNumber, formatTimeIST } from "../ui/format";
+import { EMPTY, formatDateIST, formatNumber, formatTimeIST } from "../ui/format";
 import { useNoBroker } from "../ui/noBroker";
 import {
-  emptyColumn, eodColumn, historyApi, liveColumn, pickExpiries, storedColumn, storedIsCurrent, type ExpiryColumn, type ExpirySummary,
+  emptyColumn, eodColumn, formatLakhs, formatLakhsChange, historyApi, liveColumn, pickExpiries, storedColumn, storedIsCurrent, type ExpiryColumn, type ExpirySummary,
 } from "./history";
 
 /**
@@ -20,7 +20,7 @@ const CARD = "min-w-0 rounded-panel border border-subtle bg-surface-1 p-space-3 
 const REFRESH_MS = 60_000;
 const tone = (v: number | null) => (v === null || v === 0 ? "" : v > 0 ? "text-up" : "text-down");
 
-const SOURCE: Record<string, string> = { stored: "Your recorded chain", live: "Your broker, live", last_close: "Last close" };
+const SOURCE: Record<string, string> = { stored: "Recorded", live: "Live", last_close: "Last close" };
 
 async function readColumns(underlying: string, noBroker: boolean, marketOpen: boolean): Promise<ExpiryColumn[]> {
   const list = pickExpiries((await api.optionChainExpiries(underlying)).expiries);
@@ -73,14 +73,14 @@ export default function MultiExpiryV2({ underlying }: { underlying: string }) {
 /** The table for columns already in hand (pure) - tests render it directly. */
 export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
   const rows: { key: string; label: string; cell: (c: ExpiryColumn) => { text: string; className?: string } }[] = [
-    { key: "call_oi", label: "Call OI", cell: (c) => ({ text: formatCount(c.totalCall) }) },
-    { key: "put_oi", label: "Put OI", cell: (c) => ({ text: formatCount(c.totalPut) }) },
-    { key: "call_chg", label: "Call OI change", cell: (c) => ({ text: formatCountChange(c.callChange), className: tone(c.callChange) }) },
-    { key: "put_chg", label: "Put OI change", cell: (c) => ({ text: formatCountChange(c.putChange), className: tone(c.putChange) }) },
+    { key: "call_oi", label: "Call OI", cell: (c) => ({ text: formatLakhs(c.totalCall) }) },
+    { key: "put_oi", label: "Put OI", cell: (c) => ({ text: formatLakhs(c.totalPut) }) },
+    { key: "call_chg", label: "Call OI chg", cell: (c) => ({ text: formatLakhsChange(c.callChange), className: tone(c.callChange) }) },
+    { key: "put_chg", label: "Put OI chg", cell: (c) => ({ text: formatLakhsChange(c.putChange), className: tone(c.putChange) }) },
     { key: "pcr", label: "PCR (OI)", cell: (c) => ({ text: c.pcr === null ? EMPTY : formatNumber(c.pcr, 2) }) },
     { key: "max_pain", label: "Max pain", cell: (c) => ({ text: c.maxPain === null ? EMPTY : c.maxPain.toLocaleString("en-IN") }) },
     { key: "atm_iv", label: "ATM IV", cell: (c) => ({ text: c.atmIv === null ? EMPTY : `${formatNumber(c.atmIv, 1)}%` }) },
-    { key: "dte", label: "Days to expiry", cell: (c) => ({ text: c.dte === null ? EMPTY : String(c.dte) }) },
+    { key: "dte", label: "Days left", cell: (c) => ({ text: c.dte === null ? EMPTY : String(c.dte) }) },
   ];
   const cell = "whitespace-nowrap px-space-2 py-space-1 text-right font-tabular";
   return (
@@ -101,12 +101,12 @@ export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.key} className="border-b border-subtle last:border-b-0" data-multi-expiry-row={r.key}>
-                <th scope="row" className="sticky left-0 bg-surface-1 px-space-2 py-space-1 text-left text-t12 font-medium text-fg-muted">{r.label}</th>
-                {cols.map((c) => { const v = r.cell(c); return <td key={c.expiry} className={cx(cell, "text-fg", v.className)}>{v.text}</td>; })}
+                <th scope="row" className="sticky left-0 whitespace-nowrap bg-surface-1 px-space-2 py-space-1 text-left text-t12 font-medium text-fg-muted">{r.label}</th>
+                {cols.map((c) => { const v = r.cell(c); return <td key={c.expiry} className={cx(cell, v.className || "text-fg")} data-tone={v.className || "none"}>{v.text}</td>; })}
               </tr>
             ))}
             <tr data-multi-expiry-row="source">
-              <th scope="row" className="sticky left-0 bg-surface-1 px-space-2 py-space-1 text-left text-t12 font-medium text-fg-muted">From</th>
+              <th scope="row" className="sticky left-0 whitespace-nowrap bg-surface-1 px-space-2 py-space-1 text-left text-t12 font-medium text-fg-muted">From</th>
               {cols.map((c) => (
                 <td key={c.expiry} className={cx(cell, "text-t12 text-fg-muted")} data-source={c.source ?? "none"}>
                   {c.source ? SOURCE[c.source] : "Not available"}
@@ -117,7 +117,7 @@ export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
           </tbody>
         </table>
       </div>
-      <p className="text-t12 text-fg-muted">Whole chain per expiry. OI change: since the day's first reading (recorded), or as the chain table shows it (live).</p>
+      <p className="text-t12 text-fg-muted">Whole chain per expiry. Live: your broker; recorded: your stored readings. OI change: since the day's first reading (recorded), or as the chain table shows it (live).</p>
     </div>
   );
 }

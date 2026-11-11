@@ -6,13 +6,34 @@ import pageSource from "../chart/ChartsPageV2.tsx?raw";
 import viewSource from "./OiViewV2.tsx?raw";
 import { optionsMoveLayer, optionsMoveText } from "./expectedMoveLayer";
 import {
-  clampFrame, daysToExpiryClose, eodColumn, expectedMove, liveColumn, maxPainOf, nextFrame, pickExpiries, pickerTime, rangeNote, replayRows,
+  clampFrame, daysToExpiryClose, formatLakhs, formatLakhsChange, eodColumn, expectedMove, liveColumn, maxPainOf, nextFrame, pickExpiries, pickerTime, rangeNote, replayRows,
   replayScale, rowsAround, storedColumn, storedIsCurrent, straddleOf, type ExpirySummary, type RangeReply, type ReplayReply,
 } from "./history";
 import { ExpiryTable } from "./MultiExpiryV2";
 import OiThresholdAlertsV2, { ruleOf, withType } from "./OiThresholdAlertsV2";
 import type { LiveChain } from "./types";
 import type { OiAlertSettings } from "../oi/types";
+import { alertStateWords } from "../oi/format";
+
+describe("M96 N1 follow-up: OI always in lakhs, 2 decimals (owner Q3)", () => {
+  it("formats every size the same way", () => {
+    expect(formatLakhs(61307)).toBe("0.61 L");
+    expect(formatLakhs(13_800_000)).toBe("138.00 L");
+    expect(formatLakhs(7_260_000)).toBe("72.60 L");
+    expect(formatLakhs(null)).toBe("–");
+    expect(formatLakhsChange(61307)).toBe("+0.61 L");
+    expect(formatLakhsChange(-170_000)).toBe("−1.70 L");
+    expect(formatLakhsChange(100)).toBe("0.00 L");
+  });
+
+  it("words the threshold alerts' states plainly in the alert log", () => {
+    expect(alertStateWords("STRIKE_OI_CHANGE", "CE 24500 reached 500000")).toBe("Call 24,500 OI change reached 5.00 L");
+    expect(alertStateWords("STRIKE_OI_CHANGE", "PE 24500 reached 2.5e+06")).toBe("Put 24,500 OI change reached 25.00 L");
+    expect(alertStateWords("STRIKE_OI_CHANGE", "412000")).toBe("OI change 4.12 L");
+    expect(alertStateWords("PCR_CROSS", "above 1.2")).toBe("PCR above 1.2");
+    expect(alertStateWords("PCR_CROSS", "1.05")).toBe("PCR 1.05");
+  });
+});
 
 const leg = (oi: number | null, ltp: number | null, oiChange: number | null = null) => ({
   oi, oi_change: oiChange, ltp, iv: null, volume: null, bid: null, ask: null, delta: null, gamma: null, theta: null, vega: null });
@@ -114,8 +135,11 @@ describe("M96 N1: expiries side by side", () => {
     expect(html).toContain('data-multi-expiry-col="2026-03-12"');
     expect(html).toContain("Monthly");
     expect(html).toContain('data-source="stored"');
-    expect(html).toContain("Your broker, live");
+    expect(html).toContain("Live");
     expect(html).toContain("18.5%");
+    expect(html).toContain("+0.01 L");                                         // OI in lakhs, never "1,200"
+    expect(html).toMatch(/text-down"[^>]*data-tone="text-down">−0.00 L|data-tone="text-down"/);   // down = red, not overridden
+    expect(html).not.toMatch(/text-fg text-down|text-down text-fg/);
     expect(html).not.toMatch(/\b(buy|sell|target|bullish|bearish)\b/i);
   });
 });

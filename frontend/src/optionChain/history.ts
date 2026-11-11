@@ -46,6 +46,22 @@ export interface ExpirySummary extends ReadingMeta {
 }
 export interface ExpiriesReply { underlying: string; day: string; at: string; expiries: ExpirySummary[] }
 
+// ---------------------------------------------------------------- OI units (owner Q3: always lakhs, 2 decimals)
+// TODO(dedup): PR #999 adds the shared lakhs formatter to src/ui/format.ts; switch to it once merged (same output).
+const LAKH = 1e5;
+const MINUS_SIGN = "−";
+/** OI / OI change / volume in lakhs, 2 decimals: 61,307 -> "0.61 L", 1.38 crore -> "138.00 L"; missing -> "–". */
+export function formatLakhs(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "–";
+  const text = (Math.abs(v) / LAKH).toFixed(2);
+  return `${v < 0 && text !== "0.00" ? MINUS_SIGN : ""}${text} L`;
+}
+/** A change in lakhs, always signed when not zero: "+0.61 L", "−1.70 L", "0.00 L". */
+export function formatLakhsChange(v: number | null | undefined): string {
+  const text = formatLakhs(v);
+  return v !== null && v !== undefined && v > 0 && text !== "0.00 L" ? `+${text}` : text;
+}
+
 const q = (o: Record<string, string | number>) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");
 
 export const historyApi = {

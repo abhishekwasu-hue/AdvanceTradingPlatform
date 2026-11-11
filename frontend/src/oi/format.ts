@@ -53,7 +53,29 @@ export function alertStateWords(alertType: string, state: string | null | undefi
   if (alertType === "DIRECTION_CHANGE") return directionWords(state);
   if (alertType === "STABLE_FLIP" || alertType === "STRENGTH_CHANGE") return leadWords(state);
   if (alertType === "PCR_BAND") return pcrBandWords(state);
+  if (alertType === "STRIKE_OI_CHANGE") return strikeOiWords(state);
+  if (alertType === "PCR_CROSS") return pcrCrossWords(state);
   return state;
+}
+
+/** OI in lakhs, 2 decimals (owner Q3). TODO(dedup): the shared lakhs formatter of PR #999 in src/ui/format.ts. */
+function lakhs(v: number): string {
+  const text = (Math.abs(v) / 1e5).toFixed(2);
+  return `${v < 0 && text !== "0.00" ? "−" : ""}${text} L`;
+}
+
+/** M96 N1: "CE 24500 reached 500000" -> "Call 24,500 OI change reached 5.00 L"; the old state (the change before) "412000" -> "4.12 L". */
+function strikeOiWords(state: string): string {
+  const m = /^(CE|PE) (\d+(?:\.\d+)?) reached (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)$/i.exec(state);
+  if (m) return `${m[1].toUpperCase() === "CE" ? "Call" : "Put"} ${Number(m[2]).toLocaleString("en-IN")} OI change reached ${lakhs(Number(m[3]))}`;
+  const n = Number(state);
+  return Number.isFinite(n) ? `OI change ${lakhs(n)}` : state;
+}
+
+/** M96 N1: "above 1.2" -> "PCR above 1.2"; the old state "1.05" -> "PCR 1.05". */
+function pcrCrossWords(state: string): string {
+  if (/^(above|below) /.test(state)) return `PCR ${state}`;
+  return Number.isFinite(Number(state)) ? `PCR ${state}` : state;
 }
 
 /** The option-chain analysis' bias (app/option_chain/analysis.py: BULLISH only when PCR > 1.2 AND put OI builds while

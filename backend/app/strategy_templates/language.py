@@ -151,8 +151,8 @@ TOKENS: Dict[str, str] = {
     "previous_day_high_rejected": ("the market was turned away from the previous day's high and the close went below the"
                                    " bar before on the {timeframe} chart"),
     # M97 family I "Supply & Demand" (I1 / I2): structure words only - no price, no number, no instruction
-    "demand_zone_reached": "the low came back to the near line of a fresh demand zone on the {timeframe} chart",
-    "supply_zone_reached": "the high came back to the near line of a fresh supply zone on the {timeframe} chart",
+    "demand_zone_reached": "a demand zone on the {timeframe} chart was reached, the way the settings name",
+    "supply_zone_reached": "a supply zone on the {timeframe} chart was reached, the way the settings name",
     # M94 family H "Intraday" (H1-H5): structure words only - no price, no number, no instruction
     "fallen_angel_broken_upward": ("after an open above the previous close, a fall from the session high and a tight base, the close"
                                    " broke above the base on the {timeframe} chart"),

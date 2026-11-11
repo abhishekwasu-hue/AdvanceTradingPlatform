@@ -8,6 +8,10 @@
   run asks for it.
 * Any list and any timeframe: a scanner opens on the daily timeframe; the builder's timeframe and the universe are his
   to change, and the run route reads the store first for closed bars, as for every screen.
+* M99 P1: the zone kinds (base / swing extreme / both, the two-candle engulfing zone), the swap level and five more
+  scanners - zone entry by type, swap level first return, compression into a zone, odds score at least the user's
+  value, zone with a higher-timeframe zone - over the shared evaluation (app/price_action/sd_odds.py); the odds
+  settings are $parameters with reference values too.
 * Signals only (ADR-0006): a scanner lists matches; nothing here places, changes or blocks an order. No buy / sell /
   target / stop wording in names or cards (the taxonomy lint checks it). Every card carries FOOTER.
 """
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.price_action import sd_odds as so
 from app.price_action import sd_zones as sd
 from app.screener import taxonomy as tx
 from app.screener.intraday import FOOTER, NOT_SET, REF_LABEL, Param, Scanner
@@ -24,7 +29,7 @@ SOURCE = "supply_demand"
 FLAG = SD_FLAG
 ALSO: tuple[str, ...] = ()
 BASE_TF = "1d"
-FORMATION_CHOICES: tuple[str, ...] = (*sd.FORMATIONS, "any")
+FORMATION_CHOICES: tuple[str, ...] = (*sd.ALL_FORMATIONS, "any")
 
 # The detector's settings as $parameters, in sd_zones.SETTINGS_TABLE order (tests check the names, values and order).
 _SETTING_DOCS: dict[str, str] = {
@@ -38,6 +43,25 @@ _SETTING_DOCS: dict[str, str] = {
     "out_ref": "What the leg-out is measured against: average (the average range) or atr.",
     "edge": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
     "skip_flat_bars": "On: a flat candle (high equals low) is never counted as a base candle.",
+    "kind": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+    "swing_left": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+    "confirm_within": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+    "engulf": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+    "swap": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+    "swap_mult": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+}
+_ODDS_DOCS: dict[str, str] = {
+    "confirm_bars": "A confirmation candle counts within this many candles from the first touch.",
+    "confirm_body_pct": "A confirmation candle's body is at least this percent of its range.",
+    "comp_bars": "Compression: the candles before the touch that are read.",
+    "comp_steps": "Compression: at least this many of them step towards the zone.",
+    "comp_mult": "Compression: none of them is wider than this multiple of the average range.",
+    "strong_out_mult": "Score: a departure of this many average ranges counts as full strength.",
+    "w_fresh": "Score weight of freshness (0 leaves it out).",
+    "w_leg_out": "Score weight of the departure strength (0 leaves it out).",
+    "w_base_time": "Score weight of a short time in the base (0 leaves it out).",
+    "w_htf": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+    "w_compression": "Score weight of a compressed approach (0 leaves it out).",
 }
 _ATP_DEFAULT = {"out_ref"}          # the function default, not a value from the study (M97-Q2 lists the others)
 
@@ -48,13 +72,25 @@ def _settings() -> tuple[Param, ...]:
 
 SETTINGS = _settings()
 KWARGS = ", ".join(f"{p.name}=${p.name}" for p in SETTINGS)
+ODDS = tuple(Param(name, ref, _ODDS_DOCS[name], True) for name, _, ref, _ in so.ODDS_TABLE)
+ODDS_KWARGS = ", ".join(f"{p.name}=${p.name}" for p in ODDS)
+HTF = Param("htf", "none", "A higher timeframe whose closed candles' zones are read (none: no higher timeframe).")
 
 
-_DEMAND, _SUPPLY, _FRESH = '"demand"', '"supply"', '"fresh"'
+_DEMAND, _SUPPLY, _FRESH, _BREAK_RETEST = '"demand"', '"supply"', '"fresh"', '"break_retest"'
 
 
 def _call(name: str, *args: str) -> str:
     return f"{name}({', '.join((*args, KWARGS))})"
+
+
+def _odds_call(name: str, *args: str) -> str:
+    return f"{name}({', '.join((*args, KWARGS, ODDS_KWARGS, 'htf=$htf'))})"
+
+
+def _with(params: tuple[Param, ...], **values: Any) -> tuple[Param, ...]:
+    """The settings with some values changed for one scanner (still his to edit)."""
+    return tuple(Param(p.name, values[p.name], p.doc, p.ref) if p.name in values else p for p in params)
 
 
 Z1 = Scanner(
@@ -71,10 +107,12 @@ Z2 = Scanner(
 
 Z3 = Scanner(
     "supply_demand.zone_formed", "New zone formed",
-    "A leg-out candle closes after a small-candle base, forming a new zone of the chosen formation.",
+    "A new zone of the chosen formation is known: a leg-out after a small-candle base, a swing zone's confirming candle,"
+    " or a strong break (swap).",
     _call("SDZoneFormed", "$formation"),
     BASE_TF,
-    (Param("formation", "any", "DBR, RBR (demand), RBD, DBD (supply) or any."), *SETTINGS))
+    (Param("formation", "any", "DBR, RBR (demand), RBD, DBD (supply), SWING, ENGULF (swing zones), SWAP (swap levels) or"
+                                    " any."), *SETTINGS))
 
 Z4 = Scanner(
     "supply_demand.zone_violated", "Zone violated",
@@ -89,7 +127,44 @@ Z5 = Scanner(
     BASE_TF,
     (Param("within_pct", None, "Distance from the close to the zone's near line, in percent of the close."), *SETTINGS))
 
-SCANNERS: tuple[Scanner, ...] = (Z1, Z2, Z3, Z4, Z5)
+# M99 P1
+Z6 = Scanner(
+    "supply_demand.zone_reached", "Zone reached your way",
+    "A zone is reached your way: the first touch of a fresh zone, a confirmation candle back outside its near line, or"
+    " the first return to a broken zone.",
+    f"{_odds_call('SDZoneEntry', _DEMAND, '$entry')} OR {_odds_call('SDZoneEntry', _SUPPLY, '$entry')}",
+    BASE_TF,
+    (Param("entry", "touch", "touch, confirm or break_retest (break_retest reads swap levels: turn swap on)."), *SETTINGS, *ODDS, HTF))
+
+Z7 = Scanner(
+    "supply_demand.swap_retest", "Swap level first return",
+    "A zone broken by a strong candle is now the other side; price comes back to it for the first time.",
+    f"{_odds_call('SDZoneEntry', _DEMAND, _BREAK_RETEST)} OR {_odds_call('SDZoneEntry', _SUPPLY, _BREAK_RETEST)}",
+    BASE_TF, (*_with(SETTINGS, swap=True), *ODDS, HTF))
+
+Z8 = Scanner(
+    "supply_demand.compression", "Compression into a zone",
+    "Price reaches a live zone after stepping towards it in small candles (higher lows into supply, lower highs into"
+    " demand).",
+    f"{_odds_call('SDZoneCompression', _DEMAND)} OR {_odds_call('SDZoneCompression', _SUPPLY)}",
+    BASE_TF, (*SETTINGS, *ODDS, HTF))
+
+Z9 = Scanner(
+    "supply_demand.zone_score", "Zone odds score at least",
+    "The nearest fresh demand or supply zone has an odds score (0-100, its parts weighted by you) of at least your value.",
+    f"{_odds_call('SDZoneScore', _DEMAND, _FRESH)} >= $min_score OR {_odds_call('SDZoneScore', _SUPPLY, _FRESH)} >= $min_score",
+    BASE_TF,
+    (Param("min_score", None, "The lowest score listed (0-100)."), *SETTINGS, *ODDS, HTF))
+
+Z10 = Scanner(
+    "supply_demand.htf_with", "Zone with a higher-timeframe zone",
+    "The nearest fresh demand or supply zone overlaps a live zone of the same side on your higher timeframe (its closed"
+    " candles only; the zones stay separate).",
+    f"{_odds_call('SDZoneHtfWith', _DEMAND, _FRESH)} OR {_odds_call('SDZoneHtfWith', _SUPPLY, _FRESH)}",
+    BASE_TF,
+    (*SETTINGS, *ODDS, Param("htf", "1w", "The higher timeframe whose closed candles' zones are read (above the scan's own).")))
+
+SCANNERS: tuple[Scanner, ...] = (Z1, Z2, Z3, Z4, Z5, Z6, Z7, Z8, Z9, Z10)
 BY_ID: dict[str, Scanner] = {s.id: s for s in SCANNERS}
 
 
@@ -115,7 +190,7 @@ def taxonomy_sample() -> dict[str, Any]:
     return tx.payload(tx.load(), hidden_sources=hidden, hidden_ids=tx.default_hidden_ids())
 
 
-__all__ = ["SOURCE", "FLAG", "ALSO", "BASE_TF", "FORMATION_CHOICES", "SETTINGS", "KWARGS", "SCANNERS", "BY_ID", "scanner",
+__all__ = ["SOURCE", "FLAG", "ALSO", "BASE_TF", "FORMATION_CHOICES", "SETTINGS", "KWARGS", "ODDS", "ODDS_KWARGS", "HTF", "SCANNERS", "BY_ID", "scanner",
            "payload", "taxonomy_sample"]
 
 

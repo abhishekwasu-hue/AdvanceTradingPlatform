@@ -60,7 +60,7 @@ ZONE_EDGE_SPARSE_SERIES: Tuple[str, ...] = ("SwingZoneEdge",)
 AREA_GATE_SPARSE_SERIES: Tuple[str, ...] = ("AreaGateRef",)
 # M97 PR-3 (family I): a Supply & Demand zone's line is missing while no fresh zone of that side exists - so an upward idea
 # never waits for the first supply zone (its optional target / reward:risk read) before its own signals start
-SD_SPARSE_SERIES: tuple[str, ...] = ("SDZoneEdge",)
+SD_SPARSE_SERIES: tuple[str, ...] = ("SDZoneEdge", "SDZoneEntryRef", "SDZoneEntryScore")   # M99 P1: the entered zone, entry bars only
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES
                                      + AREA_GATE_SPARSE_SERIES + SD_SPARSE_SERIES)
 

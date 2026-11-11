@@ -690,6 +690,14 @@ class _Eval:
             "SDZoneFormed": lambda: _sd(f, "formed", _text(0, "any"), "", gate_settings()),
             "SDZoneViolated": lambda: _sd(f, "violated", _text(0, "demand"), "", gate_settings()),
             "SDZoneEdge": lambda: _sd(f, "edge", _text(0, "demand"), _text(1, "proximal"), gate_settings()),
+            # M99 P1 (flag sd_pack): entry types, the odds score, compression, the higher-timeframe tag (app/price_action/sd_odds.py)
+            "SDZoneEntry": lambda: _sd_odds(self, f, tf, "entry", _text(0, "demand"), _text(1, "touch"), "", gate_settings()),
+            "SDZoneEntryRef": lambda: _sd_odds(self, f, tf, "entry_ref", _text(0, "demand"), _text(2, "touch"), _text(1, "distal"),
+                                               gate_settings()),
+            "SDZoneEntryScore": lambda: _sd_odds(self, f, tf, "entry_ref", _text(0, "demand"), _text(1, "touch"), "score", gate_settings()),
+            "SDZoneScore": lambda: _sd_odds(self, f, tf, "score", _text(0, "demand"), _text(1, "any"), "", gate_settings()),
+            "SDZoneCompression": lambda: _sd_odds(self, f, tf, "compression", _text(0, "demand"), "", "", gate_settings()),
+            "SDZoneHtfWith": lambda: _sd_odds(self, f, tf, "htf_with", _text(0, "demand"), _text(1, "any"), "", gate_settings()),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
                 "retest_of": _text(2, _bkd("retest_of")), "retest_max_bars": num(3, _bkd("retest_max_bars")),
@@ -1400,6 +1408,32 @@ def _sd(f: pd.DataFrame, what: str, arg: str, extra: str, settings: dict[str, An
         return pd.Series(values, index=f.index, dtype=float)
     flags = series.formed(arg) if what == "formed" else series.entered(arg) if what == "enter" else series.violated(arg)
     return pd.Series(flags, index=f.index, dtype=bool)
+
+
+def _sd_odds(ev: Any, f: pd.DataFrame, tf: str, what: str, side: str, arg: str, line: str, settings: dict[str, Any]) -> pd.Series:
+    """M99 P1: the shared Supply & Demand evaluation (sd_odds.view) - the same zones as the M97 functions, plus the
+    higher timeframe's zones from its own CLOSED bars (`htf`, aligned by close time as every @tf read is)."""
+    from app.price_action import sd_odds
+    try:
+        s, o, htf = sd_odds.split_settings(settings)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    ctx = None
+    if htf != sd_odds.NO_HTF:
+        if n.TF_MINUTES[htf] <= n.TF_MINUTES[tf]:
+            raise ScreenRuntimeError(f"htf {htf} must be a higher timeframe than {tf}")
+        ns = lambda x: pd.DatetimeIndex(x).asi8                                      # noqa: E731
+        ctx = sd_odds.htf_for(htf, ns(ev.closes(tf)), ev.frame, lambda t: ns(ev.closes(t)), s)
+    v = sd_odds.view(f, s, o, ctx)
+    if what == "entry":
+        return pd.Series(v.entries(side, arg)[0], index=f.index, dtype=bool)
+    if what == "entry_ref":
+        return pd.Series(v.entry_ref(side, arg, line), index=f.index, dtype=float)
+    if what == "score":
+        return pd.Series(v.nearest_score(side, arg), index=f.index, dtype=float)
+    if what == "compression":
+        return pd.Series(v.compression_hits(side), index=f.index, dtype=bool)
+    return pd.Series(v.htf_with(side, arg), index=f.index, dtype=bool)
 
 
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:

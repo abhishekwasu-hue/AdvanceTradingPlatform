@@ -50,10 +50,10 @@ describe("saved in the server chart prefs", () => {
     expect(cleanSdOverlay(null)).toEqual(DEFAULT_SD_OVERLAY);
     expect(cleanSdOverlay({ style: "daytrader", timeframes: ["7m", "1d", "1d", "5m", "1h", "2h", "1w"], presets: { swing: ["1d"], nope: ["1d"], scalper: [] },
                             show_violated: "yes" }))
-      .toEqual({ style: null, timeframes: ["5m", "1h", "2h", "1d"], presets: { swing: ["1d"] }, show_violated: false });
+      .toEqual({ style: null, timeframes: ["5m", "1h", "2h", "1d"], presets: { swing: ["1d"] }, show_violated: false, kind: "base", swap: false });
     const prefs = cleanPrefs({ sd_zones: true, sd_overlay: { style: "intraday", timeframes: ["15m", "10m"], show_violated: true } });
     expect(prefs.sd_zones).toBe(true);
-    expect(prefs.sd_overlay).toEqual({ style: "intraday", timeframes: ["10m", "15m"], presets: {}, show_violated: true });
+    expect(prefs.sd_overlay).toEqual({ style: "intraday", timeframes: ["10m", "15m"], presets: {}, show_violated: true, kind: "base", swap: false });
     const next = applyPatch(DEFAULT_CHART_PREFS, { sd_overlay: pickStyle(DEFAULT_SD_OVERLAY, "positional") as SdOverlayPrefs });
     expect(next.sd_overlay.timeframes).toEqual(["1w"]);
     expect(applyPatch(next, { sd_zones: true }).sd_overlay.timeframes).toEqual(["1w"]);      // one patch never loses the other

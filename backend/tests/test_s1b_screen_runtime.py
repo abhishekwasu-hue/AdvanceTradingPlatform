@@ -604,6 +604,17 @@ def test_m97_supply_demand_zone_functions():
     dist = _ev('SDZoneDistancePct("demand")', d)
     assert dist.iloc[formed] == pytest.approx((100.8 - 97.7) / 100.8 * 100) and np.isnan(dist.iloc[-1])
     assert _ev('SDZoneEdge("demand", "proximal", edge="body")', d).iloc[formed] == 97.3
+    # M99 P1 (the full fixtures: tests/test_m99_p1_sd.py): the entry types, the entered zone's lines and score, the odds
+    # score, compression and the higher-timeframe tag - the same zone through the shared evaluation (sd_odds)
+    assert list(np.flatnonzero(_ev('SDZoneEntry("demand", "touch")', d).to_numpy())) == [formed + 2]
+    assert not _ev('SDZoneEntry("demand", "confirm")', d).any()                 # violated before a confirmation candle
+    ref = _ev('SDZoneEntryRef("demand", "distal", "touch")', d)
+    assert ref.iloc[formed + 2] == 96.6 and ref.drop(ref.index[formed + 2]).isna().all()
+    score = _ev('SDZoneEntryScore("demand", "touch")', d)
+    assert 0 < score.iloc[formed + 2] <= 100 and score.drop(score.index[formed + 2]).isna().all()
+    near = _ev('SDZoneScore("demand")', d)
+    assert np.isfinite(near.iloc[formed]) and np.isnan(near.iloc[formed - 1]) and np.isnan(near.iloc[-1])
+    assert not _ev('SDZoneCompression("demand")', d).any() and not _ev('SDZoneHtfWith("demand", htf="15m")', d).any()
 
 
 def test_every_registry_entry_has_a_runtime_test():

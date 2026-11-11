@@ -8,7 +8,8 @@
  */
 import { cx } from "../components/primitives/cx";
 import { Combobox } from "../ui/Combobox";
-import { SD_STYLES, SD_STYLE_LABELS, SD_MAX_TIMEFRAMES, editTimeframes, pickStyle, styleTimeframes, type SdOverlayPrefs, type SdStyle } from "./sdStyles";
+import { SD_KINDS, SD_KIND_LABELS, SD_STYLES, SD_STYLE_LABELS, SD_MAX_TIMEFRAMES, editTimeframes, pickStyle, styleTimeframes, type SdKind,
+         type SdOverlayPrefs, type SdStyle } from "./sdStyles";
 import { SD_LABEL, SD_TF_SHORT, sdTimeframeOf, sdTimeframesFor, toggleSdTimeframe, type SdTimeframe } from "./sdZones";
 import type { TimeframeId } from "./timeframes";
 
@@ -56,6 +57,14 @@ export function SdZonesBar({ chartTf, shown, options, onChange, note }: SdZonesB
             onChange={(e) => onChange({ ...options, show_violated: e.target.checked })} className={cx("h-4 w-4", focus)} />
           Show violated
         </label>
+        <Combobox label="Zones" value={options.kind} options={SD_KINDS.map((k) => ({ value: k, label: SD_KIND_LABELS[k] }))}
+          dataAttrs={{ "data-sd-kind": options.kind }} onChange={(v) => onChange({ ...options, kind: v as SdKind })}
+          triggerText={SD_KIND_LABELS[options.kind]} className="w-auto" />
+        <label className="flex min-h-11 items-center gap-space-1 text-t12 text-fg md:min-h-8">
+          <input type="checkbox" checked={options.swap} data-sd-swap
+            onChange={(e) => onChange({ ...options, swap: e.target.checked })} className={cx("h-4 w-4", focus)} />
+          Swap levels
+        </label>
       </div>
       {note && <p role="status" className="mt-space-1 text-t12 text-fg-muted">{note}</p>}
       <details className="mt-space-1 text-t12 text-fg-muted">
@@ -67,6 +76,12 @@ export function SdZonesBar({ chartTf, shown, options, onChange, note }: SdZonesB
           the chips add a higher timeframe&apos;s zones (each labelled with its timeframe, fainter the higher it is). A trading style only
           picks the chips; change them and your choice is kept for that style. Up to {SD_MAX_TIMEFRAMES} timeframes at once; closed
           candles only. Tap a zone for its numbers.
+        </p>
+        <p className="mt-space-1">
+          Swing zones start at a swing high or low: the extreme candle (two when it engulfs the one before), shown once a later candle
+          closes without touching it. Swap levels: a zone broken by a strong candle stays as a zone of the other side. Each zone has a
+          score from 0 to 100 - freshness, the move out, a short base, a matching higher-timeframe zone and a compressed approach,
+          each weighted; information only, it filters nothing. All numbers are reference values - edit before use.
         </p>
       </details>
     </section>

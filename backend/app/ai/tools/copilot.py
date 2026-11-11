@@ -206,7 +206,7 @@ async def get_market_zones(ctx: ToolContext, args: _ZoneArgs) -> ToolResult:
 
 SD_OFF = "the Supply & Demand zones overlay is off on your chart"
 MAX_SD_ZONES = 6
-SD_FIELDS = ("timeframe", "side", "formation", "state", "tests", "proximal", "distal")
+SD_FIELDS = ("timeframe", "side", "formation", "state", "tests", "proximal", "distal", "kind")    # M99 P1: + kind, score
 
 
 class _SdArgs(BaseModel):
@@ -227,7 +227,8 @@ def summarise_sd(layer: dict[str, Any]) -> dict[str, Any]:
     """The zones the overlay draws, trimmed for the model: side, formation, state, tests, the proximal / distal lines and
     the timeframe - the nearest first, at most MAX_SD_ZONES (violated ones are not read)."""
     rows = (layer.get("timeframes") or [{}])[0]
-    zones = [{k: z.get(k) for k in SD_FIELDS} for z in rows.get("zones") or []][:MAX_SD_ZONES]
+    zones = [{**{k: z.get(k) for k in SD_FIELDS}, "score": (z.get("odds") or {}).get("score")}
+             for z in rows.get("zones") or []][:MAX_SD_ZONES]
     return {"symbol": layer.get("symbol"), "timeframe": rows.get("timeframe"), "as_of_bar": rows.get("as_of_bar"), "bars": rows.get("bars"),
             "reason": rows.get("reason"), "zones": zones, "settings_note": layer.get("settings_note")}
 
@@ -239,9 +240,13 @@ async def get_sd_zones(ctx: ToolContext, args: _SdArgs) -> ToolResult:
     from app.charts import sd_zones_layer as szl
     if not await sd_overlay_on(ctx):
         return ToolResult(False, None, None, "sd_zones", error=SD_OFF)
+    from app.me import prefs
+    value, _version = await prefs.read_one("chart", ctx.user, ctx.session)
+    opts = value.get("sd_overlay") or {}                     # M99 P1: the zones his overlay draws (kind, swap levels)
     key = lake_key(args.symbol)
     try:
-        layer = await szl.sd_zones_layer(symbol=key, timeframes=args.timeframe, at=None, include_violated=False, user=ctx.user,
+        layer = await szl.sd_zones_layer(symbol=key, timeframes=args.timeframe, at=None, include_violated=False,
+                                         kind=opts.get("kind", "base"), swap=bool(opts.get("swap", False)), user=ctx.user,
                                          session=ctx.session)
     except HTTPException as exc:
         return _refused("sd_zones", exc)

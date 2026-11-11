@@ -18,10 +18,12 @@ from app.platform import controls, flag_catalog, flag_state, trader_pack
 from app.price_action import sd_zones as sd
 from app.quality.lookahead import synthetic_bars
 from app.screener import compile_screen, parse, sd_gate
-from app.screener.registry import FUNCTIONS, SD_FLAG, SD_FUNCTIONS, SD_KWARGS
+from app.screener.registry import FUNCTIONS, SD_ALL_KWARGS, SD_FLAG, SD_FUNCTIONS, SD_KWARGS
 from app.screener.runtime import SymbolData, evaluate
 
 PRELUDE = 21                                    # neutral candles: range 2, body 40 % (neither a leg nor a base candle)
+
+M97_FUNCTIONS = {"SDZoneDistancePct", "SDZoneEnter", "SDZoneFormed", "SDZoneViolated", "SDZoneEdge"}
 
 
 def _neutral(level: float = 100.0) -> tuple[float, float, float, float]:
@@ -293,8 +295,8 @@ def test_settings_reference_values_bounds_and_the_registry_mirror():
             assert tuple(kwargs[name].choices) == rule
         else:
             assert kwargs[name].bounds == rule
-    for name in SD_FUNCTIONS:
-        assert FUNCTIONS[name].kwargs == SD_KWARGS and FUNCTIONS[name].timeframed
+    for name in SD_FUNCTIONS:                         # M99 P1: the odds functions take the odds settings too
+        assert FUNCTIONS[name].kwargs == (SD_KWARGS if name in M97_FUNCTIONS else SD_ALL_KWARGS) and FUNCTIONS[name].timeframed
     for bad in ({"leg_mult": 9}, {"base_max": 2.5}, {"edge": "close"}, {"nope": 1}, {"base_mult": 1.0, "leg_mult": 1.0},
                 {"avg_n": True}, {"skip_flat_bars": 1}, {"skip_flat_bars": "yes"}):
         with pytest.raises(ValueError):
@@ -326,7 +328,8 @@ def test_the_flag_is_registered_off_with_catalog_state_and_pack_entries():
     assert flag_catalog.FLAG_INFO[SD_FLAG].status == "unfinished" and flag_catalog.FLAG_GROUP[SD_FLAG] == "screen_library"
     assert "M97" in flag_catalog.FINISH[SD_FLAG] and "M97" in str(flag_state.FLAG_STATUS[SD_FLAG])
     assert SD_FLAG in trader_pack.EXCLUDED_REASONS
-    assert set(SD_FUNCTIONS) == {"SDZoneDistancePct", "SDZoneEnter", "SDZoneFormed", "SDZoneViolated", "SDZoneEdge"}
+    assert set(SD_FUNCTIONS) == M97_FUNCTIONS | {"SDZoneEntry", "SDZoneEntryRef", "SDZoneEntryScore", "SDZoneScore",
+                                                 "SDZoneCompression", "SDZoneHtfWith"}         # M99 P1
     ast = parse('SDZoneEnter("demand") AND SDZoneDistancePct("demand") < 1 AND close > open')
     assert sd_gate.flagged_calls(ast) == ["SDZoneEnter", "SDZoneDistancePct"]
     assert SD_FLAG in sd_gate.refusal(["SDZoneEnter"]) and "bar close only" in sd_gate.intrabar_refusal(["SDZoneEnter"])

@@ -27,8 +27,16 @@ export interface SdOverlayPrefs {
   /** The user's own timeframes for a style he edited (a style left out keeps its ladder). */
   presets: Partial<Record<SdStyle, SdTimeframe[]>>;
   show_violated: boolean;
+  /** M99 P1: which zones are drawn - base zones, swing-extreme zones or both (reference: base). */
+  kind: SdKind;
+  /** M99 P1: a zone broken by a strong candle stays as a zone of the other side (reference: off). */
+  swap: boolean;
 }
-export const DEFAULT_SD_OVERLAY: SdOverlayPrefs = { style: null, timeframes: null, presets: {}, show_violated: false };
+export const SD_KINDS = ["base", "swing", "both"] as const;
+export type SdKind = (typeof SD_KINDS)[number];
+export const SD_KIND_LABELS: Record<SdKind, string> = { base: "Base zones", swing: "Swing-point zones", both: "Base + swing-point" };
+export const DEFAULT_SD_OVERLAY: SdOverlayPrefs = { style: null, timeframes: null, presets: {}, show_violated: false, kind: "base", swap: false };
+const isKind = (x: unknown): x is SdKind => typeof x === "string" && (SD_KINDS as readonly string[]).includes(x);
 
 const isStyle = (x: unknown): x is SdStyle => typeof x === "string" && (SD_STYLES as readonly string[]).includes(x);
 
@@ -48,7 +56,8 @@ export function cleanSdOverlay(raw: unknown): SdOverlayPrefs {
     const tfs = cleanSdTimeframes(given[style]);
     if (tfs) presets[style] = tfs;
   }
-  return { style: isStyle(v.style) ? v.style : null, timeframes: cleanSdTimeframes(v.timeframes), presets, show_violated: v.show_violated === true };
+  return { style: isStyle(v.style) ? v.style : null, timeframes: cleanSdTimeframes(v.timeframes), presets, show_violated: v.show_violated === true,
+           kind: isKind(v.kind) ? v.kind : "base", swap: v.swap === true };
 }
 
 /** A style's timeframes: the user's own edit of it, else the ladder. */

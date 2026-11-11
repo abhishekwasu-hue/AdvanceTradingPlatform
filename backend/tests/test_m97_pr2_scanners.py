@@ -31,6 +31,10 @@ from tests.test_phase_l_ai import _owner
 
 IDS = ["supply_demand.demand_enter", "supply_demand.supply_enter", "supply_demand.zone_formed", "supply_demand.zone_violated",
        "supply_demand.near_fresh_zone"]
+# M99 P1: five more scanners (tests/test_m99_p1_sd.py)
+P1_IDS = ["supply_demand.zone_reached", "supply_demand.swap_retest", "supply_demand.compression", "supply_demand.zone_score",
+          "supply_demand.htf_with"]
+ALL_IDS = IDS + P1_IDS
 GALLERY = ("screener_v2", "screener_gallery")
 PACK = ("sd_pack",)
 WEAK_OUT = (97.1, 99.4, 97.2, 99.2)             # range 2.2 < 1.5 x the average: no zone
@@ -91,9 +95,9 @@ CASES = {
 
 # ----------------------------------------------------------------------------------------------- the five scanners
 def test_the_five_scanners():
-    assert [s.id for s in sds.SCANNERS] == IDS and set(CASES) == set(IDS)
+    assert [s.id for s in sds.SCANNERS] == ALL_IDS and set(CASES) == set(IDS)
     assert {s.base_tf for s in sds.SCANNERS} == {"1d"}
-    assert [s.unset() for s in sds.SCANNERS] == [[], [], [], [], ["within_pct"]]
+    assert [s.unset() for s in sds.SCANNERS] == [[], [], [], [], ["within_pct"], [], [], [], ["min_score"], []]
 
 
 @pytest.mark.parametrize("ident", IDS)
@@ -152,7 +156,7 @@ def test_the_detector_settings_are_his_parameters_with_reference_values():
     function default; the values and their order are sd_zones.SETTINGS_TABLE's."""
     assert [(p.name, p.value) for p in sds.SETTINGS] == [(row[0], row[2]) for row in sd.SETTINGS_TABLE]
     assert [p.name for p in sds.SETTINGS if not p.ref] == ["out_ref"]
-    for sc in sds.SCANNERS:
+    for sc in sds.SCANNERS[:5]:
         assert sc.params[-len(sds.SETTINGS):] == sds.SETTINGS
         for p in sds.SETTINGS:
             assert f"{p.name}=${p.name}" in sc.text
@@ -172,12 +176,12 @@ def test_every_scanner_is_filed_on_both_axes():
     src = tx.sources()["supply_demand"]
     assert src.flag == "sd_pack" and src.also == () and src.note == sds.FOOTER
     filed = {s.id: s for s in tx.load().screens if s.source == "supply_demand"}
-    assert list(filed) == IDS
+    assert list(filed) == ALL_IDS
     for sc in sds.SCANNERS:
         s = filed[sc.id]
         assert (s.name, s.definition, s.method) == (sc.name, sc.definition, "price_action")
     assert {i: s.tags["direction"] for i, s in filed.items()} == {
-        IDS[0]: "long", IDS[1]: "short", IDS[2]: "both", IDS[3]: "both", IDS[4]: "both"}
+        IDS[0]: "long", IDS[1]: "short", IDS[2]: "both", IDS[3]: "both", IDS[4]: "both", **{i: "both" for i in P1_IDS}}
     assert "supply_demand" in tx.default_hidden()
 
 
@@ -215,10 +219,10 @@ def test_the_gallery_leaves_them_out_while_the_flag_is_off(gallery_on):
     assert client.get("/api/screener/supply-demand", headers=headers).status_code == 503
     _set_flags(sd_pack=True)
     on = client.get("/api/screener/taxonomy", headers=headers).json()
-    assert [s["id"] for s in on["screens"] if s["source"] == "supply_demand"] == IDS
+    assert [s["id"] for s in on["screens"] if s["source"] == "supply_demand"] == ALL_IDS
     assert on["source_notes"]["supply_demand"] == sds.FOOTER
     body = client.get("/api/screener/supply-demand", headers=headers).json()
-    assert [s["id"] for s in body["scanners"]] == IDS and body["footer"] == sds.FOOTER
+    assert [s["id"] for s in body["scanners"]] == ALL_IDS and body["footer"] == sds.FOOTER
     assert body["scanners"][4]["unset"] == ["within_pct"]
 
 

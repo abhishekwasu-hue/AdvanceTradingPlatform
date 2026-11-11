@@ -14,6 +14,11 @@ GET /api/charts/layers/sd-zones?symbol=NSE:NIFTY 50&timeframes=15m,1h,1d&at=<ISO
     the detector's reference, the average or the ATR).
   * Violated zones are left out unless `include_violated=1`; per timeframe and side the zones nearest the last close
     (MAX_PER_SIDE, a display limit) - `more` counts the rest.
+M99 P1: `kind` (base / swing / both) and `swap` (0 / 1) pick the zones drawn (the user's overlay options; reference: base
+zones, no swap levels); each zone also carries its kind and its odds-enhancer score with every part and weight
+(app/price_action/sd_odds.py - the evaluation the scanners and the templates read). With two or more timeframes drawn,
+each timeframe's zones are tagged against the next higher drawn timeframe's zones ("with" / "against"), from that
+timeframe's own closed bars; the zones are never merged.
 Behind the `sd_pack` flag (off by default -> 503). Zones are price areas from past prices only - reference, never an
 order or a recommendation.
 """
@@ -34,6 +39,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.platform.controls import require_flag
+from app.price_action import sd_odds as so
 from app.price_action import sd_zones as sd
 
 router = APIRouter(prefix="/api/charts/layers", tags=["charts"])
@@ -76,11 +82,15 @@ def _num(x: float, digits: int = 4) -> float | None:
     return None if x is None or not np.isfinite(x) else round(float(x), digits)
 
 
+FORMATION_WORDS: dict[str, str] = {"SWING": "Swing", "ENGULF": "Engulf", "SWAP": "Swap"}
+
+
 def label_text(side: str, formation: str, state: str, tests: int, tf: str) -> str:
-    """"Demand · DBR · Fresh · D" - the side, the formation, the state (with the test count) and the timeframe."""
+    """"Demand · DBR · Fresh · D" - the side, the formation (M99 P1: Swing / Engulf / Swap for the new kinds), the state
+    (with the test count) and the timeframe. The odds score is in the zone's tap card (the label stays short, M75 W-1)."""
     word = "Tested" if state == sd.TESTED else state.capitalize()
     shown = f"{word} {tests}" if state == sd.TESTED else word
-    return " · ".join(("Demand" if side == sd.DEMAND else "Supply", formation, shown, SHORT.get(tf, tf)))
+    return " · ".join(("Demand" if side == sd.DEMAND else "Supply", FORMATION_WORDS.get(formation, formation), shown, SHORT.get(tf, tf)))
 
 
 def _candle(frame: pd.DataFrame, nums: dict[str, np.ndarray], times: pd.DatetimeIndex, i: int, of: str = "avg",
@@ -98,12 +108,12 @@ def _candle(frame: pd.DataFrame, nums: dict[str, np.ndarray], times: pd.Datetime
 
 
 def zone_id(tf: str, z: sd.SDZone, times: pd.DatetimeIndex) -> str:
-    raw = f"{tf}|{z.side}|{_epoch(times[z.base_start])}|{_epoch(times[z.formed])}"
+    raw = f"{tf}|{z.side}|{_epoch(times[z.base_start])}|{_epoch(times[z.formed])}" + ("" if z.kind == "base" else f"|{z.kind}")
     return f"sd-{tf}-{hashlib.sha256(raw.encode()).hexdigest()[:12]}"
 
 
 def zone_rows(frame: pd.DataFrame, tf: str, *, settings: sd.SDSettings | None = None, include_violated: bool = False,
-              per_side: int = MAX_PER_SIDE) -> dict[str, Any]:
+              per_side: int = MAX_PER_SIDE, odds: so.OddsSettings | None = None, htf: so.HtfContext | None = None) -> dict[str, Any]:
     """The zones of one timeframe's closed bars (index = bar start, oldest first), as of the last bar: each zone's state
     at that bar's close. Violated ones only with `include_violated`; per side the `per_side` zones whose proximal line is
     nearest the last close (`more`: how many were left out, `hidden_violated`: how many violated ones were hidden)."""
@@ -112,7 +122,8 @@ def zone_rows(frame: pd.DataFrame, tf: str, *, settings: sd.SDSettings | None = 
     if len(frame) < 3:
         return out
     times = pd.DatetimeIndex(frame.index)
-    zones = sd.track(frame, sd.detect(frame, s))
+    view = so.view(frame, s, odds, htf, series=sd.sd_series(frame, s))
+    zones = view.zones
     nums = sd.candle_numbers(frame, s)
     last = len(frame) - 1
     close = float(frame["close"].iloc[-1])
@@ -128,6 +139,8 @@ def zone_rows(frame: pd.DataFrame, tf: str, *, settings: sd.SDSettings | None = 
             continue
         tests = z.visits_by(last)
         base = range(z.base_start, z.base_end + 1)
+        odd = view.breakdown(z, last)
+        depart = z.depart if z.depart >= 0 else z.formed
         b_hi = float(frame["high"].iloc[z.base_start:z.base_end + 1].max())
         b_lo = float(frame["low"].iloc[z.base_start:z.base_end + 1].min())
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -142,7 +155,9 @@ def zone_rows(frame: pd.DataFrame, tf: str, *, settings: sd.SDSettings | None = 
                      "bars": [_candle(frame, nums, times, i, tf=tf) for i in base],
                      "max_body_pct": _num(float(max(nums["body_pct"][i] for i in base)), 1),
                      "max_mult": _num(max(mults), 2) if mults else None},
-            "leg_out": {**_candle(frame, nums, times, z.formed, of=out_ref, tf=tf), "of": "ATR" if s.out_ref == "atr" else "average range"},
+            "leg_out": {**_candle(frame, nums, times, depart, of=out_ref if z.kind == "base" else "avg", tf=tf),
+                        "of": "ATR" if s.out_ref == "atr" and z.kind == "base" else "average range"},
+            "kind": z.kind, "odds": odd,
             "label": label_text(z.side, z.formation, state, int(tests), tf),
         }
         rows.append((abs(close - z.proximal), row))
@@ -183,10 +198,26 @@ async def load_tf(session: AsyncSession, key: str, tf: str, when: datetime, priv
     return df, source
 
 
-def _compute(frames: list[tuple[str, pd.DataFrame, str | None]], include_violated: bool) -> list[dict[str, Any]]:
+def close_ns(df: pd.DataFrame, tf: str, exchange: str | None) -> np.ndarray:
+    """When each bar of `df` closed (int64 ns, UTC) - the ScreenQL runtime's bar_close, so a higher timeframe's zone is
+    read from the close of the candle that made it, as every @tf read is."""
+    from app.screener.runtime import bar_close
+    if not len(df):
+        return np.empty(0, dtype=np.int64)
+    return pd.DatetimeIndex(bar_close(pd.DatetimeIndex(df.index), tf, exchange)).asi8
+
+
+def _compute(frames: list[tuple[str, pd.DataFrame, str | None]], include_violated: bool, settings: sd.SDSettings | None = None,
+             exchange: str | None = None) -> list[dict[str, Any]]:
+    """Each timeframe's rows; M99 P1: tagged against the next higher drawn timeframe (its own closed bars)."""
+    s = settings or sd.SDSettings()
     out = []
-    for tf, df, source in frames:
-        rows = zone_rows(df, tf, include_violated=include_violated)
+    for i, (tf, df, source) in enumerate(frames):
+        ctx = None
+        if i + 1 < len(frames) and len(df) and len(frames[i + 1][1]) >= 3:
+            htf, hdf, _ = frames[i + 1]
+            ctx = so.htf_context(htf, sd.sd_series(hdf, s).zones, close_ns(hdf, htf, exchange), close_ns(df, tf, exchange))
+        rows = zone_rows(df, tf, include_violated=include_violated, settings=s, htf=ctx)
         out.append({**rows, "source": source, "reason": None if len(df) else NO_BARS})
     return out
 
@@ -210,6 +241,7 @@ def parse_timeframes(text: str) -> list[str]:
 @router.get("/sd-zones", dependencies=[Depends(rate_limited)])
 async def sd_zones_layer(symbol: str = Query(..., min_length=1, max_length=100), timeframes: str = Query("1d", max_length=60),
                          at: datetime | None = None, include_violated: bool = False,
+                         kind: str = Query("base", pattern="^(base|swing|both)$"), swap: bool = False,
                          user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     owner = user.id
@@ -217,9 +249,10 @@ async def sd_zones_layer(symbol: str = Query(..., min_length=1, max_length=100),
     at_utc = L._aware(at, "at")
     now = datetime.now(UTC)
     when = now.replace(second=0, microsecond=0) if at_utc is None or at_utc > now else at_utc
-    s = sd.SDSettings()
+    s = sd.settings_from({"kind": kind, "swap": swap})
     head = {"schema": SCHEMA, "symbol": symbol, "at": when.isoformat(), "note": NOTE, "include_violated": include_violated,
-            "settings": {name: getattr(s, name) for name, *_ in sd.SETTINGS_TABLE}, "settings_note": sd.REFERENCE_LABEL}
+            "settings": {name: getattr(s, name) for name, *_ in sd.SETTINGS_TABLE}, "settings_note": sd.REFERENCE_LABEL,
+            "odds_settings": so.settings_dict(so.OddsSettings())}
     from app.price_action.zones.store import normalise_key
     try:
         key: str | None = normalise_key(symbol if ":" in symbol else f"NSE:{symbol}")
@@ -236,8 +269,9 @@ async def sd_zones_layer(symbol: str = Query(..., min_length=1, max_length=100),
             frames.append((tf, df, source))
     except L.WindowTooLarge as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
-    rows = await L._in_slot(session, owner, _compute, frames, include_violated)
+    rows = await L._in_slot(session, owner, _compute, frames, include_violated, s, key.split(":", 1)[0] if ":" in key else None)
     return {**head, "symbol": key, "timeframes": rows}
 
 
-__all__ = ["router", "FLAG", "TIMEFRAMES", "BUILT_FROM", "zone_rows", "label_text", "load_tf", "built", "indexed", "parse_timeframes"]
+__all__ = ["router", "FLAG", "TIMEFRAMES", "BUILT_FROM", "zone_rows", "label_text", "load_tf", "built", "indexed", "parse_timeframes",
+           "close_ns", "FORMATION_WORDS"]

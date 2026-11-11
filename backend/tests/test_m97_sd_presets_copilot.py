@@ -48,7 +48,7 @@ def _answer(question: str, *, sd: bool, flags: dict | None = None):
 def test_the_overlay_prefs_default_off_and_the_style_ladders_are_the_owners():
     d = prefs.defaults("chart")
     assert d["sd_zones"] is False
-    assert d["sd_overlay"] == {"style": None, "timeframes": None, "presets": {}, "show_violated": False}
+    assert d["sd_overlay"] == {"style": None, "timeframes": None, "presets": {}, "show_violated": False, "kind": "base", "swap": False}
     assert prefs.SD_STYLE_TIMEFRAMES == {"investor": ("1M",), "positional": ("1w",), "swing": ("1d", "2h"), "short_term": ("1h", "30m"),
                                          "intraday": ("15m", "10m"), "scalper": ("5m", "3m")}
 
@@ -143,7 +143,7 @@ def test_the_tool_is_read_only_flagged_strict_and_reads_the_pref_on_the_server(m
     on = _run(call("2h"))
     assert on.ok and seen[-1]["timeframes"] == "2h" and seen[-1]["include_violated"] is False
     assert on.data["zones"][0] == {"timeframe": "1d", "side": "demand", "formation": "DBR", "state": "fresh", "tests": 0,
-                                   "proximal": 24310.0, "distal": 24180.5}
+                                   "proximal": 24310.0, "distal": 24180.5, "kind": None, "score": None}   # M99 P1 (a stub row)
     with pytest.raises(ValueError):
         tc._SdArgs(symbol="NIFTY", timeframe="1d", proximal=1)            # strict: nothing else is taken from the client
 

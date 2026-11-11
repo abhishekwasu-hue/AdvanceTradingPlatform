@@ -125,8 +125,8 @@ def test_every_detector_number_is_a_setting_with_the_reference_value():
         assert by[name].default == ref, name
         if by[name].type in ("int", "float"):
             assert (by[name].min, by[name].max) == rule, name
-        elif by[name].type == "bool":                                         # M98-P1 Q2: skip_flat_bars, on
-            assert rule is None and by[name].default is True, name
+        elif by[name].type == "bool":                     # M98-P1 Q2: skip_flat_bars on; M99 P1: engulf on, swap off
+            assert rule is None and by[name].default is ref, name
         else:
             assert tuple(by[name].choices) == rule, name
     assert by["buf"].default == 0.0 and by["min_rr"].default == 0.0 and by["confirm"].default == "none"
@@ -312,7 +312,7 @@ def test_family_i_is_hidden_with_the_flag_off_and_listed_with_it_on():
     assert how["schematic"] is not None and how["window_note"] == "" and how["footer"] == pages.FOOTER
     exits_line = next(ln for ln in how["lines"] if ln["key"] == "exits")["text"]
     assert "the opposing zone's near line" in exits_line
-    assert how["scanner"]["long"]["text"].startswith('SDZoneEnter("demand"')
+    assert how["scanner"]["long"]["text"].startswith('SDZoneEntry("demand", $entry')     # M99 P1: the entry type
 
 
 def test_a_family_i_strategy_id_runs_only_with_the_flag_on():

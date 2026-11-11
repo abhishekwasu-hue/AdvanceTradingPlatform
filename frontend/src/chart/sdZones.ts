@@ -16,7 +16,7 @@ import { request } from "../api/client";
 import type { BandRef } from "../charting/geometry";
 import type { ChartEngine, LayerBand, LayerData, LayerMark, LayerSegment } from "../charting/engine";
 import { formatNumber } from "../ui/format";
-import { SD_MAX_TIMEFRAMES, SD_TIMEFRAMES, type SdOverlayPrefs, type SdTimeframe } from "./sdStyles";
+import { SD_MAX_TIMEFRAMES, SD_TIMEFRAMES, type SdKind, type SdOverlayPrefs, type SdTimeframe } from "./sdStyles";
 import type { TimeframeId } from "./timeframes";
 
 export { SD_MAX_TIMEFRAMES, SD_TIMEFRAMES, type SdTimeframe };
@@ -56,13 +56,24 @@ export const SD_TF_OPACITY = [0.16, 0.1, 0.07, 0.05] as const;
 export const sdOpacity = (rank: number, violated: boolean) => (SD_TF_OPACITY[Math.min(rank, SD_TF_OPACITY.length - 1)] ?? 0.05) * (violated ? 0.4 : 1);
 
 export interface SdCandle { time: number; end?: number | null; high: number | null; low: number | null; range: number | null; body_pct: number | null; mult: number | null }
+/** M99 P1: a zone's odds-enhancer score (0-100, information only) with every part (0..1) and its weight. */
+export interface SdOdds {
+  score: number | null;
+  parts: { name: "fresh" | "leg_out" | "base_time" | "htf" | "compression"; value: number | null; weight: number }[];
+  leg_out_mult: number | null;
+  htf: { timeframe: SdTimeframe; relation: "with" | "against" | "none" } | null;
+}
 export interface SdZone {
-  id: string; timeframe: SdTimeframe; side: "demand" | "supply"; formation: "DBR" | "RBR" | "RBD" | "DBD"; state: "fresh" | "tested" | "violated";
+  id: string; timeframe: SdTimeframe; side: "demand" | "supply"; formation: "DBR" | "RBR" | "RBD" | "DBD" | "SWING" | "ENGULF" | "SWAP";
+  state: "fresh" | "tested" | "violated";
   tests: number; proximal: number; distal: number; base_start: number; base_end: number; formed: number; violated_at: number | null;
   leg_in: SdCandle;
   base: { candles: number; times: number[]; high: number | null; low: number | null; max_body_pct: number | null; max_mult: number | null; bars: SdCandle[] };
   leg_out: SdCandle & { of: string };
   label: string;
+  /** M99 P1 (absent from an older server): the zone's kind and its odds score. */
+  kind?: "base" | "swing" | "engulf" | "swap";
+  odds?: SdOdds;
 }
 export interface SdTimeframeRows {
   timeframe: SdTimeframe; bars: number; as_of_bar: number | null; zones: SdZone[]; more: number; hidden_violated: number;
@@ -74,15 +85,40 @@ export interface SdZonesResponse {
 }
 
 export const sdZonesApi = {
-  layer: (symbol: string, timeframes: readonly SdTimeframe[], includeViolated: boolean, at: string | null = null) => {
+  layer: (symbol: string, timeframes: readonly SdTimeframe[], includeViolated: boolean, at: string | null = null,
+          kind: SdKind = "base", swap = false) => {
     const q = new URLSearchParams({ symbol, timeframes: timeframes.join(",") });
     if (includeViolated) q.set("include_violated", "1");
+    if (kind !== "base") q.set("kind", kind);
+    if (swap) q.set("swap", "1");
     if (at) q.set("at", at);
     return request<SdZonesResponse>(`/charts/layers/sd-zones?${q.toString()}`);
   },
 };
 
-const FORMATION_WORDS: Record<SdZone["formation"], string> = { DBR: "drop, base, rally", RBR: "rally, base, rally", RBD: "rally, base, drop", DBD: "drop, base, drop" };
+const FORMATION_WORDS: Record<SdZone["formation"], string> = {
+  DBR: "drop, base, rally", RBR: "rally, base, rally", RBD: "rally, base, drop", DBD: "drop, base, drop",
+  SWING: "the swing's extreme candle", ENGULF: "two candles, the extreme one engulfing", SWAP: "a broken zone, now the other side",
+};
+const PART_WORDS: Record<SdOdds["parts"][number]["name"], string> = {
+  fresh: "Fresh", leg_out: "Move out", base_time: "Short base", htf: "Higher timeframe", compression: "Compression",
+};
+const share = (v: number | null) => (v == null ? "–" : `${formatNumber(v * 100, 0)}%`);
+/** M99 P1: "72 / 100" and its parts "Fresh 100% · Move out 67% ×2 · ..." (a weight other than 1 shown; a part with weight 0
+ * left out; a part not counted shows "–"). */
+export function sdScoreRows(o: SdOdds | undefined): [string, string][] {
+  if (!o) return [];
+  const rows: [string, string][] = [["Score", o.score == null ? "–" : `${formatNumber(o.score, 0)} / 100`]];
+  rows.push(["Parts", o.parts.filter((p) => p.weight > 0).map((p) => `${PART_WORDS[p.name]} ${share(p.value)}${p.weight === 1 ? "" : ` ×${formatNumber(p.weight, 1)}`}`).join(" · ")]);
+  if (o.htf) rows.push(["Higher timeframe", `${o.htf.relation === "with" ? "With" : o.htf.relation === "against" ? "Against" : "None"} · ${SD_TF_SHORT[o.htf.timeframe] ?? o.htf.timeframe}`]);
+  return rows;
+}
+/** The tap card's names of a zone's three candle groups (a swing zone has no legs; a swap zone shows its break). */
+export function sdPartNames(z: Pick<SdZone, "kind">): [string, string, string] {
+  if (z.kind === "swing" || z.kind === "engulf") return ["Before", "Zone candle", "Move out"];
+  if (z.kind === "swap") return ["Leg-in", "Base", "Break"];
+  return ["Leg-in", "Base", "Leg-out"];
+}
 const price = (v: number | null | undefined) => (v == null ? "–" : formatNumber(v, 2));
 const times = (v: number | null | undefined) => (v == null ? "–" : `${formatNumber(v, 1)}×`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${formatNumber(v, 0)}%`);
@@ -90,15 +126,17 @@ export const stateText = (z: Pick<SdZone, "state" | "tests">) => (z.state === "t
 
 /** The tooltip rows of a zone: what it is, its lines, then the numbers each candle was judged by. */
 export function sdTipRows(z: SdZone): [string, string][] {
+  const [inName, baseName, outName] = sdPartNames(z);
   return [
-    ["Formation", `${z.formation} (${FORMATION_WORDS[z.formation]})`],
+    ["Formation", `${z.formation} (${FORMATION_WORDS[z.formation] ?? z.formation})`],
     ["State", stateText(z)],
+    ...sdScoreRows(z.odds),
     ["Proximal", price(z.proximal)],
     ["Distal", price(z.distal)],
     // range · multiple of the average range before it · body % of the range (short enough for one line on a phone)
-    ["Leg-in", `${price(z.leg_in.range)} · ${times(z.leg_in.mult)} avg · body ${pct(z.leg_in.body_pct)}`],
-    ["Base", `${z.base.candles} ${z.base.candles === 1 ? "candle" : "candles"} · ≤ ${times(z.base.max_mult)} avg · body ≤ ${pct(z.base.max_body_pct)}`],
-    ["Leg-out", `${price(z.leg_out.range)} · ${times(z.leg_out.mult)} ${z.leg_out.of === "ATR" ? "ATR" : "avg"} · body ${pct(z.leg_out.body_pct)}`],
+    [inName, `${price(z.leg_in.range)} · ${times(z.leg_in.mult)} avg · body ${pct(z.leg_in.body_pct)}`],
+    [baseName, `${z.base.candles} ${z.base.candles === 1 ? "candle" : "candles"} · ≤ ${times(z.base.max_mult)} avg · body ≤ ${pct(z.base.max_body_pct)}`],
+    [outName, `${price(z.leg_out.range)} · ${times(z.leg_out.mult)} ${z.leg_out.of === "ATR" ? "ATR" : "avg"} · body ${pct(z.leg_out.body_pct)}`],
   ];
 }
 
@@ -136,13 +174,14 @@ export function sdFocusLayer(z: SdZone): LayerData {
     const up = baseHigh == null || baseLow == null ? z.side === "demand" : c.high - baseHigh >= baseLow - c.low;
     marks.push({ time: c.time, ...(c.end != null ? { end: c.end } : {}), low: c.low, high: c.high, text, position: up ? "above" : "below", role: z.side });
   };
-  leg(z.leg_in, "Leg-in");
+  const [inName, baseName, outName] = sdPartNames(z);
+  leg(z.leg_in, inName);
   if (bars.length && baseHigh != null && baseLow != null) {
     const lastEnd = bars[bars.length - 1].end;
-    marks.push({ time: bars[0].time, ...(lastEnd != null ? { end: lastEnd } : {}), low: baseLow, high: baseHigh, text: "Base",
+    marks.push({ time: bars[0].time, ...(lastEnd != null ? { end: lastEnd } : {}), low: baseLow, high: baseHigh, text: baseName,
                  position: z.side === "demand" ? "below" : "above", role: z.side });
   }
-  leg(z.leg_out, "Leg-out");
+  leg(z.leg_out, outName);
   return { marks };
 }
 
@@ -204,10 +243,10 @@ export function useSdZones(engine: ChartEngine | null, symbol: string, tf: Timef
     let live = true;
     setFailed(false);
     if (!on || !symbol) { setResp(null); return () => { live = false; }; }
-    sdZonesApi.layer(symbol, shown, options.show_violated).then((r) => { if (live) setResp(r); },
+    sdZonesApi.layer(symbol, shown, options.show_violated, null, options.kind, options.swap).then((r) => { if (live) setResp(r); },
       () => { if (live) { setResp(null); setFailed(true); } });
     return () => { live = false; };
-  }, [on, symbol, key, options.show_violated, newestBar]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [on, symbol, key, options.show_violated, options.kind, options.swap, newestBar]);  // eslint-disable-line react-hooks/exhaustive-deps
   const data = useMemo(() => (on && resp ? toSdLayer(resp) : null), [on, resp]);
   useEffect(() => {
     if (!engine) return undefined;

@@ -42,6 +42,23 @@ Reference values (M97-Q2, each a setting, shown "reference - edit before use"): 
 out_mult 1.5, leg_body_pct 50, base_body_pct 50, base_max 5, out_ref "average", edge "wick", skip_flat_bars on. (M98-P1
 Q1: the leg-in need not be explosive - leg_mult 1.0 / leg_body_pct 50, were 1.5 / 75; the leg-out stays explosive.)
 
+M99 P1 (flag `sd_pack`): two more zone kinds and the swap level, each a setting (the M97 reads are unchanged at the
+reference `kind` "base", `swap` off):
+
+* Swing-extreme zone (`kind` "swing" or "both"): a candle whose high (supply) / low (demand) is beyond the highs / lows
+  of the `swing_left` candles before it. The zone is that candle's wick and body: supply = from the high down to the
+  lower body edge, demand = from the low up to the upper body edge. One-candle confirmation: the zone is known only on
+  the first later candle that does not touch it (supply: high < proximal; demand: low > proximal), within
+  `confirm_within` candles and with no new extreme before it (a new high / low means the candle was not the extreme).
+* Two-candle engulfing zone (`engulf`, reference on): when that extreme candle's body engulfs the previous candle's
+  opposite-colour body, the zone is the two candles: from the extreme of both to the previous candle's open (its far
+  body edge).
+* Swap level (`swap`, reference off): a zone violated by a strong candle (range >= `swap_mult` x the average range
+  before it; 0 = any violating close) leaves the same box as a zone of the other side - a broken demand zone becomes a
+  supply zone above price, a broken supply zone a demand zone below it - known from the violating candle's close and
+  tracked like any zone (fresh / tested / violated). A swap zone is never swapped again. Areas are never merged: each
+  kind is its own zone.
+
 No look-ahead: every quantity at bar t uses bars <= t only, so a run on the bars cut at t gives the same values up to t
 as the full run (tested). The ScreenQL functions (flag `sd_pack`) read the per-bar series below.
 """
@@ -65,6 +82,10 @@ FORMATION_SIDE: dict[str, str] = {"DBR": DEMAND, "RBR": DEMAND, "RBD": SUPPLY, "
 FRESH, TESTED, VIOLATED = "fresh", "tested", "violated"
 STATE_CHOICES: tuple[str, ...] = (FRESH, TESTED, "any")      # the nearest-zone reads: a violated zone is hidden
 EDGES: tuple[str, ...] = ("wick", "body")
+KINDS: tuple[str, ...] = ("base", "swing", "both")             # M99 P1: which zones the detector draws
+SWING_FORMATIONS: tuple[str, ...] = ("SWING", "ENGULF")         # M99 P1: the swing-extreme zone, one or two candles
+SWAP = "SWAP"                                                   # M99 P1: a broken zone's box, as the other side
+ALL_FORMATIONS: tuple[str, ...] = (*FORMATIONS, *SWING_FORMATIONS, SWAP)
 OUT_REFS: tuple[str, ...] = ("average", "atr")
 LINES: tuple[str, ...] = ("proximal", "distal")
 
@@ -81,6 +102,13 @@ SETTINGS_TABLE: tuple[tuple[str, str, Any, Any], ...] = (
     ("out_ref", "choice", "average", OUT_REFS),
     ("edge", "choice", "wick", EDGES),
     ("skip_flat_bars", "bool", True, None),
+    # M99 P1 (reference values, edit before use): the zone kinds and the swap level
+    ("kind", "choice", "base", KINDS),
+    ("swing_left", "bars", 10, (1, 100)),
+    ("confirm_within", "bars", 10, (1, 100)),
+    ("engulf", "bool", True, None),
+    ("swap", "bool", False, None),
+    ("swap_mult", "num", 1.5, (0.0, 5.0)),
 )
 REFERENCE_LABEL = "reference - edit before use"
 
@@ -98,6 +126,12 @@ class SDSettings:
     out_ref: str = "average"
     edge: str = "wick"
     skip_flat_bars: bool = True
+    kind: str = "base"
+    swing_left: int = 10
+    confirm_within: int = 10
+    engulf: bool = True
+    swap: bool = False
+    swap_mult: float = 1.5
 
 
 def settings_from(values: dict[str, Any] | None = None) -> SDSettings:
@@ -154,6 +188,10 @@ class SDZone:
     formed: int                                  # the leg-out bar: the zone is known from this bar's close
     violated: int | None = None                  # the bar whose close went beyond the distal line
     visits: list[int] = field(default_factory=list)   # the bars on which a visit started
+    kind: str = "base"                           # M99 P1: base / swing / engulf / swap
+    depart: int = -1                             # M99 P1: the departure candle (leg-out; swing: the widest candle up to
+                                                 # the confirming one; swap: the breaking candle); -1 = `formed`
+    swap_of: int | None = None                   # M99 P1: a swap zone's source zone (its position in the list)
 
     def visits_by(self, t: int) -> int:
         return sum(1 for v in self.visits if v <= t)
@@ -212,6 +250,10 @@ def detect(df: pd.DataFrame, settings: SDSettings | None = None) -> list[SDZone]
     for i in range(n):
         run[i] = (run[i - 1] + 1 if i else 1) if k["base"][i] else 0
     zones: list[SDZone] = []
+    if s.kind in ("swing", "both"):
+        zones.extend(_swing_zones(k, s, n))
+    if s.kind == "swing":
+        return sorted(zones, key=lambda z: (z.formed, z.base_start))
     for j in range(2, n):
         if not k["out"][j]:
             continue
@@ -232,11 +274,69 @@ def detect(df: pd.DataFrame, settings: SDSettings | None = None) -> list[SDZone]
             bottom = float(k["l"][sl].min()) if s.edge == "wick" else float(np.minimum(k["o"][sl], k["c"][sl]).min())
             distal = float(max(k["h"][sl].max(), k["h"][j]))
             zones.append(SDZone(SUPPLY, formation, bottom, distal, leg_in, start, end, j))
+    return sorted(zones, key=lambda z: (z.formed, z.base_start)) if s.kind == "both" else zones
+
+
+def _swing_zones(k: dict[str, np.ndarray], s: SDSettings, n: int) -> list[SDZone]:
+    """M99 P1: the swing-extreme zones (one candle, or two with `engulf`), each known on its confirming candle."""
+    o, h, lo, c = k["o"], k["h"], k["l"], k["c"]
+    rng = h - lo
+    out: list[SDZone] = []
+    for e in range(s.swing_left, n - 1):
+        for side in SIDES:
+            if side == SUPPLY:
+                if not h[e] > h[e - s.swing_left:e].max():
+                    continue
+                engulfs = s.engulf and c[e] < o[e] and c[e - 1] > o[e - 1] and o[e] >= c[e - 1] and c[e] <= o[e - 1]
+                prox = float(o[e - 1]) if engulfs else float(min(o[e], c[e]))
+                dist = float(max(h[e], h[e - 1])) if engulfs else float(h[e])
+            else:
+                if not lo[e] < lo[e - s.swing_left:e].min():
+                    continue
+                engulfs = s.engulf and c[e] > o[e] and c[e - 1] < o[e - 1] and o[e] <= c[e - 1] and c[e] >= o[e - 1]
+                prox = float(o[e - 1]) if engulfs else float(max(o[e], c[e]))
+                dist = float(min(lo[e], lo[e - 1])) if engulfs else float(lo[e])
+            if prox == dist:                     # no body and no wick on the far side: nothing to draw
+                continue
+            formed = None
+            for j in range(e + 1, min(n, e + 1 + s.confirm_within)):
+                if (h[j] > h[e]) if side == SUPPLY else (lo[j] < lo[e]):
+                    break                        # a new extreme: this candle was not the swing's extreme
+                if (h[j] < prox) if side == SUPPLY else (lo[j] > prox):
+                    formed = j                   # the first candle that closed without touching the zone
+                    break
+            if formed is None:
+                continue
+            start = e - 1 if engulfs else e
+            depart = e + 1 + int(np.argmax(rng[e + 1:formed + 1]))
+            out.append(SDZone(side, "ENGULF" if engulfs else "SWING", prox, dist, max(start - 1, 0), start, e, formed,
+                              kind="engulf" if engulfs else "swing", depart=depart))
+    return out
+
+
+def track(df: pd.DataFrame, zones: list[SDZone], settings: SDSettings | None = None) -> list[SDZone]:
+    """Fills each zone's visits and violation bar from the bars after its leg-out (in place; returns the list). With
+    `swap` on (M99 P1) a zone violated by a strong candle adds its swap zone (appended, in the order of its break bar,
+    and tracked the same way)."""
+    s = settings or SDSettings()
+    _track(df, zones)
+    if not s.swap:
+        return zones
+    avg = average_range(df, s.avg_n, s.avg_n).shift(1).to_numpy(float)
+    h, lo = df["high"].to_numpy(float), df["low"].to_numpy(float)
+    swaps: list[SDZone] = []
+    for i, z in enumerate(zones):
+        v = z.violated
+        if v is None or z.kind == "swap" or not np.isfinite(avg[v]) or (h[v] - lo[v]) < s.swap_mult * avg[v]:
+            continue
+        side = SUPPLY if z.side == DEMAND else DEMAND
+        swaps.append(SDZone(side, SWAP, z.distal, z.proximal, z.leg_in, z.base_start, z.base_end, v, kind="swap", depart=v, swap_of=i))
+    _track(df, swaps)
+    zones.extend(sorted(swaps, key=lambda z: (z.formed, z.base_start)))
     return zones
 
 
-def track(df: pd.DataFrame, zones: list[SDZone]) -> list[SDZone]:
-    """Fills each zone's visits and violation bar from the bars after its leg-out (in place; returns the list)."""
+def _track(df: pd.DataFrame, zones: list[SDZone]) -> None:
     h, lo, c = df["high"].to_numpy(float), df["low"].to_numpy(float), df["close"].to_numpy(float)
     for z in zones:
         a = z.formed + 1
@@ -253,7 +353,6 @@ def track(df: pd.DataFrame, zones: list[SDZone]) -> list[SDZone]:
         t = touch[:stop + 1]
         starts = t & ~np.r_[False, t[:-1]]       # a visit starts where a touch follows a bar outside the zone
         z.visits = [a + int(i) for i in np.flatnonzero(starts)]
-    return zones
 
 
 @dataclass
@@ -279,9 +378,19 @@ class SDSeries:
         """Per bar: (signed distance % from the close to the nearest live zone's proximal line, its proximal, its
         distal) among the zones of `side` in `state` ("fresh", "tested" or "any"); NaN where there is none. The distance
         is positive while the close is outside the zone (above a demand line, below a supply line), negative inside."""
+        dist, prox, dis, _ = self._nearest(side, state, chunk)
+        return dist, prox, dis
+
+    def nearest_index(self, side: str, state: str, chunk: int = 4096) -> np.ndarray:
+        """M99 P1: per bar, the position in `zones` of that same nearest zone (-1 where there is none)."""
+        return self._nearest(side, state, chunk)[3]
+
+    def _nearest(self, side: str, state: str, chunk: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dist = np.full(self.n, np.nan)
         prox = np.full(self.n, np.nan)
         dis = np.full(self.n, np.nan)
+        which = np.full(self.n, -1, dtype=int)
+        pos = {id(z): i for i, z in enumerate(self.zones)}
         for t0 in range(0, self.n, chunk):
             t1 = min(self.n, t0 + chunk)
             live = self._live(side, t0, t1)
@@ -300,7 +409,8 @@ class SDSeries:
             dist[t0 + cols] = d_all[best[cols], cols]
             prox[t0 + cols] = np.array([live[i][0].proximal for i in best[cols]])
             dis[t0 + cols] = np.array([live[i][0].distal for i in best[cols]])
-        return dist, prox, dis
+            which[t0 + cols] = np.array([pos[id(live[i][0])] for i in best[cols]])
+        return dist, prox, dis, which
 
     def formed(self, formation: str) -> np.ndarray:
         """True on the leg-out bar of each zone of `formation` (a name, a side, or "any")."""
@@ -329,7 +439,7 @@ class SDSeries:
 
 def sd_series(df: pd.DataFrame, settings: SDSettings | None = None) -> SDSeries:
     s = settings or SDSettings()
-    zones = track(df, detect(df, s))
+    zones = track(df, detect(df, s), s)
     return SDSeries(zones, len(df), df["close"].to_numpy(float))
 
 
@@ -362,4 +472,4 @@ def cached_sd_series(df: pd.DataFrame, settings: SDSettings | None = None) -> SD
 
 __all__ = ["SDSettings", "SDZone", "SDSeries", "SETTINGS_TABLE", "REFERENCE_LABEL", "settings_from", "candle_numbers", "detect", "track",
            "sd_series", "cached_sd_series", "DEMAND", "SUPPLY", "SIDES", "FORMATIONS", "FORMATION_SIDE", "FRESH", "TESTED",
-           "VIOLATED", "STATE_CHOICES", "EDGES", "OUT_REFS", "LINES"]
+           "VIOLATED", "STATE_CHOICES", "EDGES", "OUT_REFS", "LINES", "KINDS", "SWING_FORMATIONS", "SWAP", "ALL_FORMATIONS"]

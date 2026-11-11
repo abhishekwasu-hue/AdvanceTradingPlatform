@@ -132,6 +132,9 @@ class SdOverlayPrefs(_Prefs):
     timeframes: SdTimeframes | None = Field(default=None, description="the timeframes shown; null = the chart's own")
     presets: dict[SdStyle, SdTimeframes] = Field(default_factory=dict)
     show_violated: bool = False
+    # M99 P1: which zones the overlay draws (base / swing extreme / both) and the swap levels (reference: base, off)
+    kind: Literal["base", "swing", "both"] = "base"
+    swap: bool = False
 
 
 class ChartPrefs(_Prefs):

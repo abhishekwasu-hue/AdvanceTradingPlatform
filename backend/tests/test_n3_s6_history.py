@@ -336,9 +336,17 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "WaveOrigin": "close > WaveOrigin(1)",                                     # waves W2: a level, flat for a whole count
     "WaveInvalidation": "close > WaveInvalidation(1)",
     "WaveCap": "close > WaveCap(1) OR close > WaveOrigin(1)",                   # no fifth wave with a short third on the fixture
+    # M99 P1: the higher timeframe of a daily screen is weekly (a few dozen weekly bars on the fixture: a short average)
+    "SDZoneHtfWith": 'SDZoneHtfWith("demand", "any", avg_n=5, leg_mult=1, out_mult=1, leg_body_pct=50, base_body_pct=90, '
+                     'base_mult=0.9, kind="both", swing_left=3, htf="1w")',
+    "SDZoneEntryRef": 'SDZoneEntryRef("demand", "distal", "touch", leg_mult=1, out_mult=1, leg_body_pct=50, base_body_pct=90, '
+                      'base_mult=0.9, kind="both", swing_left=3) > 0',                   # a price on entry bars only
+    "SDZoneEntryScore": 'SDZoneEntryScore("demand", "touch", leg_mult=1, out_mult=1, leg_body_pct=50, base_body_pct=90, '
+                        'base_mult=0.9, kind="both", swing_left=3) > 0',
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
-               "DonchianBreakout", "MABreakout", "RegimeBreakout"}
+               "DonchianBreakout", "MABreakout", "RegimeBreakout",
+               "SDZoneEntryRef", "SDZoneEntryScore", "SDZoneHtfWith"}            # M99 P1: entry bars / a weekly tag on 300 days
 
 
 def _sweep_cases():

@@ -70,6 +70,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | M94 | Intraday pack: 12 intraday scanners + 10 intraday strategy templates (setup scanner + trigger + stop + exits, PAPER path) + 3 optional risk tools (default OFF); India rules I1-I5 | DECISIONS 10 Nov (M94) | tests per scanner / template / risk tool; proof: library list (390 + desktop), one template page, one scanner run, one PAPER trade; owner ✅ |
 | M95 | Front door + link preview: link preview image and text (F1), login page as the front door (F2), read-only guest demo on EOD data (F3), video slot (F4), MR / HI / EN switch (F5), rules F6, marketing_site pages finished (F7) | owner 10 Nov | INBOX / DECISIONS 10 Nov (M95) |
 | M97 | Supply & Demand pack: zone detector (Z1), states (Z2), chart overlay (Z3), scanners (Z4), templates (Z5), style presets (Z6), Copilot facts (Z7) | owner 11 Nov | INBOX 11 Nov (M97) |
+| M99 | Book-study scanners + templates: B0 audit, B1 shared primitives, P1 S&D upgrade, P3 VSA, P4 Wyckoff, P5 Fib + Elliott, P6 PA patterns, P2 Intraday upgrade, P7 risk options | owner 11 Nov | INBOX 11 Nov (M99) |
 | COP-2 | Copilot: stale answers leave the screen (A), Read chart for any symbol (B), headline trend = card trend (C), EOD timing audit (D) | owner 11 Nov | INBOX / DECISIONS 11 Nov |
 | M96 | Terminal option chain: audit (A1), banner + OI-difference table on top (L1), order from the OI-difference table (O1), trader analysis features (N1), tests (T1) | owner 11 Nov | INBOX 11 Nov (M96) |
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
@@ -310,6 +311,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | COP-2 | merged (#993, #994); deploy 11081161 given, waits for deploy + owner ✅ | proof ZIP sent 11 Nov; D: no bug (10 Nov NSE holiday) | DECISIONS 11 Nov (COP-2) |
 | M96 | in progress (owner 11 Nov) | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
 | M97 | in progress (owner 11 Nov) | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
+| M99 | in progress (owner 11 Nov) | B0 audit table first (owner reviews before P3-P6), then B1 primitives, P1 S&D upgrade (after M98) | INBOX 11 Nov (M99) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

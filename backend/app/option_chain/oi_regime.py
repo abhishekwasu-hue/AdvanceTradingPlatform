@@ -94,9 +94,9 @@ class StrikeOIRule(BaseModel):
 class OIAlertSettings(BaseModel):
     """O4: which banner changes notify, how often, and when not (all off until the tenant turns alerts on)."""
     enabled: bool = False
-    types: List[str] = Field(default_factory=lambda: list(BANNER_ALERT_TYPES))
-    strike_rules: List[StrikeOIRule] = Field(default_factory=list, max_length=20)   # M96 N1: none until he adds one
-    pcr_level: Optional[float] = Field(default=None, gt=0, le=20)                   # M96 N1: none until he types one
+    types: list[str] = Field(default_factory=lambda: list(BANNER_ALERT_TYPES))
+    strike_rules: list[StrikeOIRule] = Field(default_factory=list, max_length=20)   # M96 N1: none until he adds one
+    pcr_level: float | None = Field(default=None, gt=0, le=20)                   # M96 N1: none until he types one
     cooldown_minutes: int = Field(default=15, ge=0, le=1440)            # per alert type and underlying
     max_pain_strikes: int = Field(default=2, ge=1, le=50)               # a move of this many strikes notifies
     dte_milestones: List[int] = Field(default_factory=lambda: [1, 0])   # expiry tomorrow / today

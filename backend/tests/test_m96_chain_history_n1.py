@@ -16,7 +16,15 @@ import pytest
 from sqlalchemy import delete, select
 
 from app.brokers.models import OptionChain, OptionChainRow
-from app.db.models import NotificationRecord, OIAlertLogRecord, OIBannerSettingRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, StrikeOISnapshotRecord
+from app.db.models import (
+    NotificationRecord,
+    OIAlertLogRecord,
+    OIBannerSettingRecord,
+    OIBannerStateRecord,
+    OIDayBaselineRecord,
+    OISnapshotRecord,
+    StrikeOISnapshotRecord,
+)
 from app.market_data.calendar import IST
 from app.market_lake import chain_range, chain_recorder, chain_store
 from app.market_lake.chain_store import StoredChain
@@ -202,7 +210,8 @@ def _clean_oi():
 
 
 def test_strike_alert_fires_once_and_respects_the_cooldown(_clean_oi):
-    from tests.test_o2_oi_snapshots import T0, UND, _chain as oi_chain, _collect
+    from tests.test_o2_oi_snapshots import T0, UND, _collect
+    from tests.test_o2_oi_snapshots import _chain as oi_chain
     from tests.test_phase_l_ai import _owner
     headers, me = _owner(f"m96-alert-{uuid.uuid4().hex[:6]}@example.com")
     alerts = {"enabled": True, "cooldown_minutes": 60, "types": ["STRIKE_OI_CHANGE"],

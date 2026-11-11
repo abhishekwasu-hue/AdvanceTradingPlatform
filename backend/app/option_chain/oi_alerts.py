@@ -61,22 +61,22 @@ class AlertEvent:
     old_state: Optional[str]
     new_state: str
     severity: NotificationSeverity
-    detail: Optional[Dict] = None          # M96 N1: the numbers of a threshold alert (rendered by render_threshold)
+    detail: dict | None = None          # M96 N1: the numbers of a threshold alert (rendered by render_threshold)
 
 
 @dataclass(frozen=True)
 class ThresholdView:
     """M96 N1: what the threshold alerts compare, for one slot: the banner's PCR and, per (side, strike), the OI change
     since the day's first reading."""
-    pcr: Optional[float]
-    oi_change: Dict[tuple, float]
+    pcr: float | None
+    oi_change: dict[tuple, float]
 
 
-def strike_changes(rows, baselines: Dict[float, tuple], first_rows=()) -> Dict[tuple, float]:
+def strike_changes(rows, baselines: dict[float, tuple], first_rows=()) -> dict[tuple, float]:
     """(side, strike) -> OI now minus the day's first reading (the collector's day baseline, else the day's first stored
     slot). A strike with either number missing is left out - never guessed."""
     first = {float(r.strike): r for r in first_rows}
-    out: Dict[tuple, float] = {}
+    out: dict[tuple, float] = {}
     for r in rows:
         k = float(r.strike)
         base, f = baselines.get(k), first.get(k)
@@ -87,10 +87,10 @@ def strike_changes(rows, baselines: Dict[float, tuple], first_rows=()) -> Dict[t
     return out
 
 
-def detect_thresholds(prev: Optional[ThresholdView], cur: ThresholdView, settings: OIAlertSettings) -> List[AlertEvent]:
+def detect_thresholds(prev: ThresholdView | None, cur: ThresholdView, settings: OIAlertSettings) -> list[AlertEvent]:
     """The threshold alerts a move from the slot `prev` to the slot `cur` raises (pure). Each fires only on the slot where
     the number crosses the user's level - not again while it stays beyond it; no previous slot: nothing to compare."""
-    out: List[AlertEvent] = []
+    out: list[AlertEvent] = []
     want = set(settings.types)
     if prev is None:
         return out
@@ -195,7 +195,7 @@ def _lakh(value: float) -> str:
     return f"{value / 1e5:,.2f} L" if abs(value) >= 1e5 else f"{value:,.0f}"
 
 
-def render_threshold(underlying: str, event: AlertEvent, slot: datetime, data_as_of: datetime) -> Dict:
+def render_threshold(underlying: str, event: AlertEvent, slot: datetime, data_as_of: datetime) -> dict:
     """M96 N1: the title / message / payload of a threshold alert - the numbers and the user's own level, in neutral
     words (information only, never an order word)."""
     d = event.detail or {}
@@ -229,7 +229,7 @@ def wall_state(rows, baselines: Dict[float, tuple], state: BannerState, strike_s
 
 # ---------------------------------------------------------------- service
 
-async def _last_sent(session: AsyncSession, tenant_id: int, underlying: str, alert_type: str, new_state: Optional[str] = None) -> Optional[datetime]:
+async def _last_sent(session: AsyncSession, tenant_id: int, underlying: str, alert_type: str, new_state: str | None = None) -> datetime | None:
     query = select(OIAlertLogRecord.created_at).where(
         OIAlertLogRecord.tenant_id == tenant_id, OIAlertLogRecord.underlying == underlying, OIAlertLogRecord.alert_type == alert_type,
         OIAlertLogRecord.status == "SENT")
@@ -343,7 +343,7 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     return decisions
 
 
-def _threshold_events(timeline, slots, latest, base: Dict[float, tuple], alerts: OIAlertSettings) -> List[AlertEvent]:
+def _threshold_events(timeline, slots, latest, base: dict[float, tuple], alerts: OIAlertSettings) -> list[AlertEvent]:
     """M96 N1: the latest slot against the stored slot just before it (both at or before the latest - no look-ahead)."""
     from app.option_chain.oi_regime import THRESHOLD_ALERT_TYPES
     if not set(alerts.types) & set(THRESHOLD_ALERT_TYPES) or len(timeline) < 2:

@@ -110,7 +110,7 @@ async def range_(underlying: str = Query(..., pattern=UNDERLYING), start: date =
 @router.get("/oi-range")
 async def oi_range(underlying: str = Query(..., pattern=UNDERLYING), expiry: date = Query(...), start: datetime = Query(...),
                    end: datetime = Query(...), user: User = Depends(get_current_user),
-                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+                   session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     await _own_history(session, user)
     start, end = _ist(start), _ist(end)
     if end <= start:
@@ -131,7 +131,7 @@ async def oi_range(underlying: str = Query(..., pattern=UNDERLYING), expiry: dat
 @router.get("/oi-replay")
 async def oi_replay(underlying: str = Query(..., pattern=UNDERLYING), expiry: date = Query(...), day: date = Query(...),
                     around: int = Query(default=0, ge=0, le=50), user: User = Depends(get_current_user),
-                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+                    session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     await _own_history(session, user)
     name = _name(underlying)
     try:
@@ -144,8 +144,8 @@ async def oi_replay(underlying: str = Query(..., pattern=UNDERLYING), expiry: da
 
 
 @router.get("/expiries")
-async def expiries(underlying: str = Query(..., pattern=UNDERLYING), at: Optional[datetime] = Query(default=None),
-                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def expiries(underlying: str = Query(..., pattern=UNDERLYING), at: datetime | None = Query(default=None),
+                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     await _own_history(session, user)
     from app.market_data.calendar import family_holidays
     from app.option_chain import chain_view

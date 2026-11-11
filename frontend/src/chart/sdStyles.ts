@@ -21,7 +21,8 @@ export const SD_STYLE_LABELS: Record<SdStyle, string> = {
 export interface SdOverlayPrefs {
   /** The chosen style; null = the user's own timeframes. */
   style: SdStyle | null;
-  /** The timeframes shown; null = the chart's own. */
+  /** The extra timeframes chosen (M98 T1: the chart's own is always drawn; of these, only the ones higher than the
+   * chart's are drawn - sdZones.ts shownSdTimeframes); null = the chart's own only. */
   timeframes: SdTimeframe[] | null;
   /** The user's own timeframes for a style he edited (a style left out keeps its ladder). */
   presets: Partial<Record<SdStyle, SdTimeframe[]>>;

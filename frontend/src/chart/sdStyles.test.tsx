@@ -20,11 +20,13 @@ describe("style presets", () => {
       intraday: ["15m", "10m"], scalper: ["5m", "3m"] });
   });
 
-  it("a style only preselects its timeframes; the overlay then shows them in the list's order", () => {
+  it("a style only preselects its extra chips; the chart's own is always drawn, then the style's higher ones (M98 T1)", () => {
     const swing = pickStyle(DEFAULT_SD_OVERLAY, "swing");
     expect(swing).toEqual({ ...DEFAULT_SD_OVERLAY, style: "swing", timeframes: ["1d", "2h"] });
-    expect(shownSdTimeframes(swing.timeframes, "15min")).toEqual(["2h", "1d"]);
-    expect(shownSdTimeframes(pickStyle(DEFAULT_SD_OVERLAY, "intraday").timeframes, "15min")).toEqual(["10m", "15m"]);   // a lower one too
+    expect(shownSdTimeframes(swing.timeframes, "15min")).toEqual(["15m", "2h", "1d"]);
+    expect(shownSdTimeframes(swing.timeframes, "day")).toEqual(["1d"]);                                                 // none higher than D
+    expect(shownSdTimeframes(pickStyle(DEFAULT_SD_OVERLAY, "intraday").timeframes, "15min")).toEqual(["15m"]);          // 10m is lower: not drawn
+    expect(shownSdTimeframes(pickStyle(DEFAULT_SD_OVERLAY, "intraday").timeframes, "5min")).toEqual(["5m", "10m", "15m"]);
     expect(pickStyle(swing, null)).toEqual({ ...swing, style: null });                                                  // own: as they are
   });
 
@@ -58,10 +60,11 @@ describe("saved in the server chart prefs", () => {
   });
 
   it("the options bar names the chosen style and shows Show violated as saved", () => {
-    const html = renderToStaticMarkup(<SdZonesBar chartTf="15min" shown={["10m", "15m"]} options={{ ...pickStyle(DEFAULT_SD_OVERLAY, "intraday"), show_violated: true }}
+    const html = renderToStaticMarkup(<SdZonesBar chartTf="5min" shown={["5m", "10m", "15m"]} options={{ ...pickStyle(DEFAULT_SD_OVERLAY, "intraday"), show_violated: true }}
       onChange={() => {}} note={null} />);
     expect(html).toContain('data-sd-style="intraday"');
     expect(html).toContain("Intraday");
+    expect(html).toContain('data-sd-own="5m"');
     expect(html).toMatch(/aria-pressed="true" data-sd-tf="10m"/);
     expect(html).toMatch(/data-sd-violated[^>]*checked/);
   });

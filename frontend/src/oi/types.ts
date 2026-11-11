@@ -23,6 +23,8 @@ export interface OiBannerRow {
   expiry: string | null;
   dte: number | null;
   first_of_day: boolean;
+  /** M96 L1: the Trade banner's message in neutral fact words (backend oi_words.trade_fact_message). */
+  fact_message?: string;
   /** M61 PCR-1 (history rows): the reading's session phase on the exchange calendar, its strike count (strikes with OI
    * on both sides) and whether it is partial (below the session's usual count). Absent on older answers. */
   phase?: "session" | "pre_open" | "after_close" | "closed_day";

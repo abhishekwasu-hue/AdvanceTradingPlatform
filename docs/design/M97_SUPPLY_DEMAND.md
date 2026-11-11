@@ -20,8 +20,8 @@ The owner's own method areas (atp_private engine, AreaGate / A1) are a separate 
 
 - **One new generic module** `price_action/sd_zones.py`: the detector + states. It reuses only `indicators.volatility.atr / true_range` and `zones.detect.average_range`. Z7a, A1 and the AreaGate stay unchanged (they are used by existing screens and templates).
 - **Detector:**
-  - Leg candle: range >= `leg_mult` x average range(`avg_n`) and body >= `leg_body_pct` % of range.
-  - Base candle: range <= `base_mult` x average and body <= `base_body_pct` %.
+  - Leg candle: range >= `leg_mult` x average range(`avg_n`) and body >= `leg_body_pct` % of range. Reference (M98-P1 Q1): 1.0 x and 50 % - the leg-in need not be explosive (was 1.5 x / 75 %); the leg-out stays explosive (`out_mult` 1.5).
+  - Base candle: range <= `base_mult` x average and body <= `base_body_pct` %. A flat candle (high = low) is never a base candle (`skip_flat_bars`, reference on; M98-P1 Q2).
   - Base length 1..`base_max`.
   - Leg-in: any leg candle.
   - Leg-out: explosive (range >= `out_mult` x average range or ATR).
@@ -52,7 +52,7 @@ The owner's own method areas (atp_private engine, AreaGate / A1) are a separate 
 | ID | Question | Default |
 |---|---|---|
 | M97-Q1 | A new separate detector, Z7a / A1 / AreaGate unchanged | Yes: new module; the old ones stay for the screens and templates that use them |
-| M97-Q2 | The study gives no numbers for "expanded" / "narrow" / "explosive" | Reference values from ATP's existing zone settings, marked "reference - edit before use": average range 20 candles; leg range >= 1.5x; base range <= 0.7x; leg-out range >= 1.5x; body: leg >= 75%, base <= 50% (the study); base length < 6 (the study) |
+| M97-Q2 | The study gives no numbers for "expanded" / "narrow" / "explosive" | Reference values from ATP's existing zone settings, marked "reference - edit before use": average range 20 candles; leg range >= 1.5x (superseded by M98-P1 Q1: 1.0x); base range <= 0.7x; leg-out range >= 1.5x; body: leg >= 75% (superseded by M98-P1 Q1: 50%), base <= 50% (the study); base length < 6 (the study) |
 | M97-Q3 | Proximal of a demand zone: the base's body top or its wick high (the study allows either); the mirror for supply | A user setting "edge: wick / body", reference wick |
 | M97-Q4 | 10m and 120m in the presets do not exist anywhere | Add 10m and 2h as timeframes built from the stored 5m / 1h bars (chart + ScreenQL), closed bars only |
 | M97-Q5 | Copilot "facts JSON (M93 H1)" does not exist in code | Use the existing Copilot facts (text lines) + the server pref `sd_zones` |

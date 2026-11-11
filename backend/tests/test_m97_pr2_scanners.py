@@ -26,7 +26,7 @@ from app.screener import taxonomy as tx
 from app.screener.parser import parse
 from app.screener.runtime import SymbolData, run_screen
 from tests.test_auth_api import _session_factory, client
-from tests.test_m97_sd_zones import BASE, LEG_DOWN, OUT_UP, STATE_PATH, _frame, _mirror
+from tests.test_m97_sd_zones import BASE, FLAT, FLAT_OUT, LEG_DOWN, OUT_UP, STATE_PATH, _frame, _mirror
 from tests.test_phase_l_ai import _owner
 
 IDS = ["supply_demand.demand_enter", "supply_demand.supply_enter", "supply_demand.zone_formed", "supply_demand.zone_violated",
@@ -122,6 +122,13 @@ def test_the_formation_is_a_parameter():
     assert sds.Z3.params[0].name == "formation" and sds.Z3.params[0].value == "any" and not sds.Z3.params[0].ref
     _, bad = compile_screen(sds.Z3.text, base_tf="1d", params={**sds.Z3.defaults(), "formation": "XYZ"})
     assert not bad.ok
+
+
+def test_flat_bars_are_no_base_unless_his_setting_says_so():
+    flat = [LEG_DOWN, FLAT, FLAT, FLAT_OUT]                                  # M98-P1 Q2: two flat candles, then a leg-out
+    assert not _match(sds.Z3, flat).matched                                  # the reference: skip_flat_bars on
+    assert _match(sds.Z3, flat, skip_flat_bars=False).matched                # his setting off: the old two-candle base
+    assert _match(sds.Z3, flat, skip_flat_bars=False, formation="DBR").matched
 
 
 def test_violated_reads_both_sides_and_names_each_in_its_branch():
@@ -224,9 +231,10 @@ def test_the_builder_opens_a_scanner_with_its_not_set_value_still_asked(gallery_
     _set_flags(sd_pack=True)
     body = client.post("/api/screener/stages", json={"library_id": "supply_demand.near_fresh_zone"}, headers=headers).json()
     assert body["base_tf"] == "1d" and body["unset"] == ["within_pct"] and "$within_pct" in body["text"]
-    assert 'SDZoneDistancePct("demand", "fresh", avg_n=20, leg_mult=1.5' in body["text"]
+    assert 'SDZoneDistancePct("demand", "fresh", avg_n=20, leg_mult=1, base_mult=0.7' in body["text"]   # M98-P1 Q1
+    assert 'leg_body_pct=50, base_body_pct=50' in body["text"] and 'skip_flat_bars=TRUE' in body["text"]   # M98-P1 Q1 / Q2
     full = client.post("/api/screener/stages", json={"library_id": "supply_demand.demand_enter"}, headers=headers).json()
-    assert "unset" not in full and full["text"].startswith('SDZoneEnter("demand", avg_n=20, leg_mult=1.5, base_mult=0.7')
+    assert "unset" not in full and full["text"].startswith('SDZoneEnter("demand", avg_n=20, leg_mult=1, base_mult=0.7')
 
 
 # ---------------------------------------------------------------------------------------------- the frontend samples

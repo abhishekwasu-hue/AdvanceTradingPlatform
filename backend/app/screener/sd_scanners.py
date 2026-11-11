@@ -37,6 +37,7 @@ _SETTING_DOCS: dict[str, str] = {
     "base_max": "At most this many base candles in a row.",
     "out_ref": "What the leg-out is measured against: average (the average range) or atr.",
     "edge": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+    "skip_flat_bars": "On: a flat candle (high equals low) is never counted as a base candle.",
 }
 _ATP_DEFAULT = {"out_ref"}          # the function default, not a value from the study (M97-Q2 lists the others)
 

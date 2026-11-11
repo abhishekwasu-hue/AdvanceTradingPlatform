@@ -44,14 +44,16 @@ describe("Supply & Demand pack chip (M97 PR-2)", () => {
     expect(html.split(FOOTER).length - 1).toBe(5);
     const t = text(html);
     expect(t).toContain("Reference value - edit before use");
-    expect(t).toContain("Settings (10) · Not set: 1 of 10. The run asks for it.");      // near a fresh zone
+    expect(t).toContain("Settings (11) · Not set: 1 of 11. The run asks for it.");      // near a fresh zone (M98-P1 Q2: +1)
     expect(html).toMatch(/data-param="within_pct"[\s\S]*?Not set/);
   });
 
   it("formats the values and uses no advice wording", () => {
     expect(isIntradayLibrary(lib)).toBe(true);
     const near = lib.scanners.find((s) => s.id === "supply_demand.near_fresh_zone")!;
-    expect(near.params.map(paramValueText).slice(0, 3)).toEqual(["Not set", "20", "1.5"]);
+    // M98-P1 Q1: the leg-in reference 1.0 x shows as "1"; the leg-out stays 1.5; Q2: skip_flat_bars on shows as "Yes"
+    expect(near.params.map(paramValueText).slice(0, 5)).toEqual(["Not set", "20", "1", "0.7", "1.5"]);
+    expect(paramValueText(near.params[near.params.length - 1])).toBe("Yes");
     expect(unsetText(lib.scanners[0])).toBe("");
     const words = text(render(on, { pack: SD_SOURCE })).toLowerCase();
     for (const w of [" buy ", " sell ", "recommend", " target", " stop", " best ", "guarantee"]) expect(words).not.toContain(w);

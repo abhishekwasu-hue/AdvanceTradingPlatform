@@ -28,10 +28,18 @@ The window mirrors the broker's Daily window (`MarketDataService._fetch`): from 
 
 No look-ahead: a Daily bar enters the frame only once its file was stored (after that day's close), and the engine
 reads each bar as closed, exactly as with the broker's Daily candles.
+
+M99 B1-d (scan = backtest = live): an index (no traded volume of its own) gets the volume of its near-month future, as
+the chart, the screener and the live worker give it (`index_volume.near_future` + `index_volume.replace_frame_volume`:
+the future's bar at the same instant, 0 where it has none). The future's bars are read through this same loader (the
+same session, user, broker and order of sources; an intraday window at most the broker's `BROKER_INTRADAY_DAYS`, as
+the index's own broker read). No contract, or its bars cannot be read: the index keeps its own bars, exactly as in the
+worker (never a failed backtest for it). The source label and words stay the index's.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -43,6 +51,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import config
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.market_data.calendar import IST
+
+logger = logging.getLogger(__name__)
 
 FLAG = "backtest_stored_history"
 LAKE_SOURCE = "lake:daily"                     # starts with "lake": server evidence (evidence.is_server)
@@ -292,7 +302,42 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
     broker session reads exactly what it read before; default `evidence.server_frame`. `stored_beyond_broker` (M55 T4,
     the backtest bars route, whose intraday window was capped at the broker's 30 days): a longer 15M / 30M / 1H window of
     a backfilled index reads the stored index history (else the broker's 30 days, with the reason when the data tier
-    is on); every other caller keeps its broker read exactly as before."""
+    is on); every other caller keeps its broker read exactly as before. M99 B1-d: an index's frame carries its
+    near-month future's volume (`_future_volume`)."""
+    got = await _resolve(session, tenant_id, symbol, exchange, timeframe, lookback_days=lookback_days, user=user, broker=broker,
+                         now=now, broker_fetch=broker_fetch, stored_beyond_broker=stored_beyond_broker)
+    return await _future_volume(session, tenant_id, symbol, exchange, timeframe, got, lookback_days=lookback_days, user=user,
+                                broker=broker, now=now)
+
+
+async def _future_volume(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, got: BacktestBars, *,
+                         lookback_days: int, user: Any, broker: Optional[str], now: Optional[datetime]) -> BacktestBars:
+    """M99 B1-d: an index's bars with its near-month future's volume (`index_volume.replace_frame_volume`), the future
+    read through `_resolve` like the index; every other symbol's bars, and an index's when the future or its bars cannot
+    be read, unchanged (as the worker's `strategy_bars._future_volume`)."""
+    from app.market_data import index_volume
+    if session is None or got.frame.empty or index_volume.index_underlying(symbol, exchange) is None:
+        return got
+    try:
+        fut = await index_volume.near_future(session, symbol, exchange, (now or datetime.now(UTC)).astimezone(IST).date())
+        if fut is None:
+            return got
+        days = lookback_days if timeframe_kind(timeframe) else min(int(lookback_days), BROKER_INTRADAY_DAYS)
+        fut_bars = await _resolve(session, tenant_id, fut.symbol, fut.exchange, timeframe, lookback_days=days, user=user,
+                                  broker=broker, now=now)
+    except Exception as exc:  # noqa: BLE001 - the index's own bars still make the backtest (as the worker, SCR-FIX A7)
+        logger.info("future volume not loaded for %s:%s: %s", exchange, symbol, exc)
+        return got
+    if fut_bars.frame.empty:
+        return got
+    return replace(got, frame=index_volume.replace_frame_volume(got.frame, fut_bars.frame))
+
+
+async def _resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *, lookback_days: int = 30,
+                   user: Any = None, broker: Optional[str] = None, now: Optional[datetime] = None,
+                   broker_fetch: Callable[[], Awaitable[tuple[pd.DataFrame, str]]] | None = None,
+                   stored_beyond_broker: bool = False) -> BacktestBars:
+    """`resolve`'s order of sources for one instrument (the index's own bars, or its future's)."""
     from app.ai import evidence
     from app.market_store.models import FLAG as STORE_FLAG
     from app.platform.controls import flag_enabled

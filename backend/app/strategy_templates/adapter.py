@@ -69,7 +69,7 @@ class TemplateStrategy(BaseStrategy):
         self.description = template.idea
         self.label = ENGINE_LABEL[settings.timeframe]
         self.timeframes = [self.label]
-        self._cache: Optional[Tuple[pd.DataFrame, engine.SignalSeries]] = None
+        self._cache: Optional[Tuple[pd.DataFrame, str, engine.SignalSeries]] = None
         self.computations = 0                                  # how many whole series were computed (R3 test)
         # Section 5: the user's exit choice (the default: exactly the behaviour before - no target, no exit acted on)
         self.exits: exit_settings.TemplateExits = exit_settings.DEFAULT
@@ -117,19 +117,20 @@ class TemplateStrategy(BaseStrategy):
         sessions = bars if minutes >= SESSION_MINUTES else math.ceil(bars * minutes / SESSION_MINUTES)
         return min(MAX_HISTORY_DAYS, math.ceil(sessions * DAYS_PER_SESSION) + HOLIDAY_MARGIN_DAYS)
 
-    def series(self, df: pd.DataFrame) -> Tuple[engine.SignalSeries, int]:
-        """The signal series and the position of `df`'s last bar in it."""
+    def series(self, df: pd.DataFrame, symbol: str = "S") -> Tuple[engine.SignalSeries, int]:
+        """The signal series and the position of `df`'s last bar in it. `symbol` (M99 B1-d): the instrument the bars
+        are of - an index's 0 volume is no volume data in the engine (`engine.compute`), as in the screener."""
         whole = whole_frame(df)
         if whole is not None:
             frame, length = whole
-            if self._cache is None or self._cache[0] is not frame:
-                self._cache = (frame, self._compute(frame))
-            return self._cache[1], length - 1
-        return self._compute(df), len(df) - 1
+            if self._cache is None or self._cache[0] is not frame or self._cache[1] != symbol:
+                self._cache = (frame, symbol, self._compute(frame, symbol))
+            return self._cache[2], length - 1
+        return self._compute(df, symbol), len(df) - 1
 
-    def _compute(self, df: pd.DataFrame) -> engine.SignalSeries:
+    def _compute(self, df: pd.DataFrame, symbol: str = "S") -> engine.SignalSeries:
         self.computations += 1
-        return engine.compute(self.recipe, {self.settings.timeframe: df}, extras=self._extras or None)
+        return engine.compute(self.recipe, {self.settings.timeframe: df}, symbol, extras=self._extras or None)
 
     def analyze(self, data: Dict[str, pd.DataFrame], symbol: str) -> Signal:
         df = data.get(self.label)
@@ -138,7 +139,7 @@ class TemplateStrategy(BaseStrategy):
         timestamp = df.index[-1]
         if len(df) < self.recipe.min_bars:
             return self.no_trade(symbol, timestamp, [_NO_SIGNAL_TEXT[engine.REASON_WARMUP]])
-        series, t = self.series(df)
+        series, t = self.series(df, symbol)
         d = int(series.direction[t])
         if d == 0:
             why = str(series.reason[t])
@@ -171,14 +172,14 @@ class TemplateStrategy(BaseStrategy):
                                           projection=float(projection[t]) if projection is not None else None,
                                           level=float(level[t]) if level is not None else None)
 
-    def exit_signal(self, data: Dict[str, pd.DataFrame], direction: Any) -> bool:
+    def exit_signal(self, data: Dict[str, pd.DataFrame], direction: Any, symbol: str = "S") -> bool:
         """The template's exit signal on the last closed bar for an open idea of `direction` (R5 / S10: both backtest
         engines and the worker act on it when the user chose TEMPLATE_EXIT - `acts_on_exit_signal`; it never blocks or
         delays any other exit)."""
         df = data.get(self.label)
         if df is None or len(df) == 0:
             return False
-        series, t = self.series(df)
+        series, t = self.series(df, symbol)
         is_long = direction in (SignalDirection.LONG, "LONG", "long")
         return bool(series.exit_long[t] if is_long else series.exit_short[t])
 

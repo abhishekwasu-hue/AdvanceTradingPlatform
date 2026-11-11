@@ -16,7 +16,7 @@ worker's cycle (and the next cycle's exits) is never held up; a refused read is 
 An index (no traded volume of its own; M99 B1-a): its frames carry the volume of its near-month future, read through the
 same path as the index's own bars (`market_data.index_volume`: the near-month contract in the instrument master, the
 future's bar at the same instant, 0 where it has none) - as the chart and the screener do, so the scan and the live
-worker read the same volume (the backtest's bar source does not do this yet). The future's bars not read: the index's
+worker read the same volume (the backtest's bar source too, M99 B1-d). The future's bars not read: the index's
 own bars as before (never a failed cycle for it).
 
 Closed bars only (no look-ahead; the worker drops the forming bar of the higher timeframes as before). A missing bar is

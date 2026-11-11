@@ -51,8 +51,8 @@ from app.charts.drawings import router as chart_drawings_router
 from app.charts.futures_basis import router as chart_futures_basis_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
-from app.charts.sd_zones_layer import router as chart_sd_zones_layer_router
 from app.charts.read_chart import router as chart_read_router
+from app.charts.sd_zones_layer import router as chart_sd_zones_layer_router
 from app.charts.studies import router as chart_studies_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.workspace_events import router as workspace_events_router

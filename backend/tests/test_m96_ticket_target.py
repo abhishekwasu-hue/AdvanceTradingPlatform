@@ -148,3 +148,16 @@ def test_exits_are_unaffected_by_an_armed_target(setup):
             return await trigger_engine.run_exits(session, t["tenant_id"], lookup)
     assert _run(go()).filled == 0
     assert [e.status for e in _exits_of(placed["trade_id"])] == ["CANCELLED"]
+
+
+def test_a_target_that_cannot_be_kept_never_undoes_the_order(setup, monkeypatch):
+    t, expiry, strike, _ = setup
+
+    async def refuse(*args, **kwargs):
+        raise resting_book.RestingOrderError("This position is already closed.")
+    monkeypatch.setattr(resting_book, "arm_exit", refuse)
+    placed = _place(t, _body(expiry, strike, target=130.0, client_ref=_ref()))
+    assert placed["status"] == "PLACED" and placed["trade_id"]
+    assert placed["target_order"] == {"armed": False, "text": "The target was not armed: This position is already closed. Arm it from the position."}
+    held = client.get("/api/paper/fno/held", headers=t["headers"], params={"underlying": "NIFTY", "expiry": expiry.isoformat()}).json()
+    assert len(held) == 1

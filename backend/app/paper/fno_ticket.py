@@ -21,6 +21,10 @@ here, before anything is placed:
   loss lockout and entries-per-day limit, approval-only mode, experience gates, the F&O ban, the Risk Guardian, the
   risk engine's size within the risk per trade), in plain words. The order pipeline runs them again when it places.
 
+M96 Q2: an optional TARGET of the user's own (empty by default, never a platform value) is checked only as a price on
+the profitable side of the entry, named in the confirm step, and armed after the fill as a TARGET exit through the
+resting-exit route's own function (`resting_book.arm_exit`); a waiting order carries it and arms it when it fills.
+
 FNO-3: the same ticket takes a FUTURE (`right` "FUT", no strike): the contract is the instrument master's future (lot
 and tick size), a future needs a stop-loss on both sides (its loss has no limit without one), and its margin is the
 broker's SPAN margin, which PAPER does not have (said so, with the contract value; never invented).
@@ -702,7 +706,7 @@ async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id:
         row = await resting_book.arm_exit(session, user, trade, client_ref=target_ref(ask, trade_id), kind=resting_book.TARGET,
                                           order_type="LIMIT", level=float(ask.target), trigger=target_trigger(ask))
     except resting_book.RestingOrderError as exc:
-        await session.rollback()
+        # arm_exit refuses before it adds anything: nothing to undo (and nothing else of this order is rolled back).
         return {"armed": False, "text": f"The target was not armed: {exc} Arm it from the position."}
     await session.commit()
     return {"armed": True, "text": f"Target armed at {float(ask.target):,.2f}.", "resting_order": resting_book.view(row)}

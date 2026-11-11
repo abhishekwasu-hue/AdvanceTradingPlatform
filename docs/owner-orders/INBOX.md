@@ -360,3 +360,4 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-11-10 | "Yes default" (after the M95 question list Q1-Q7) | M95-Q1..Q7 defaults approved as written in docs/design/M95_FRONT_DOOR.md section 2; build all parts |
 | 2026-11-10 | "Default ho" (after the M95 invite-request PR note and the M94 proof findings) | read as: (1) the "Ask for an invite" form shows under ui_v2 only (CLAUDE.md §7), today's line without ui_v2; (2) the three M94 phone UI findings stay as they are until the owner asks for a change |
 | 2026-11-11 | "Default ho" (after the M95 report: the old invite sentence above the form, the option-chain card without OI bars) | both stay as they are until a new order |
+| 2026-11-11 | "Paper & Real Trading ase kara," (owner wrote it in Devanagari; after the M95 front-door report) | M95 follow-up: the front door / link preview / site wording to say Paper & Real Trading; open question M95-Q8 (how, while LIVE is off) |

@@ -690,7 +690,7 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
     <div className="space-y-space-3" data-ticket="confirm">
       {/* M96-Q1: the mode, in large text, before anything else on the confirm step. */}
       <p className={cx("text-t18 font-semibold", p.mode === "LIVE" ? "text-warn" : "text-fg")} data-ticket="confirm-mode">
-        {p.mode === "LIVE" ? "LIVE order: real money, your broker" : "PAPER order: practice, no real money"}
+        {p.mode === "LIVE" ? "LIVE order · real money" : "PAPER order · practice"}
       </p>
       <dl className="rounded-control border border-subtle px-space-3">
         <Line label="Order" testId="order">{sideWord(p.side)} · {type} · {p.product}</Line>

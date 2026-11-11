@@ -61,9 +61,9 @@ describe("M96-Q1 ticket mode", () => {
 
   it("the confirm step names the mode in large text", () => {
     const live = renderToStaticMarkup(<MemoryRouter><Review preview={preview({ mode: "LIVE" })} /></MemoryRouter>);
-    expect(live).toMatch(/class="text-t18 font-semibold text-warn" data-ticket="confirm-mode">LIVE order: real money, your broker</);
+    expect(live).toMatch(/class="text-t18 font-semibold text-warn" data-ticket="confirm-mode">LIVE order · real money</);
     const paper = renderToStaticMarkup(<MemoryRouter><Review preview={preview()} /></MemoryRouter>);
-    expect(paper).toMatch(/data-ticket="confirm-mode">PAPER order: practice, no real money</);
+    expect(paper).toMatch(/data-ticket="confirm-mode">PAPER order · practice</);
   });
 
   it("the header chip and the result follow the mode", () => {

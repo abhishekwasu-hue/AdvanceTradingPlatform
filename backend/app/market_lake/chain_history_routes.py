@@ -9,6 +9,14 @@ organisation (404 while off). For Part 9.3 (IV / OI history), Part 10 (replay) a
 - GET range?underlying=&start=&end=&expiry=   up to CHAIN_HISTORY_READ_MAX_DAYS days, at most
                                     CHAIN_HISTORY_READ_MAX_CHAINS chains (counted first; 422 above it)
 
+M96 N1 (the option chain's OI view; the caller's own rows only, the same scope as above; also open with the
+bring-your-own-broker data tier on, whose own 5-minute reads live in the same store):
+- GET oi-range?underlying=&expiry=&start=&end=   per strike call / put OI at the two times and the change (start / end
+                                    are IST date-times; the reading used is the newest read at or before each, same day)
+- GET oi-replay?underlying=&expiry=&day=&around=  every stored chain of that day and expiry, OI per strike per frame
+- GET expiries?underlying=&at=      per stored expiry at `at` (default now): total OI, OI change since the day's first
+                                    reading, PCR (OI), max pain, ATM IV
+
 Admin - GET /api/admin/chain-history/status (SUPER_ADMIN with two-factor): what is being recorded, today's chains per
 underlying, the last snapshot, today's gaps. Counts and times only - no prices.
 """
@@ -23,7 +31,7 @@ from app.core import config
 from app.db.models import User
 from app.db.session import get_session
 from app.market_data.calendar import IST
-from app.market_lake import chain_recorder, chain_store
+from app.market_lake import chain_range, chain_recorder, chain_store
 
 router = APIRouter(prefix="/api/chain-history", tags=["chain-history"])
 admin_router = APIRouter(prefix="/api/admin/chain-history", tags=["admin"],
@@ -36,6 +44,20 @@ async def _flag(session: AsyncSession, user: User) -> None:
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, chain_recorder.FLAG, user.tenant_id):
         raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": chain_recorder.FLAG})
+
+
+async def _own_history(session: AsyncSession, user: User) -> None:
+    """M96 N1: the recorder's flag, or the own-broker data tier (whose own reads are stored in the same table)."""
+    from app.market_data import live_access
+    from app.platform.controls import flag_enabled
+    if await flag_enabled(session, chain_recorder.FLAG, user.tenant_id) or await live_access.byob_on(session, user.tenant_id):
+        return
+    raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": chain_recorder.FLAG})
+
+
+def _ist(moment: datetime) -> datetime:
+    """A date-time without a zone is IST (the pickers' clock)."""
+    return moment.replace(tzinfo=IST) if moment.tzinfo is None else moment
 
 
 def _name(underlying: str) -> str:
@@ -83,6 +105,64 @@ async def range_(underlying: str = Query(..., pattern=UNDERLYING), start: date =
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return {"underlying": name, "start": start.isoformat(), "end": end.isoformat(), "expiry": expiry.isoformat() if expiry else None,
             "fields": list(chain_store.FIELD_NAMES), "chains": [c.as_json() for c in chains]}
+
+
+@router.get("/oi-range")
+async def oi_range(underlying: str = Query(..., pattern=UNDERLYING), expiry: date = Query(...), start: datetime = Query(...),
+                   end: datetime = Query(...), user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _own_history(session, user)
+    start, end = _ist(start), _ist(end)
+    if end <= start:
+        raise HTTPException(status_code=422, detail="The 'To' time must be after the 'From' time.")
+    if (end.astimezone(IST).date() - start.astimezone(IST).date()).days + 1 > config.CHAIN_HISTORY_READ_MAX_DAYS:
+        raise HTTPException(status_code=422, detail=f"At most {config.CHAIN_HISTORY_READ_MAX_DAYS} days per request.")
+    name = _name(underlying)
+    first = await chain_range.chain_at(session, user.tenant_id, user.id, name, expiry, start)
+    last = await chain_range.chain_at(session, user.tenant_id, user.id, name, expiry, end)
+    head = {"underlying": name, "expiry": expiry.isoformat(), "start": start.isoformat(), "end": end.isoformat()}
+    if first is None or last is None or first.captured_at >= last.captured_at:
+        missing = "both" if first is None and last is None else "start" if first is None else "end" if last is None else "same"
+        return {**head, "missing": missing, "from": chain_range.meta(first) if first else None,
+                "to": chain_range.meta(last) if last else None, "atm": None, "rows": [], "totals": None}
+    return {**head, "missing": None, **chain_range.oi_diff(first, last)}
+
+
+@router.get("/oi-replay")
+async def oi_replay(underlying: str = Query(..., pattern=UNDERLYING), expiry: date = Query(...), day: date = Query(...),
+                    around: int = Query(default=0, ge=0, le=50), user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _own_history(session, user)
+    name = _name(underlying)
+    try:
+        chains = await chain_store.read_day(session, user.tenant_id, name, day, expiry=expiry, reader_user_id=user.id,
+                                            max_chains=config.CHAIN_HISTORY_READ_MAX_CHAINS)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return {"underlying": name, "expiry": expiry.isoformat(), "day": day.isoformat(), "around": around,
+            **chain_range.replay_frames(chains, around)}
+
+
+@router.get("/expiries")
+async def expiries(underlying: str = Query(..., pattern=UNDERLYING), at: datetime | None = Query(default=None),
+                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _own_history(session, user)
+    from app.market_data.calendar import family_holidays
+    from app.option_chain import chain_view
+    name = _name(underlying)
+    moment = _ist(at) if at is not None else datetime.now(timezone.utc)
+    day = moment.astimezone(IST).date()
+    holidays = await family_holidays(session, chain_view.spot_instrument(name)[1])
+    rate = await chain_view.risk_free_rate_for(session, user)
+    items = []
+    for expiry in await chain_range.day_expiries(session, user.tenant_id, user.id, name, day):
+        chain = await chain_range.chain_at(session, user.tenant_id, user.id, name, expiry, moment)
+        if chain is None:
+            continue
+        first = await chain_range.first_of_day(session, user.tenant_id, user.id, name, expiry, day, before=moment)
+        items.append(chain_range.expiry_summary(chain, first if first is not None and first.captured_at < chain.captured_at else None,
+                                                holidays=holidays, rate=rate))
+    return {"underlying": name, "day": day.isoformat(), "at": moment.astimezone(IST).isoformat(), "expiries": items}
 
 
 @admin_router.get("/status")

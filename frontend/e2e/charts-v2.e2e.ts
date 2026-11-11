@@ -326,8 +326,10 @@ test.describe("v2 Charts 1440 desktop", () => {
     await chartReady(page);
     await page.getByRole("button", { name: /^Indicators/ }).click();
     const menu = page.getByRole("dialog", { name: "Indicators" });
-    await expect(menu.locator("section")).toHaveCount(2);                      // no layer's flag is on
-    await expect(menu.getByRole("region")).toHaveText([/On this chart/, /Popular/]);
+    // M96 N1: the one layer of the v2 chart (ui_v2) - the expected move from the option prices; flagged layers stay hidden
+    await expect(menu.locator("section")).toHaveCount(3);
+    await expect(menu.getByRole("region")).toHaveText([/On this chart/, /Popular/, /Layers/]);
+    await expect(menu.getByRole("switch", { name: /Expected move \(from the option prices\)/ })).toHaveAttribute("aria-checked", "false");
     await expect(menu.getByRole("button", { name: "What is VWAP?" })).toBeVisible();
     await menu.getByRole("textbox", { name: "Search indicators" }).fill("average");
     await expect(menu.getByRole("switch")).toHaveText(["EMA 9", "EMA 21", "SMA 50", "VWAP"]);

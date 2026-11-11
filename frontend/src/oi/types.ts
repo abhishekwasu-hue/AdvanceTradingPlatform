@@ -87,7 +87,17 @@ export interface OiAlertSettings {
   quiet_start: string | null;
   quiet_end: string | null;
   digest_time: string | null;
+  /** M96 N1: the user's own per-strike OI change levels (none until he adds one). */
+  strike_rules?: OiStrikeRule[];
+  /** M96 N1: the user's own PCR level (none until he types one). */
+  pcr_level?: number | null;
 }
+
+/** M96 N1: notify when this strike's call (CE) or put (PE) OI change since the day's first reading reaches `threshold`. */
+export interface OiStrikeRule { strike: number; side: "CE" | "PE"; threshold: number }
+
+/** M96 N1: the threshold alert types (managed in their own card, src/optionChain/OiThresholdAlertsV2.tsx). */
+export const OI_THRESHOLD_ALERT_TYPES = ["STRIKE_OI_CHANGE", "PCR_CROSS"] as const;
 
 export interface OiAlertLogResponse {
   underlying: string;

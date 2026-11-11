@@ -238,7 +238,8 @@ describe("8b-h Explain: the structure and each Greek in plain words (education)"
 
 describe("8b-l the PAPER frame on every F&O order surface", () => {
   it("the ticket, the basket panel and the positions page carry the frame", () => {
-    expect(ticketSource).toContain("<PracticeFrame />");
+    // M96-Q1: the ticket's chip follows his mode choice - PAPER unless he picks LIVE (then the LIVE badge).
+    expect(ticketSource).toContain("<TicketModeBadge mode={t.draft.mode} />");
     expect(panelSource).toContain("<PracticeFrame />");
     // CT-1 C8: positions carry the one PAPER badge in the title row while a paper position or trade is shown; a LIVE row
     // has its own LIVE badge, and no row repeats "Paper".

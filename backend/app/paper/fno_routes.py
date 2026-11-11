@@ -114,6 +114,8 @@ class OrderBody(BaseModel):
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    # M96 Q2: the user's own optional target (premium); not sent = no target (never a platform value).
+    target: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     chain_ltp: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
     # TM-2: "wait for my price" - a limit / stop the price has not reached rests in the resting book (needs client_ref).

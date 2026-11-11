@@ -398,14 +398,15 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
 /** The "Practice mode (PAPER)" frame on every ticket (owner order 8b-l); 8b slice 1: also on the positions page while
  * every position shown is PAPER (`className` rounds it there). */
 /** UX-9: the "More options" summary line - the product and the position's stop-loss as they stand. */
-export function advancedSummary(draft: Pick<Draft, "product" | "stopLoss">): string {
+export function advancedSummary(draft: Pick<Draft, "product" | "stopLoss"> & { target?: string }): string {
   const stop = draft.stopLoss.trim();
-  return `${draft.product ?? "no product"} · ${stop ? `stop-loss ${stop}` : "no stop-loss"}`;
+  const target = (draft.target ?? "").trim();      // M96 Q2: named only when he entered one
+  return `${draft.product ?? "no product"} · ${stop ? `stop-loss ${stop}` : "no stop-loss"}${target ? ` · target ${target}` : ""}`;
 }
 
 /** UX-9: the review asked for a stop-loss, so "More options" opens to show the field (the server's own words). */
 export function needsStop(problem: string | null | undefined): boolean {
-  return !!problem && /stop-loss/i.test(problem);
+  return !!problem && /stop-loss|target/i.test(problem);
 }
 
 /** UI-28 U1.1 / CT-1 C8: the one "PAPER" badge (ui/PaperBadge), kept under its old name for the pieces that import it. */
@@ -457,7 +458,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
 }) {
   const n = needs(draft.orderType);
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
-  const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop` };
+  const ids = { lots: `${idPrefix}-lots`, price: `${idPrefix}-price`, trigger: `${idPrefix}-trigger`, stop: `${idPrefix}-stop`, target: `${idPrefix}-target` };
   const marks = draftFromDefaults(draft, defaults);
   const fromDefaults = [marks.lots && "lots", marks.orderType && "order type", marks.product && "product"].filter(Boolean) as string[];
   const sideTone = draft.side === "BUY" ? "bg-up text-on-brand" : "bg-down text-on-brand";
@@ -534,7 +535,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 M68 TS-3: it stays open while it asks for the product, and after he picks one (its "Save as my default"). */}
             <details className="group rounded-control border border-subtle" data-ticket="advanced" open={needsStop(problem) || draft.product === null || (saveDefaults && !marks.product) || undefined}>
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-space-2 px-space-3 text-t13 font-medium text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand [&::-webkit-details-marker]:hidden">
-                <span className="inline-flex items-center gap-space-1">
+                <span className="inline-flex shrink-0 items-center gap-space-1 whitespace-nowrap">
                   <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />More options
                 </span>
                 <span className="min-w-0 truncate font-tabular text-t12 font-normal text-fg-muted" data-ticket="advanced-summary">{advancedSummary(draft)}</span>
@@ -548,6 +549,11 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                     Stop-loss for the position {stopHint(draft.side, target.right)}
                   </label>
                   <input id={ids.stop} inputMode="decimal" value={draft.stopLoss} onChange={(e) => onDraft({ stopLoss: e.target.value })} className={FIELD} data-ticket="stop" />
+                </div>
+                {/* M96 Q2: his own optional target, empty by default; armed after the fill as a waiting exit. */}
+                <div>
+                  <label htmlFor={ids.target} className="mb-space-1 block text-t12 font-medium text-fg-muted">Target for the position (optional)</label>
+                  <input id={ids.target} inputMode="decimal" value={draft.target ?? ""} onChange={(e) => onDraft({ target: e.target.value })} className={FIELD} data-ticket="target" />
                 </div>
               </div>
             </details>
@@ -682,6 +688,12 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
           {moneyText(p.max_loss?.value)}
           {p.max_loss && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.max_loss.basis}</span>}
         </Line>
+        {typeof p.target === "number" && (
+          <Line label="Target" testId="target">
+            {formatPrice(p.target)}
+            <span className="block max-w-[14rem] text-t12 text-fg-muted">Waits as a limit exit after the fill</span>
+          </Line>
+        )}
         {p.charges && <Line label="Charges (estimate)" testId="charges">{moneyText(p.charges.total)}</Line>}
       </dl>
       {p.charges?.words && <p className="text-t12 text-fg-muted" data-ticket="charges-words">{p.charges.words}</p>}

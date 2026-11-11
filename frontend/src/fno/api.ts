@@ -60,6 +60,8 @@ export interface OrderAsk {
   price?: number | null;
   trigger_price?: number | null;
   stop_loss?: number | null;
+  /** M96 Q2: his own optional target (premium), armed after the fill as a TARGET exit; null / absent = none. */
+  target?: number | null;
   chain_ltp?: number | null;
   client_ref?: string | null;
   /** M76 MP-5 (trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. */
@@ -84,6 +86,8 @@ export interface OrderPreview {
   fill_price: number | null;
   fill_note: string | null;
   stop_loss: number | null;
+  /** M96 Q2: the target he entered (null = none). */
+  target?: number | null;
   margin: MoneyLine | null;
   max_loss: MoneyLine | null;
   /** M68 PR-7: `words` - his own paper charges in plain words (Not set: statutory charges only). */
@@ -108,6 +112,8 @@ export interface OrderResult extends OrderPreview {
   order_id: number | null;
   trade_id: number | null;
   filled: { price: number; quantity: number; lots: number } | null;
+  /** M96 Q2: his target after the fill - armed as a TARGET exit, or why not (null = no target asked). */
+  target_order?: { armed: boolean; text: string } | null;
 }
 
 const q = (params: Record<string, string | number | null>) =>

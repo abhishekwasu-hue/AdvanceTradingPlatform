@@ -140,6 +140,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),
     "screener_waves": FlagInfo("Wave count in screens (running wave, type, alternate, clarity, wave levels and lines)", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
+    "m99_primitives": FlagInfo("M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
     "trade_warnings": FlagInfo("One compact check card on the order ticket and the basket: fact lines, a switch per warning type", "trading",
                                "one card of facts before Place, with Don't show again and Edit on each line", ("ui_v2",), "", "unfinished"),
     "term_margin_pair": FlagInfo("Margin required and available in the basket, re-read on every lot change", "trading",
@@ -306,6 +307,7 @@ FLAG_GROUP: dict[str, str] = {
     "screener_fundamentals": "screens",
     "screener_ownership": "screens",
     "screener_waves": "screens",
+    "m99_primitives": "screens",
     # Screens: ready-made screens and ideas
     "screener_gallery": "screen_library",
     "idea_library": "screen_library",
@@ -419,6 +421,7 @@ KEEP_OFF: Dict[str, str] = {
     "screener_legends_lg3": "needs company fundamentals",
     "screener_ownership": "no ownership data source",
     "screener_waves": "wave reading is method content; after the wave templates / P5-1",
+    "m99_primitives": "unfinished: the M99 shared primitives are still being built (M99 B1)",
     "mobile_push": "needs the FCM key and the app (P5-4)",
     "alerts_whatsapp_dlt": "needs DLT registration (owner / legal)",
     "growth_v2": "plans come with payments (P5-2)",

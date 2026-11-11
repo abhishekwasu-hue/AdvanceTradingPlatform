@@ -578,6 +578,10 @@ class _Eval:
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
+            # M99 B1-b (flag m99_primitives): Fibonacci levels of the confirmed swings and the nearest price cluster
+            "FibLevel": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "level"),
+            "FibDistancePct": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "distance"),
+            "ClusterDistancePct": lambda: _cluster_distance(f, num(0, float("nan")), _text(1, "pct"), int(num(2, 0))),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
@@ -1017,6 +1021,38 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     lo = pd.Series(low, index=f.index).ffill()
     d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
+
+
+def _fib(f: pd.DataFrame, kind: str, ratio: float, degree: int, what: str) -> pd.Series:
+    """M99 B1-b: FibLevel / FibDistancePct - the level of `kind` at `ratio` from the pivots CONFIRMED by each bar
+    (app/price_action/fib_causal.py, default price-action settings), or the close's distance from it in %."""
+    from app.price_action import fib_causal
+    if kind not in fib_causal.FIB_KINDS:
+        raise ScreenRuntimeError(f"unknown Fibonacci kind {kind!r} (one of {', '.join(fib_causal.FIB_KINDS)})")
+    if not np.isfinite(ratio) or ratio < 0:
+        raise ScreenRuntimeError(f"the Fibonacci ratio must be a number at or above 0, not {ratio!r}")
+    try:
+        level = fib_causal.fib_series(f, kind, float(ratio), degree)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what == "distance":
+        return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), level), index=f.index)
+    return pd.Series(level, index=f.index)
+
+
+def _cluster_distance(f: pd.DataFrame, band: float, mode: str, degree: int) -> pd.Series:
+    """M99 B1-b: ClusterDistancePct - the close's distance in % from the centre of the nearest price cluster known at each
+    bar (app/price_action/fib_causal.py `cluster_series`, the reference ratios, two or more levels)."""
+    from app.price_action import fib_causal, price_clusters
+    if mode not in price_clusters.BAND_MODES:
+        raise ScreenRuntimeError(f"unknown band mode {mode!r} (one of {', '.join(price_clusters.BAND_MODES)})")
+    if not np.isfinite(band) or band < 0:
+        raise ScreenRuntimeError(f"the cluster band must be a number at or above 0, not {band!r}")
+    try:
+        c = fib_causal.cluster_series(f, float(band), mode, degree)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), c["centre"]), index=f.index)
 
 
 PRIOR_SWING_BACK: Dict[str, int] = {"one": 1, "two": 2, "three": 3}

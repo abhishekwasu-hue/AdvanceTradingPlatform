@@ -170,6 +170,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_venues": _behind(),
     "screener_ownership": _decision("A licensed source of ownership data (none chosen)"),
     "screener_waves": _decision("Wave reading is method content; kept off until the chart reader port"),
+    "m99_primitives": _not_built("Only the Fibonacci and price-cluster functions are built; the other shared primitives come next", "M99"),
     "term_margin_pair": _ready("Your broker's margin where it offers one, else a labelled estimate"),
     "term_roll": _ready(),
     "term_strike_area": _ready("Reads the stored areas"),

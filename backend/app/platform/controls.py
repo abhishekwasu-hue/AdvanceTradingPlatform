@@ -495,6 +495,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # reason; wave alerts fire on bar close only. Information only - places no orders.
     "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, the wave levels, ratios and "
                       "anchored wave lines and their retest, from confirmed swings (information only)",
+    # M99 B1 (owner order M99): the shared primitives in ScreenQL - B1-b: FibLevel / FibDistancePct / ClusterDistancePct from
+    # confirmed swings (app/price_action/fib_causal.py). OFF: the registry hides them and a screen or study using one is
+    # refused with the reason; alert rules do not take them yet. Information only - places no orders.
+    "m99_primitives": "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished",
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
     # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the

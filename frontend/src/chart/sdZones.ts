@@ -69,7 +69,7 @@ export interface SdTimeframeRows {
   source: string | null; reason: string | null;
 }
 export interface SdZonesResponse {
-  schema: "sd-layer/1"; symbol: string; at: string; note: string; include_violated: boolean; settings: Record<string, number | string>;
+  schema: "sd-layer/1"; symbol: string; at: string; note: string; include_violated: boolean; settings: Record<string, number | string | boolean>;
   settings_note: string; timeframes: SdTimeframeRows[];
 }
 

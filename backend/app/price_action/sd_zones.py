@@ -11,7 +11,9 @@ Definitions (our own words):
   against itself). The leg-out may use the ATR(`avg_n`) known at the candle before instead (`out_ref` "atr").
 * Leg candle: range >= `leg_mult` x average range, and a body >= `leg_body_pct` % of its own range. Its direction is
   up (close > open) or down (close < open).
-* Base candle: range <= `base_mult` x average range, and a body <= `base_body_pct` % of its own range.
+* Base candle: range <= `base_mult` x average range, and a body <= `base_body_pct` % of its own range. With
+  `skip_flat_bars` on (reference, M98-P1 Q2) a zero-range candle (high == low) is never a base candle: it carries no
+  range or body to read.
 * Base: 1 to `base_max` base candles in a row. A longer run of base candles is not a base.
 * Leg-in: the leg candle just before the base, up or down.
 * Leg-out: the candle just after the base, explosive: range >= `out_mult` x the reference (average range or ATR), up or
@@ -36,8 +38,9 @@ States (M97-Q6), computed causally bar by bar from the bar after the leg-out:
 * Violated: a close beyond the distal line (demand: close < distal; supply: close > distal). Final: a violated zone is
   hidden from the nearest-zone reads.
 
-Reference values (M97-Q2, each a setting, shown "reference - edit before use"): avg_n 20, leg_mult 1.5, base_mult 0.7,
-out_mult 1.5, leg_body_pct 75, base_body_pct 50, base_max 5, out_ref "average", edge "wick".
+Reference values (M97-Q2, each a setting, shown "reference - edit before use"): avg_n 20, leg_mult 1.0, base_mult 0.7,
+out_mult 1.5, leg_body_pct 50, base_body_pct 50, base_max 5, out_ref "average", edge "wick", skip_flat_bars on. (M98-P1
+Q1: the leg-in need not be explosive - leg_mult 1.0 / leg_body_pct 50, were 1.5 / 75; the leg-out stays explosive.)
 
 No look-ahead: every quantity at bar t uses bars <= t only, so a run on the bars cut at t gives the same values up to t
 as the full run (tested). The ScreenQL functions (flag `sd_pack`) read the per-bar series below.
@@ -69,14 +72,15 @@ LINES: tuple[str, ...] = ("proximal", "distal")
 # (registry.SD_KWARGS, checked by tests/test_m97_sd_zones.py)
 SETTINGS_TABLE: tuple[tuple[str, str, Any, Any], ...] = (
     ("avg_n", "bars", 20, (5, 200)),
-    ("leg_mult", "num", 1.5, (1.0, 5.0)),
+    ("leg_mult", "num", 1.0, (1.0, 5.0)),
     ("base_mult", "num", 0.7, (0.1, 1.0)),
     ("out_mult", "num", 1.5, (1.0, 5.0)),
-    ("leg_body_pct", "num", 75.0, (50.0, 100.0)),
+    ("leg_body_pct", "num", 50.0, (50.0, 100.0)),
     ("base_body_pct", "num", 50.0, (5.0, 90.0)),
     ("base_max", "bars", 5, (1, 10)),
     ("out_ref", "choice", "average", OUT_REFS),
     ("edge", "choice", "wick", EDGES),
+    ("skip_flat_bars", "bool", True, None),
 )
 REFERENCE_LABEL = "reference - edit before use"
 
@@ -85,14 +89,15 @@ REFERENCE_LABEL = "reference - edit before use"
 class SDSettings:
     """The detector's settings; every default is a reference value (M97-Q2), never a recommendation."""
     avg_n: int = 20
-    leg_mult: float = 1.5
+    leg_mult: float = 1.0
     base_mult: float = 0.7
     out_mult: float = 1.5
-    leg_body_pct: float = 75.0
+    leg_body_pct: float = 50.0
     base_body_pct: float = 50.0
     base_max: int = 5
     out_ref: str = "average"
     edge: str = "wick"
+    skip_flat_bars: bool = True
 
 
 def settings_from(values: dict[str, Any] | None = None) -> SDSettings:
@@ -110,6 +115,11 @@ def settings_from(values: dict[str, Any] | None = None) -> SDSettings:
             if value not in bounds:
                 raise ValueError(f"{name} must be one of {', '.join(bounds)}, got {value!r}")
             out[name] = str(value)
+            continue
+        if kind == "bool":
+            if not isinstance(value, (bool, np.bool_)):
+                raise ValueError(f"{name} must be true or false, got {value!r}")
+            out[name] = bool(value)
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) or not np.isfinite(value):
             raise ValueError(f"{name} must be a number, got {value!r}")
@@ -174,6 +184,8 @@ def _candles(df: pd.DataFrame, s: SDSettings) -> dict[str, np.ndarray]:
         leg = known & (rng >= s.leg_mult * avg) & (body_pct >= s.leg_body_pct) & (c != o)
         base = known & (rng <= s.base_mult * avg) & (body_pct <= s.base_body_pct)
         out = np.isfinite(ref) & (rng >= s.out_mult * ref) & (c != o)
+    if s.skip_flat_bars:
+        base &= rng > 0                                                          # M98-P1 Q2: a flat bar is no base candle
     return {"o": o, "h": h, "l": lo, "c": c, "up": c > o, "leg": leg, "base": base, "out": out, "avg": avg, "ref": ref}
 
 

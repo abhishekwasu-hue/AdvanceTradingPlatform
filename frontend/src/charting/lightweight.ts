@@ -13,7 +13,7 @@
 import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerMark, LayerSegment, StudyLine, StudySpec } from "./engine";
-import { DEFAULT_COLOR, bandLeft, barSpan, layerShapes, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
+import { DEFAULT_COLOR, bandLeft, barSpan, layerShapes, markLabelRects, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -75,7 +75,7 @@ export class LightweightEngine implements ChartEngine {
   private studies = new Map<string, StudySpec>();
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
-  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[] }>();
+  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[]; marks: LayerMark[] }>();
   private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
@@ -357,20 +357,28 @@ export class LightweightEngine implements ChartEngine {
     for (const line of old?.lines ?? []) this.candles.removePriceLine(line);
     if (old?.bands) this.candles.detachPrimitive(old.bands);
     this.layers.delete(id);
-    if (!data) return;
+    if (!data) {
+      if (old?.marks.length) this.refreshLayers();                                // M98-P1 Q3: the others' labels move back
+      return;
+    }
     const made = (data.lines ?? []).filter((l) => Number.isFinite(l.price)).map((l) => this.candles.createPriceLine({
       price: l.price, color: l.color ?? "#64748b", lineWidth: 1, lineStyle: LINE_STYLE[l.style ?? "dashed"], axisLabelVisible: false, title: l.title ?? "",
     }));
     let bands: LayerPrimitive | null = null;
     if (data.bands?.length || data.segments?.length || data.labels?.length || data.marks?.length) {
       const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])], marks: [...(data.marks ?? [])] };
-      bands = new LayerPrimitive((c) => layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand), segments: shapes.segments.map(this.themedSegment),
-                                                      marks: shapes.marks.map(this.themedMark) },
-                                                    { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle }),
-                                 (w, h) => this.converters(w, h));
+      bands = new LayerPrimitive((c) => {
+        const cc = { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle };
+        // M98-P1 Q3: the candle-box names every other layer paints (a tap's highlight) - this layer's band labels keep
+        // clear of them, by the same placement those layers paint with
+        const names = [...this.layers].flatMap(([key, l]) => (key !== id && l.marks.length ? markLabelRects(l.marks, cc) : []));
+        return layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand), segments: shapes.segments.map(this.themedSegment),
+                             marks: shapes.marks.map(this.themedMark) }, names.length ? { ...cc, labelBlocks: names } : cc);
+      }, (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);
     }
-    this.layers.set(id, { lines: made, bands, data: [...(data.bands ?? [])] });
+    this.layers.set(id, { lines: made, bands, data: [...(data.bands ?? [])], marks: [...(data.marks ?? [])] });
+    if ((old?.marks.length ?? 0) || data.marks?.length) this.refreshLayers();      // M98-P1 Q3: the others' labels move
   }
 
   /** N4 CH6: one line series per study id, kept while its pane and colour stay (only the data is replaced). */

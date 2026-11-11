@@ -55,8 +55,10 @@ def test_each_formation_gives_one_zone_with_every_field_the_chart_needs(formatio
     assert z["base"]["times"] == [t[last - 2], t[last - 1]] and z["base"]["candles"] == 2
     detected = sd.detect(df)[0]
     assert (z["proximal"], z["distal"]) == pytest.approx((detected.proximal, detected.distal))
-    # the numbers the detector judged the candles by: a leg >= 1.5 x the average and >= 75 % body, a base <= 0.7 x and <= 50 %
-    assert z["leg_in"]["mult"] >= 1.5 and z["leg_in"]["body_pct"] >= 75
+    # the numbers the detector judged the candles by (the reference, M98-P1 Q1): a leg-in >= 1.0 x the average and >= 50 %
+    # body, a leg-out >= 1.5 x, a base <= 0.7 x and <= 50 %
+    assert (sd.SDSettings().leg_mult, sd.SDSettings().leg_body_pct) == (1.0, 50.0)
+    assert z["leg_in"]["mult"] >= 1.0 and z["leg_in"]["body_pct"] >= 50
     assert z["leg_out"]["mult"] >= 1.5 and z["leg_out"]["of"] == "average range"
     assert z["base"]["max_mult"] <= 0.7 and z["base"]["max_body_pct"] <= 50
     assert z["label"] == f"{'Demand' if side == 'demand' else 'Supply'} · {formation} · Fresh · 15m"
@@ -219,6 +221,7 @@ def test_zones_per_chosen_timeframe_and_violated_hidden(owner, lake):
     assert [z["formation"] for z in by_tf["1d"]["zones"]] == ["RBD"]
     assert by_tf["1h"]["zones"] == [] and by_tf["1h"]["hidden_violated"] == 1
     assert data["settings_note"] == sd.REFERENCE_LABEL and data["settings"]["avg_n"] == 20
+    assert (data["settings"]["leg_mult"], data["settings"]["leg_body_pct"], data["settings"]["skip_flat_bars"]) == (1.0, 50.0, True)
     shown = client.get(URL, params={"symbol": "NSE:SDTEST", "timeframes": "1h", "at": at, "include_violated": 1}, headers=headers).json()
     assert [z["state"] for z in shown["timeframes"][0]["zones"]] == ["violated"]
 

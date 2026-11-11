@@ -23,7 +23,7 @@ import { InPlaceLink } from "../inplace/InPlaceLink";
 import { LoadingRowsV2 } from "../dashboard/CardV2";
 import type { ChainTrading } from "../fno/ChainTradingV2";
 import { basketOn } from "../fno/desk";
-import { PracticeFrame, TicketBody, useOrderTicket, type OrderTicketState } from "../fno/OrderTicketV2";
+import { TicketBody, TicketModeBadge, useOrderTicket, type OrderTicketState } from "../fno/OrderTicketV2";
 import type { BasketLeg } from "../fno/basket";
 import { heldKey, type TicketTarget } from "../fno/ticketModel";
 import type { Side } from "../fno/api";
@@ -278,12 +278,12 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
       <div className="px-space-4 pt-space-2">
         <div className="flex min-w-0 items-center gap-space-2">
           <p className="truncate text-t15 font-semibold text-fg">{label}</p>
-          {paperBadge && <PracticeFrame />}
+          {(paperBadge || t.draft.mode === "LIVE") && <TicketModeBadge mode={t.draft.mode} />}
         </div>
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
-        budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} keysHint={false} stickyActions
+        budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live} keysHint={false} stickyActions
         onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClear} />
     </div>
   );

@@ -3,7 +3,7 @@
  * which expiry to show, the plain-word states, the columns, where the ATM row scrolls to and the number formats.
  * Nothing here reads the network or makes up a number: a missing value is shown as "–" (src/ui/format.ts).
  */
-import { EMPTY, MINUS, formatDateIST, formatDateTimeIST, formatNumber } from "../ui/format";
+import { EMPTY, MINUS, formatContracts, formatDateIST, formatDateTimeIST, formatLakhs, formatNumber } from "../ui/format";
 import type { ComboOption } from "../ui/Combobox";
 import { OPTION_INDICES, OPTION_STOCKS } from "../ui/symbolUniverse";
 import type { ChainExpiries, ChainLeg, ChainRow, LiveChain } from "./types";
@@ -103,7 +103,12 @@ export interface ColumnPrefs {
   more: boolean;
   /** FNO-1: OI change in percent of the earlier OI instead of the count. */
   pct?: boolean;
+  /** M96 Q3: OI, OI change and volume in lakhs (the default, "0.50 L") or as the broker's whole number ("Contracts"). */
+  units?: OiUnits;
 }
+
+/** M96 Q3: the chain's unit for OI, OI change and volume. */
+export type OiUnits = "lakhs" | "contracts";
 
 export const DEFAULT_COLUMNS: ColumnPrefs = { greeks: false, quotes: false, more: false };
 export const COLUMNS_KEY = "atp_option_chain_columns";
@@ -111,7 +116,8 @@ export const COLUMNS_KEY = "atp_option_chain_columns";
 export function readColumns(): ColumnPrefs {
   try {
     const raw = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? "{}") as Partial<ColumnPrefs>;
-    return { greeks: raw.greeks === true, quotes: raw.quotes === true, more: raw.more === true, pct: raw.pct === true };
+    return { greeks: raw.greeks === true, quotes: raw.quotes === true, more: raw.more === true, pct: raw.pct === true,
+      units: raw.units === "contracts" ? "contracts" : "lakhs" };
   } catch {
     return { ...DEFAULT_COLUMNS };
   }
@@ -192,6 +198,12 @@ export function formatStrike(v: number | null | undefined): string {
 /** A count (OI, volume) and its change: M61 OI-1 keeps ONE formatter app-wide (ui/format.ts); re-exported here for the
  * chain's callers. */
 export { formatCount, formatCountChange } from "../ui/format";
+
+/** M96 Q3: one OI / OI change / volume figure on the chain in the user's unit (lakhs unless he picked Contracts);
+ *  `signed` for a change. */
+export function formatOi(v: number | null | undefined, units: OiUnits | undefined, signed = false): string {
+  return units === "contracts" ? formatContracts(v, { signed }) : formatLakhs(v, { signed });
+}
 
 /** FNO-1: an OI change in percent of the OI before it ("+12.5%", "−4.0%"); "–" when the earlier OI is not known or 0. */
 export function formatOiChangePct(oi: number | null | undefined, change: number | null | undefined): string {

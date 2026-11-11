@@ -211,7 +211,7 @@ describe("OC1 summary strip", () => {
   });
 
   it("a value the broker did not give is a dash, never 0", () => {
-    const s = { ...liveChain().summary, spot: null, futures: null, pcr_oi: null, atm_iv: null, days_to_expiry: null };
+    const s = { ...liveChain().summary, spot: null, futures: null, pcr_oi: null, pcr_oi_atm: null, atm_iv: null, days_to_expiry: null };
     const words = text(renderToStaticMarkup(<SummaryStripV2 summary={s} expiry={null} loading={false} />));
     expect(words).toContain("Spot –");
     expect(words).toContain("Futures –");
@@ -351,17 +351,20 @@ describe("OC1 phone layout", () => {
     expect(all).not.toContain("hidden md:table-cell");
   });
 
-  it("the strike stays in the centre (sticky) and every row opens its details", () => {
+  it("the strike opens in the centre, then stays at the edge it reaches (sticky), and every row opens its details", () => {
     const html = table();
-    // Sticky in the centre once the table is wider than its box (measured in the browser; e2e checks it at 360 px).
-    expect(tableSource).toContain('wide && "sticky left-[calc(50%-2.75rem)] right-[calc(50%-2.75rem)] z-[1]"');
+    // M96: a wide table opens with the strike column in the middle; scrolled, it sticks at the edge it reaches, so it
+    // never sits over cells beside it (measured in the browser; e2e checks it at 390 px).
+    expect(tableSource).toContain('wide && "sticky left-0 right-0 z-[1]"');
+    expect(tableSource).toContain("el.scrollLeft = Math.max(0, Math.round(natural + head.offsetWidth / 2 - el.clientWidth / 2));");
+    expect(tableSource).toContain('data-scroll-hint="right"');
     expect(tableSource).toContain("setWide(el.scrollWidth > el.clientWidth + 1)");
     expect(html).toMatch(/<tr[^>]*data-strike="24500"[^>]*tabindex="0"/);
     expect(html).toMatch(/<th scope="row"[^>]*>24,500<span[^>]*>ATM<span class="sr-only">, at the money<\/span><\/span><\/th>/);
     expect(tableSource).toContain("onClick={() => onPick(row)}");
     expect(tableSource).toContain('if (e.key === "Enter" || e.key === " ")');
     const details = text(renderToStaticMarkup(<RowDetailsBody row={rows()[3]} />));
-    for (const part of ["Call Put", "LTP 250.00 200.00", "OI 4 L 4 L", "IV 12.3% 12.7%", "Delta 0.50 −0.50", "Bid 249.50 199.50"]) {
+    for (const part of ["Call Put", "LTP 250.00 200.00", "OI 4.00 L 4.00 L", "IV 12.3% 12.7%", "Delta 0.50 −0.50", "Bid 249.50 199.50"]) {
       expect(details).toContain(part);
     }
   });
@@ -383,14 +386,21 @@ describe("OC1 phone layout", () => {
   });
 
   it("UX3: the summary is two rows of two on a phone (the rest under More), never sideways; one row from md", () => {
-    const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} />);
-    expect(html).toMatch(/aria-label="Summary"[^>]*class="grid grid-cols-2[^"]*md:grid-cols-4"/);
+    const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} asOf="2026-10-27T05:00:00+00:00" />);
+    expect(text(html)).toContain("Data time 10:30 IST");
+    // M96 L1: from md as many columns as fit the width (never a fixed four that cuts values in a narrow panel).
+    expect(html).toMatch(/aria-label="Summary"[^>]*class="grid grid-cols-2[^"]*md:grid-cols-\[repeat\(auto-fill,minmax\(9rem,1fr\)\)\]"/);
+    expect(html).not.toMatch(/data-summary[^>]*>[\s\S]{0,200}?class="[^"]*truncate/);
     expect(html).not.toMatch(/overflow-x-auto|snap-x/);
     const order = [...html.matchAll(/data-summary="([a-z-]+)"/g)].map((m) => m[1]);
     expect(order.slice(0, 4)).toEqual(["spot", "atm", "pcr", "max-pain"]);
-    for (const key of ["futures", "atm-iv", "dte", "oi-walls"]) expect(html).toMatch(new RegExp(`data-summary="${key}"[^>]*class="[^"]*hidden md:block`));
+    for (const key of ["futures", "atm-iv", "dte", "oi-walls", "as-of"]) expect(html).toMatch(new RegExp(`data-summary="${key}"[^>]*class="[^"]*hidden md:block`));
     expect(html).toMatch(/data-summary="futures"[^>]*md:order-2/);                       // the server's order from md
-    expect(html).toContain("More: futures, IV, expiry, OI walls");
+    expect(html).toContain("More: futures, IV, expiry, OI walls, data time");
+    // M96 L1: on a Terminal phone the figures its context bar shows are left out, and the rest all show (no More).
+    const omitted = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} asOf={null} omit={["spot", "pcr", "atm", "dte"]} />);
+    expect([...omitted.matchAll(/data-summary="([a-z-]+)"/g)].map((m) => m[1])).toEqual(["futures", "max-pain", "atm-iv", "oi-walls", "as-of"]);
+    expect(omitted).not.toMatch(/hidden md:block|data-summary-more/);
     expect(stripSource).toContain("<TermHint term={c.term} floating");      // a hint inside the strip is not cut off
   });
 });

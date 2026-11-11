@@ -500,7 +500,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
     # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the
-    # routes answer 404 and a template id resolves to nothing. Signals only; LIVE is refused for a template.
+    # routes answer 404 and a template id resolves to nothing. Signals only; LIVE-1: a template runs PAPER or LIVE (the user's
+    # choice, LIVE only while live_trading is on) like any strategy.
     "strategy_templates": "Strategy templates: ready signal recipes (Supertrend flip, moving-average cross, range and channel breakouts and their retests, range edges, structure flip retest) adopted as paper strategies with the user's own settings",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",

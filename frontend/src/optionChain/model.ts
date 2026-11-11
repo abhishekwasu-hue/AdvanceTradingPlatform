@@ -92,7 +92,7 @@ export function pollEvery(marketOpen: boolean | null | undefined): number {
 
 // --- Columns -------------------------------------------------------------------------------------------------------
 
-export type ColumnKey = Exclude<keyof ChainLeg, "ltp_change">;
+export type ColumnKey = keyof ChainLeg;
 
 export interface ColumnPrefs {
   /** Delta, gamma, theta, vega. */

@@ -20,7 +20,8 @@ import { spotChange } from "./spotChange";
  * PCR, max pain) as two rows of two, and the other three under "More" - nothing scrolls sideways any more.
  *
  * M96 L1 (owner; audit issues 3, 8): the chain's banner on top - spot / future, ATM, expiry, PCR, max pain and the data
- * time, every figure from the same /live answer as the table (PCR and max pain over the whole chain, M96 Q4). From md
+ * time, every figure from the same /live answer as the table. M96 (owner: Trade AS IS): the PCR is Trade's, over ATM ± 6
+ * (the OI-difference table's window and the banner's PCR - one definition), the max pain over the whole chain. From md
  * the cards fill the width they get (as many columns as fit, never a fixed four), and no label, value or caption is cut:
  * a long one wraps. `omit` (the Terminal on a phone) leaves out the figures its context bar already shows.
  */
@@ -80,9 +81,9 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
     { key: "futures", label: "Futures", value: formatPrice(future?.ltp),
       caption: future ? `Expires ${formatDateIST(future.expiry).replace(/ \d{4}$/, "")}` : s ? "Near-month price: waiting for the feed" : undefined },
     { key: "atm", label: "ATM strike", term: "atm", value: formatStrike(s?.atm_strike) },
-    // M96 Q4: PCR and max pain are over the whole chain (the server's summary), the same numbers the table adds up to.
-    { key: "pcr", label: "PCR (OI)", term: "pcr", value: formatNumber(s?.pcr_oi, 2), caption: "All strikes",
-      extra: <MiniGauge label={`PCR on a 0 to ${PCR_GAUGE_MAX} scale`} value={s?.pcr_oi} max={PCR_GAUGE_MAX} /> },
+    // M96 (Trade AS IS): the PCR over ATM ± 6 (Trade's banner and Net Diff table window); max pain over the whole chain.
+    { key: "pcr", label: "PCR (OI)", term: "pcr", value: formatNumber(s?.pcr_oi_atm, 2), caption: "ATM ± 6",
+      extra: <MiniGauge label={`PCR on a 0 to ${PCR_GAUGE_MAX} scale`} value={s?.pcr_oi_atm ?? null} max={PCR_GAUGE_MAX} /> },
     { key: "max-pain", label: "Max pain", term: "max-pain", value: formatStrike(s?.max_pain),
       extra: maxPainDistance(s, live ? live.ltp : s?.spot) == null ? undefined
         : <span className="text-t12 text-fg-muted"><Signed value={maxPainDistance(s, live ? live.ltp : s?.spot)} kind="count" /> pts from spot</span> },
@@ -106,7 +107,7 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 break-words rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit, drop }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
   /** TERM-2: the same figures as one compact row (the Terminal's chain panel), so the chain stays in view. */
   dense?: boolean;
@@ -118,8 +119,10 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
   asOf?: string | null;
   /** M96 L1 (the Terminal on a phone): figures its context bar already shows, left out here (no fact twice). */
   omit?: readonly string[];
+  /** M96 L1: cards a block right below already shows (the Trade banner's expiry line), left out with no other change. */
+  drop?: readonly string[];
 }) {
-  const all = summaryCards(summary, expiry, spot, prevClose, asOf).filter((c) => !omit?.includes(c.key));
+  const all = summaryCards(summary, expiry, spot, prevClose, asOf).filter((c) => !omit?.includes(c.key) && !drop?.includes(c.key));
   const [more, setMore] = useState(false);
   // Phone order: the four first cards, then the rest; from md the server's order. With `omit` every card left shows.
   const first = (key: string) => PHONE_FIRST.has(key) || !!omit?.length;
@@ -158,7 +161,7 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
       ))}
       {!omit?.length && <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more} data-summary-more
         className="order-last col-span-2 inline-flex min-h-11 items-center justify-center rounded-control text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
-        {more ? "Show less" : "More: futures, IV, expiry, OI walls, data time"}
+        {more ? "Show less" : `More: futures, IV, ${drop?.includes("dte") ? "" : "expiry, "}OI walls, data time`}
       </button>}
     </section>
   );

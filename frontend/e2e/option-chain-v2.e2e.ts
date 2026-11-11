@@ -33,6 +33,44 @@ const THEMES = ["light", "dark"] as const;
 
 interface Calls { expiries: string[]; live: string[] }
 
+type Leg = { oi: number | null; oi_change: number | null; ltp: number | null };
+type Row = { strike: number; call: Leg; put: Leg };
+
+/** M96 L1: the made-up chain's Trade "Net Diff" block as the server builds it (ATM ± 6 steps, NIFTY 50 / BANKNIFTY and
+ * SENSEX 100; here the fixture's own OI change stands for the change since the day's first reading) and its PCR. */
+function withNetDiff(body: Record<string, unknown>): Record<string, unknown> {
+  const rows = body.rows as Row[];
+  const summary = body.summary as Record<string, unknown>;
+  const name = String(body.underlying);
+  const step = name === "NIFTY" ? 50 : 100;
+  const spot = Number(summary.spot);
+  const atm = Math.round(spot / step) * step;
+  const shown = rows.filter((r) => r.strike >= atm - 6 * step && r.strike <= atm + 6 * step).map((r) => {
+    const ce = r.call.oi_change ?? 0;
+    const pe = r.put.oi_change ?? 0;
+    return { strike: r.strike, ce_chg: ce, ce_oi: r.call.oi ?? 0, ce_ltp: r.call.ltp, pe_ltp: r.put.ltp, pe_oi: r.put.oi ?? 0, pe_chg: pe,
+      diff: pe - ce, dominance: pe - ce > 0 ? "Bulls" : pe - ce < 0 ? "Bears" : "Neutral" };
+  });
+  const call = shown.reduce((a, r) => a + r.ce_oi, 0);
+  const put = shown.reduce((a, r) => a + r.pe_oi, 0);
+  const pcr = call > 0 ? Math.round((put / call) * 100) / 100 : null;
+  return { ...body, summary: { ...summary, pcr_oi_atm: pcr },
+    net_diff: { status: "ready", since: "2026-10-27T03:50:00+00:00", step, atm, window: 6, pcr, rows: shown } };
+}
+
+/** M96 L1: made-up stored OI readings of the day (the banner and its History), as /banner and /history answer. */
+function bannerRow(i: number) {
+  const call = 9_000_000 + 60_000 * i;
+  const put = 9_600_000 + 110_000 * i;
+  const min = 25 - 5 * i;
+  return { slot: `2026-10-27T10:${String(min).padStart(2, "0")}:00+05:30`, data_as_of: `2026-10-27T04:${String(min + 31).padStart(2, "0")}:10+00:00`,
+    direction: "BULLISH", message: "", fact_message: "Put writing rising + Call short covering (resistance weakening) → NIFTY OI readings lean up",
+    put_class: "Writing", call_class: "Short covering", signal: i === 5 ? "BEARISH (Weakening)" : "BULLISH (Strong)", diff: put - call, delta_diff: 50_000,
+    total_call_oi: call, total_put_oi: put, pcr: Math.round((put / call) * 100) / 100, pcr_band: "MILD_BULLISH", pcr_label: "", underlying_price: 24480,
+    atm_strike: 24500, strike_step: 50, max_pain: 24500, expiry: "2026-11-03", dte: 7, first_of_day: i === 5 };
+}
+const FRESH = { market_open: true, stale: false, age_minutes: 1, stale_after_minutes: 15 };
+
 async function open(page: Page, theme: "light" | "dark", opts: {
   options?: MockOptions; marketOpen?: boolean; live?: (body: Record<string, unknown>) => Record<string, unknown>; path?: string;
   /** The chain read fails with this status (the server's own words in the body must never show). */
@@ -64,8 +102,15 @@ async function open(page: Page, theme: "light" | "dark", opts: {
     }
     calls.live.push(`${symbol}@${url.searchParams.get("expiry") ?? ""}`);
     if (opts.failLive) return route.fulfill({ status: opts.failLive, json: { detail: "RuntimeError: socket closed" } });
-    const body = { ...DATA.live, underlying: symbol, expiry: url.searchParams.get("expiry") ?? DATA.live.expiry, market_open: opts.marketOpen ?? true };
+    const body = withNetDiff({ ...DATA.live, underlying: symbol, expiry: url.searchParams.get("expiry") ?? DATA.live.expiry, market_open: opts.marketOpen ?? true });
     return route.fulfill({ json: opts.live ? opts.live(body) : body });
+  });
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/(banner|history)/, (route) => {
+    const m = /\/option-chain\/([^/]+)\/(banner|history)/.exec(new URL(route.request().url()).pathname)!;
+    const underlying = decodeURIComponent(m[1]);
+    const flags = { ...FRESH, market_open: opts.marketOpen ?? true };
+    if (m[2] === "banner") return route.fulfill({ json: { underlying, date: "2026-10-27", banner: { ...bannerRow(0), underlying }, ...flags } });
+    return route.fulfill({ json: { underlying, date: "2026-10-27", interval: 5, rows: [0, 1, 2, 3, 4, 5].map(bannerRow), ...flags } });
   });
   // OC4: the analyses below the chain (the OC2 fixture, renamed to the symbol on screen) and no saved analyses yet.
   await page.route(/\/api(?:\/v1)?\/option-chain\/analyses/, (r) => {
@@ -130,10 +175,13 @@ test.describe("Option chain v2 at 1440", () => {
     await expect(page.locator("[data-max-oi='put']")).toHaveCount(1);
     await expect(page.locator("tr[data-strike='25000'] [data-max-oi='call']")).toBeVisible();
     await expect(page.locator("tr[data-strike='24100'] [data-max-oi='put']")).toBeVisible();
-    for (const [card, value] of [["spot", "24,480.00"], ["futures", "24,531.50"], ["atm", "24,500"], ["pcr", "0.91"], ["max-pain", "24,500"],
-      ["atm-iv", "12.0%"], ["dte", "7 days"]]) {
+    // M96 (Trade AS IS): the PCR card is ATM ± 6 (the banner's and the OI-difference table's), the trading-days DTE card
+    // gives way to the banner's calendar-days expiry line.
+    for (const [card, value] of [["spot", "24,480.00"], ["futures", "24,531.50"], ["atm", "24,500"], ["pcr", "ATM ± 6"], ["max-pain", "24,500"],
+      ["atm-iv", "12.0%"]]) {
       await expect(page.locator(`[data-summary='${card}']`)).toContainText(value);
     }
+    await expect(page.locator("[data-summary='dte']")).toHaveCount(0);
   });
 
   test("Columns adds the Greeks and bid / ask; a new symbol reads its own expiries and chain", async ({ page }) => {
@@ -201,7 +249,7 @@ test.describe("Option chain v2 at 390", () => {
     expect(strip.sw).toBeLessThanOrEqual(strip.cw);
     await expect(summary.locator("[data-summary]:visible")).toHaveCount(4);
     await summary.getByRole("button", { name: /More: futures/ }).tap();
-    await expect(summary.locator("[data-summary]:visible")).toHaveCount(9);
+    await expect(summary.locator("[data-summary]:visible")).toHaveCount(8);
     await summary.getByRole("button", { name: "Show less" }).tap();
     await page.locator("tr[data-strike='24500']").tap();
     const sheet = page.locator("[data-row-details]");
@@ -235,21 +283,36 @@ test.describe("Option chain v2 at 390", () => {
     await expect(page.locator("[data-scroll-hint='left']")).toBeVisible();
   });
 
-  test("M96 phone 390: banner and OI-difference table on top, 44 px targets, nothing cut, no sideways page", async ({ page }) => {
+  test("M96 phone 390: Trade's banner and Net Diff table on top, 44 px targets, nothing cut, no sideways page", async ({ page }) => {
     await open(page, "light");
     await chainReady(page);
     await expectPhoneLayout(page);
     const y = async (sel: string) => (await page.locator(sel).first().boundingBox())!.y;
-    expect(await y("[data-block='chain-summary']")).toBeLessThan(await y("[data-block='oi-diff']"));
+    expect(await y("[data-block='chain-summary']")).toBeLessThan(await y("[data-block='oi-banner']"));
+    expect(await y("[data-block='oi-banner']")).toBeLessThan(await y("[data-block='oi-diff']"));
     expect(await y("[data-block='oi-diff']")).toBeLessThan(await y("[data-chain-scroll]"));
+    // M96 (Trade AS IS): the banner - direction colour, the message, classes, PCR ATM ± 6 with its zone, calendar expiry
+    const banner = page.locator("[data-block='oi-banner']");
+    await expect(banner.locator("[data-banner-tone='up']")).toBeVisible();
+    await expect(banner.locator("[data-banner-message]")).toHaveText(/NIFTY OI readings lean up$/);
+    await expect(banner.locator("[data-banner-classes]")).toHaveText("Put: Writing · Call: Short covering");
+    await expect(banner.locator("[data-banner-pcr]")).toContainText(/PCR \(ATM ± 6\): \d\.\d{2} - /);
+    await expect(banner.locator("[data-banner-expiry]")).toHaveText("Expiry: 3 Nov 2026 (7 days left)");
+    // Trade's Net Diff: ATM ± 6 steps of 50 (the fixture lists every 100: 24200 .. 24800), a TOTAL row, Dominance words
+    const diff = page.locator("[data-block='oi-diff']");
+    await expect(diff.locator("[data-oi-diff-row]")).toHaveCount(7);
+    await expect(diff.locator("[data-oi-diff-total]")).toContainText("TOTAL");
+    await expect(diff.locator("[data-dominance]").first()).toHaveText(/^(Bulls|Bears|Neutral)$/);
+    await banner.locator("summary", { hasText: "OI history (Signal)" }).tap();
+    await expect(banner.locator("[data-history-signal]").first()).toHaveText("BULLISH (Strong)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     // tap targets: the OI-difference cells, the chain rows and the strikes chips
-    for (const sel of ["[data-oi-diff-cell]", "[data-chain-scroll] tbody tr", "[data-strike-range] button"]) {
+    for (const sel of ["[data-oi-diff-cell]", "[data-chain-scroll] tbody tr", "[data-strike-range] button", "[data-oi-history-trade] summary"]) {
       const small = await page.locator(sel).evaluateAll((els) => els.filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.height < 43.5; }).length);
       expect(small, sel).toBe(0);
     }
     // nothing cut: no value or label in the banner or the OI-difference table is clipped
-    const cut = await page.locator("[data-block='chain-summary'] *, [data-block='oi-diff'] td *, [data-block='oi-diff'] th").evaluateAll((els) =>
+    const cut = await page.locator("[data-block='chain-summary'] *, [data-block='oi-banner'] [data-banner-tone] > div, [data-block='oi-diff'] td *, [data-block='oi-diff'] th").evaluateAll((els) =>
       els.filter((e) => { const h = e as HTMLElement; return h.children.length === 0 && (h.textContent ?? "").trim() && h.scrollWidth > h.clientWidth + 1; })
         .map((e) => e.textContent));
     expect(cut).toEqual([]);
@@ -458,5 +521,32 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
       console.log(`[cards] ${JSON.stringify(await readCards(page))}`);
       expect(await textBudgetProblems(page)).toEqual([]);
     });
+  });
+}
+
+// M96 L1 proof pictures (owner: Trade AS IS): the top of the chain view - the summary cards, Trade's banner with its
+// History open, and the Net Diff table - at 390 and 1440, light and dark, into docs/design/m96/. Off unless M96_CAPTURE
+// is set (CI never writes into docs): `M96_CAPTURE=1 npx playwright test --project=phone e2e/option-chain-v2.e2e.ts -g "M96 capture"`.
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`M96 capture ${width}`, () => {
+    test.skip(!process.env.M96_CAPTURE, "proof pictures only on request (M96_CAPTURE)");
+    test.use(width === 390 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+    for (const theme of THEMES) {
+      test(`M96 capture ${width} ${theme}`, async ({ page }) => {
+        await open(page, theme);
+        await chainReady(page);
+        await page.locator("[data-oi-history-trade] summary").click();
+        await expect(page.locator("[data-history-signal]").first()).toBeVisible();
+        const top = (await page.locator("[data-block='chain-summary']").boundingBox())!;
+        const end = (await page.locator("[data-block='oi-diff']").boundingBox())!;
+        await page.setViewportSize({ width, height: Math.ceil(end.y + end.height + 24) });
+        const t2 = (await page.locator("[data-block='chain-summary']").boundingBox())!;
+        const e2 = (await page.locator("[data-block='oi-diff']").boundingBox())!;
+        const x = width === 390 ? 0 : t2.x - 16;
+        await page.screenshot({ path: `../docs/design/m96/after-trade-port-${width}-${theme}.png`, animations: "disabled",
+          clip: { x, y: t2.y - 12, width: width - x, height: e2.y + e2.height - t2.y + 24 } });
+        expect(top.y).toBeGreaterThan(0);
+      });
+    }
   });
 }

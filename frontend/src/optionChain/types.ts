@@ -28,9 +28,6 @@ export interface ChainLeg {
   gamma: number | null;
   theta: number | null;
   vega: number | null;
-  /** M96 L1 (optional): the contract's price change since the previous close, when the server sends it. Without it the
-   *  OI-difference table's interpretation word is "–" (nothing is worked out from another baseline). */
-  ltp_change?: number | null;
 }
 
 export interface ChainRow { strike: number; call: ChainLeg; put: ChainLeg }
@@ -49,6 +46,8 @@ export interface ChainSummary {
   max_put_oi_strike: number | null;
   total_call_oi: number;
   total_put_oi: number;
+  /** M96 L1 (Trade port): the PCR of ATM ± 6 strikes (the OI-difference table's window, Trade's banner PCR), two places. */
+  pcr_oi_atm?: number | null;
 }
 
 export interface OiChangeState {
@@ -68,4 +67,33 @@ export interface LiveChain {
   market_open: boolean;
   /** B2a: the chain's capture time while open, the last session close while closed (never the request time). */
   data_as_of?: string;
+  /** M96 L1: the Trade chain table's "Net Diff" (backend app/option_chain/net_diff.py). */
+  net_diff?: NetDiff;
+}
+
+/** One strike of the Trade "Net Diff" table: OI change since the app's first reading of the day (never the exchange's
+ *  previous-day change). OI is the broker's whole number. */
+export interface NetDiffRow {
+  strike: number;
+  ce_chg: number;
+  ce_oi: number;
+  ce_ltp: number | null;
+  pe_ltp: number | null;
+  pe_oi: number;
+  pe_chg: number;
+  diff: number;
+  dominance: "Bulls" | "Bears" | "Neutral";
+}
+
+export interface NetDiff {
+  /** "building": this is the day's first reading (every change 0 until the next); "none": no spot / expiry to place it. */
+  status: "ready" | "building" | "none";
+  /** The day's first reading (the baseline's time). */
+  since: string | null;
+  step?: number;
+  atm?: number;
+  window?: number;
+  pcr: number | null;
+  rows: NetDiffRow[];
+  total?: { ce_chg: number; ce_oi: number; pe_oi: number; pe_chg: number; diff: number };
 }

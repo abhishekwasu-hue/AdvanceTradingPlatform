@@ -211,7 +211,7 @@ describe("OC1 summary strip", () => {
   });
 
   it("a value the broker did not give is a dash, never 0", () => {
-    const s = { ...liveChain().summary, spot: null, futures: null, pcr_oi: null, atm_iv: null, days_to_expiry: null };
+    const s = { ...liveChain().summary, spot: null, futures: null, pcr_oi: null, pcr_oi_atm: null, atm_iv: null, days_to_expiry: null };
     const words = text(renderToStaticMarkup(<SummaryStripV2 summary={s} expiry={null} loading={false} />));
     expect(words).toContain("Spot –");
     expect(words).toContain("Futures –");

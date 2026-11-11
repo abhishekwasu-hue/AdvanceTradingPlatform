@@ -241,7 +241,7 @@ describe("FNO-1 order ticket", () => {
   it("the request carries lots, the order type and the prices it needs - and no mode (PAPER only)", () => {
     const ask = askOf(TT, { ...newDraft("SELL", { product: "MIS" }), lots: 2, orderType: "LIMIT", price: "251", trigger: "249", stopLoss: "300" }, "ref-12345678");
     expect(ask).toEqual({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 2, order_type: "LIMIT",
-      product: "MIS", price: 251, trigger_price: null, stop_loss: 300, chain_ltp: 250, client_ref: "ref-12345678" });
+      product: "MIS", price: 251, trigger_price: null, stop_loss: 300, target: null, chain_ltp: 250, client_ref: "ref-12345678" });   // M96: no target entered = none
     expect(ask).not.toHaveProperty("mode");
     expect(apiSource).not.toMatch(/LIVE/);
     expect(apiSource.slice(apiSource.indexOf("export interface OrderAsk"), apiSource.indexOf("export interface MoneyLine"))).not.toContain("mode");
@@ -307,7 +307,9 @@ describe("FNO-1 order ticket", () => {
     expect(ticketSource).toContain("fixed inset-x-0 bottom-0");                 // a bottom sheet on a phone
     expect(ticketSource).toContain("md:right-0");                                // a side panel from md
     expect(ticketSource).toMatch(/min-h-11/);                                    // 44 px targets
-    expect(text(ticket(newDraft("BUY")).html)).not.toMatch(ADVICE);
+    // M96 Q2: the label of his OWN optional Target field (owner order) is the only allowed use of the word - the ticket
+    // never suggests a target or a value.
+    expect(text(ticket(newDraft("BUY")).html).replace("Target for the position (optional)", "")).not.toMatch(ADVICE);
   });
 });
 

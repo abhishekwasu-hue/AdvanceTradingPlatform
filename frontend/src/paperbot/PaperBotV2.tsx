@@ -29,6 +29,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
+import { LIVE_OFF_TEXT, useLiveAvailable } from "../settings/useLiveAvailable";
 import { APPROVAL_MODE_KEY, ENTRY_MODE_CHOICES, LOTS_KEY, ORDER_TYPE_KEY, POSITION_SIZE_WHERE, PROTECTION_KEY, approvalModeOf, orderDefaultsOf,
   sizesItself, useTradeSettings, type EntryModeChoice } from "../settings/tradeSettings";
 import { NEEDS, RULE_STRIKE_STRUCTURES, optionDefaultsOf, withOwnOptions } from "../settings/optionDefaults";
@@ -492,6 +493,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [entryModePick, setEntryModePick] = useState<"" | EntryModeChoice>("");
   const [result, setResult] = useState<{ kind: "done" | "warn"; text: string } | null>(null);
   const [touched, setTouched] = useState(false);
+  // LIVE-1 (owner order: ONE live switch): Paper or Live - his own choice for this bot, shown only while live trading is
+  // switched on; Paper is always the default (nothing pre-selects Live). The server decides again on Start.
+  const liveAvailable = useLiveAvailable();
+  const [modePick, setModePick] = useState<"PAPER" | "LIVE">("PAPER");
+  const live = liveAvailable && modePick === "LIVE";
+  const [formStepUp, setFormStepUp] = useState<string | null>(null);
   // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
   // created until "Start on paper"; the template keeps its usual settings here).
   const picked = strategyId.startsWith(PICK) ? templates.find((t) => t.id === strategyId.slice(PICK.length)) ?? null : null;
@@ -625,7 +632,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const stockBot = !sized.instrument_kind || sized.instrument_kind === "UNDERLYING";
   // his "Ask me first" saved as a default (My trading defaults) already sets entry_mode on the request; else his choice here
   const askMode = !ownMode && !sent.entry_mode;
-  const sentWithMode = askMode && entryModePick ? { ...sized, entry_mode: entryModePick } : sized;
+  const withEntryMode = askMode && entryModePick ? { ...sized, entry_mode: entryModePick } : sized;
+  const sentWithMode = live ? { ...withEntryMode, mode: "LIVE" as const } : withEntryMode;
   const summary = startSummaryParts(symbol, info, sentWithMode);
   const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING
     : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : askMode && !entryModePick ? MODE_MISSING : null;
@@ -639,12 +647,14 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     setBusy(true); setResult(null);
     try {
       await api.createDeployment(sentWithMode);
-      setResult({ kind: "done", text: `Started on paper: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
+      setResult({ kind: "done", text: `${live ? "Started live" : "Started on paper"}: ${cleanSymbol(symbol)}. It shows under Your bots and starts checking the market on its next round.` });
       onStarted();
     } catch (e) {
+      if (live && isStepUpError(e)) { setFormStepUp(String(e)); return; }     // LIVE: a two-factor check first, then Start again
       // REV-H1: a 409 names its own reason (no broker, contracts not loaded, a bot already running, ...): the shared
       // sentence for that reason, never one guess for all of them.
-      setResult({ kind: "warn", text: e instanceof ApiError && e.status === 409 ? errorSentence(e)
+      setResult({ kind: "warn", text: e instanceof ApiError && e.status === 503 && live ? LIVE_OFF_TEXT
+        : e instanceof ApiError && (e.status === 409 || (live && e.status === 400)) ? errorSentence(e)
         : e instanceof ApiError && e.status === 403 ? "Your role cannot start a bot. Ask your organisation's owner."
         : "The bot could not be started just now. Try again in a moment." });
     } finally {
@@ -894,15 +904,32 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           {notTaken && <p className="text-t13 text-fg-muted" data-defaults-not-taken>{notTaken}</p>}
           {/* REV-H3: no preview of a contract nobody chose yet (the preview would fill in a side). */}
           {effectiveId && !startWhy && <ContractPreviewV2 request={sized} />}
+          {liveAvailable && (
+            <fieldset className="space-y-space-1" data-bot-mode>
+              <legend className={LABEL}>Mode</legend>
+              <div className="flex flex-wrap gap-space-2" role="radiogroup" aria-label="Mode">
+                {(["PAPER", "LIVE"] as const).map((m) => (
+                  <label key={m} className={`flex min-h-11 cursor-pointer items-center gap-space-2 rounded-control border px-space-3 text-t14 font-medium md:min-h-0 md:py-space-1 ${
+                    modePick === m ? (m === "LIVE" ? "border-down text-down" : "border-brand text-brand") : "border-subtle text-fg-muted"}`}>
+                    <input type="radio" name={ids.mode} className="h-4 w-4 accent-brand" checked={modePick === m} data-bot-mode-pick={m}
+                      onChange={() => { setModePick(m); setResult(null); }} />
+                    {m === "LIVE" ? "Live" : "Paper"}
+                  </label>
+                ))}
+              </div>
+              {live && <p className="text-t13 text-down" data-bot-live-note>Live: real orders go to your own broker and real money moves. Your risk limits and the kill switch apply.</p>}
+            </fieldset>
+          )}
           <button type="button" className={`${BUTTON_PRIMARY} w-full sm:w-auto`} disabled={busy || !effectiveId || !!startWhy} aria-busy={busy || undefined}
             aria-describedby={startWhy ? ids.startWhy : undefined} onClick={() => void start()}>
             {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
-            Start on paper
+            {live ? "Start live" : "Start on paper"}
           </button>
           {startWhy && <p id={ids.startWhy} role="status" className="text-t13 text-fg-muted" data-start-why>{startWhy}</p>}
         </div>
         {result && <NoteV2 kind={result.kind}>{result.text}</NoteV2>}
       </div>
+      {formStepUp && <StepUpDialog reason={formStepUp} onCancel={() => setFormStepUp(null)} onVerified={() => { setFormStepUp(null); void start(); }} />}
     </CardV2>
   );
 }

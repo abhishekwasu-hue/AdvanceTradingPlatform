@@ -733,6 +733,12 @@ async def create_deployment(
         raise HTTPException(status_code=400, detail="A routing policy only applies to LIVE deployments (paper trades need no account)")
     if request.mode == ExecutionMode.LIVE:
         if not broker_name:
+            # LIVE-1: the v2 bot form names no broker - his ONE stored broker is the one (several: he names it).
+            stored = list(await session.scalars(
+                select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+            if len(stored) == 1:
+                broker_name = stored[0].broker_name
+        if not broker_name:
             raise HTTPException(status_code=400, detail="LIVE deployments must name the broker to trade through")
         if account is not None and account.status != "ACTIVE":
             raise _refused(REFUSED_BROKER_ACCOUNT_OFF,

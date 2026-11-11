@@ -74,9 +74,11 @@ export function OiDiffTableBody({ rows, atm, units, onPickLeg, atmRow, underlyin
 }) {
   const colour = useColourV2();
   const diff = oiDiffRows(rows);
-  const head = "border-b border-subtle bg-surface-1 px-space-2 py-space-2 font-medium";
+  const head = "border-b border-subtle bg-surface-1 px-space-1 py-space-2 font-medium md:px-space-2";
   return (
-    <table className="w-full border-separate border-spacing-0 text-t13" aria-label={`OI change by strike${underlying ? ` for ${underlying}` : ""}`}>
+    <table className="w-full table-fixed border-separate border-spacing-0 text-t13" aria-label={`OI change by strike${underlying ? ` for ${underlying}` : ""}`}>
+      {/* Fixed widths: each side a quarter, the strike its own width, the difference and its word the rest. */}
+      <colgroup><col className="w-1/4" /><col className="w-[4.5rem]" /><col className="w-1/4" /><col /></colgroup>
       <thead className="sticky top-0 z-[2] bg-surface-1">
         <tr className="text-t12 text-fg-muted">
           <th scope="col" className={cx(head, "text-right")}>Call OI chg</th>
@@ -93,12 +95,12 @@ export function OiDiffTableBody({ rows, atm, units, onPickLeg, atmRow, underlyin
             <tr key={d.strike} ref={isAtm ? atmRow : undefined} data-oi-diff-row={d.strike} data-oi-diff-atm={isAtm || undefined}
               className={cx("[&>*]:border-b [&>*]:border-subtle", isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
               <OiDiffSideCell side="call" d={d} row={row} units={units} onPickLeg={onPickLeg} />
-              <th scope="row" className={cx("px-space-2 py-space-1 text-center font-tabular font-semibold text-fg", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-2")}>
+              <th scope="row" className={cx("px-space-1 py-space-1 md:px-space-2 text-center font-tabular font-semibold text-fg", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-2")}>
                 {formatStrike(d.strike)}
                 {isAtm && <span className="block text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
               </th>
               <OiDiffSideCell side="put" d={d} row={row} units={units} onPickLeg={onPickLeg} />
-              <td className="px-space-2 py-space-1 text-right font-tabular text-fg" data-oi-diff="diff">
+              <td className="px-space-1 py-space-1 md:px-space-2 text-right font-tabular text-fg" data-oi-diff="diff">
                 <span className="block">{formatOi(d.diff, units, true)}</span>
                 <span className="block text-t12 text-fg-muted" data-oi-diff-word>{d.word ?? "–"}</span>
               </td>
@@ -124,13 +126,13 @@ export function OiDiffSideCell({ side, d, row, units, onPickLeg }: {
   );
   const align = side === "call" ? "text-right" : "text-left";
   if (!onPickLeg) {
-    return <td className={cx("px-space-2 py-space-1 text-fg", align)} data-oi-diff={side}>{inner}</td>;
+    return <td className={cx("px-space-1 py-space-1 md:px-space-2 text-fg", align)} data-oi-diff={side}>{inner}</td>;
   }
   return (
     <td className={cx("p-0", align)} data-oi-diff={side}>
       <button type="button" data-oi-diff-cell={`${d.strike}|${right}`} onClick={() => onPickLeg(row, side)}
         aria-label={`${formatStrike(d.strike)} ${right}: OI change ${value}, ${tagText(tag)}. Open its actions`}
-        className={cx("block min-h-11 w-full px-space-2 py-space-1 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand", align)}>
+        className={cx("block min-h-11 w-full px-space-1 py-space-1 md:px-space-2 text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand", align)}>
         {inner}
       </button>
     </td>

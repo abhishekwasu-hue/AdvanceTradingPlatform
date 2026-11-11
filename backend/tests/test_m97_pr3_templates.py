@@ -125,11 +125,14 @@ def test_every_detector_number_is_a_setting_with_the_reference_value():
         assert by[name].default == ref, name
         if by[name].type in ("int", "float"):
             assert (by[name].min, by[name].max) == rule, name
+        elif by[name].type == "bool":                                         # M98-P1 Q2: skip_flat_bars, on
+            assert rule is None and by[name].default is True, name
         else:
             assert tuple(by[name].choices) == rule, name
     assert by["buf"].default == 0.0 and by["min_rr"].default == 0.0 and by["confirm"].default == "none"
     assert "Reference 2 (2:1) - reference, edit before use" in by["min_rr"].help
-    assert all("Reference value - edit before use" in by[k].help for k in ("leg_mult", "base_mult", "out_mult", "edge"))
+    assert all("Reference value - edit before use" in by[k].help for k in ("leg_mult", "base_mult", "out_mult", "edge",
+                                                                    "leg_body_pct", "skip_flat_bars"))
     with pytest.raises(C.TemplateError):
         C.resolve_settings(t, "1d", None, {"base_mult": 1.0, "leg_mult": 1.0})              # the constraint, in words
 

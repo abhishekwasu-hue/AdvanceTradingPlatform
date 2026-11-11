@@ -33,7 +33,7 @@
       "label": "Leg candle size",
       "help": "A leg candle's range is at least this many times the average range. Reference value - edit before use.",
       "type": "float",
-      "default": 1.5,
+      "default": 1.0,
       "min": 1.0,
       "max": 5.0,
       "step": 0.1
@@ -63,7 +63,7 @@
       "label": "Leg candle body (%)",
       "help": "A leg candle's body is at least this percent of its range. Reference value - edit before use.",
       "type": "float",
-      "default": 75.0,
+      "default": 50.0,
       "min": 50.0,
       "max": 100.0,
       "step": 1
@@ -117,6 +117,13 @@
         "Wick",
         "Body"
       ]
+    },
+    {
+      "key": "skip_flat_bars",
+      "label": "Skip flat candles",
+      "help": "On: a flat candle (high equals low) is never counted as a base candle. Reference value - edit before use.",
+      "type": "bool",
+      "default": true
     },
     {
       "key": "confirm",
@@ -183,13 +190,13 @@
   "sides_default": "short",
   "setup": {
     "kind": "event",
-    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
-    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)",
+    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
+    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)",
     "same_bar": true
   },
   "trigger": {
-    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) AND ($min_rr <= 0 OR NOT (SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) - close < $min_rr * (close - (SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1] - $buf * ATR($atr_n)[1]))))",
-    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) AND ($min_rr <= 0 OR NOT (close - SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge) < $min_rr * ((SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1] + $buf * ATR($atr_n)[1]) - close)))"
+    "long": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) AND ($min_rr <= 0 OR NOT (SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) - close < $min_rr * (close - (SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] - $buf * ATR($atr_n)[1]))))",
+    "short": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) AND ($min_rr <= 0 OR NOT (close - SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars) < $min_rr * ((SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] + $buf * ATR($atr_n)[1]) - close)))"
   },
   "confirmations": [
     {
@@ -197,8 +204,8 @@
       "variants": {
         "none": null,
         "close_back": {
-          "long": "close > SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1]",
-          "short": "close < SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1]"
+          "long": "close > SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1]",
+          "short": "close < SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1]"
         },
         "candle": {
           "long": "Pattern(\"hammer\") OR Pattern(\"bullish_engulfing\")",
@@ -208,8 +215,8 @@
     }
   ],
   "invalidation": {
-    "long": "SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1] - $buf * ATR($atr_n)[1]",
-    "short": "SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge)[1] + $buf * ATR($atr_n)[1]"
+    "long": "SDZoneEdge(\"demand\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] - $buf * ATR($atr_n)[1]",
+    "short": "SDZoneEdge(\"supply\", \"distal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars)[1] + $buf * ATR($atr_n)[1]"
   },
   "exit_signal": null,
   "evidence": [],

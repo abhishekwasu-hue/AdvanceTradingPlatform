@@ -54,7 +54,7 @@ from app.strategy_templates.language import _WAVE_NAME_WORDS
 
 # M97 PR-3: the Supply & Demand zone settings of a family I template, as ScreenQL named arguments (its own $settings)
 SD_ZONE_KWARGS = ("avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, "
-                  "base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge")
+                  "base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars")
 
 # The spec's full lists (section 5 + WAVE section 4) and what this build offers
 STOP_SOURCES: Tuple[str, ...] = ("TEMPLATE_INVALIDATION", "PREMIUM_PCT", "CREDIT_PCT", "NONE")

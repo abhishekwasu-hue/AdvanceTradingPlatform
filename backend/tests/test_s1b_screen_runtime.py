@@ -232,6 +232,9 @@ def test_breakout_series_u6_bk1():
     assert _ev("RelVolume(5)", data).dropna().eq(1.0).all()                    # constant volume
     assert _ev("ATRPercentile(14, 50)", data).dropna().between(0, 100).all()
     assert set(_ev("DowTrend(0)", data).dropna().unique()) <= {"UP", "DOWN", "RANGE"}
+    # M99 B1-c (flag m99_primitives): per-bar structure events and regime (deeper checks: tests/test_m99_b1_structure.py)
+    assert set(_ev("StructureEventSeries()", data).unique()) <= {"BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""}
+    assert set(_ev("RegimeTag()", data).dropna().unique()) <= {"UP", "DOWN", "UP_WEAK", "DOWN_WEAK", "RANGE"}
 
 
 def test_intraday_breakout_series_u6_bk2():

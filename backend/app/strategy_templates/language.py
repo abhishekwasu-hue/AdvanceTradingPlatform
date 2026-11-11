@@ -133,13 +133,13 @@ TOKENS: Dict[str, str] = {
                                     " over the line from that extreme on the {timeframe} chart"),
     "missing_link_line_broken_down": ("after a falling trend ended in a fault, double, trap or climax and rose away, the close went"
                                       " under the line from that extreme on the {timeframe} chart"),
-    "run_pullback_turned_up": ("after a run broke the last swing high and paused shallowly, price came back to the area"
+    "run_pullback_turned_up": ("after a run broke the last swing high and paused shallowly, the bars came back to the area"
                                         " between that level and the pause and turned up on the {timeframe} chart"),
-    "run_pullback_turned_down": ("after a run broke the last swing low and paused shallowly, price came back to the area"
+    "run_pullback_turned_down": ("after a run broke the last swing low and paused shallowly, the bars came back to the area"
                                           " between that level and the pause and turned down on the {timeframe} chart"),
-    "trigger_candle_at_support": ("at a recent swing level below, an inside, outside or long-tail bar formed after the arrival"
+    "trigger_candle_at_support": ("at a recent swing level below, an inside, outside or tailed bar formed after the arrival"
                                   " on the {timeframe} chart"),
-    "trigger_candle_at_resistance": ("at a recent swing level above, an inside, outside or long-tail bar formed after the arrival"
+    "trigger_candle_at_resistance": ("at a recent swing level above, an inside, outside or tailed bar formed after the arrival"
                                      " on the {timeframe} chart"),
     "inverse_hs_neckline_broken": ("after a fall, three swing lows with the middle one lowest; the close went over"
                                                " the line of the two highs between them on the {timeframe} chart"),

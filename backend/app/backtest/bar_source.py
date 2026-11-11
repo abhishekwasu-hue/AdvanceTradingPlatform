@@ -311,7 +311,7 @@ async def resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: 
 
 
 async def _future_volume(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, got: BacktestBars, *,
-                         lookback_days: int, user: Any, broker: Optional[str], now: Optional[datetime]) -> BacktestBars:
+                         lookback_days: int, user: Any, broker: str | None, now: datetime | None) -> BacktestBars:
     """M99 B1-d: an index's bars with its near-month future's volume (`index_volume.replace_frame_volume`), the future
     read through `_resolve` like the index; every other symbol's bars, and an index's when the future or its bars cannot
     be read, unchanged (as the worker's `strategy_bars._future_volume`)."""
@@ -334,7 +334,7 @@ async def _future_volume(session: AsyncSession, tenant_id: int, symbol: str, exc
 
 
 async def _resolve(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *, lookback_days: int = 30,
-                   user: Any = None, broker: Optional[str] = None, now: Optional[datetime] = None,
+                   user: Any = None, broker: str | None = None, now: datetime | None = None,
                    broker_fetch: Callable[[], Awaitable[tuple[pd.DataFrame, str]]] | None = None,
                    stored_beyond_broker: bool = False) -> BacktestBars:
     """`resolve`'s order of sources for one instrument (the index's own bars, or its future's)."""

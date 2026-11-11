@@ -87,6 +87,28 @@ export function formatCountChange(v: Num): string {
 }
 
 /**
+ * M96 Q3 (owner): OI, OI change and volume on the option chain ALWAYS in lakhs, two decimals, so every cell reads the
+ * same unit: 50,000 -> "0.50 L", 12,34,567 -> "12.35 L", 2,50,00,000 -> "250.00 L" (Indian grouping above 999 L).
+ * `signed` (a change): "+0.50 L", "−0.50 L", and "0.00 L" for a value that rounds to zero. A missing value is "–".
+ * formatCount (above) stays as it is for every other caller.
+ */
+export function formatLakhs(v: Num, opts: { signed?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const hundredths = Math.round(Math.abs(v) / 1e3);         // whole hundredths of a lakh (half away from zero)
+  if (hundredths === 0) return "0.00 L";
+  const sign = v < 0 ? MINUS : opts.signed ? "+" : "";
+  return `${sign}${magnitude(hundredths / 100, 2)} L`;
+}
+
+/** M96 Q3: the same figures as the whole number the broker sends (the chain's "Contracts" choice): "50,000", signed
+ *  for a change ("+50,000", "−4,500", "0"). */
+export function formatContracts(v: Num, opts: { signed?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const text = formatNumber(v, 0);
+  return opts.signed && Math.round(v) > 0 ? `+${text}` : text;
+}
+
+/**
  * The money rule (owner's user-friendly pass, 23 Oct): one formatter, two precisions.
  * - Summaries, cards, tiles and sentences show WHOLE rupees with Indian grouping: formatINR(123456.4) -> "₹1,23,456".
  * - Paise only where they matter - order tickets, fills and the P&L detail of a closed trade - and only when the caller

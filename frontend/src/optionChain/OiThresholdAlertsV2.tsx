@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { OiAlertSettings, OiStrikeRule } from "../oi/types";
 import { Combobox } from "../ui/Combobox";
 import { formatLakhs } from "./history";
+import { strikeText } from "./oiTab";
 
 /**
  * M96 N1: the user's own OI threshold alerts, inside the OI alerts card (same channels: in-app and Telegram through
@@ -49,7 +50,7 @@ export default function OiThresholdAlertsV2({ alerts, onSave }: { alerts: OiAler
         <ul className="space-y-0.5 tabular-nums" data-oi-threshold-rules>
           {rules.map((r, i) => (
             <li key={`${r.side}-${r.strike}-${i}`} className="flex items-center gap-2">
-              <span>{r.strike.toLocaleString("en-IN")} {r.side === "CE" ? "call" : "put"}: change ≥ {formatLakhs(r.threshold)}</span>
+              <span>{strikeText(r.strike)} {r.side === "CE" ? "call" : "put"}: change ≥ {formatLakhs(r.threshold)}</span>
               <button type="button" className="rounded border border-border px-1.5 hover:border-brand"
                       onClick={() => onSave({ strike_rules: rules.filter((_, j) => j !== i) })}>Remove</button>
             </li>

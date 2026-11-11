@@ -4,7 +4,9 @@ import { eodApi } from "../api/eod";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatNumber, formatTimeIST } from "../ui/format";
+import { Details } from "../ui/Details";
 import { useNoBroker } from "../ui/noBroker";
+import { strikeText } from "./oiTab";
 import {
   emptyColumn, eodColumn, formatLakhs, formatLakhsChange, historyApi, liveColumn, pickExpiries, storedColumn, storedIsCurrent, type ExpiryColumn, type ExpirySummary,
 } from "./history";
@@ -78,7 +80,7 @@ export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
     { key: "call_chg", label: "Call OI chg", cell: (c) => ({ text: formatLakhsChange(c.callChange), className: tone(c.callChange) }) },
     { key: "put_chg", label: "Put OI chg", cell: (c) => ({ text: formatLakhsChange(c.putChange), className: tone(c.putChange) }) },
     { key: "pcr", label: "PCR (OI)", cell: (c) => ({ text: c.pcr === null ? EMPTY : formatNumber(c.pcr, 2) }) },
-    { key: "max_pain", label: "Max pain", cell: (c) => ({ text: c.maxPain === null ? EMPTY : c.maxPain.toLocaleString("en-IN") }) },
+    { key: "max_pain", label: "Max pain", cell: (c) => ({ text: c.maxPain === null ? EMPTY : strikeText(c.maxPain) }) },
     { key: "atm_iv", label: "ATM IV", cell: (c) => ({ text: c.atmIv === null ? EMPTY : `${formatNumber(c.atmIv, 1)}%` }) },
     { key: "dte", label: "Days left", cell: (c) => ({ text: c.dte === null ? EMPTY : String(c.dte) }) },
   ];
@@ -117,7 +119,9 @@ export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
           </tbody>
         </table>
       </div>
-      <p className="text-t12 text-fg-muted">Whole chain per expiry. Live: your broker; recorded: your stored readings. OI change: since the day's first reading (recorded), or as the chain table shows it (live).</p>
+      <Details id="optionChain.multiExpiry.about" label="How these are counted">
+        <p className="text-t12 text-fg-muted">Whole chain per expiry. Live: your broker; recorded: your stored readings. OI change: since the day's first reading (recorded), or as the chain table shows it (live).</p>
+      </Details>
     </div>
   );
 }

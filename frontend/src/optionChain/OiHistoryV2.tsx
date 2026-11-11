@@ -7,6 +7,7 @@ import {
   FRAME_MS, SPEEDS, clampFrame, formatLakhs, formatLakhsChange, hhmm, historyApi, nextFrame, pickerTime, rangeNote, replayRows, replayScale, rowsAround, usedNote,
   type CoverageDay, type RangeReply, type ReplayReply, type Speed,
 } from "./history";
+import { strikeText } from "./oiTab";
 
 /**
  * M96 N1: OI over a From-To range and its replay, from the user's OWN recorded option chains (the 1-minute chain store
@@ -152,7 +153,7 @@ function RangeCard({ underlying, day, expiry }: { underlying: string; day: Cover
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.strike} data-oi-range-strike={r.strike} className={cx("border-b border-subtle last:border-b-0", r.strike === reply.atm && "bg-surface-2")}>
-                    <td className={cx(STICKY, "font-medium text-fg", r.strike === reply.atm ? "bg-surface-2" : "bg-surface-1")}>{r.strike.toLocaleString("en-IN")}</td>
+                    <td className={cx(STICKY, "font-medium text-fg", r.strike === reply.atm ? "bg-surface-2" : "bg-surface-1")}>{strikeText(r.strike)}</td>
                     <td className={cx(cell, tone(r.ce_change))}>{formatLakhsChange(r.ce_change)}</td>
                     <td className={cx(cell, tone(r.pe_change))}>{formatLakhsChange(r.pe_change)}</td>
                     <td className={cx(cell, tone(r.diff))}>{formatLakhsChange(r.diff)}</td>
@@ -237,7 +238,7 @@ function ReplayCard({ underlying, day, expiry }: { underlying: string; day: stri
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.strike} className="border-b border-subtle last:border-b-0" data-oi-replay-strike={r.strike}>
-                    <td className={cx(STICKY, "bg-surface-1 font-medium text-fg")}>{r.strike.toLocaleString("en-IN")}</td>
+                    <td className={cx(STICKY, "bg-surface-1 font-medium text-fg")}>{strikeText(r.strike)}</td>
                     <BarCell value={r.ce} width={bar(r.ce)} fill="bg-oi-call" />
                     <td className={cx(cell, tone(r.ceChange))}>{formatLakhsChange(r.ceChange)}</td>
                     <BarCell value={r.pe} width={bar(r.pe)} fill="bg-oi-put" />

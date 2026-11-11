@@ -1,6 +1,6 @@
 /** OI Banner (O3): pure presentation helpers (tested in format.test.ts). No number here is invented: every value
  *  comes from the API row, and a missing value is shown as a dash. */
-import { formatCount, formatNumber } from "../ui/format";
+import { formatCount, formatLakhs, formatNumber } from "../ui/format";
 import type { OiBannerResponse, OiBannerRow, OiDirection, OiStrikeSeries } from "./types";
 
 /** M61 follow-up (owner order M61, OI-5; CLAUDE.md section 3): the engine's internal labels in neutral words, mapped
@@ -58,16 +58,13 @@ export function alertStateWords(alertType: string, state: string | null | undefi
   return state;
 }
 
-/** OI in lakhs, 2 decimals (owner Q3). TODO(dedup): the shared lakhs formatter of PR #999 in src/ui/format.ts. */
-function lakhs(v: number): string {
-  const text = (Math.abs(v) / 1e5).toFixed(2);
-  return `${v < 0 && text !== "0.00" ? "−" : ""}${text} L`;
-}
+const lakhs = (v: number) => formatLakhs(v);
+const strikeWords = (k: number) => formatNumber(k, Number.isInteger(k) ? 0 : 2, { trim: true });
 
 /** M96 N1: "CE 24500 reached 500000" -> "Call 24,500 OI change reached 5.00 L"; the old state (the change before) "412000" -> "4.12 L". */
 function strikeOiWords(state: string): string {
   const m = /^(CE|PE) (\d+(?:\.\d+)?) reached (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)$/i.exec(state);
-  if (m) return `${m[1].toUpperCase() === "CE" ? "Call" : "Put"} ${Number(m[2]).toLocaleString("en-IN")} OI change reached ${lakhs(Number(m[3]))}`;
+  if (m) return `${m[1].toUpperCase() === "CE" ? "Call" : "Put"} ${strikeWords(Number(m[2]))} OI change reached ${lakhs(Number(m[3]))}`;
   const n = Number(state);
   return Number.isFinite(n) ? `OI change ${lakhs(n)}` : state;
 }

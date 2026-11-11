@@ -233,11 +233,14 @@ describe("timeframe choice", () => {
     expect(shownSdTimeframes(["15m", "1h"], "60min")).toEqual(["1h"]);
     expect(shownSdTimeframes(["7m"], "15min")).toEqual(["15m"]);
     expect(shownSdTimeframes(["30m", "1h", "2h", "1d"], "15min")).toEqual(["15m", "30m", "1h", "2h"]);   // at most four in all
-    // the toggle returns the extras only (the chart's own is never stored)
-    expect(toggleSdTimeframe(["15m"], "1d")).toEqual(["1d"]);
-    expect(toggleSdTimeframe(["15m", "1h", "1d"], "1h")).toEqual(["1d"]);
-    expect(toggleSdTimeframe(["15m", "1d"], "15m")).toEqual(["1d"]);
-    expect(toggleSdTimeframe(["15m", "30m", "1h", "1d"], "1w")).toEqual(["30m", "1h", "1w"]);           // the newest replaces the highest
+    // the toggle works on the stored choice: the chart's own is never toggled, a chip not drawn here stays stored
+    expect(toggleSdTimeframe(null, "1d", "15min")).toEqual(["1d"]);
+    expect(toggleSdTimeframe(["1h", "1d"], "1h", "15min")).toEqual(["1d"]);
+    expect(toggleSdTimeframe(["1d"], "15m", "15min")).toEqual(["1d"]);
+    expect(toggleSdTimeframe(["1h"], "1d", "60min")).toEqual(["1h", "1d"]);            // 1H is the chart's own now, kept for a lower chart
+    expect(shownSdTimeframes(["1h", "1d"], "15min")).toEqual(["15m", "1h", "1d"]);
+    expect(toggleSdTimeframe(["30m", "1h", "1d"], "1w", "15min")).toEqual(["30m", "1h", "1w"]);         // four drawn: the newest replaces the highest
+    expect(toggleSdTimeframe(["5m", "10m", "1h", "1d"], "1w", "15min")).toEqual(["10m", "1h", "1d", "1w"]);  // a not-drawn one leaves the store first
   });
 
   it("M98 T1: each timeframe's bands get their own opacity - the chart's own strongest, higher ones fainter", () => {

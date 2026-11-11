@@ -28,7 +28,7 @@ export function SdZonesBar({ chartTf, shown, options, onChange, note }: SdZonesB
             const on = shown.includes(t);
             return (
               <button key={t} type="button" aria-pressed={on} data-sd-tf={t}
-                onClick={() => { const extras = toggleSdTimeframe(shown, t, own); onChange({ ...options, timeframes: extras.length ? extras : null }); }}
+                onClick={() => { const next = toggleSdTimeframe(options.timeframes, t, chartTf); onChange({ ...options, timeframes: next.length ? next : null }); }}
                 className={cx("min-h-11 min-w-11 rounded-pill border px-space-2 text-t12 font-semibold md:min-h-8 md:min-w-8", focus,
                   on ? "border-brand bg-brand-tint text-brand" : "border-border text-fg-muted hover:text-fg")}>
                 {SD_TF_SHORT[t]}

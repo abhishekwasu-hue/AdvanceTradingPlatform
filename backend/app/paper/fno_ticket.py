@@ -38,7 +38,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,9 @@ from app.execution.approval import ORIGIN_AUTOMATIC
 from app.instruments import master
 from app.instruments.models import ContractSpec
 from app.market_data.calendar import to_ist
+
+if TYPE_CHECKING:
+    from app.execution.resting_book import Trigger
 
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
@@ -85,6 +88,9 @@ class OrderAsk:
     price: Optional[float] = None    # LIMIT and SL: the limit price
     trigger_price: Optional[float] = None   # SL and SL-M
     stop_loss: Optional[float] = None       # the position's stop (premium); DEF-0 D7: the trader's choice on every side
+    # M96 Q2: the user's own optional target (premium). Never a platform value: empty = no target. Armed after the fill as a
+    # TARGET exit through the resting-exit route (resting_book.arm_exit); no R:R or other check reads it.
+    target: Optional[float] = None
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
@@ -220,7 +226,8 @@ def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> Li
         errors.append("Enter the limit price")
     if ask.order_type in ("SL", "SL-M") and not ask.trigger_price:
         errors.append("Enter the trigger price")
-    for name, value in (("Limit price", ask.price), ("Trigger price", ask.trigger_price), ("Stop-loss", ask.stop_loss)):
+    for name, value in (("Limit price", ask.price), ("Trigger price", ask.trigger_price), ("Stop-loss", ask.stop_loss),
+                        ("Target", ask.target)):
         if value is not None and not on_tick(float(value), tick):
             errors.append(f"{name} {value:g} is not a multiple of the tick size {tick:g}")
     if ask.order_type == "SL" and ask.price and ask.trigger_price:
@@ -243,6 +250,30 @@ def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "opti
     if side == "SELL" and not stop > fill:
         return [f"The stop-loss ({stop:,.2f}) must be above the price ({fill:,.2f}) for a sold {what}"]
     return []
+
+
+def target_errors(side: str, fill: float, target: Optional[float], what: str = "option") -> List[str]:
+    """M96 Q2: the user's own target only has to be a price on the profitable side of the entry (no other check)."""
+    if target is None:
+        return []
+    if side == "BUY" and not target > fill:
+        return [f"The target ({target:,.2f}) must be above the price ({fill:,.2f}) for a bought {what}"]
+    if side == "SELL" and not target < fill:
+        return [f"The target ({target:,.2f}) must be below the price ({fill:,.2f}) for a sold {what}"]
+    return []
+
+
+def target_trigger(ask: OrderAsk) -> "Trigger":
+    """M96 Q2: how the target exit watches its price - the option's own price (the target is a premium), on the ticket's
+    / his Trade settings' trigger (touch or candle close), else a touch, as the resting-exit route does."""
+    from app.execution import resting_book
+    return resting_book.Trigger(source=resting_book.PREMIUM, mode=ask.trigger_mode or resting_book.TOUCH,
+                                timeframe_minutes=ask.timeframe_minutes)
+
+
+def target_ref(ask: OrderAsk, trade_id: int) -> str:
+    """The armed target's own id: from the ticket's id (a second Place never arms twice), else the position's."""
+    return f"exit:target:{ask.client_ref}" if ask.client_ref else f"exit:target:t{trade_id}"
 
 
 def position_stop(side: str, stop: Optional[float], tick: float) -> float:
@@ -497,6 +528,10 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     reference = basis if basis is not None else (ask.price or price)
     if reference is not None and not errors:
         errors.extend(stop_errors(side, float(reference), ask.stop_loss, what))
+        errors.extend(target_errors(side, float(reference), ask.target, what))
+    if ask.target is not None:
+        from app.execution import resting_book
+        errors.extend(resting_book.trigger_errors(target_trigger(ask)))
 
     tenant = await session.get(Tenant, user.tenant_id)
     refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
@@ -577,12 +612,13 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         "side": side, "lots": ask.lots, "lot_size": lot_size, "units": units, "order_type": ask.order_type, "product": ask.product,
         "price": price, "price_source": price_source, "fill_price": fill, "fill_note": fill_note or None,
         "resting": resting, "rest_level": rest_level(ask) if resting else None,
-        "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
+        "stop_loss": ask.stop_loss, "target": ask.target, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
         "errors": errors, "refusals": refusals, "warnings": warnings, "warning_ids": warning_ids, "can_place": can_place,
         # M68 TS-3: the ticket fields still Not set (neither on the ticket nor in his Trade settings): the ticket asks
         # for each one at its field, with "Save as my default" next to it.
         "missing": missing, "trigger_mode": ask.trigger_mode,
-        "confirm_label": f"{'Place waiting' if resting else 'Place'} PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)" if can_place and units else None,
+        "confirm_label": (f"{'Place waiting' if resting else 'Place'} PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)"
+                          + (f", target {ask.target:,.2f}" if ask.target is not None else "")) if can_place and units else None,
         "as_of": now.isoformat(),
     }
 
@@ -644,9 +680,32 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
         # M76 MP-5: after the fill, the lines he pressed Place with go on the journal entry (queued; never raises).
         from app.paper import pretrade_warnings
         await pretrade_warnings.record_accepted(session, user, [order.trade_id], ask.accepted_warnings, ask.accepted_at)
+    target_view = None
+    if filled is not None and ask.target is not None and order.trade_id:
+        target_view = await arm_target(session, user, ask, int(order.trade_id))
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
-            "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
+            "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode, "target_order": target_view}
+
+
+async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id: int) -> Dict[str, Any]:
+    """M96 Q2: after the fill, the user's own target is armed on the new position through the resting-exit route's own
+    function (`resting_book.arm_exit`, kind TARGET, a limit at his price) - the same way `POST /resting/exit` arms one.
+    The fill is already committed by the pipeline (as the stop on the position is); a target that cannot be kept is said
+    in plain words and never undoes the order. It is an exit: no entry check reads it (ADR-0004)."""
+    from app.execution import resting_book
+    assert ask.target is not None
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None:
+        return {"armed": False, "text": "The target was not armed: the position was not found. Arm it from the position."}
+    try:
+        row = await resting_book.arm_exit(session, user, trade, client_ref=target_ref(ask, trade_id), kind=resting_book.TARGET,
+                                          order_type="LIMIT", level=float(ask.target), trigger=target_trigger(ask))
+    except resting_book.RestingOrderError as exc:
+        await session.rollback()
+        return {"armed": False, "text": f"The target was not armed: {exc} Arm it from the position."}
+    await session.commit()
+    return {"armed": True, "text": f"Target armed at {float(ask.target):,.2f}.", "resting_order": resting_book.view(row)}
 
 
 # M68 TS-3: a ticket field -> its Trade settings key (the ticket's "Save as my default" writes it).

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { api, madeUpBars, mockCharts } from "./chartsMocks";
+import { api, mockCharts } from "./chartsMocks";
+import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
 
 /**
@@ -18,29 +19,10 @@ const PROOF = process.env.M97_PROOF === "1";
 const FORMATIONS = ["DBR", "RBR", "RBD", "DBD"] as const;
 type Formation = (typeof FORMATIONS)[number];
 
-const sec = (iso: string) => Math.floor(Date.parse(iso) / 1000);
-const candle = (b: ReturnType<typeof madeUpBars>[number], avg: number) => ({
-  time: sec(b.timestamp), high: b.high, low: b.low, range: b.high - b.low,
-  body_pct: Math.round((Math.abs(b.close - b.open) / (b.high - b.low)) * 100), mult: Math.round(((b.high - b.low) / avg) * 10) / 10,
-});
-
-/** One made-up zone on the mocked 15 min bars: leg-in at bar k, a two-candle base, the leg-out after it. */
-function zoneOn(formation: Formation, tf: "15m" | "1d", k: number, id: string) {
-  const bars = madeUpBars(tf === "15m" ? "15min" : "day");
-  const avg = bars.slice(k - 20, k).reduce((s, b) => s + (b.high - b.low), 0) / 20;
-  const base = bars.slice(k + 1, k + 3);
-  const demand = formation === "DBR" || formation === "RBR";
-  const hi = Math.max(...base.map((b) => b.high)), lo = Math.min(...base.map((b) => b.low));
-  const proximal = demand ? hi : lo, distal = demand ? lo - 8 : hi + 8;
-  const short = tf === "15m" ? "15m" : "D";
-  return {
-    id, timeframe: tf, side: demand ? "demand" : "supply", formation, state: tf === "15m" ? "fresh" : "tested", tests: tf === "15m" ? 0 : 1,
-    proximal, distal, base_start: sec(base[0].timestamp), base_end: sec(base[1].timestamp), formed: sec(bars[k + 3].timestamp), violated_at: null,
-    leg_in: candle(bars[k], avg), leg_out: { ...candle(bars[k + 3], avg), of: "average range" },
-    base: { candles: 2, times: base.map((b) => sec(b.timestamp)), high: hi, low: lo, max_body_pct: 40, max_mult: 0.6, bars: base.map((b) => candle(b, avg)) },
-    label: `${demand ? "Demand" : "Supply"} · ${formation} · ${tf === "15m" ? "Fresh" : "Tested 1"} · ${short}`,
-  };
-}
+/** The real detector's output on hand-built bars that form each formation (backend/scripts/m97_proof_fixture.py):
+ * the candles shown and the sd-zones answer are the same made-up bars, so the zone, the highlighted candles and the
+ * tooltip numbers agree with what is on screen. */
+const PROOF_DATA = JSON.parse(readFileSync(new URL("./fixtures/sd-zones-proof.json", import.meta.url), "utf8")) as { formations: Record<Formation, { bars: Record<string, unknown>[]; rows: Record<string, unknown> }> };
 
 async function open(page: Page, formation: Formation, width: number) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
@@ -56,16 +38,21 @@ async function open(page: Page, formation: Formation, width: number) {
   });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: { ui_v2: true, sd_pack: true }, brokers: CONNECTED });
-  await mockCharts(page, { prefs: { theme: "dark", indicators: { volume: false, rsi: false } } });
+  await mockCharts(page, { market: "closed", prefs: { theme: "dark", indicators: { volume: false, rsi: false } } });   // no live price folded into the bars
+  const fx = PROOF_DATA.formations[formation];
+  await page.route(api("/market-data/candles$"), (r) => {
+    const body = r.request().postDataJSON() as { symbols: string[]; timeframe: string; lookback_days: number; before: string | null };
+    const bars = body.before || body.timeframe !== "15min" ? [] : fx.bars;
+    return r.fulfill({ json: { source: { broker: "upstox", account_label: "primary" }, exchange: "NSE", timeframe: body.timeframe, base_interval: "1min",
+      lookback_days: body.lookback_days, before: body.before, fetched_at: "2026-10-19T05:30:00Z", warnings: [], note: "",
+      symbols: { [body.symbols[0]]: { bars, count: bars.length, first: null, last: null, error: null, volume_source: null } } } });
+  });
   const asks: URLSearchParams[] = [];
   await page.route(api("/charts/layers/sd-zones"), (r) => {
     const q = new URL(r.request().url()).searchParams;
     asks.push(q);
-    const tfs = (q.get("timeframes") ?? "").split(",");
-    const rows = tfs.map((tf) => ({
-      timeframe: tf, bars: 160, as_of_bar: null, more: 0, hidden_violated: tf === "15m" ? 1 : 0, source: "lake", reason: null,
-      zones: tf === "15m" ? [zoneOn(formation, "15m", 128, `z-${formation}`)] : tf === "1d" ? [zoneOn(formation === "DBR" ? "RBD" : formation === "RBD" ? "DBR" : formation === "RBR" ? "DBD" : "RBR", "1d", 150, "z-d")] : [],
-    }));
+    const rows = (q.get("timeframes") ?? "").split(",").map((tf) => (tf === "15m" ? fx.rows
+      : { timeframe: tf, bars: 0, as_of_bar: null, zones: [], more: 0, hidden_violated: 0, source: null, reason: "no closed bars for this instrument and timeframe yet" }));
     return r.fulfill({ json: { schema: "sd-layer/1", symbol: q.get("symbol"), at: "2026-10-19T05:30:00Z", note: "", include_violated: q.get("include_violated") === "1",
       settings: {}, settings_note: "reference - edit before use", timeframes: rows } });
   });
@@ -89,8 +76,9 @@ async function hoverZone(page: Page, want = "·") {
   const box = await page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first().boundingBox();
   if (!box) throw new Error("no chart");
   const plot = box.width - 90;                                   // the price axis takes the right edge
-  for (const frac of [0.97, 0.9, 0.8]) {
-    for (let y = box.y + 30; y < box.y + box.height * 0.8; y += 3) {
+  for (const frac of [0.97, 0.9, 0.8, 0.7]) {
+    // bottom up: the first hit is the zone's lower edge, so the tooltip opens below the zone and its candles stay in view
+    for (let y = box.y + box.height * 0.85; y > box.y + 30; y -= 3) {
       await page.mouse.move(box.x + plot * frac, y);
       const tip = page.locator("[data-band-tip]");
       if (await tip.locator("[data-band-rows]").count() && (await tip.locator("p").first().textContent())?.includes(want)) return true;
@@ -107,7 +95,7 @@ test.describe("M97 Supply & Demand zones layer", () => {
     expect(asks.at(-1)?.get("symbol")).toBe("NSE:NIFTY 50");
     await page.getByTestId("sd-zones-bar").getByRole("button", { name: "D", exact: true }).click();
     await expect.poll(() => asks.at(-1)?.get("timeframes")).toBe("15m,1d");
-    await expect(page.getByTestId("sd-zones-bar")).toContainText("1 violated hidden");
+    await expect(page.getByTestId("sd-zones-bar")).toContainText("no closed bars yet on D");
     await page.getByLabel("Show violated").check();
     await expect.poll(() => asks.at(-1)?.get("include_violated")).toBe("1");
     await page.getByLabel("Show violated").uncheck();
@@ -125,11 +113,13 @@ test.describe("M97 Supply & Demand zones layer", () => {
         test.skip(!PROOF, "proof images only with M97_PROOF=1");
         await open(page, formation, width);
         await turnOn(page);
-        await page.getByTestId("sd-zones-bar").getByRole("button", { name: "D", exact: true }).click();
         await page.waitForLoadState("networkidle");
-        await hoverZone(page, `· ${formation} · Fresh · 15m`);
+        expect(await hoverZone(page, `· ${formation} · Fresh · 15m`)).toBe(true);
         await page.waitForTimeout(150);
-        await page.locator("[data-page='charts-v2']").screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css" });
+        // a page screenshot clipped to the chart page: no scrolling, so the pointer stays and the tooltip stays open
+        const clip = await page.locator("[data-page='charts-v2']").boundingBox();
+        await expect(page.locator("[data-band-tip]")).toBeVisible();
+        await page.screenshot({ path: `../docs/design/m97/sd-${formation.toLowerCase()}-${width}-dark.png`, scale: "css", clip: clip ?? undefined });
       });
     }
   }

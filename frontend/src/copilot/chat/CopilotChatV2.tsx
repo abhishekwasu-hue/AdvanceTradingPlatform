@@ -179,7 +179,12 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
   // COP-2 B (owner 11 Nov): "Read chart" asks which chart first - any share or index the chart reader reads.
   const [picking, setPicking] = useState(false);
   const pickerId = useId();
-  useEffect(() => { if (picking) document.getElementById(pickerId)?.focus(); }, [picking, pickerId]);
+  useEffect(() => {
+    if (!picking) return;
+    const field = document.getElementById(pickerId);
+    field?.focus({ preventScroll: true });
+    field?.scrollIntoView?.({ block: "center", behavior: "smooth" });              // room for the list above the phone's ask box
+  }, [picking, pickerId]);
   const line = marketLineText(home);
   const chips = home ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;

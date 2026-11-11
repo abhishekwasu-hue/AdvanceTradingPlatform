@@ -232,6 +232,7 @@ class ShoonyaBroker(BrokerInterface):
                 volume=float(body.get("v", 0) or 0), oi=float(body["oi"]) if body.get("oi") else None,
                 bid=float(body["bp1"]) if body.get("bp1") else None,
                 ask=float(body["sp1"]) if body.get("sp1") else None,
+                prev_close=float(body["c"]) if body.get("c") not in (None, "", "0", 0) else None,   # M96 L1: `c`, as above
             )
         return quotes
 
@@ -313,10 +314,10 @@ class ShoonyaBroker(BrokerInterface):
             option_type = (v.get("optt") or v.get("otype") or "").upper()
             if option_type == "CE":
                 row.call_oi, row.call_ltp, row.call_volume = quote.oi, quote.ltp, quote.volume
-                row.call_bid, row.call_ask = quote.bid, quote.ask
+                row.call_bid, row.call_ask, row.call_prev_close = quote.bid, quote.ask, quote.prev_close   # M96 L1
             elif option_type == "PE":
                 row.put_oi, row.put_ltp, row.put_volume = quote.oi, quote.ltp, quote.volume
-                row.put_bid, row.put_ask = quote.bid, quote.ask
+                row.put_bid, row.put_ask, row.put_prev_close = quote.bid, quote.ask, quote.prev_close
 
         return OptionChain(
             underlying=underlying, expiry=expiry.isoformat() if expiry else "",

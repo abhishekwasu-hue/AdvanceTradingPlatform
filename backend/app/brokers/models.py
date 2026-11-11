@@ -135,6 +135,10 @@ class OptionChainRow(BaseModel):
     put_gamma: Optional[float] = None
     put_theta: Optional[float] = None
     put_vega: Optional[float] = None
+    # M96 L1: the contract's previous-session close where the broker's chain or quote says it (None = unknown, never
+    # computed here); the live chain's per-leg `ltp_change` is the last price minus it.
+    call_prev_close: Optional[float] = None
+    put_prev_close: Optional[float] = None
 
 
 class OptionChain(BaseModel):

@@ -1,6 +1,7 @@
 import gzip
 import json
 import logging
+import math
 import re
 import time
 from datetime import date, datetime, timezone
@@ -460,11 +461,13 @@ class UpstoxBroker(BrokerInterface):
                     call_oi=call.get("oi"), call_ltp=call.get("ltp"), call_volume=call.get("volume"),
                     call_change_oi=(call.get("oi") - call.get("prev_oi")) if call.get("oi") is not None and call.get("prev_oi") is not None else None,
                     call_bid=call.get("bid_price"), call_ask=call.get("ask_price"),
+                    call_prev_close=_positive_price(call.get("close_price")),
                     call_iv=call_greeks.get("iv"), call_delta=call_greeks.get("delta"),
                     call_gamma=call_greeks.get("gamma"), call_theta=call_greeks.get("theta"), call_vega=call_greeks.get("vega"),
                     put_oi=put.get("oi"), put_ltp=put.get("ltp"), put_volume=put.get("volume"),
                     put_change_oi=(put.get("oi") - put.get("prev_oi")) if put.get("oi") is not None and put.get("prev_oi") is not None else None,
                     put_bid=put.get("bid_price"), put_ask=put.get("ask_price"),
+                    put_prev_close=_positive_price(put.get("close_price")),
                     put_iv=put_greeks.get("iv"), put_delta=put_greeks.get("delta"),
                     put_gamma=put_greeks.get("gamma"), put_theta=put_greeks.get("theta"), put_vega=put_greeks.get("vega"),
                 )
@@ -614,6 +617,16 @@ class UpstoxBroker(BrokerInterface):
             available_margin=equity.get("available_margin", 0.0),
             total_margin=equity.get("total_margin"),
         )
+
+
+def _positive_price(value: Any) -> Optional[float]:
+    """M96 L1: an option chain leg's `market_data.close_price` (Upstox documents it as the previous session's close of
+    the contract) as a price above 0, else None."""
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if math.isfinite(price) and price > 0 else None
 
 
 def _prev_close(entry: dict) -> Optional[float]:

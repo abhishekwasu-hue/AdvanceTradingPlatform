@@ -22,6 +22,11 @@ Nothing here places, changes or suggests an order.
 * **OI change.** The broker's change in OI since the previous session where it sends one. Otherwise it is the change
   since this organisation's first reading of the day for that underlying and expiry (kept in the cache while the page
   is open): "building" until that reading is BUILD_MINUTES old, during market hours only.
+* **Price change (M96 L1)** per leg, `ltp_change` with `ltp_change_basis`: the last price minus the contract's
+  previous-session close where the broker sends that close ("previous_close", `OptionChainRow.<side>_prev_close`);
+  otherwise the last price minus this organisation's first reading of the day of that contract ("first_reading", the
+  same cache rule as the OI change: kept while the page is open, shown once BUILD_MINUTES old, market hours only);
+  otherwise None. Never invented.
 """
 from __future__ import annotations
 
@@ -196,7 +201,7 @@ def highest_oi_strike(rows: Sequence[OptionChainRow], side: str) -> Optional[flo
 
 
 def _leg(row: OptionChainRow, side: str, spot: float | None, years: float | None, change: float | None,
-         rate: float = RISK_FREE_RATE) -> Dict[str, float | None]:
+         rate: float = RISK_FREE_RATE, first_ltp: float | None = None) -> Dict[str, float | str | None]:
     p = "call_" if side == "call" else "put_"
     ltp = _finite(getattr(row, p + "ltp"))
     quoted = _finite(getattr(row, p + "iv"))
@@ -218,9 +223,70 @@ def _leg(row: OptionChainRow, side: str, spot: float | None, years: float | None
             greeks = {"delta": bs.delta, "gamma": bs.gamma, "theta": bs.theta, "vega": bs.vega}
         except ValueError:
             pass
+    ltp_change, basis = price_change(ltp, _finite(getattr(row, p + "prev_close")), first_ltp)
     return {"oi": _finite(getattr(row, p + "oi")), "oi_change": change, "ltp": ltp, "iv": iv,
+            "ltp_change": ltp_change, "ltp_change_basis": basis,
             "volume": _finite(getattr(row, p + "volume")), "bid": _finite(getattr(row, p + "bid")),
             "ask": _finite(getattr(row, p + "ask")), **greeks}
+
+
+def price_change(ltp: float | None, prev_close: float | None, first_ltp: float | None) -> Tuple[Optional[float], Optional[str]]:
+    """(the leg's price change, its basis): against the broker's previous close first, else the first reading of the
+    day, else (None, None). A last price of 0 or less is no price (some brokers send 0 for "not traded")."""
+    if ltp is None or ltp <= 0:
+        return None, None
+    if prev_close is not None and prev_close > 0:
+        return round(ltp - prev_close, 4), "previous_close"
+    if first_ltp is not None and first_ltp > 0:
+        return round(ltp - first_ltp, 4), "first_reading"
+    return None, None
+
+
+def broker_has_prev_close(rows: Sequence[OptionChainRow]) -> bool:
+    return all((r.call_prev_close or 0) > 0 or not (r.call_ltp or 0) > 0 for r in rows) and \
+        all((r.put_prev_close or 0) > 0 or not (r.put_ltp or 0) > 0 for r in rows)
+
+
+@dataclass
+class LtpFirst:
+    """M96 L1: the first reading of the day of each contract's last price (strike -> (call, put)), once it is
+    BUILD_MINUTES old; None until then or when not needed (the broker sends every previous close)."""
+    since: Optional[datetime] = None
+    prices: Optional[Dict[float, Tuple[Optional[float], Optional[float]]]] = None
+
+
+def ltp_baseline_key(tenant_id: int, underlying: str, expiry: str, day: date) -> str:
+    return f"oc1:ltp_first:{tenant_id}:{underlying}:{expiry}:{day.isoformat()}"
+
+
+def _ltp_json(prices: Dict[float, Tuple[Optional[float], Optional[float]]], at: datetime) -> str:
+    return json.dumps({"at": at.isoformat(), "oi": [[k, c, p] for k, (c, p) in prices.items()]})
+
+
+async def ltp_first_state(chain: OptionChain, *, tenant_id: int, underlying: str, now: datetime, market_open: bool) -> LtpFirst:
+    """M96 L1: the first reading of the day of each contract's last price, kept exactly like the OI first reading (the
+    same cache TTL renewed on read, BUILD_MINUTES, market hours only; a strike first seen later has none). Not stored
+    when the broker sends every traded leg's previous close."""
+    if not chain.rows or broker_has_prev_close(chain.rows):
+        return LtpFirst()
+    key = ltp_baseline_key(tenant_id, underlying, chain.expiry, today_ist(now))
+    stored = _read_baseline(await cache_get(key))
+    if stored is None:
+        if not market_open:
+            return LtpFirst()
+        prices = {float(r.strike): (_positive(r.call_ltp), _positive(r.put_ltp)) for r in chain.rows}
+        await cache_set(key, _ltp_json(prices, now), BASELINE_TTL_SECONDS)
+        return LtpFirst(since=now)
+    at, prices = stored
+    await cache_set(key, _ltp_json(prices, at), BASELINE_TTL_SECONDS)
+    if now - at < timedelta(minutes=BUILD_MINUTES):
+        return LtpFirst(since=at)
+    return LtpFirst(since=at, prices=prices)
+
+
+def _positive(v: Any) -> Optional[float]:
+    f = _finite(v)
+    return f if f is not None and f > 0 else None
 
 
 def broker_has_oi_change(rows: Sequence[OptionChainRow]) -> bool:
@@ -280,7 +346,8 @@ def _change(now_oi: Optional[float], then: Optional[float]) -> Optional[float]:
 
 
 def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Dict[str, Any]], expiry: Optional[date],
-               now: datetime, oi: OiChange, holidays: Iterable[date] = (), rate: float = RISK_FREE_RATE) -> Dict[str, Any]:
+               now: datetime, oi: OiChange, holidays: Iterable[date] = (), rate: float = RISK_FREE_RATE,
+               ltp_first: Optional[LtpFirst] = None) -> Dict[str, Any]:
     """The page's whole answer for one chain: summary, rows (both legs with IV and Greeks) and the OI-change state.
     B3: `days_to_expiry` counts TRADING days (app/market_data/calendar.py; `holidays` = the exchange's closed days)."""
     rows = sorted(chain.rows, key=lambda r: r.strike)
@@ -296,8 +363,9 @@ def build_view(chain: OptionChain, *, spot: Optional[float], future: Optional[Di
         else:
             base = (oi.baseline or {}).get(r.strike, (None, None))
             call_change, put_change = _change(_finite(r.call_oi), base[0]), _change(_finite(r.put_oi), base[1])
-        out_rows.append({"strike": r.strike, "call": _leg(r, "call", spot, years, call_change, rate),
-                         "put": _leg(r, "put", spot, years, put_change, rate)})
+        first = ((ltp_first.prices if ltp_first else None) or {}).get(float(r.strike), (None, None))
+        out_rows.append({"strike": r.strike, "call": _leg(r, "call", spot, years, call_change, rate, first[0]),
+                         "put": _leg(r, "put", spot, years, put_change, rate, first[1])})
     atm_ivs = [v for row in out_rows if row["strike"] == atm for v in (row["call"]["iv"], row["put"]["iv"]) if v is not None]
     summary = {
         "spot": spot,

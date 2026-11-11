@@ -277,10 +277,10 @@ class ZerodhaBroker(BrokerInterface):
             row = rows_by_strike.setdefault(instrument.strike, OptionChainRow(strike=instrument.strike))
             if instrument.instrument_type == "CE":
                 row.call_oi, row.call_ltp, row.call_volume = quote.oi, quote.ltp, quote.volume
-                row.call_bid, row.call_ask = quote.bid, quote.ask
+                row.call_bid, row.call_ask, row.call_prev_close = quote.bid, quote.ask, quote.prev_close   # M96 L1: Kite ohlc.close
             else:
                 row.put_oi, row.put_ltp, row.put_volume = quote.oi, quote.ltp, quote.volume
-                row.put_bid, row.put_ask = quote.bid, quote.ask
+                row.put_bid, row.put_ask, row.put_prev_close = quote.bid, quote.ask, quote.prev_close
 
         return OptionChain(
             underlying=underlying,

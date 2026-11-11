@@ -442,8 +442,10 @@ class AngelOneBroker(BrokerInterface):
             right = "CE" if contract.tradingsymbol.endswith("CE") else "PE"
             if right == "CE":
                 row.call_ltp, row.call_oi, row.call_volume, row.call_bid, row.call_ask = quote.ltp, quote.oi, quote.volume, quote.bid, quote.ask
+                row.call_prev_close = quote.prev_close            # M96 L1: SmartAPI FULL quote `close` (previous session)
             else:
                 row.put_ltp, row.put_oi, row.put_volume, row.put_bid, row.put_ask = quote.ltp, quote.oi, quote.volume, quote.bid, quote.ask
+                row.put_prev_close = quote.prev_close
         return OptionChain(underlying=underlying, expiry=chosen, underlying_ltp=underlying_ltp, rows=[rows[k] for k in sorted(rows)])
 
     # --- orders ----------------------------------------------------------------------------------

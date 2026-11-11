@@ -433,10 +433,16 @@ class FyersBroker(BrokerInterface):
             vol = float(leg["volume"]) if leg.get("volume") not in (None, "") else None
             bid = float(leg["bid"]) if leg.get("bid") not in (None, "") else None
             ask = float(leg["ask"]) if leg.get("ask") not in (None, "") else None
+            # M96 L1: Fyers' options-chain-v3 leg documents `ltpch` (the last price's change from the previous close), so
+            # the previous close = ltp - ltpch; None when either is missing.
+            ltpch = float(leg["ltpch"]) if leg.get("ltpch") not in (None, "") else None
+            prev = ltp - ltpch if ltpch is not None and ltp > 0 and ltp - ltpch > 0 else None
             if right == "CE":
                 row.call_ltp, row.call_oi, row.call_change_oi, row.call_volume, row.call_bid, row.call_ask = ltp, oi, chg, vol, bid, ask
+                row.call_prev_close = prev
             else:
                 row.put_ltp, row.put_oi, row.put_change_oi, row.put_volume, row.put_bid, row.put_ask = ltp, oi, chg, vol, bid, ask
+                row.put_prev_close = prev
         if underlying_ltp is None:
             try:
                 underlying_ltp = await self.get_ltp_for_symbol(underlying, "NSE")

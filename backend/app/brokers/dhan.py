@@ -503,13 +503,17 @@ class DhanBroker(BrokerInterface):
                               chg=(float(leg["oi"]) - float(leg["previous_oi"])) if leg.get("oi") not in (None, "") and leg.get("previous_oi") not in (None, "") else None,
                               vol=float(leg["volume"]) if leg.get("volume") not in (None, "") else None, iv=float(leg["implied_volatility"]) if leg.get("implied_volatility") not in (None, "") else None,
                               bid=float(leg["top_bid_price"]) if leg.get("top_bid_price") not in (None, "") else None, ask=float(leg["top_ask_price"]) if leg.get("top_ask_price") not in (None, "") else None,
-                              delta=float((leg.get("greeks") or {}).get("delta")) if (leg.get("greeks") or {}).get("delta") not in (None, "") else None)
+                              delta=float((leg.get("greeks") or {}).get("delta")) if (leg.get("greeks") or {}).get("delta") not in (None, "") else None,
+                              # M96 L1: Dhan's option chain documents `previous_close_price` per leg (the previous session's close).
+                              prev=_positive_or_none(leg.get("previous_close_price")))
                 if right == "ce":
                     row.call_ltp, row.call_oi, row.call_change_oi, row.call_volume, row.call_iv, row.call_bid, row.call_ask, row.call_delta = (
                         values["ltp"], values["oi"], values["chg"], values["vol"], values["iv"], values["bid"], values["ask"], values["delta"])
+                    row.call_prev_close = values["prev"]
                 else:
                     row.put_ltp, row.put_oi, row.put_change_oi, row.put_volume, row.put_iv, row.put_bid, row.put_ask, row.put_delta = (
                         values["ltp"], values["oi"], values["chg"], values["vol"], values["iv"], values["bid"], values["ask"], values["delta"])
+                    row.put_prev_close = values["prev"]
             rows.append(row)
         underlying_ltp = float(data.get("last_price") or 0) or None
         return OptionChain(underlying=underlying, expiry=chosen, underlying_ltp=underlying_ltp, rows=rows)
@@ -610,6 +614,14 @@ class DhanBroker(BrokerInterface):
         available = f("availabelBalance", "availableBalance")       # Dhan's own spelling first
         used = f("utilizedAmount")
         return MarginInfo(available_cash=available, used_margin=used, available_margin=available, total_margin=f("sodLimit") or (available + used))
+
+
+def _positive_or_none(value) -> Optional[float]:
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 0 else None
 
 
 def _prev_close(ltp, net_change) -> Optional[float]:

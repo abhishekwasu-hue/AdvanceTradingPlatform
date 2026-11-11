@@ -311,7 +311,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | COP-2 | merged (#993, #994); deploy 11081161 given, waits for deploy + owner ✅ | proof ZIP sent 11 Nov; D: no bug (10 Nov NSE holiday) | DECISIONS 11 Nov (COP-2) |
 | M96 | in progress (owner 11 Nov) | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
 | M97 | in progress (owner 11 Nov) | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
-| M99 | in progress (owner 11 Nov) | B0 audit table first (owner reviews before P3-P6), then B1 primitives, P1 S&D upgrade (after M98) | INBOX 11 Nov (M99) |
+| M99 | in progress (owner 11 Nov) | B0 audit table first (owner reviews before P3-P6), then B1 primitives, P1 S&D upgrade (after M98) | INBOX 11 Nov (M99, M100, M101) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

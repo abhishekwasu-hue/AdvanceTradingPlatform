@@ -90,7 +90,7 @@ export function OiDiffTableBody({ rows, atm, units, onPickLeg, atmRow, underlyin
           const row = rows[i];
           const isAtm = d.strike === atm;
           return (
-            <tr key={d.strike} ref={isAtm ? atmRow : undefined} data-oi-diff-row={d.strike} data-atm={isAtm || undefined}
+            <tr key={d.strike} ref={isAtm ? atmRow : undefined} data-oi-diff-row={d.strike} data-oi-diff-atm={isAtm || undefined}
               className={cx("[&>*]:border-b [&>*]:border-subtle", isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
               <OiDiffSideCell side="call" d={d} row={row} units={units} onPickLeg={onPickLeg} />
               <th scope="row" className={cx("px-space-2 py-space-1 text-center font-tabular font-semibold text-fg", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-2")}>

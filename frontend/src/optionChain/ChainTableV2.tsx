@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cx } from "../components/primitives/cx";
 import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
@@ -35,7 +36,7 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  *   tokens.test.ts). Colour-blind mode the same, with orange call bars and blue put bars.
  * - M96 (owner, audit issues 7): OI, OI change and volume in lakhs ("0.50 L") or, by the Columns menu, as the broker's
  *   whole number; a table wider than its box opens with the strike column in the middle, the strike column stays at
- *   the edge it reaches when scrolled (it never sits over cells that have not scrolled past), a fade marks the side
+ *   the edge it reaches when scrolled (it never sits over cells that have not scrolled past), a chevron marks the side
  *   with more columns, every row is a 44 px target on a phone, the "ATM" label is body text (AA), and the box lets
  *   the page scroll on at its ends (no scroll trap inside the Terminal's panel).
  */
@@ -55,6 +56,9 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false, units?: OiU
     default: return formatGreek(key, leg[key]);
   }
 }
+
+/** M96: the "more columns this way" mark (no gradient: CA2 keeps tables free of them). */
+const HINT = "pointer-events-none absolute top-space-2 z-[3] inline-flex h-5 w-5 items-center justify-center rounded-pill border border-subtle bg-surface-2 text-fg-muted shadow-card";
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
 /** M63 I-7: the (?) on a jargon column, on the calls' header only (the first time the term shows; the puts mirror it). */
@@ -137,7 +141,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
 
   // M96: a table wider than its box opens with the strike column in the middle; scrolled sideways, the strike column
   // stays at the edge it reaches (sticky at both edges), so it only covers cells that are leaving the box - never the
-  // cells beside it. A fade marks each side that has more columns. A table that fits keeps every column where it is.
+  // cells beside it. A chevron marks each side that has more columns. A table that fits keeps every column where it is.
   const [wide, setWide] = useState(false);
   const [more, setMore] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const edges = useCallback(() => {
@@ -221,9 +225,9 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
         </tbody>
       </table>
     </div>
-    {/* M96: the side with more columns fades out (a phone sees the put OI is there). */}
-    {more.left && <span aria-hidden data-scroll-hint="left" className="pointer-events-none absolute inset-y-px left-px w-space-6 rounded-l-panel bg-gradient-to-r from-surface-1 to-transparent" />}
-    {more.right && <span aria-hidden data-scroll-hint="right" className="pointer-events-none absolute inset-y-px right-px w-space-6 rounded-r-panel bg-gradient-to-l from-surface-1 to-transparent" />}
+    {/* M96: a chevron on the header row of each side with more columns (a phone sees the put OI is there). */}
+    {more.left && <span aria-hidden data-scroll-hint="left" className={cx(HINT, "left-space-1")}><ChevronLeft size={14} /></span>}
+    {more.right && <span aria-hidden data-scroll-hint="right" className={cx(HINT, "right-space-1")}><ChevronRight size={14} /></span>}
     </div>
   );
 }

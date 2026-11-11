@@ -84,7 +84,7 @@ describe("M96 L1: OI difference per strike (the fixture chain)", () => {
     const html = renderToStaticMarkup(<OiDiffTableBody rows={rows()} atm={24500} />);
     expect(text(html)).toContain("Call OI chg Strike Put OI chg Put − Call");
     expect(html).toMatch(/data-oi-diff-row="24200"[\s\S]*?−0.15 L[\s\S]*?24,200[\s\S]*?0.00 L[\s\S]*?\+0.15 L[\s\S]*?Calls cut more/);
-    expect(html).toMatch(/data-oi-diff-row="24500" data-atm="true"/);
+    expect(html).toMatch(/data-oi-diff-row="24500" data-oi-diff-atm="true"/);
     expect(html).toMatch(/<th scope="row"[^>]*>24,500<span class="block text-t12 font-semibold text-fg">ATM/);
     const contracts = renderToStaticMarkup(<OiDiffTableBody rows={rows()} atm={24500} units="contracts" />);
     expect(contracts).toContain("+15,000");

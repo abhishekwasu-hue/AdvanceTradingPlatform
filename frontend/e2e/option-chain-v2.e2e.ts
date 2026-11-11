@@ -201,7 +201,7 @@ test.describe("Option chain v2 at 390", () => {
     expect(strip.sw).toBeLessThanOrEqual(strip.cw);
     await expect(summary.locator("[data-summary]:visible")).toHaveCount(4);
     await summary.getByRole("button", { name: /More: futures/ }).tap();
-    await expect(summary.locator("[data-summary]:visible")).toHaveCount(8);
+    await expect(summary.locator("[data-summary]:visible")).toHaveCount(9);
     await summary.getByRole("button", { name: "Show less" }).tap();
     await page.locator("tr[data-strike='24500']").tap();
     const sheet = page.locator("[data-row-details]");
@@ -219,12 +219,42 @@ test.describe("Option chain v2 at 390", () => {
     await open(page, "light");
     await chainReady(page);
     await expectPhoneLayout(page);
-    // Wider than the screen: the table scrolls sideways inside its box and the strike stays in the centre.
+    // Wider than the screen: the table opens with the strike in the centre and scrolls sideways inside its box; M96: the
+    // strike then stays at the edge it reaches (never over the cells beside it), and a chevron marks the side with more.
     const box = page.locator("[data-chain-scroll]");
     expect(await box.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+    const head = page.locator("[data-chain-scroll] thead th", { hasText: "Strike" });
+    const opened = await head.boundingBox();
+    expect(Math.abs(opened!.x + opened!.width / 2 - 180)).toBeLessThanOrEqual(24);
+    await expect(page.locator("[data-scroll-hint='right']")).toBeVisible();
     await box.evaluate((e) => { e.scrollLeft = e.scrollWidth; });
-    const strike = await page.locator("[data-chain-scroll] thead th", { hasText: "Strike" }).boundingBox();
-    expect(Math.abs(strike!.x + strike!.width / 2 - 180)).toBeLessThanOrEqual(24);
+    const boxAt = await box.boundingBox();
+    const strike = await head.boundingBox();
+    expect(Math.abs(strike!.x - boxAt!.x)).toBeLessThanOrEqual(2);
+    await expect(page.locator("[data-scroll-hint='right']")).toHaveCount(0);
+    await expect(page.locator("[data-scroll-hint='left']")).toBeVisible();
+  });
+
+  test("M96 phone 390: banner and OI-difference table on top, 44 px targets, nothing cut, no sideways page", async ({ page }) => {
+    await open(page, "light");
+    await chainReady(page);
+    await expectPhoneLayout(page);
+    const y = async (sel: string) => (await page.locator(sel).first().boundingBox())!.y;
+    expect(await y("[data-block='chain-summary']")).toBeLessThan(await y("[data-block='oi-diff']"));
+    expect(await y("[data-block='oi-diff']")).toBeLessThan(await y("[data-chain-scroll]"));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // tap targets: the OI-difference cells, the chain rows and the strikes chips
+    for (const sel of ["[data-oi-diff-cell]", "[data-chain-scroll] tbody tr", "[data-strike-range] button"]) {
+      const small = await page.locator(sel).evaluateAll((els) => els.filter((e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.height < 43.5; }).length);
+      expect(small, sel).toBe(0);
+    }
+    // nothing cut: no value or label in the banner or the OI-difference table is clipped
+    const cut = await page.locator("[data-block='chain-summary'] *, [data-block='oi-diff'] td *, [data-block='oi-diff'] th").evaluateAll((els) =>
+      els.filter((e) => { const h = e as HTMLElement; return h.children.length === 0 && (h.textContent ?? "").trim() && h.scrollWidth > h.clientWidth + 1; })
+        .map((e) => e.textContent));
+    expect(cut).toEqual([]);
+    // OI in lakhs, two decimals
+    await expect(page.locator("[data-chain-scroll] tbody td[data-col='call-oi']").first()).toHaveText(/^\d[\d,]*\.\d{2} L/);
   });
 });
 

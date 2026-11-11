@@ -165,6 +165,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const [view, setView] = useState<ChainView>("chain");
   // M96 L1: one "Strikes" choice for the OI-difference table and the chain table (UI-28 U7.1: kept for the visit).
   const [range, setRange] = useState<number>(0);
+  const barPickers = embedded && !!omitFacts?.length;
   const symbolId = useId();
   const expiryId = useId();
 
@@ -207,21 +208,22 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       <header className={embedded ? "block" : "flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between"}>
         {/* M96 L1: inside the Terminal the panel's own title is the heading - no second "Option chain". */}
         {!embedded && <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>}
-        <div data-tour="oc-pickers" className={cx("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2", !embedded && "md:flex md:gap-space-3")}>
-          <div className={cx("min-w-0", !embedded && "md:w-48")}>
+        {/* M96 L1: on a Terminal phone the context bar right above holds the symbol and expiry - only Columns stays here. */}
+        <div data-tour="oc-pickers" className={barPickers ? "flex justify-end" : cx("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2", !embedded && "md:flex md:gap-space-3")}>
+          {!barPickers && <div className={cx("min-w-0", !embedded && "md:w-48")}>
             <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
             {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
             <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange={symbol === "SENSEX" ? "BSE" : "NSE"} universe="optionable"
               storageKey={recentKeyFor(auth?.user?.id)} onPick={(p) => { if (p.symbol !== symbol) { setPicked(null); onSymbol(p.symbol); } }} className="w-full min-w-0" />
-          </div>
-          <div className={cx("min-w-0", !embedded && "md:w-56")}>
+          </div>}
+          {!barPickers && <div className={cx("min-w-0", !embedded && "md:w-56")}>
             <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
               <CalendarDays size={12} aria-hidden /> Expiry
             </label>
             <Combobox id={expiryId} label="Expiry" value={chain.expiry ?? ""} disabled={expiryOptions.length === 0} className="w-full"
               placeholder={chain.loading ? "Loading…" : "Nearest"} onChange={(v) => { setPicked(null); chain.setExpiry(v); }}
               options={expiryComboOptions(expiryOptions)} />
-          </div>
+          </div>}
           <ColumnsMenuV2 prefs={prefs} onChange={onPrefs} />
           {/* OC-2: "Ask AI about this chain" is the header's primary action - a side panel (phone: a bottom sheet). */}
           {!shellAsk && <button type="button" onClick={() => setAskOpen(true)} data-oc-ask-open

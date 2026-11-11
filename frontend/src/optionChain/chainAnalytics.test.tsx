@@ -138,6 +138,23 @@ describe("M96 N1 chain analytics: the view", () => {
     expect(html).toContain("How it is worked out");
   });
 
+  it("phone 390: a mirrored table shows the strike first and one side at a time; plain tables pin their first column", () => {
+    for (const key of ["buildup", "iv", "volume_oi"] as const) {
+      const html = view(key);
+      expect(html, key).toContain("data-phone-sides");
+      const head = html.match(/<thead>[\s\S]*?<\/thead>/)![0];
+      expect(head.match(/data-col="([^"]+)"/)![1], key).toBe("k-phone");                 // the strike is the first column
+      expect(head, key).toMatch(/class="[^"]*sticky left-0[^"]*md:hidden[^"]*"[^>]*data-col="k-phone"|data-col="k-phone"/);
+      expect(head, key).toMatch(/class="[^"]*hidden md:table-cell[^"]*"[^>]*>Strike</);   // the middle strike: from md only
+      expect(head, key).toMatch(/hidden md:table-cell[^"]*"[^>]*>Put/);                   // puts wait for the toggle on a phone
+    }
+    for (const key of ["walls", "pcr", "exposure"] as const) {
+      const html = view(key);
+      expect(html, key).not.toContain("data-phone-sides");
+      expect(html.match(/<thead>[\s\S]*?<\/thead>/)![0], key).toMatch(/<th[^>]*sticky left-0/);
+    }
+  });
+
   it("walls: highest OI and OI addition per side and the shift table", () => {
     const words = text(view("walls"));
     expect(words).toMatch(/Highest call OI 110 60\.00 L/);

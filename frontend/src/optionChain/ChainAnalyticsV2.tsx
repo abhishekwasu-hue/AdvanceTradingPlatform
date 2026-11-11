@@ -137,36 +137,70 @@ function Message({ text }: { text: string | null | undefined }) {
   return text ? <p className="text-t14 text-fg-muted" data-section-message>{text}</p> : null;
 }
 
-interface Col<T> { key: string; label: string; cell: (r: T) => ReactNode; figure?: boolean; tone?: (r: T) => "up" | "down" | "muted"; mark?: (r: T) => boolean }
+interface Col<T> {
+  key: string; label: string; cell: (r: T) => ReactNode; figure?: boolean; tone?: (r: T) => "up" | "down" | "muted"; mark?: (r: T) => boolean;
+  /** A mirrored chain table's side: on a phone only the chosen side shows, after the strike. */
+  side?: "call" | "put";
+}
 
+const PHONE_SIDES = [{ key: "call", label: "Calls" }, { key: "put", label: "Puts" }] as const;
+
+/**
+ * A table of server numbers. Phone (390): a mirrored table (calls | strike | puts) shows the strike FIRST and one side at
+ * a time (Calls / Puts toggle); from md all columns show in the mirrored order. A plain table keeps its first column
+ * (strike or time) pinned while it scrolls sideways.
+ */
 function Table<T extends { strike?: number; time?: string }>({ title, rows, cols, atm }: { title: string; rows: readonly T[]; cols: Col<T>[]; atm?: number | null }) {
+  const [phoneSide, setPhoneSide] = useState<"call" | "put">("call");
+  const mirrored = cols.some((c) => c.side);
+  const strike = cols.find((c) => c.key === "k");
+  const shown: (Col<T> & { cls?: string })[] = mirrored && strike
+    ? [{ ...strike, key: "k-phone", cls: "sticky left-0 z-10 md:hidden" },
+       ...cols.map((c) => ({ ...c, cls: c.key === "k" || (c.side && c.side !== phoneSide) ? "hidden md:table-cell" : undefined }))]
+    : cols.map((c, i) => ({ ...c, cls: i === 0 ? "sticky left-0 z-10" : undefined }));
+  const pinned = (c: { cls?: string }) => !!c.cls?.includes("sticky");
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-collapse text-t13">
-        <caption className="pb-space-1 text-left text-t12 font-semibold text-fg-muted">{title}</caption>
-        <thead>
-          <tr className="border-b border-subtle">
-            {cols.map((c) => <th key={c.key} scope="col" className={cx("px-space-2 py-space-1 font-normal text-fg-muted", c.figure === false ? "text-left" : "text-right")}>{c.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.strike ?? r.time ?? i} className={cx("border-b border-subtle last:border-0", atm != null && r.strike === atm && "bg-surface-2")}
-              data-row={r.strike ?? r.time}>
-              {cols.map((c) => {
-                const marked = c.mark?.(r) ?? false;
-                return (
-                  <td key={c.key} data-unusual={marked || undefined}
-                    className={cx("px-space-2 py-space-1", c.figure === false ? "text-left" : "text-right font-tabular",
-                      c.tone ? TONE_TEXT[c.tone(r)] : "text-fg", marked && "bg-warn/10 font-semibold")}>
-                    {c.cell(r)}
-                  </td>
-                );
-              })}
+    <div className="space-y-space-1" data-table={title}>
+      {mirrored && (
+        <div className="md:hidden" data-phone-sides>
+          <SubTabs label={`${title}: side`} kind="toggle" size="sm" value={phoneSide} onChange={setPhoneSide} items={PHONE_SIDES} />
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-max border-collapse text-t13">
+          <caption className="pb-space-1 text-left text-t12 font-semibold text-fg-muted">{title}</caption>
+          <thead>
+            <tr className="border-b border-subtle">
+              {shown.map((c) => (
+                <th key={c.key} scope="col" data-col={c.key}
+                  className={cx("px-space-2 py-space-1 font-normal text-fg-muted", c.figure === false ? "text-left" : "text-right", c.cls, pinned(c) && "bg-surface-1")}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const isAtm = atm != null && r.strike === atm;
+              return (
+                <tr key={r.strike ?? r.time ?? i} className={cx("border-b border-subtle last:border-0", isAtm && "bg-surface-2")} data-row={r.strike ?? r.time}>
+                  {shown.map((c) => {
+                    const marked = c.mark?.(r) ?? false;
+                    return (
+                      <td key={c.key} data-unusual={marked || undefined} data-col={c.key}
+                        className={cx("px-space-2 py-space-1", c.figure === false ? "text-left" : "text-right font-tabular",
+                          c.tone ? TONE_TEXT[c.tone(r)] : "text-fg", marked && "bg-warn/10 font-semibold", c.cls,
+                          pinned(c) && (isAtm ? "bg-surface-2" : "bg-surface-1"))}>
+                        {c.cell(r)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -192,13 +226,13 @@ function BuildUp({ s, spot, each }: { s: BuildUpSection; spot: number | null; ea
             { key: "call", label: "Call OI change", tone: "down", value: (r) => r.call_oi_change },
           ], spot, "OI change")} />
           <Table title="Build-up per strike" atm={atmOf(s.rows, spot)} rows={rows} cols={[
-            { key: "cp", label: "Call price chg", cell: (r) => signed(r.call_price_change), tone: (r) => signTone(r.call_price_change) },
-            { key: "co", label: "Call OI chg", cell: (r) => lakhsChange(r.call_oi_change), tone: (r) => signTone(r.call_oi_change) },
-            { key: "ct", label: "Call", figure: false, cell: (r) => r.call_label, tone: (r) => buildUpTone(r.call_class) },
+            { key: "cp", side: "call", label: "Call price chg", cell: (r) => signed(r.call_price_change), tone: (r) => signTone(r.call_price_change) },
+            { key: "co", side: "call", label: "Call OI chg", cell: (r) => lakhsChange(r.call_oi_change), tone: (r) => signTone(r.call_oi_change) },
+            { key: "ct", side: "call", label: "Call", figure: false, cell: (r) => r.call_label, tone: (r) => buildUpTone(r.call_class) },
             { key: "k", label: "Strike", cell: (r) => strikeText(r.strike) },
-            { key: "pt", label: "Put", figure: false, cell: (r) => r.put_label, tone: (r) => buildUpTone(r.put_class) },
-            { key: "po", label: "Put OI chg", cell: (r) => lakhsChange(r.put_oi_change), tone: (r) => signTone(r.put_oi_change) },
-            { key: "pp", label: "Put price chg", cell: (r) => signed(r.put_price_change), tone: (r) => signTone(r.put_price_change) },
+            { key: "pt", side: "put", label: "Put", figure: false, cell: (r) => r.put_label, tone: (r) => buildUpTone(r.put_class) },
+            { key: "po", side: "put", label: "Put OI chg", cell: (r) => lakhsChange(r.put_oi_change), tone: (r) => signTone(r.put_oi_change) },
+            { key: "pp", side: "put", label: "Put price chg", cell: (r) => signed(r.put_price_change), tone: (r) => signTone(r.put_price_change) },
           ]} />
         </>
       )}
@@ -311,11 +345,11 @@ function Iv({ s, spot, each }: { s: IvSection; spot: number | null; each: number
             ], spot, "IV points")} />
           )}
           <Table title={s.reference_time ? `IV per strike, change since ${formatTimeIST(s.reference_time)}` : "IV per strike"} atm={atmOf(per, spot)} rows={rows} cols={[
-            { key: "ci", label: "Call IV %", cell: (x) => plain(x.call_iv) },
-            { key: "cc", label: "Call IV chg", cell: (x) => signed(x.call_iv_change), tone: (x) => signTone(x.call_iv_change) },
+            { key: "ci", side: "call", label: "Call IV %", cell: (x) => plain(x.call_iv) },
+            { key: "cc", side: "call", label: "Call IV chg", cell: (x) => signed(x.call_iv_change), tone: (x) => signTone(x.call_iv_change) },
             { key: "k", label: "Strike", cell: (x) => strikeText(x.strike) },
-            { key: "pc", label: "Put IV chg", cell: (x) => signed(x.put_iv_change), tone: (x) => signTone(x.put_iv_change) },
-            { key: "pi", label: "Put IV %", cell: (x) => plain(x.put_iv) },
+            { key: "pc", side: "put", label: "Put IV chg", cell: (x) => signed(x.put_iv_change), tone: (x) => signTone(x.put_iv_change) },
+            { key: "pi", side: "put", label: "Put IV %", cell: (x) => plain(x.put_iv) },
           ]} />
         </>
       )}
@@ -370,13 +404,13 @@ function VolOi({ s, spot, each, threshold }: { s: VolOiSection; spot: number | n
             { key: "call", label: "Call volume / OI", tone: "down", value: (r) => r.call_ratio },
           ], spot, "Volume / OI")} />
           <Table title="Volume / OI per strike" atm={atmOf(all, spot)} rows={rows} cols={[
-            { key: "cv", label: "Call vol", cell: (r) => lakhs(r.call_volume) },
-            { key: "co", label: "Call OI", cell: (r) => lakhs(r.call_oi) },
-            { key: "cr", label: "Call vol/OI", cell: (r) => plain(r.call_ratio), mark: (r) => r.call_unusual },
+            { key: "cv", side: "call", label: "Call vol", cell: (r) => lakhs(r.call_volume) },
+            { key: "co", side: "call", label: "Call OI", cell: (r) => lakhs(r.call_oi) },
+            { key: "cr", side: "call", label: "Call vol/OI", cell: (r) => plain(r.call_ratio), mark: (r) => r.call_unusual },
             { key: "k", label: "Strike", cell: (r) => strikeText(r.strike) },
-            { key: "pr", label: "Put vol/OI", cell: (r) => plain(r.put_ratio), mark: (r) => r.put_unusual },
-            { key: "po", label: "Put OI", cell: (r) => lakhs(r.put_oi) },
-            { key: "pv", label: "Put vol", cell: (r) => lakhs(r.put_volume) },
+            { key: "pr", side: "put", label: "Put vol/OI", cell: (r) => plain(r.put_ratio), mark: (r) => r.put_unusual },
+            { key: "po", side: "put", label: "Put OI", cell: (r) => lakhs(r.put_oi) },
+            { key: "pv", side: "put", label: "Put vol", cell: (r) => lakhs(r.put_volume) },
           ]} />
         </>
       )}

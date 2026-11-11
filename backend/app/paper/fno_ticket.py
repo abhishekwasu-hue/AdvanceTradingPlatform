@@ -117,7 +117,7 @@ class OrderAsk:
     stop_loss: Optional[float] = None       # the position's stop (premium); DEF-0 D7: the trader's choice on every side
     # M96 Q2: the user's own optional target (premium). Never a platform value: empty = no target. Armed after the fill as a
     # TARGET exit through the resting-exit route (resting_book.arm_exit); no R:R or other check reads it.
-    target: Optional[float] = None
+    target: float | None = None
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
@@ -281,7 +281,7 @@ def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "opti
     return []
 
 
-def target_errors(side: str, fill: float, target: Optional[float], what: str = "option") -> List[str]:
+def target_errors(side: str, fill: float, target: float | None, what: str = "option") -> list[str]:
     """M96 Q2: the user's own target only has to be a price on the profitable side of the entry (no other check)."""
     if target is None:
         return []
@@ -292,7 +292,7 @@ def target_errors(side: str, fill: float, target: Optional[float], what: str = "
     return []
 
 
-def target_trigger(ask: OrderAsk) -> "Trigger":
+def target_trigger(ask: OrderAsk) -> Trigger:
     """M96 Q2: how the target exit watches its price - the option's own price (the target is a premium), on the ticket's
     / his Trade settings' trigger (touch or candle close), else a touch, as the resting-exit route does."""
     from app.execution import resting_book
@@ -749,7 +749,7 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode, "target_order": target_view}
 
 
-async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id: int) -> Dict[str, Any]:
+async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id: int) -> dict[str, Any]:
     """M96 Q2: after the fill, the user's own target is armed on the new position through the resting-exit route's own
     function (`resting_book.arm_exit`, kind TARGET, a limit at his price) - the same way `POST /resting/exit` arms one.
     The fill is already committed by the pipeline (as the stop on the position is); a target that cannot be kept is said
@@ -761,7 +761,8 @@ async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id:
         return {"armed": False, "text": "The target was not armed: the position was not found. Arm it from the position."}
     try:
         row = await resting_book.arm_exit(session, user, trade, client_ref=target_ref(ask, trade_id), kind=resting_book.TARGET,
-                                          order_type="LIMIT", level=float(ask.target), trigger=target_trigger(ask))
+                                          # a premium target waits as a limit (resting_book.arm_exit requires it)
+                                          order_type=resting_book.LIMIT, level=float(ask.target), trigger=target_trigger(ask))
     except resting_book.RestingOrderError as exc:
         # arm_exit refuses before it adds anything: nothing to undo (and nothing else of this order is rolled back).
         return {"armed": False, "text": f"The target was not armed: {exc} Arm it from the position."}

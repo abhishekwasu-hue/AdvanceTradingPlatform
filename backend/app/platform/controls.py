@@ -374,6 +374,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # pennant arguments; later the intraday scanners, templates and risk tools. Needs `screener_breakouts` too. OFF: the
     # functions and arguments are hidden and refused, and alert rules using them pause. Signals only - places no orders.
     "intraday_pack": "Intraday pack: session high / low / volume so far, bars counted in the session, the pre-open levels and named flag settings in screens (needs screener_breakouts; signals only, places no orders)",
+    # M99 B1-a: the per-bar classifier (app/price_action/bar_class.py) - relative range, spread class, close position,
+    # bar direction and volume class as ScreenQL functions (RelRange, SpreadClass, ClosePosition, BarDirection,
+    # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and
+    # alert rules using them pause. Signals only - places no orders.
+    "m99_primitives": "Bar classes: relative range, spread class, close position, bar direction and volume class in screens (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
     # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint

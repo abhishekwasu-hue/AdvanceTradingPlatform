@@ -120,6 +120,13 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         if found_wy is None:
             return None, "no such Wyckoff scanner"
         text, base_tf, params = found_wy.text, found_wy.base_tf, found_wy.defaults()   # M99 P4: every value a reference value
+    elif screen.source == "supply_demand":
+        from app.screener import sd_scanners as sds
+        found = sds.scanner(screen.id)
+        if found is None:
+            return None, "no such Supply & Demand scanner"
+        # M97 PR-2: as the intraday source - the set values only; a Not set parameter stays a $parameter
+        text, base_tf, params = found.text, found.base_tf, found.defaults()
     elif screen.source == "fib_ew":
         from app.screener import fib_ew_scanners as fes
         found = fes.scanner(screen.id)

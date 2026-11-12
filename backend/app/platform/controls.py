@@ -376,6 +376,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # pennant arguments; later the intraday scanners, templates and risk tools. Needs `screener_breakouts` too. OFF: the
     # functions and arguments are hidden and refused, and alert rules using them pause. Signals only - places no orders.
     "intraday_pack": "Intraday pack: session high / low / volume so far, bars counted in the session, the pre-open levels and named flag settings in screens (needs screener_breakouts; signals only, places no orders)",
+    # M97 (docs/design/M97_SUPPLY_DEMAND.md): the Supply & Demand pack - PR-1 a generic zone detector (DBR / RBR / RBD /
+    # DBD, proximal / distal lines, Fresh / Tested / Violated, app/price_action/sd_zones.py) and its ScreenQL functions
+    # (SDZoneDistancePct, SDZoneEnter, SDZoneFormed, SDZoneViolated, SDZoneEdge); later the scanners, templates, chart
+    # layer, presets and Copilot facts. OFF: the functions are hidden and refused, and alert rules using them pause.
+    # Signals only - places no orders.
+    "sd_pack": "Supply & Demand pack: demand and supply zones (DBR / RBR / RBD / DBD) with their proximal / distal lines and Fresh / Tested / Violated states in screens (signals only, places no orders)",
     # M99 B1-a: the per-bar classifier (app/price_action/bar_class.py) - relative range, spread class, close position,
     # bar direction and volume class as ScreenQL functions (RelRange, SpreadClass, ClosePosition, BarDirection,
     # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and

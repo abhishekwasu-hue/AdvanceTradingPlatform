@@ -14,7 +14,7 @@ const NO_PERIODS: TimeframeId[] = ALL.filter((tf) => tf !== "week" && tf !== "mo
 describe("TF-1 model", () => {
   it("groups the offered timeframes as minutes / hours / days / weeks / months, leaving out an empty group", () => {
     expect(groupTimeframes(ALL)).toEqual([
-      { label: "Minutes", ids: ["1min", "3min", "5min", "15min", "30min"] }, { label: "Hours", ids: ["60min"] },
+      { label: "Minutes", ids: ["1min", "3min", "5min", "10min", "15min", "30min"] }, { label: "Hours", ids: ["60min", "120min"] },   // M97-Q4
       { label: "Days", ids: ["day"] }, { label: "Weeks", ids: ["week"] }, { label: "Months", ids: ["month"] }]);
     expect(groupTimeframes(NO_PERIODS).map((g) => g.label)).toEqual(["Minutes", "Hours", "Days"]);
   });
@@ -42,11 +42,12 @@ describe("TF-1 model", () => {
     expect(parseCustomInterval("1", "hours", ALL)).toEqual({ ok: true, id: "60min" });
     expect(parseCustomInterval("1", "weeks", ALL)).toEqual({ ok: true, id: "week" });
     expect(parseCustomInterval("1", "weeks", NO_PERIODS)).toMatchObject({ ok: false });
-    expect(parseCustomInterval("2", "hours", ALL)).toEqual({ ok: false,
-      message: "A 2 hours chart is not available yet. Charts here can show 1, 3, 5, 15 and 30 minutes, 1 hour, daily, weekly and monthly." });
+    expect(parseCustomInterval("2", "hours", ALL)).toEqual({ ok: true, id: "120min" });                    // M97-Q4
+    expect(parseCustomInterval("4", "hours", ALL)).toEqual({ ok: false,
+      message: "A 4 hours chart is not available yet. Charts here can show 1, 3, 5, 10, 15 and 30 minutes, 1 and 2 hours, daily, weekly and monthly." });
     expect(parseCustomInterval("abc", "minutes", ALL)).toEqual({ ok: false, message: "Type a whole number, for example 15." });
     expect(parseCustomInterval("0", "minutes", ALL)).toMatchObject({ ok: false });
-    expect(servedText(NO_PERIODS)).toBe("1, 3, 5, 15 and 30 minutes, 1 hour and daily");
+    expect(servedText(NO_PERIODS)).toBe("1, 3, 5, 10, 15 and 30 minutes, 1 and 2 hours and daily");
   });
 });
 
@@ -77,7 +78,7 @@ describe("TF-1 control", () => {
   it("the open list is grouped, one menuitemradio per timeframe with a star toggle (aria-pressed), then Add custom interval", () => {
     const html = renderToStaticMarkup(<TimeframePicker offered={ALL} value="5min" onChange={noop} favourites={DEFAULT_FAVOURITES} onFavourites={noop} defaultOpen />);
     expect([...html.matchAll(/role="group" aria-label="(Minutes|Hours|Days|Weeks|Months)"/g)].map((m) => m[1])).toEqual(["Minutes", "Hours", "Days", "Weeks", "Months"]);
-    expect([...html.matchAll(/role="menuitemradio"/g)]).toHaveLength(9);
+    expect([...html.matchAll(/role="menuitemradio"/g)]).toHaveLength(11);                                  // M97-Q4: 10 min, 2 hours
     expect(html).toMatch(/role="menuitemradio" aria-checked="true" tabindex="0" data-timeframe="5min"/);   // roving focus starts on the pick
     expect(html).toMatch(/aria-pressed="true" tabindex="-1" data-star="5min" aria-label="Remove 5 min from favourites"/);
     expect(html).toMatch(/aria-pressed="false" tabindex="-1" data-star="3min" aria-label="Add 3 min to favourites"/);

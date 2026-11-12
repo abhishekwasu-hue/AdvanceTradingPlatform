@@ -318,6 +318,68 @@ _WLDOC = (" - read from the main count known at the bar (the alternate is eviden
           " does not apply")
 
 
+# M97 PR-1 (docs/design/M97_SUPPLY_DEMAND.md, flag `sd_pack`, off by default): the generic Supply & Demand zones
+# (app/price_action/sd_zones.py - a separate detector; Z7a, A1 and the AreaGate are unchanged). Every detector number is a
+# named setting read once (a literal or a $parameter) within its bounds; left out, the reference value (M97-Q2,
+# "reference - edit before use"; tests/test_m97_sd_zones.py checks these against sd_zones.SETTINGS_TABLE). Close-only in
+# alerts: a zone forms, is visited or is violated at a bar's close.
+SD_FLAG = "sd_pack"
+SD_SIDES: tuple[str, ...] = ("demand", "supply")
+SD_STATES: tuple[str, ...] = ("fresh", "tested", "any")
+SD_FORMATIONS: tuple[str, ...] = ("DBR", "RBR", "RBD", "DBD", "SWING", "ENGULF", "SWAP", "demand", "supply", "any")
+SD_MIN_BARS = 100                       # the average range (up to 200 candles by avg_n) plus room for a few zones
+SD_KWARGS: tuple[Arg, ...] = (
+    Arg("avg_n", "window", 20, False, bounds=(5, 200)),
+    Arg("leg_mult", NUM, 1.0, False, literal_only=True, bounds=(1.0, 5.0)),
+    Arg("base_mult", NUM, 0.7, False, literal_only=True, bounds=(0.1, 1.0)),
+    Arg("out_mult", NUM, 1.5, False, literal_only=True, bounds=(1.0, 5.0)),
+    Arg("leg_body_pct", NUM, 50.0, False, literal_only=True, bounds=(50.0, 100.0)),
+    Arg("base_body_pct", NUM, 50.0, False, literal_only=True, bounds=(5.0, 90.0)),
+    Arg("base_max", "window", 5, False, bounds=(1, 10)),
+    Arg("out_ref", STR, "average", False, choices=("average", "atr")),
+    Arg("edge", STR, "wick", False, choices=("wick", "body")),
+    Arg("skip_flat_bars", BOOL, True, False),
+    # M99 P1: the zone kinds (base / swing extreme / both), the swing's confirmation, the two-candle engulfing zone and
+    # the swap level (sd_zones.SETTINGS_TABLE)
+    Arg("kind", STR, "base", False, choices=("base", "swing", "both")),
+    Arg("swing_left", "window", 10, False, bounds=(1, 100)),
+    Arg("confirm_within", "window", 10, False, bounds=(1, 100)),
+    Arg("engulf", BOOL, True, False),
+    Arg("swap", BOOL, False, False),
+    Arg("swap_mult", NUM, 1.5, False, literal_only=True, bounds=(0.0, 5.0)),
+)
+# M99 P1 (app/price_action/sd_odds.py ODDS_TABLE): the entry types' confirmation, the compression test and the score's
+# parts, each a named setting with its reference value; `htf` the higher timeframe ("none": no higher-timeframe part)
+SD_HTF_CHOICES: tuple[str, ...] = ("none", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M")
+SD_ENTRY_TYPES: tuple[str, ...] = ("touch", "confirm", "break_retest")
+SD_ODDS_KWARGS: tuple[Arg, ...] = (
+    Arg("confirm_bars", "window", 3, False, bounds=(1, 20)),
+    Arg("confirm_body_pct", NUM, 50.0, False, literal_only=True, bounds=(0.0, 100.0)),
+    Arg("comp_bars", "window", 5, False, bounds=(2, 50)),
+    Arg("comp_steps", "window", 3, False, bounds=(1, 50)),
+    Arg("comp_mult", NUM, 1.0, False, literal_only=True, bounds=(0.1, 5.0)),
+    Arg("strong_out_mult", NUM, 3.0, False, literal_only=True, bounds=(1.0, 10.0)),
+    Arg("w_fresh", NUM, 1.0, False, literal_only=True, bounds=(0.0, 10.0)),
+    Arg("w_leg_out", NUM, 1.0, False, literal_only=True, bounds=(0.0, 10.0)),
+    Arg("w_base_time", NUM, 1.0, False, literal_only=True, bounds=(0.0, 10.0)),
+    Arg("w_htf", NUM, 1.0, False, literal_only=True, bounds=(0.0, 10.0)),
+    Arg("w_compression", NUM, 1.0, False, literal_only=True, bounds=(0.0, 10.0)),
+    Arg("htf", STR, "none", False, choices=SD_HTF_CHOICES),
+)
+SD_ALL_KWARGS: tuple[Arg, ...] = SD_KWARGS + SD_ODDS_KWARGS
+_SD_SIDE = Arg("side", STR, choices=SD_SIDES)
+_SD_ORDER: tuple[tuple[str, str, bool], ...] = (("base_mult", "leg_mult", False), ("base_mult", "out_mult", False))
+_SD_DOC = (" - zones from a base of 1..base_max small candles between a leg-in candle and an explosive leg-out candle,"
+           " known from the leg-out candle's close; settings (reference values, edit before use): avg_n, leg_mult, base_mult,"
+           " out_mult, leg_body_pct, base_body_pct, base_max, out_ref (average / atr), edge (wick / body), skip_flat_bars (TRUE:"
+           " a flat candle, high = low, is never a base candle); kind (base / swing / both: the swing-extreme zone, known on the"
+           " first later candle that does not touch it within confirm_within candles, beyond the swing_left candles before it;"
+           " engulf TRUE: a two-candle zone when the extreme candle engulfs the one before), swap (TRUE: a zone violated by a"
+           " candle of at least swap_mult average ranges leaves its box as a zone of the other side)")
+_SD_ODDS_DOC = (" - odds settings (reference values, edit before use): confirm_bars, confirm_body_pct (the confirmation"
+                " candle), comp_bars, comp_steps, comp_mult (compression), strong_out_mult and the weights w_fresh, w_leg_out,"
+                " w_base_time, w_htf, w_compression of the score's parts, htf (a higher timeframe, closed bars only; none)")
+
 # TPL-1: the add-indicator work's arguments. Windows are whole bars (1..MAX_WINDOW by the validator); the acceleration
 # factors of the parabolic SAR are read once for the whole series (literal_only) within their bounds.
 SUPERTREND_K_BOUNDS = (0.1, 20.0)
@@ -1056,6 +1118,56 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the level gate's invalidation on its entry candles (missing elsewhere): beyond the area's far edge (and the lowest"
              " low / highest high since the visit) by sl_buffer_mr median ranges - the same entries as AreaGate with the same"
              " settings"),
+    # M97 PR-1 (flag sd_pack): the generic Supply & Demand zones as causal per-bar series (app/price_action/sd_zones.py)
+    Spec("SDZoneDistancePct", "factor", NUM, "pct", (_SD_SIDE, Arg("state", STR, "any", False, choices=SD_STATES)), kwargs=SD_KWARGS,
+         cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="% distance from the close to the proximal line of the nearest live zone of that side and state (fresh / tested"
+             " / any; a violated zone is never read): positive while the close is outside the zone, negative inside it;"
+             " missing when there is none" + _SD_DOC),
+    Spec("SDZoneEnter", "filter", BOOL, None, (_SD_SIDE,), kwargs=SD_KWARGS, cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG,
+         ordered_args=_SD_ORDER,
+         doc="true on the bar whose wick first touches the proximal line of a FRESH zone of that side (its first visit)" + _SD_DOC),
+    Spec("SDZoneFormed", "filter", BOOL, None, (Arg("formation", STR, choices=SD_FORMATIONS),), kwargs=SD_KWARGS, cost=4.0,
+         min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="true on the leg-out bar of a new zone of that formation (DBR / RBR demand, RBD / DBD supply; or demand / supply /"
+             " any)" + _SD_DOC),
+    Spec("SDZoneViolated", "filter", BOOL, None, (_SD_SIDE,), kwargs=SD_KWARGS, cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG,
+         ordered_args=_SD_ORDER,
+         doc="true on the bar whose close goes beyond the distal line of a zone of that side (the zone is then violated)" + _SD_DOC),
+    Spec("SDZoneEdge", "factor", NUM, "price", (_SD_SIDE, Arg("line", STR, choices=("proximal", "distal"))), kwargs=SD_KWARGS,
+         cost=4.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="the proximal or distal line of the nearest FRESH zone of that side (for a stop or target the user sets); missing"
+             " when there is none" + _SD_DOC),
+    # M99 P1 (flag sd_pack): entry types, the score, compression and the higher-timeframe tag (app/price_action/sd_odds.py)
+    Spec("SDZoneEntry", "filter", BOOL, None, (_SD_SIDE, Arg("entry", STR, "touch", False, choices=SD_ENTRY_TYPES)),
+         kwargs=SD_ALL_KWARGS, cost=5.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="true on an entry bar of a zone of that side: touch (the first touch of a fresh zone), confirm (the first candle"
+             " in the zone's direction with a body of at least confirm_body_pct % closing back outside the near line, within"
+             " confirm_bars candles of the first touch) or break_retest (the first return to a swap zone; needs swap=TRUE)"
+             + _SD_DOC + _SD_ODDS_DOC),
+    Spec("SDZoneEntryRef", "factor", NUM, "price", (_SD_SIDE, Arg("line", STR, choices=("proximal", "distal")),
+                                                   Arg("entry", STR, "touch", False, choices=SD_ENTRY_TYPES)),
+         kwargs=SD_ALL_KWARGS, cost=5.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="on SDZoneEntry's bars, the entered zone's proximal or distal line (for the stop the user sets beyond it);"
+             " missing elsewhere" + _SD_DOC + _SD_ODDS_DOC),
+    Spec("SDZoneEntryScore", "factor", NUM, None, (_SD_SIDE, Arg("entry", STR, "touch", False, choices=SD_ENTRY_TYPES)),
+         kwargs=SD_ALL_KWARGS, cost=5.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="on SDZoneEntry's bars, the entered zone's odds score (0-100, information only); missing elsewhere" + _SD_DOC
+             + _SD_ODDS_DOC),
+    Spec("SDZoneScore", "factor", NUM, None, (_SD_SIDE, Arg("state", STR, "any", False, choices=SD_STATES)),
+         kwargs=SD_ALL_KWARGS, cost=5.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="the odds score (0-100, information only) of the nearest live zone of that side and state: the weighted parts"
+             " fresh (1 / (1 + tests)), leg-out strength, time in the base, the higher-timeframe tag and compression; missing"
+             " when there is none" + _SD_DOC + _SD_ODDS_DOC),
+    Spec("SDZoneCompression", "filter", BOOL, None, (_SD_SIDE,), kwargs=SD_ALL_KWARGS, cost=5.0, min_bars=SD_MIN_BARS,
+         flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="true on a bar that starts a visit of a live zone of that side after a compressed approach: of the comp_bars"
+             " candles before it, at least comp_steps stepped towards the zone (higher lows into supply, lower highs into"
+             " demand), none wider than comp_mult average ranges, none touching the zone" + _SD_DOC + _SD_ODDS_DOC),
+    Spec("SDZoneHtfWith", "filter", BOOL, None, (_SD_SIDE, Arg("state", STR, "any", False, choices=SD_STATES)),
+         kwargs=SD_ALL_KWARGS, cost=6.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
+         doc="true while the nearest live zone of that side and state overlaps a live zone of the same side on the higher"
+             " timeframe htf (its closed candles only; the zones are never merged); false with htf none" + _SD_DOC + _SD_ODDS_DOC),
     # M99 B1-b (flag m99_primitives): Fibonacci levels of the confirmed swings and the nearest price cluster
     Spec("FibLevel", "factor", NUM, "price", (_FIB_KIND, _FIB_RATIO, _DEGREE), cost=3.0, min_bars=SWING_MIN_BARS,
          degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG, doc="the Fibonacci level of `kind` at `ratio` (a $setting)" + _FIB_DOC),
@@ -1168,6 +1280,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
                            "TMA", "SessionCount"})
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
+SD_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == SD_FLAG)
 M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 VSA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == VSA_FLAG)
 WYCKOFF_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WYCKOFF_FLAG)
@@ -1207,7 +1320,9 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
-           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS",
+           "SD_FLAG", "SD_FUNCTIONS", "SD_KWARGS", "SD_SIDES", "SD_STATES", "SD_FORMATIONS",
+           "SD_ODDS_KWARGS", "SD_ALL_KWARGS", "SD_HTF_CHOICES", "SD_ENTRY_TYPES",
+           "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS",
            "WYCKOFF_FLAG", "WYCKOFF_FUNCTIONS", "WYCKOFF_KWARGS",
            "PA_FLAG", "PA_FUNCTIONS", "PA_SETTINGS",
            "FIB_EW_FLAG", "FIB_EW_FUNCTIONS", "FIB_EW_SETTINGS"]

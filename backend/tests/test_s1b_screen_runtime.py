@@ -595,6 +595,37 @@ def test_m94_session_functions():
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
 
+def test_m97_supply_demand_zone_functions():
+    """M97 PR-1: a DBR demand zone (the full fixtures: tests/test_m97_sd_zones.py) - formed on its leg-out bar, entered once
+    while fresh, violated by a close below its distal line; the distance and the fresh edge until then."""
+    neutral = [(99.4, 101.0, 99.0, 100.6)] * 21                        # range 2, body 60 %: neither leg nor base
+    path = [(100.0, 100.2, 96.8, 97.0), (97.0, 97.6, 96.6, 97.3), (97.3, 97.7, 96.9, 97.1), (97.1, 101.0, 97.2, 100.8),
+            (100.8, 101.7, 100.5, 101.5), (101.0, 101.2, 97.5, 98.5), (101.0, 101.2, 95.8, 96.0)]
+    o, h, lo, c = (np.array(col, dtype=float) for col in zip(*(neutral + path)))
+    f = pd.DataFrame({"open": o, "high": h, "low": lo, "close": c, "volume": 100.0},
+                     index=pd.date_range("2026-03-02 03:45", periods=len(o), freq="5min", tz="UTC"))
+    d, formed = SymbolData("S", {"5m": f}), 24
+    assert list(np.flatnonzero(_ev('SDZoneFormed("DBR")', d).to_numpy())) == [formed]
+    assert list(np.flatnonzero(_ev('SDZoneEnter("demand")', d).to_numpy())) == [formed + 2]
+    assert list(np.flatnonzero(_ev('SDZoneViolated("demand")', d).to_numpy())) == [formed + 3]
+    edge = _ev('SDZoneEdge("demand", "proximal")', d)
+    assert edge.iloc[formed:formed + 2].tolist() == [97.7, 97.7] and edge.iloc[formed + 2:].isna().all()
+    dist = _ev('SDZoneDistancePct("demand")', d)
+    assert dist.iloc[formed] == pytest.approx((100.8 - 97.7) / 100.8 * 100) and np.isnan(dist.iloc[-1])
+    assert _ev('SDZoneEdge("demand", "proximal", edge="body")', d).iloc[formed] == 97.3
+    # M99 P1 (the full fixtures: tests/test_m99_p1_sd.py): the entry types, the entered zone's lines and score, the odds
+    # score, compression and the higher-timeframe tag - the same zone through the shared evaluation (sd_odds)
+    assert list(np.flatnonzero(_ev('SDZoneEntry("demand", "touch")', d).to_numpy())) == [formed + 2]
+    assert not _ev('SDZoneEntry("demand", "confirm")', d).any()                 # violated before a confirmation candle
+    ref = _ev('SDZoneEntryRef("demand", "distal", "touch")', d)
+    assert ref.iloc[formed + 2] == 96.6 and ref.drop(ref.index[formed + 2]).isna().all()
+    score = _ev('SDZoneEntryScore("demand", "touch")', d)
+    assert 0 < score.iloc[formed + 2] <= 100 and score.drop(score.index[formed + 2]).isna().all()
+    near = _ev('SDZoneScore("demand")', d)
+    assert np.isfinite(near.iloc[formed]) and np.isnan(near.iloc[formed - 1]) and np.isnan(near.iloc[-1])
+    assert not _ev('SDZoneCompression("demand")', d).any() and not _ev('SDZoneHtfWith("demand", htf="15m")', d).any()
+
+
 def test_m99_fib_and_cluster_functions():
     # deeper checks (exact ratios, clusters by band width, confirm-bar use, truncation, the flag) are in tests/test_m99_fib_levels.py
     from app.price_action import fib_causal

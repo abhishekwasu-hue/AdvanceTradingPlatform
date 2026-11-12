@@ -112,6 +112,8 @@ export const screenerApi = {
   vsa: () => request<IntradayLibrary>("/screener/vsa"),
   /** M99 P4: the "Wyckoff" scanners' settings (flag `wyckoff_pack`; 503 while off - no settings shown). Same shape. */
   wyckoff: () => request<IntradayLibrary>("/screener/wyckoff"),
+  /** M97 PR-2: the Supply & Demand scanners' settings (flag `sd_pack`; 503 while off - no settings shown). Same shape. */
+  supplyDemand: () => request<IntradayLibrary>("/screener/supply-demand"),
   /** M99 P5: the "Fibonacci + Elliott" scanners' settings (flag `fib_ew_pack`; 503 while off - no settings shown). Same shape. */
   fibEw: () => request<IntradayLibrary>("/screener/fib-ew"),
   /** M99 P6: the "Price patterns" scanners' settings (flag `pa_pack`; 503 while off - no settings shown). Same shape. */

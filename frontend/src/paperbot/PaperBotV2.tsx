@@ -329,7 +329,7 @@ export default function PaperBotV2(_props: PageProps) {
           {draftNote && <NoteV2 kind="done" testId="draft-saved">{draftNote}</NoteV2>}
           <StartBotV2 library={library} custom={custom} hasBroker={hasBroker} firstField={firstField} onStarted={() => void loadBots()}
             defaults={defaults} approvalAllowed templates={templates} initialTemplate={templateFromUrl(location.search)}
-            intradayPackOn={features.on("intraday_pack")}
+            intradayPackOn={features.on("intraday_pack")} sdPackOn={features.on("sd_pack")}
             preselect={preselect} />
         </section>
       )}
@@ -449,7 +449,7 @@ export function strategyOptions(ready: readonly StrategyInfo[], custom: readonly
 }
 
 export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, defaults = null, approvalAllowed = false, templates = [],
-  intradayPackOn = false,
+  intradayPackOn = false, sdPackOn = false,
   initialTemplate = null, preselect = null }: {
   library: StrategyInfo[] | null; custom: CustomStrategyResponse[]; hasBroker: boolean | null;
   firstField: RefObject<HTMLButtonElement>; onStarted: () => void;
@@ -459,6 +459,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   templates?: StrategyTemplate[]; initialTemplate?: TemplateLink | null;
   /** M94: the reference-values label on a template's settings shows only while `intraday_pack` is on. */
   intradayPackOn?: boolean;
+  /** M97 PR-3: the same for family I (Supply & Demand) while `sd_pack` is on. */
+  sdPackOn?: boolean;
   /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
   preselect?: Preselect | null;
 }) {
@@ -710,7 +712,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             {adoption && settingRows(picked, adoption.settings.params).length > 0 && (
               <div className="mt-space-2 rounded-control border border-subtle p-space-3" data-template-settings>
                 <p className="text-t13 font-medium text-fg">{fromLink ? "The idea's settings" : "Its settings"}</p>
-                {showsReferenceLabel(picked, intradayPackOn) && <div data-template-reference className="mt-space-1"><ReferenceLabel /></div>}
+                {showsReferenceLabel(picked, intradayPackOn, sdPackOn) && <div data-template-reference className="mt-space-1"><ReferenceLabel /></div>}
                 <dl className="mt-space-1 grid grid-cols-1 gap-x-space-4 gap-y-space-1 text-t13 sm:grid-cols-2">
                   {settingRows(picked, adoption.settings.params).map((r) => (
                     <div key={r.key} className="flex justify-between gap-space-2 sm:block">

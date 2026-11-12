@@ -31,7 +31,7 @@ GRIDS = (1, 2, 4, 6, 8)
 GROUPS = ("A", "B", "C", "D")
 # UI2-4a2-pre: week, month and the "bars" (OHLC) chart type are accepted so the Charts page can save them; the W/M candles
 # themselves come with UI2-4a2. The short labels W, M and D are stored as their ids. Older layouts stay valid.
-TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month")
+TIMEFRAMES = ("1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month")   # M97-Q4: 10min, 120min
 TIMEFRAME_ALIASES = {"D": "day", "W": "week", "M": "month"}
 CHART_TYPES = ("candles", "hollow", "heikin_ashi", "renko", "range", "line", "area", "bars")
 MAX_PER_USER = 50
@@ -42,7 +42,7 @@ class Cell(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = Field(pattern=SYMBOL_RE)
     exchange: str = Field(default="NSE", pattern=EXCHANGE_RE)
-    timeframe: Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"] = "5min"
+    timeframe: Literal["1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month"] = "5min"
     chart_type: Literal["candles", "hollow", "heikin_ashi", "renko", "range", "line", "area", "bars"] = "candles"
     group: Optional[Group] = None
 

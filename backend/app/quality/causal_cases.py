@@ -64,6 +64,8 @@ SCREENQL_EXEMPT: Dict[str, str] = {
     "IsFnO": "reference data as of the run date, not bars",
 }
 
+_SD_LOOSE = "leg_mult=1, out_mult=1, leg_body_pct=50, base_body_pct=90, base_mult=0.9"   # M97: zones on the synthetic walk
+
 # ScreenQL expressions per registry function (base timeframe 5m). Every function appears at least once; the `@`
 # variants exercise the higher-timeframe alignment (a 1h / 1d value is visible only after that bar has closed).
 SCREENQL_SERIES: Dict[str, List[str]] = {
@@ -307,6 +309,30 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # (AREA_GATE_CASE: 60 sessions, where the gate fires on the short side; tests/test_m55_t5_pullback_area.py checks both sides)
     "AreaGate": ['AreaGate("down")', 'AreaGate("down", min_rr=1, max_armed_bars=12)'],
     "AreaGateRef": ['AreaGateRef("invalidation", "down")', 'AreaGateRef("invalidation", "down", sl_buffer_mr=0.5)'],
+    # M97 PR-1 (flag sd_pack): the generic Supply & Demand zones; the synthetic walk has few candles that pass the reference
+    # body tests, so most cases loosen them (_SD_LOOSE) to make zones form, get visited and get violated
+    "SDZoneDistancePct": [f'SDZoneDistancePct("demand", "any", {_SD_LOOSE})', f'SDZoneDistancePct("supply", "tested", {_SD_LOOSE})',
+                          f'SDZoneDistancePct("demand", "fresh", {_SD_LOOSE})@15m', 'SDZoneDistancePct("demand", leg_body_pct=50, base_body_pct=90)'],
+    "SDZoneEnter": [f'SDZoneEnter("demand", {_SD_LOOSE})', f'SDZoneEnter("supply", {_SD_LOOSE}, edge="body")'],
+    "SDZoneFormed": [f'SDZoneFormed("any", {_SD_LOOSE})', f'SDZoneFormed("DBD", {_SD_LOOSE}, out_ref="atr")',
+                     f'SDZoneFormed("demand", {_SD_LOOSE})@15m'],
+    "SDZoneViolated": [f'SDZoneViolated("demand", {_SD_LOOSE})', f'SDZoneViolated("supply", {_SD_LOOSE})'],
+    "SDZoneEdge": [f'SDZoneEdge("demand", "proximal", {_SD_LOOSE})', f'SDZoneEdge("supply", "distal", {_SD_LOOSE}, edge="body")',
+                   f'SDZoneEdge("supply", "proximal", {_SD_LOOSE})@15m'],
+    # M99 P1 (flag sd_pack): the swing-extreme / engulfing zones, the swap level, the entry types, the odds score,
+    # compression and the higher-timeframe tag (its zones from the 1h bars closed by each 5m bar's close)
+    "SDZoneEntry": [f'SDZoneEntry("demand", "touch", {_SD_LOOSE}, kind="both")', f'SDZoneEntry("supply", "confirm", {_SD_LOOSE}, confirm_body_pct=0)',
+                    f'SDZoneEntry("demand", "break_retest", {_SD_LOOSE}, swap=TRUE, swap_mult=0)',
+                    f'SDZoneEntry("supply", "touch", {_SD_LOOSE}, kind="swing", swing_left=3)@15m'],
+    "SDZoneEntryRef": [f'SDZoneEntryRef("demand", "distal", "touch", {_SD_LOOSE}, kind="swing", swing_left=3)',
+                       f'SDZoneEntryRef("supply", "proximal", "break_retest", {_SD_LOOSE}, swap=TRUE, swap_mult=0)'],
+    "SDZoneEntryScore": [f'SDZoneEntryScore("demand", "touch", {_SD_LOOSE}, htf="1h")',
+                         f'SDZoneEntryScore("supply", "confirm", {_SD_LOOSE}, confirm_body_pct=0, kind="both")'],
+    "SDZoneScore": [f'SDZoneScore("demand", "any", {_SD_LOOSE})', f'SDZoneScore("supply", "fresh", {_SD_LOOSE}, kind="both", htf="1h")',
+                    f'SDZoneScore("demand", "tested", {_SD_LOOSE}, comp_bars=4, comp_steps=2, comp_mult=3)@15m'],
+    "SDZoneCompression": [f'SDZoneCompression("supply", {_SD_LOOSE}, comp_bars=4, comp_steps=2, comp_mult=3)',
+                          f'SDZoneCompression("demand", {_SD_LOOSE}, kind="both", comp_bars=3, comp_steps=1, comp_mult=5)'],
+    "SDZoneHtfWith": [f'SDZoneHtfWith("demand", "any", {_SD_LOOSE}, htf="1h")', f'SDZoneHtfWith("supply", "any", {_SD_LOOSE}, kind="both", htf="15m")'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
@@ -755,7 +781,7 @@ def _register_screenql() -> None:
                 register(f"screenql.{text}", _screenql(text, "15m"), group="screenql", **AREA_GATE_CASE)
                 continue
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
-                                            "RsiDivergence", "SwingLabel", "Wave", "StructureEventSeries", "RegimeTag", "Fib", "Cluster"))
+                                            "RsiDivergence", "SwingLabel", "Wave", "StructureEventSeries", "RegimeTag", "Fib", "Cluster", "SDZone"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

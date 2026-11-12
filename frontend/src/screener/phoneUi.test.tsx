@@ -120,13 +120,13 @@ describe("SCR-FIX PR D: Find setups on a phone", () => {
     expect(row).not.toContain('<span className="text-t12 text-fg-muted">ScreenQL</span>');
   });
 
-  it("D8: the six pickers are the shared combobox; the timeframe list keeps all nine", () => {
+  it("D8: the six pickers are the shared combobox; the timeframe list keeps all eleven (M97-Q4: 10m and 2h)", () => {
     for (const f of ["src/pages/ScreenerPage.tsx", "src/screener/TimeframeChip.tsx", "src/screener/ParamInline.tsx", "src/screener/WatchlistPicker.tsx",
       "src/screener/LibraryTools.tsx", "src/screener/EtfPanel.tsx"]) {
       expect(read(f), f).not.toMatch(/<select\b/);
       expect(read(f), f).toMatch(/<Combobox\b/);
     }
-    expect(TIMEFRAMES).toEqual(["1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w", "1M"]);
+    expect(TIMEFRAMES).toEqual(["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M"]);
     const html = canvas([newStage(reg)]);
     expect(html).toContain('role="combobox"');
     expect(html).not.toContain("<select");

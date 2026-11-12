@@ -506,6 +506,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/wyckoff"): "member",            # M99 P4: Wyckoff ranges and events on the caller's own bars (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("GET", "/api/charts/layers/sd-zones"): "member",           # M97 PR-4: zones computed from the lake / own bars as of a time (read-only)
     ("GET", "/api/charts/layers/fib-ew"): "member",             # M99 P5: the user's own bars (store first, then the user's broker), read-only
     ("GET", "/api/charts/layers/price-patterns"): "member",     # M99 P6: the user's own bars (store first, then the user's broker), read-only
     # M88-R: the shared daily market report - one stored report of the shared EOD files, the same for every member (no
@@ -944,6 +945,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/intraday"): "member",
     ("GET", "/api/screener/vsa"): "member",                     # M99 P3: the volume spread scanners' texts and settings (read-only)
     ("GET", "/api/screener/wyckoff"): "member",                 # M99 P4: the Wyckoff scanners' texts and settings (read-only)
+    ("GET", "/api/screener/supply-demand"): "member",
     ("GET", "/api/screener/fib-ew"): "member",
     ("GET", "/api/screener/pa"): "member",
     ("GET", "/api/screener/legends"): "member",

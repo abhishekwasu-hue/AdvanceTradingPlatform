@@ -21,9 +21,10 @@ VENDOR_SOURCE = (os.environ.get("MARKET_STORE_VENDOR_SOURCE", "") or "").strip()
 
 DAILY = "1d"
 WEEKLY = "1w"
-INTRADAY_MINUTES: dict[str, int] = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
+INTRADAY_MINUTES: dict[str, int] = {"1m": 1, "3m": 3, "5m": 5, "10m": 10, "15m": 15, "30m": 30, "1h": 60, "2h": 120}   # M97-Q4: 10m, 2h
 _ALIASES: dict[str, str] = {
-    "1min": "1m", "1minute": "1m", "minute": "1m", "3min": "3m", "5min": "5m", "15min": "15m", "30min": "30m",
+    "1min": "1m", "1minute": "1m", "minute": "1m", "3min": "3m", "5min": "5m", "10min": "10m", "15min": "15m", "30min": "30m",
+    "120min": "2h", "2hour": "2h",
     "60min": "1h", "60m": "1h", "1hour": "1h", "hour": "1h",
     "day": "1d", "1day": "1d", "d": "1d", "daily": "1d",
     "week": "1w", "1week": "1w", "weekly": "1w",
@@ -46,12 +47,12 @@ class UnknownInterval(ValueError):
 
 
 def canonical(interval: str) -> str:
-    """'60min' / '1h' / 'day' / '1d' / 'week' ... -> the store's own name (1m 3m 5m 15m 30m 1h 1d 1w)."""
+    """'60min' / '1h' / 'day' / '1d' / 'week' ... -> the store's own name (1m 3m 5m 10m 15m 30m 1h 2h 1d 1w)."""
     raw = (interval or "").strip().lower()
     name = _ALIASES.get(raw, raw)
     if name in INTRADAY_MINUTES or name in (DAILY, WEEKLY):
         return name
-    raise UnknownInterval(f"the store serves 1m, 3m, 5m, 15m, 30m, 1h, 1d and 1w bars, not {interval!r}")
+    raise UnknownInterval(f"the store serves 1m, 3m, 5m, 10m, 15m, 30m, 1h, 2h, 1d and 1w bars, not {interval!r}")
 
 
 def is_eod(interval: str) -> bool:

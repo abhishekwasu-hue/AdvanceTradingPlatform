@@ -21,13 +21,31 @@ export interface LayerMarker { time: number; position: "aboveBar" | "belowBar" |
  * beside the band, clear of the controls; geometry.ts `placeBandLabels`). `role`: a buyer (demand) / seller (supply)
  * area - an engine that knows the chart theme paints it in the theme's up / down colours (`color` is the fallback). */
 export type BandRole = "demand" | "supply" | "neutral";
-export interface LayerBand { low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string; role?: BandRole }
-/** CH3: a straight line between two data points (a price-action leg, a broken level's run), placed by time and price. */
-export interface LayerSegment { t1: number; p1: number; t2: number; p2: number; color?: string; width?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
-/** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. */
-export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below" }
+export interface LayerBand {
+  low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string; role?: BandRole;
+  /** M97 PR-4: a time-anchored band - it starts at this time (epoch seconds) and runs to the right edge; left out, the
+   * band spans the whole pane as before. */
+  start?: number;
+  /** M97 PR-4: the band's own id (a tap names it to the page) and the rows its tooltip shows instead of Top / Bottom. */
+  id?: string;
+  tip?: readonly (readonly [string, string])[];
+}
+/** CH3: a straight line between two data points (a price-action leg, a broken level's run), placed by time and price.
+ * M97 PR-4: `extend: "right"` makes it a horizontal line at `p1` from `t1` on to the pane's right edge (`t2` / `p2`
+ * unused); `role` paints it in the theme's buyer / seller colour (as a band's). */
+export interface LayerSegment {
+  t1: number; p1: number; t2: number; p2: number; color?: string; width?: number; style?: "solid" | "dashed" | "dotted"; label?: string;
+  extend?: "right"; role?: BandRole;
+}
+/** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. M97 PR-4: `inside` - drawn only
+ * when its point is on the pane (a tapped zone's "Leg-out" of a candle left of the bars shown is not cut in half). */
+export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below"; inside?: boolean }
+/** M98 F1: a candle mark (a tapped zone's leg-in / base / leg-out): an outlined box around exactly the chart bars of the
+ * candle [time, end) - `time` its start as the chart stamps bars, `end` the start of the next one of its timeframe -
+ * from its low to its high, and an optional text above or below the box. `role` paints it in the buyer / seller colour. */
+export interface LayerMark { time: number; end?: number; low: number; high: number; text?: string; position?: "above" | "below"; role?: BandRole; color?: string }
 /** A platform overlay (price-action levels, market-zone bands, option walls, trade markers...), computed server-side with an as-of time. */
-export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[] }
+export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[]; marks?: LayerMark[] }
 
 /** N4 CH6: a study line from the server (ScreenQL via the screener runtime): on the price pane or in its own pane. */
 export interface StudyLine { data: { time: number; value: number }[]; color?: string; pane: "price" | "own"; title?: string }

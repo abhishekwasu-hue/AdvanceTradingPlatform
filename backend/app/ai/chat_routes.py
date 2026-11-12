@@ -105,6 +105,17 @@ async def chat_flags(session: AsyncSession, tenant_id: int) -> Dict[str, bool]:
     return {name: await flag_enabled(session, name, tenant_id) for name in chat.CHAT_FLAGS}
 
 
+async def _sd_overlay(session: AsyncSession, tenant_id: int, user_id: int) -> bool:
+    """M97 PR-5 (Z7): the asker's own chart setting `sd_zones` (the Supply & Demand zones overlay is on) - read here on
+    the server, never taken from the request."""
+    from app.me import prefs
+    user = await session.get(User, user_id)
+    if user is None or user.tenant_id != tenant_id:
+        return False
+    value, _version = await prefs.read_one("chart", user, session)
+    return bool(value.get("sd_zones"))
+
+
 async def _provider(session: AsyncSession, tenant_id: int, user_id: int) -> Any:
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None:
@@ -255,7 +266,7 @@ async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_
     run = _runner(session, tenant_id, user_id, body.message)
     from app.signals.language import FLAG as SIGNAL_LANGUAGE_FLAG
     out = await chat.answer(body.message, run, signal_v2=await flag_enabled(session, SIGNAL_LANGUAGE_FLAG, tenant_id),
-                            flags=await chat_flags(session, tenant_id))
+                            flags=await chat_flags(session, tenant_id), sd_zones=await _sd_overlay(session, tenant_id, user_id))
     result = out.as_dict()
     result["ai"] = ai_state
     if agent_tried:

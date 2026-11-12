@@ -151,6 +151,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "vsa_pack": _ready("The thirteen readings, the Volume spread screens, the chart layer with Why? and the J templates",
                        "Screener > Volume spread; Charts > Layers > Volume spread; Strategy templates > Volume spread"),
     "intraday_pack": _not_built("Only the screen functions are built; the intraday scanners, templates and risk tools come next", "M94"),
+    "sd_pack": _not_built("Only the zone detector and the screen functions are built; the scanners, templates, chart layer, presets and Copilot facts come next", "M97"),
     "m99_primitives": _not_built("Only the shared primitives are built; the M99 packs that use them come next", "M99"),
     "screener_breakouts_fitness": _ready(),
     "evidence_context": _ready(),

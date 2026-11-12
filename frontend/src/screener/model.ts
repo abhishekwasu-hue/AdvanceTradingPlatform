@@ -30,12 +30,13 @@ export interface RegistryEntry {
 }
 export type Registry = Record<string, RegistryEntry>;
 
-export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "1d", "1w", "1M"] as const;
+/** M97-Q4: 10m and 2h are built on the server from finer closed bars (a screen timeframe that divides them). */
+export const TIMEFRAMES = ["1m", "3m", "5m", "10m", "15m", "30m", "1h", "2h", "1d", "1w", "1M"] as const;
 export type Timeframe = (typeof TIMEFRAMES)[number];
 
 /** Day-one fix 4 (ui_v2): a timeframe in the words a trader uses ("Daily", not "1d"). Unknown values are shown as given. */
 export const TIMEFRAME_WORDS: Readonly<Record<string, string>> = {
-  "1m": "1 min", "3m": "3 min", "5m": "5 min", "15m": "15 min", "30m": "30 min", "1h": "1 hour", "1d": "Daily", "1w": "Weekly", "1M": "Monthly",
+  "1m": "1 min", "3m": "3 min", "5m": "5 min", "10m": "10 min", "15m": "15 min", "30m": "30 min", "1h": "1 hour", "2h": "2 hours", "1d": "Daily", "1w": "Weekly", "1M": "Monthly",
 };
 export function timeframeWords(tf: string, plain: boolean): string {
   return plain ? TIMEFRAME_WORDS[tf] ?? tf : tf;

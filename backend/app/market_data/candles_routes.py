@@ -81,7 +81,8 @@ def read_failed_reason(exc: BaseException, what: str) -> str:
     return f"Your broker could not send {what} just now. Try again in a moment."
 
 MAX_SYMBOLS = 50
-INTRADAY_TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min")
+# M97-Q4: 10min and 120min (2 hours) are built from the same one-minute bars on the 09:15 grid as every intraday timeframe
+INTRADAY_TIMEFRAMES = ("1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min")
 # UI2-4a2: week and month are aggregated in IST from daily bars (app/market_data/periods.py), never the broker's own.
 SUPPORTED_TIMEFRAMES = INTRADAY_TIMEFRAMES + ("day",) + periods.PERIODS
 DAILY_TIMEFRAMES = ("day",) + periods.PERIODS

@@ -58,13 +58,16 @@ DIVERGENCE_SPARSE_SERIES: Tuple[str, ...] = ("RsiDivergenceRef",)
 ZONE_EDGE_SPARSE_SERIES: Tuple[str, ...] = ("SwingZoneEdge",)
 # M55 T5 (A1): the level gate's invalidation is a price on its entry candles only
 AREA_GATE_SPARSE_SERIES: Tuple[str, ...] = ("AreaGateRef",)
+# M97 PR-3 (family I): a Supply & Demand zone's line is missing while no fresh zone of that side exists - so an upward idea
+# never waits for the first supply zone (its optional target / reward:risk read) before its own signals start
+SD_SPARSE_SERIES: tuple[str, ...] = ("SDZoneEdge", "SDZoneEntryRef", "SDZoneEntryScore")   # M99 P1: the entered zone, entry bars only
 # M99 P5: the Fibonacci + Elliott levels are prices where they apply only (a setup's trigger while watched, the idea's
 # void level on its signal bars, a cluster, a thrust projection)
 FIB_EW_SPARSE_SERIES: tuple[str, ...] = ("FibEwLevel",)
 # M99 P6: the price pattern levels are prices where they apply only (a watched pattern's line or area, a signal bar's void)
 PA_SPARSE_SERIES: tuple[str, ...] = ("PricePatternLevel",)
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES + DIVERGENCE_SPARSE_SERIES + ZONE_EDGE_SPARSE_SERIES
-                                     + AREA_GATE_SPARSE_SERIES + PA_SPARSE_SERIES
+                                     + AREA_GATE_SPARSE_SERIES + SD_SPARSE_SERIES + PA_SPARSE_SERIES
                                      + FIB_EW_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"

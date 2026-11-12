@@ -1,0 +1,1699 @@
+{
+ "scanners": [
+  {
+   "id": "supply_demand.demand_enter",
+   "name": "Price entering a fresh demand zone",
+   "definition": "The bar's low first touches the near line of a demand zone no candle has visited since it formed.",
+   "text": "SDZoneEnter(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.supply_enter",
+   "name": "Price entering a fresh supply zone",
+   "definition": "The bar's high first touches the near line of a supply zone no candle has visited since it formed.",
+   "text": "SDZoneEnter(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_formed",
+   "name": "New zone formed",
+   "definition": "A new zone of the chosen formation is known: a leg-out after a small-candle base, a swing zone's confirming candle, or a strong break (swap).",
+   "text": "SDZoneFormed($formation, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "formation",
+     "value": "any",
+     "doc": "DBR, RBR (demand), RBD, DBD (supply), SWING, ENGULF (swing zones), SWAP (swap levels) or any.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_violated",
+   "name": "Zone violated",
+   "definition": "The bar closes beyond the far line of a demand or a supply zone; the zone is then violated.",
+   "text": "SDZoneViolated(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult) OR SDZoneViolated(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.near_fresh_zone",
+   "name": "Near a fresh zone",
+   "definition": "The close is within your percent of the near line of the nearest fresh demand or supply zone.",
+   "text": "SDZoneDistancePct(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult) <= $within_pct OR SDZoneDistancePct(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult) <= $within_pct",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "within_pct",
+     "value": null,
+     "doc": "Distance from the close to the zone's near line, in percent of the close.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    }
+   ],
+   "unset": [
+    "within_pct"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_reached",
+   "name": "Zone reached your way",
+   "definition": "A zone is reached your way: the first touch of a fresh zone, a confirmation candle back outside its near line, or the first return to a broken zone.",
+   "text": "SDZoneEntry(\"demand\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) OR SDZoneEntry(\"supply\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "entry",
+     "value": "touch",
+     "doc": "touch, confirm or break_retest (break_retest reads swap levels: turn swap on).",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_bars",
+     "value": 3,
+     "doc": "A confirmation candle counts within this many candles from the first touch.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_body_pct",
+     "value": 50.0,
+     "doc": "A confirmation candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_bars",
+     "value": 5,
+     "doc": "Compression: the candles before the touch that are read.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_steps",
+     "value": 3,
+     "doc": "Compression: at least this many of them step towards the zone.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_mult",
+     "value": 1.0,
+     "doc": "Compression: none of them is wider than this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "strong_out_mult",
+     "value": 3.0,
+     "doc": "Score: a departure of this many average ranges counts as full strength.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_fresh",
+     "value": 1.0,
+     "doc": "Score weight of freshness (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_leg_out",
+     "value": 1.0,
+     "doc": "Score weight of the departure strength (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_base_time",
+     "value": 1.0,
+     "doc": "Score weight of a short time in the base (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_htf",
+     "value": 1.0,
+     "doc": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_compression",
+     "value": 1.0,
+     "doc": "Score weight of a compressed approach (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "htf",
+     "value": "none",
+     "doc": "A higher timeframe whose closed candles' zones are read (none: no higher timeframe).",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.swap_retest",
+   "name": "Swap level first return",
+   "definition": "A zone broken by a strong candle is now the other side; price comes back to it for the first time.",
+   "text": "SDZoneEntry(\"demand\", \"break_retest\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) OR SDZoneEntry(\"supply\", \"break_retest\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": true,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_bars",
+     "value": 3,
+     "doc": "A confirmation candle counts within this many candles from the first touch.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_body_pct",
+     "value": 50.0,
+     "doc": "A confirmation candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_bars",
+     "value": 5,
+     "doc": "Compression: the candles before the touch that are read.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_steps",
+     "value": 3,
+     "doc": "Compression: at least this many of them step towards the zone.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_mult",
+     "value": 1.0,
+     "doc": "Compression: none of them is wider than this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "strong_out_mult",
+     "value": 3.0,
+     "doc": "Score: a departure of this many average ranges counts as full strength.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_fresh",
+     "value": 1.0,
+     "doc": "Score weight of freshness (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_leg_out",
+     "value": 1.0,
+     "doc": "Score weight of the departure strength (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_base_time",
+     "value": 1.0,
+     "doc": "Score weight of a short time in the base (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_htf",
+     "value": 1.0,
+     "doc": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_compression",
+     "value": 1.0,
+     "doc": "Score weight of a compressed approach (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "htf",
+     "value": "none",
+     "doc": "A higher timeframe whose closed candles' zones are read (none: no higher timeframe).",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.compression",
+   "name": "Compression into a zone",
+   "definition": "Price reaches a live zone after stepping towards it in small candles (higher lows into supply, lower highs into demand).",
+   "text": "SDZoneCompression(\"demand\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) OR SDZoneCompression(\"supply\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_bars",
+     "value": 3,
+     "doc": "A confirmation candle counts within this many candles from the first touch.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_body_pct",
+     "value": 50.0,
+     "doc": "A confirmation candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_bars",
+     "value": 5,
+     "doc": "Compression: the candles before the touch that are read.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_steps",
+     "value": 3,
+     "doc": "Compression: at least this many of them step towards the zone.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_mult",
+     "value": 1.0,
+     "doc": "Compression: none of them is wider than this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "strong_out_mult",
+     "value": 3.0,
+     "doc": "Score: a departure of this many average ranges counts as full strength.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_fresh",
+     "value": 1.0,
+     "doc": "Score weight of freshness (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_leg_out",
+     "value": 1.0,
+     "doc": "Score weight of the departure strength (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_base_time",
+     "value": 1.0,
+     "doc": "Score weight of a short time in the base (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_htf",
+     "value": 1.0,
+     "doc": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_compression",
+     "value": 1.0,
+     "doc": "Score weight of a compressed approach (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "htf",
+     "value": "none",
+     "doc": "A higher timeframe whose closed candles' zones are read (none: no higher timeframe).",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.zone_score",
+   "name": "Zone odds score at least",
+   "definition": "The nearest fresh demand or supply zone has an odds score (0-100, its parts weighted by you) of at least your value.",
+   "text": "SDZoneScore(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) >= $min_score OR SDZoneScore(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) >= $min_score",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "min_score",
+     "value": null,
+     "doc": "The lowest score listed (0-100).",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_bars",
+     "value": 3,
+     "doc": "A confirmation candle counts within this many candles from the first touch.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_body_pct",
+     "value": 50.0,
+     "doc": "A confirmation candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_bars",
+     "value": 5,
+     "doc": "Compression: the candles before the touch that are read.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_steps",
+     "value": 3,
+     "doc": "Compression: at least this many of them step towards the zone.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_mult",
+     "value": 1.0,
+     "doc": "Compression: none of them is wider than this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "strong_out_mult",
+     "value": 3.0,
+     "doc": "Score: a departure of this many average ranges counts as full strength.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_fresh",
+     "value": 1.0,
+     "doc": "Score weight of freshness (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_leg_out",
+     "value": 1.0,
+     "doc": "Score weight of the departure strength (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_base_time",
+     "value": 1.0,
+     "doc": "Score weight of a short time in the base (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_htf",
+     "value": 1.0,
+     "doc": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_compression",
+     "value": 1.0,
+     "doc": "Score weight of a compressed approach (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "htf",
+     "value": "none",
+     "doc": "A higher timeframe whose closed candles' zones are read (none: no higher timeframe).",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [
+    "min_score"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "supply_demand.htf_with",
+   "name": "Zone with a higher-timeframe zone",
+   "definition": "The nearest fresh demand or supply zone overlaps a live zone of the same side on your higher timeframe (its closed candles only; the zones stay separate).",
+   "text": "SDZoneHtfWith(\"demand\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf) OR SDZoneHtfWith(\"supply\", \"fresh\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct, comp_bars=$comp_bars, comp_steps=$comp_steps, comp_mult=$comp_mult, strong_out_mult=$strong_out_mult, w_fresh=$w_fresh, w_leg_out=$w_leg_out, w_base_time=$w_base_time, w_htf=$w_htf, w_compression=$w_compression, htf=$htf)",
+   "base_tf": "1d",
+   "params": [
+    {
+     "name": "avg_n",
+     "value": 20,
+     "doc": "Candles in the average range a candle is measured against.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_mult",
+     "value": 1.0,
+     "doc": "A leg candle's range is at least this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_mult",
+     "value": 0.7,
+     "doc": "A base candle's range is at most this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_mult",
+     "value": 1.5,
+     "doc": "The leg-out candle's range is at least this multiple of the average range (or ATR).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "leg_body_pct",
+     "value": 50.0,
+     "doc": "A leg candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_body_pct",
+     "value": 50.0,
+     "doc": "A base candle's body is at most this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "base_max",
+     "value": 5,
+     "doc": "At most this many base candles in a row.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "out_ref",
+     "value": "average",
+     "doc": "What the leg-out is measured against: average (the average range) or atr.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "edge",
+     "value": "wick",
+     "doc": "The zone's near line: wick (the base's high or low) or body (the base's body top or bottom).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "skip_flat_bars",
+     "value": true,
+     "doc": "On: a flat candle (high equals low) is never counted as a base candle.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "kind",
+     "value": "base",
+     "doc": "Which zones: base (a base between two legs), swing (the swing extreme candle) or both.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swing_left",
+     "value": 10,
+     "doc": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_within",
+     "value": 10,
+     "doc": "A swing zone counts only if a later candle closes without touching it within this many candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "engulf",
+     "value": true,
+     "doc": "On: when the extreme candle engulfs the one before, the zone is the two candles.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap",
+     "value": false,
+     "doc": "On: a zone broken by a strong candle stays as a zone of the other side (a swap level).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "swap_mult",
+     "value": 1.5,
+     "doc": "The breaking candle's range is at least this multiple of the average range (0 = any break).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_bars",
+     "value": 3,
+     "doc": "A confirmation candle counts within this many candles from the first touch.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "confirm_body_pct",
+     "value": 50.0,
+     "doc": "A confirmation candle's body is at least this percent of its range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_bars",
+     "value": 5,
+     "doc": "Compression: the candles before the touch that are read.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_steps",
+     "value": 3,
+     "doc": "Compression: at least this many of them step towards the zone.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "comp_mult",
+     "value": 1.0,
+     "doc": "Compression: none of them is wider than this multiple of the average range.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "strong_out_mult",
+     "value": 3.0,
+     "doc": "Score: a departure of this many average ranges counts as full strength.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_fresh",
+     "value": 1.0,
+     "doc": "Score weight of freshness (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_leg_out",
+     "value": 1.0,
+     "doc": "Score weight of the departure strength (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_base_time",
+     "value": 1.0,
+     "doc": "Score weight of a short time in the base (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_htf",
+     "value": 1.0,
+     "doc": "Score weight of a matching higher-timeframe zone (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "w_compression",
+     "value": 1.0,
+     "doc": "Score weight of a compressed approach (0 leaves it out).",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "htf",
+     "value": "1w",
+     "doc": "The higher timeframe whose closed candles' zones are read (above the scan's own).",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
+  }
+ ],
+ "footer": "Information and education only, not investment advice.",
+ "ref_label": "Reference value - edit before use",
+ "not_set": "Not set"
+}

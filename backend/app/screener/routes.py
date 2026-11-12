@@ -37,7 +37,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import bands as band_gate
 from app.screener import chains as chain_gate
-from app.screener import compile_screen, fib_ew_gate, m99_gate, nodes, pa_gate, reasons, vsa_gate, wyckoff_gate
+from app.screener import compile_screen, fib_ew_gate, m99_gate, nodes, pa_gate, reasons, sd_gate, vsa_gate, wyckoff_gate
 from app.screener import fib_ew_scanners as fes  # registers the `fib_ew` template source (M99 P5)
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import intraday as itd  # registers the `intraday` template source (M94 PR-2)
@@ -47,6 +47,7 @@ from app.screener import pa_scanners as pas  # registers the `pa` template sourc
 from app.screener import primitives as primitives_gate
 from app.screener import ranking as ranking_gate  # registers the `legends` template source (U7 LG1)
 from app.screener import reference as reference_gate
+from app.screener import sd_scanners as sds  # registers the `supply_demand` template source (M97 PR-2)
 from app.screener import taxonomy as tx
 from app.screener import venues as venue_gate
 from app.screener import vsa_scanners as vss  # registers the `vsa` template source (M99 P3)
@@ -326,7 +327,8 @@ async def screen_stages(body: StagesBody, user: User = Depends(get_current_user)
     await _gate(session, user, ast, validated, params)        # main: params resolve RankScore($name) (N3 S7a)
     # M94-Q2: an intraday scanner opens with its Not set parameters still as $parameters - the builder shows them and the
     # run asks for their values (validation refuses "parameter $name has no value" until he sets them)
-    scanner = itd.scanner(body.library_id) if body.library_id else None
+    # (M97 PR-2: a Supply & Demand scanner the same way)
+    scanner = (itd.scanner(body.library_id) or sds.scanner(body.library_id)) if body.library_id else None
     unset = scanner.unset() if scanner is not None else []
     blocking = [p for p in validated.problems if not (p.kind == "parameter" and any(f"${u} " in p.message for u in unset))]
     if ast is None or blocking:
@@ -372,6 +374,18 @@ async def wyckoff_scanners(user: User = Depends(get_current_user), session: Asyn
     return wys.payload()
 
 
+@router.get("/supply-demand")
+async def supply_demand_scanners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M97 PR-2: the Supply & Demand scanners - each one's text, base timeframe, editable parameters (a reference value,
+    the ATP default or Not set) and the footer. Behind `screener_gallery` and `sd_pack` (404 / 503 while off, as the
+    gallery hides them). Nothing runs here."""
+    await _flag(session, user)
+    await require_flag(session, GALLERY_FLAG, user.tenant_id)
+    for f in (sds.FLAG, *sds.ALSO):
+        await require_flag(session, f, user.tenant_id)
+    return sds.payload()
+
+
 @router.get("/fib-ew")
 async def fib_ew_scanners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """M99 P5: the "Fibonacci + Elliott" scanners - each one's text, base timeframe, editable parameters (reference values)
@@ -409,7 +423,7 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
     the U7 LG3 fundamentals functions (`screener_fundamentals`), N3 S8a's ownership functions (`screener_ownership`), the
-    wave count functions (`screener_waves`), M99's bar classifier and structure functions and its Fibonacci / cluster functions
+    wave count functions (`screener_waves`), M97's Supply & Demand zone functions (`sd_pack`), M99's bar classifier and structure functions and its Fibonacci / cluster functions
     (`m99_primitives`), the volume spread function (`vsa_pack`), the Wyckoff functions (`wyckoff_pack`), the price pattern functions (`pa_pack`), the Fibonacci + Elliott functions (`fib_ew_pack`), the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves
     a `$parameter` pattern name), N3 S8c's venue matrix (`screener_venues`,
     with an exchange) and N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or this
@@ -417,7 +431,7 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     Every gate runs; RankScore's check is last so its early return skips none."""
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
-    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, m99_gate, primitives_gate,
+    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, sd_gate, m99_gate, primitives_gate,
                  vsa_gate, wyckoff_gate, pa_gate, fib_ew_gate):   # M99 P3 / P4 / P6 / P5
         # the wave gate resolves a `$parameter` RetestEntry choice (R7: of wave_line / wave_end) from the screen's parameters
         blocked = await (waves_gate.blocked_calls(session, user.tenant_id, ast, params or {}) if gate is waves_gate

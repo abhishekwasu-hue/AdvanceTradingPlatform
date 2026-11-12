@@ -41,6 +41,10 @@ J (ids `J<n>`; the letter I stays free for the Supply & Demand family on its own
 Family K "Wyckoff" (M99 P4), the same way: ids `K<n>` (I and J are taken), listed only while `wyckoff_pack` is on. Its
 expressions read the ONE Wyckoff range evaluation (ScreenQL `Wyckoff(...)` / `WyckoffLevel(...)`).
 
+Family I "Supply & Demand" (M97 PR-3, docs/design/M97_SUPPLY_DEMAND.md Z5), still `atp.template/1` and without changing
+any existing template: the family letter I (ids `I<n>`), listed only while the flag `sd_pack` is on (routes.py
+FAMILY_FLAGS).
+
 Family L "Fibonacci + Elliott" (M99 P5), the same way: ids `L<n>` (the letters I, J and K are taken by the other M99
 packs on their own branches), listed only while `fib_ew_pack` is on. Its expressions read the ONE Fibonacci + Elliott
 evaluation (ScreenQL `FibEw(...)` / `FibEwLevel(...)`).
@@ -61,7 +65,10 @@ from app.screener.registry import INTRADAY_SERIES_TFS
 
 SCHEMA_VERSION = "atp.template/1"
 SIGNAL_TIMEFRAME = "signal_timeframe"        # the reserved name a constraint uses for the user's chosen signal timeframe
-TIMEFRAMES: Tuple[str, ...] = n.TIMEFRAMES
+# M97-Q4: 10m / 2h are ScreenQL and chart timeframes only (built from finer closed bars); a template runs on the strategy
+# engine's timeframes (adapter.ENGINE_LABEL + weekly / monthly reads), so they stay out of a template's timeframes
+TEMPLATE_EXCLUDED_TFS: tuple[str, ...] = ("10m", "2h")
+TIMEFRAMES: tuple[str, ...] = tuple(tf for tf in n.TIMEFRAMES if tf not in TEMPLATE_EXCLUDED_TFS)
 MA_TYPES: Tuple[str, ...] = ("EMA", "SMA", "WMA", "HMA")
 SOURCES: Tuple[str, ...] = ("close", "open", "high", "low")
 _KEY = r"^[a-z][a-z0-9_]{0,31}$"
@@ -276,10 +283,10 @@ def leaves(part: object) -> List[object]:
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-HJ-M][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-M][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -386,6 +393,8 @@ class Template(_Strict):
             raise ValueError("a Volume spread (family J) template has a J id, and only it")
         if (self.family == "K") != self.id.startswith("K"):
             raise ValueError("a Wyckoff (family K) template has a K id, and only it")
+        if (self.family == "I") != self.id.startswith("I"):
+            raise ValueError("a Supply & Demand (family I) template has an I id, and only it")
         if (self.family == "L") != self.id.startswith("L"):
             raise ValueError("a Fibonacci + Elliott (family L) template has an L id, and only it")
         if (self.family == "M") != self.id.startswith("M"):

@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { BandRef } from "../charting/geometry";
 import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
@@ -48,6 +49,8 @@ import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
 import { OPTIONS_EM_LAYER_ID, useOptionsExpectedMove } from "../optionChain/expectedMoveLayer";
+import { SD_LAYER_ID, useSdZones } from "./sdZones";
+import { SdZonesBar } from "./SdZonesBar";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
 import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
 import { WYCKOFF_LAYER_ID, WyckoffBar, useWyckoffLayer } from "./wyckoffLayer";
@@ -175,7 +178,7 @@ export default function ChartsPageV2(_props: PageProps) {
   const screen = useScreenOverlay(engine, { screenId, symbol, exchange, timeframe, candles: data.candles,
     on: screenShown && tab === "chart" && !hubView });
   // M94 F16: the template overlay from the address - read and drawn only on demand (its toolbar button; off at first)
-  const tplAsk = features.on("intraday_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
+  const tplAsk = features.on("intraday_pack") || features.on("sd_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
   const [tplShown, setTplShown] = useState(false);
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
@@ -199,6 +202,10 @@ export default function ChartsPageV2(_props: PageProps) {
     const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers, ...fibEw.markers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
   }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers, fibEw.markers]);
+  // M97 PR-4: Supply & Demand zones (flag sd_pack) - read again when a new bar arrives; a tapped zone's candles highlighted
+  const [tipBand, setTipBand] = useState<BandRef | null>(null);
+  const sdOn = view.layers.includes(SD_LAYER_ID) && features.on("sd_pack") && tab === "chart" && !hubView;
+  const sd = useSdZones(engine, `${exchange}:${symbol}`, timeframe, sdOn, last ? Date.parse(last.timestamp) : null, tipBand, prefs.prefs.sd_overlay);
   const emNote = useOptionsExpectedMove(engine, symbol, view.layers.includes(OPTIONS_EM_LAYER_ID) && tab === "chart" && !hubView, chip ? chip.open : null);   // M96 N1
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -260,6 +267,8 @@ export default function ChartsPageV2(_props: PageProps) {
     const change = toggleIndicator(id, indicatorState);
     if ("panes" in change) prefs.update({ indicators: change.panes });
     else setView(change);
+    // M97 PR-5 (Z7): the server knows the overlay is on, so the Copilot's chart answer adds the zones only then
+    if (id === SD_LAYER_ID && "layers" in change) prefs.update({ sd_zones: change.layers.includes(SD_LAYER_ID) });
   };
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
@@ -362,7 +371,7 @@ export default function ChartsPageV2(_props: PageProps) {
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
                 markers={chartMarkers}
-                volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} captureTouch={fs.on} rememberViewFor={userId}
+                volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} onBandTip={setTipBand} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
             {screenId != null && screenShown && !fs.on && (
@@ -373,6 +382,9 @@ export default function ChartsPageV2(_props: PageProps) {
             )}
             {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
             {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
+            {sdOn && !fs.on && (
+              <SdZonesBar chartTf={timeframe} shown={sd.shown} options={prefs.prefs.sd_overlay} onChange={(o) => prefs.update({ sd_overlay: o })} note={sd.note} />
+            )}
             {fibEwOn && !fs.on && <FibEwBar state={fibEw} show={fibEwShow} onShow={setFibEwShow} />}
             {paOn && !fs.on && <PaBar state={paLayer} options={paOptions} onChange={setPaOptions} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}

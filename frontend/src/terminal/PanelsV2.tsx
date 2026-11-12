@@ -45,7 +45,7 @@ import { Chip } from "../ui/Chip";
 import { Signed } from "../ui/Signed";
 import { SubTabs } from "../ui/SubTabs";
 import type { ChartLive, TerminalSpot } from "./spot";
-import { orderGroup, statusWords, type OrderEvent, type OrderGroup, type OrderRow, type TerminalApi } from "./api";
+import { orderGroup, orderRowWords, statusWords, type OrderEvent, type OrderGroup, type OrderRow, type TerminalApi } from "./api";
 import { Details } from "../ui/numbersFirst";
 
 /**
@@ -57,7 +57,8 @@ import { Details } from "../ui/numbersFirst";
  *   useOrderTicket) - the same order path as the chain's ticket, PAPER in Phase 0.
  * - Positions: the My trades rows (src/trading/PositionsV2.tsx PositionRowV2) with their own Exit now (never blocked,
  *   ADR-0004).
- * - Orders: his own orders (read only), Open / Executed / Rejected, each with its trail.
+ * - Orders: his own orders of today's IST trading day (read only), Open / Executed / Rejected, each with its trail; a
+ *   "Past orders" link opens the earlier ones (My trades › Orders).
  * - Basket: his basket's legs; "Review and place" opens the existing basket panel (src/fno/BasketPanelV2.tsx).
  * - Bots & signals (M63 I-5): his running / paused bots and the signals waiting for him, read only, with links to the
  *   Trading bot and Signals pages (which keep pause, stop, approve and skip).
@@ -398,6 +399,9 @@ export function PositionsPanelV2({ read, exposure = null, canTrade, exitNowOn, f
 const GROUPS: { key: OrderGroup; label: string }[] = [{ key: "open", label: "Open" }, { key: "executed", label: "Executed" }, { key: "rejected", label: "Rejected" },
   { key: "cancelled", label: "Cancelled" }];
 
+/** My trades › Orders: every earlier order (the Terminal's tab lists today's only, `?today=true`). */
+export const PAST_ORDERS_PATH = "/positions/orders";
+
 export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; terminal: Pick<TerminalApi, "events"> }) {
   const [group, setGroup] = useState<OrderGroup>("executed");
   const [openId, setOpenId] = useState<number | null>(null);
@@ -436,7 +440,7 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
                 <span className="shrink-0 font-tabular text-t13 text-fg-muted">{formatNumber(o.quantity, o.quantity % 1 ? 2 : 0)}</span>
                 <span className="shrink-0 text-t12 text-fg-muted">{formatTimeIST(o.created_at)}</span>
               </button>
-              <p className="pl-space-5 text-t12 text-fg-muted">{statusWords(o.status)}{o.mode === "PAPER" ? "" : " · Live"}</p>
+              <p className="pl-space-5 text-t12 text-fg-muted">{orderRowWords(o)}{o.mode === "PAPER" ? "" : " · Live"}</p>
               {group === "rejected" && o.reasons.length > 0 && <p className="pl-space-5 text-t12 text-warn">{o.reasons[0]}</p>}
               {openId === o.id && (
                 <div className="pl-space-5" data-order-trail={o.id}>
@@ -453,6 +457,8 @@ export function OrdersPanelV2({ read, terminal }: { read: Read<OrderRow[]>; term
           ))}
         </ul>
       )}
+      {/* The order book of today, as a broker's; the earlier days' orders stay in My trades › Orders. */}
+      <InPlaceLink to={PAST_ORDERS_PATH} className={LINK} data-orders-past>Past orders</InPlaceLink>
     </div>
   );
 }

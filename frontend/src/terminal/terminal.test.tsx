@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
-import { orderGroup, statusWords, terminalApi, type TerminalStatus } from "./api";
+import { orderGroup, orderRowWords, statusWords, terminalApi, type TerminalStatus } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
   firstFree, forSave, layoutFor, layoutProblem, liftedY, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
@@ -216,7 +216,7 @@ describe("layout model: his own layouts", () => {
     const paths: string[] = [];
     const t = terminalApi((async (path: string) => { paths.push(path); return []; }) as never);
     await t.positions(); await t.orders(); await t.status(); await t.events(7);
-    expect(paths).toEqual(["/positions?mine=true", "/orders?mine=true&limit=100", "/terminal/status", "/orders/7/events"]);
+    expect(paths).toEqual(["/positions?mine=true", "/orders?mine=true&today=true&limit=100", "/terminal/status", "/orders/7/events"]);
   });
 });
 
@@ -401,6 +401,15 @@ describe("panels: plain words", () => {
     expect(orderGroup("REJECTED")).toBe("rejected");
     expect(orderGroup("FAILED")).toBe("rejected");
     expect(statusWords("SOMETHING_NEW")).toBe("Updated");
+  });
+
+  it("a filled entry whose position has closed says so, with the exit's reason (owner bug report)", () => {
+    expect(orderRowWords({ status: "POSITION_OPEN", position_closed: true, exit_reason: "Premium floor" })).toBe("Filled, position closed (Premium floor)");
+    expect(orderRowWords({ status: "POSITION_OPEN", position_closed: true, exit_reason: null })).toBe("Filled, position closed");
+    expect(orderRowWords({ status: "POSITION_OPEN", position_closed: false })).toBe("Filled, position open");
+    expect(orderRowWords({ status: "POSITION_OPEN" })).toBe("Filled, position open");          // an older server's answer
+    expect(orderRowWords({ status: "REJECTED", position_closed: true })).toBe("Refused");
+    expect(panelsSource).toContain("PAST_ORDERS_PATH");
   });
 
   it("one order path: the Terminal places nothing itself and the AI is never imported (ADR-0006)", () => {

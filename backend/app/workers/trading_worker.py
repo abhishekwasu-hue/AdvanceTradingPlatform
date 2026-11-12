@@ -79,6 +79,7 @@ from app.market_lake.recorder import LakeRecorder
 from app.news_feed import service as news_feed
 from app.notifications.service import notify
 from app.observability.metrics import MARKET_DATA_STALE, RETENTION_DELETED, observe_cycle
+from app.paper import expiry_settlement
 from app.plans.limits import live_allowed_for, tenant_is_active
 from app.platform import controls as platform_controls
 from app.platform import phase0_lock
@@ -301,6 +302,7 @@ class TradingWorker:
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
         self._last_view_sweep: Optional[datetime] = None
+        self._last_expiry_sweep: Optional[datetime] = None   # PAPER expiry settlement (app/paper/expiry_settlement.py)
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_watch_check: Optional[datetime] = None      # M72 PR-7: the Copilot watch
@@ -1053,6 +1055,18 @@ class TradingWorker:
                             self._last_view_sweep = now
                     except Exception as exc:  # noqa: BLE001 - housekeeping never stops trading
                         report.errors.append(f"view sessions: {exc}")
+                # Owner bug report (expired PAPER option still open): an open PAPER index option / future past its expiry
+                # close is settled in cash at the stored expiry-day close (app/paper/expiry_settlement.py) - an exit, never
+                # blocked; LIVE rows are never read here (the broker settles them). Every few minutes, cheap when none.
+                if self._last_expiry_sweep is None or (now - self._last_expiry_sweep).total_seconds() >= expiry_settlement.SWEEP_SECONDS:
+                    try:
+                        settled = await expiry_settlement.settle_expired(session, now)
+                        report.positions_closed += len(settled.settled)
+                        self._last_expiry_sweep = now
+                    except Exception as exc:  # noqa: BLE001 - tried again next pass; never stops trading
+                        logger.exception("PAPER expiry settlement failed")
+                        report.errors.append(f"expiry settlement: {exc}")
+                        await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():

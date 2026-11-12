@@ -19,6 +19,7 @@ import { IndexRow, StatusChip } from "./SettingsIndexV2";
 import indexSource from "./SettingsIndexV2.tsx?raw";
 import sectionSource from "./SettingsSectionV2.tsx?raw";
 import { liveHiddenFrom } from "./useLiveHidden";
+import { liveAvailableFrom } from "./useLiveAvailable";
 
 /** Settings redesign part B: the Settings index, its section pages, the search, the status chips and the old links. */
 
@@ -206,10 +207,17 @@ describe("B1: the status chips", () => {
 });
 
 describe("B3: nothing about LIVE in Phase 0", () => {
-  it("hidden while phase0_paper_only is on, or the flags are not known", () => {
+  it("hidden while paper only is on (LIVE-1: the server derives it from live_trading), or the flags are not known", () => {
     expect(liveHiddenFrom({ answered: false, on: () => false })).toBe(true);
     expect(liveHiddenFrom({ answered: true, on: (f) => f === "phase0_paper_only" })).toBe(true);
     expect(liveHiddenFrom({ answered: true, on: () => false })).toBe(false);
+  });
+
+  it("LIVE-1: a mode picker offers Live only while the one switch is on (and paper only, derived from it, is off)", () => {
+    expect(liveAvailableFrom({ answered: true, on: (f) => f === "live_trading" })).toBe(true);
+    expect(liveAvailableFrom({ answered: true, on: () => false })).toBe(false);
+    expect(liveAvailableFrom({ answered: true, on: () => true })).toBe(false);
+    expect(liveAvailableFrom({ answered: false, on: (f) => f === "live_trading" })).toBe(false);
   });
 
   it("the index, the Advanced page and the Setup page gate their LIVE parts on it", () => {

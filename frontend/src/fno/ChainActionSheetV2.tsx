@@ -104,6 +104,13 @@ export async function watchlistAdd(lists: Lists, contract: FnoContract, list: Wa
 }
 
 /** The ScreenQL condition of a price alert: reaching `level` from where the price is now. */
+/** M96: the basket chip says the lots the leg is really added with - his saved lots - or no number when he saved none
+ * (the basket then asks for them). M68: never a default "1 lot". */
+export function basketChipLabel(side: Side, lots: number | null | undefined): string {
+  const word = side === "BUY" ? "Buy leg" : "Sell leg";
+  return typeof lots === "number" && Number.isFinite(lots) && lots > 0 ? `${word}, ${lots} lot${lots === 1 ? "" : "s"}` : word;
+}
+
 export function alertCondition(level: number, ltp: number | null): { condition: string; words: string; sign: string } {
   const above = ltp === null || level >= ltp;
   return { condition: `close ${above ? ">=" : "<="} ${level}`, words: above ? "at or above" : "at or below", sign: above ? "≥" : "≤" };
@@ -177,7 +184,7 @@ export default function ChainActionSheetV2({
             </RD.Close>
           </div>
           <ActionSheetBody target={target} contract={contract} contractProblem={contractProblem} held={held} panel={panel} note={note}
-            watchlists={watchlists} level={level} watchlistsOn={watchlistsOn} alertsOn={alertsOn} {...handlers} />
+            watchlists={watchlists} level={level} watchlistsOn={watchlistsOn} alertsOn={alertsOn} basketLots={ownLots} {...handlers} />
         </RD.Content>
       </RD.Portal>
     </RD.Root>
@@ -196,9 +203,11 @@ export interface BodyHandlers {
 }
 
 /** The sheet's content (no state, no hooks). */
-export function ActionSheetBody({ target, contract, contractProblem, held, panel, note, watchlists, level, watchlistsOn, alertsOn, ...on }: {
+export function ActionSheetBody({ target, contract, contractProblem, held, panel, note, watchlists, level, watchlistsOn, alertsOn, basketLots = null, ...on }: {
   target: ActionTarget; contract: FnoContract | null; contractProblem: string | null; held: HeldLeg[]; panel: Panel; note: Note;
   watchlists: WatchlistV2[] | null; level: string; watchlistsOn: boolean; alertsOn: boolean;
+  /** M96: the lots a basket leg is added with (his saved lots; null = none saved, the basket asks). */
+  basketLots?: number | null;
 } & BodyHandlers) {
   const leg = target.leg;
   const mine = held.filter((h) => h.strike === target.strike && h.right === target.right);
@@ -242,8 +251,8 @@ export function ActionSheetBody({ target, contract, contractProblem, held, panel
         </button>
         {panel === "basket" && (
           <Inline>
-            <button type="button" className={CHIP} onClick={() => on.onBasket("BUY")} data-action="basket-buy">Buy leg, 1 lot</button>
-            <button type="button" className={CHIP} onClick={() => on.onBasket("SELL")} data-action="basket-sell">Sell leg, 1 lot</button>
+            <button type="button" className={CHIP} onClick={() => on.onBasket("BUY")} data-action="basket-buy">{basketChipLabel("BUY", basketLots)}</button>
+            <button type="button" className={CHIP} onClick={() => on.onBasket("SELL")} data-action="basket-sell">{basketChipLabel("SELL", basketLots)}</button>
           </Inline>
         )}
         <InPlaceLink to={chartLink(target, contract)} className={ROW} data-action="chart" onClick={on.onChart}>

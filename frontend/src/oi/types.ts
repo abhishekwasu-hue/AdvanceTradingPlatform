@@ -23,6 +23,8 @@ export interface OiBannerRow {
   expiry: string | null;
   dte: number | null;
   first_of_day: boolean;
+  /** M96 L1: the Trade banner's message in neutral fact words (backend oi_words.trade_fact_message). */
+  fact_message?: string;
   /** M61 PCR-1 (history rows): the reading's session phase on the exchange calendar, its strike count (strikes with OI
    * on both sides) and whether it is partial (below the session's usual count). Absent on older answers. */
   phase?: "session" | "pre_open" | "after_close" | "closed_day";
@@ -85,7 +87,17 @@ export interface OiAlertSettings {
   quiet_start: string | null;
   quiet_end: string | null;
   digest_time: string | null;
+  /** M96 N1: the user's own per-strike OI change levels (none until he adds one). */
+  strike_rules?: OiStrikeRule[];
+  /** M96 N1: the user's own PCR level (none until he types one). */
+  pcr_level?: number | null;
 }
+
+/** M96 N1: notify when this strike's call (CE) or put (PE) OI change since the day's first reading reaches `threshold`. */
+export interface OiStrikeRule { strike: number; side: "CE" | "PE"; threshold: number }
+
+/** M96 N1: the threshold alert types (managed in their own card, src/optionChain/OiThresholdAlertsV2.tsx). */
+export const OI_THRESHOLD_ALERT_TYPES = ["STRIKE_OI_CHANGE", "PCR_CROSS"] as const;
 
 export interface OiAlertLogResponse {
   underlying: string;

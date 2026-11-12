@@ -3,18 +3,19 @@ import { X } from "lucide-react";
 import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
-import { formatCount, formatCountChange, formatGreek, formatIv, formatStrike } from "./model";
+import { formatGreek, formatIv, formatOi, formatStrike, type OiUnits } from "./model";
 import type { ChainLeg, ChainRow } from "./types";
 
 /**
  * OC1: one strike's full details - every figure of its call and its put (LTP, OI, OI change, volume, IV, bid, ask and
  * the Greeks). A sheet from the bottom on a phone, a dialog on a desktop. Read-only: nothing here places an order.
  */
-const LINES: { label: string; term?: GlossaryKey; value: (leg: ChainLeg) => string }[] = [
+const LINES: { label: string; term?: GlossaryKey; value: (leg: ChainLeg, units?: OiUnits) => string }[] = [
   { label: "LTP", term: "ltp", value: (l) => formatPrice(l.ltp) },
-  { label: "OI", term: "oi", value: (l) => formatCount(l.oi) },
-  { label: "OI change", value: (l) => formatCountChange(l.oi_change) },
-  { label: "Volume", value: (l) => formatCount(l.volume) },
+  // M96 Q3: in the chain's unit (lakhs unless he picked Contracts).
+  { label: "OI", term: "oi", value: (l, u) => formatOi(l.oi, u) },
+  { label: "OI change", value: (l, u) => formatOi(l.oi_change, u, true) },
+  { label: "Volume", value: (l, u) => formatOi(l.volume, u) },
   { label: "IV", term: "iv", value: (l) => formatIv(l.iv) },
   { label: "Bid", value: (l) => formatPrice(l.bid) },
   { label: "Ask", value: (l) => formatPrice(l.ask) },
@@ -24,8 +25,8 @@ const LINES: { label: string; term?: GlossaryKey; value: (leg: ChainLeg) => stri
   { label: "Vega", term: "vega", value: (l) => formatGreek("vega", l.vega) },
 ];
 
-export default function RowDetailsV2({ row, atm, underlying, onClose }: {
-  row: ChainRow | null; atm: number | null; underlying: string; onClose: () => void;
+export default function RowDetailsV2({ row, atm, underlying, onClose, units }: {
+  row: ChainRow | null; atm: number | null; underlying: string; onClose: () => void; units?: OiUnits;
 }) {
   return (
     <RD.Root open={row !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -44,7 +45,7 @@ export default function RowDetailsV2({ row, atm, underlying, onClose }: {
                   <X size={18} aria-hidden />
                 </RD.Close>
               </div>
-              <RowDetailsBody row={row} />
+              <RowDetailsBody row={row} units={units} />
             </>
           )}
         </RD.Content>
@@ -54,7 +55,7 @@ export default function RowDetailsV2({ row, atm, underlying, onClose }: {
 }
 
 /** The two columns of figures (Call, Put) for one strike. */
-export function RowDetailsBody({ row }: { row: ChainRow }) {
+export function RowDetailsBody({ row, units }: { row: ChainRow; units?: OiUnits }) {
   return (
     <table className="mt-space-3 w-full text-t14" aria-label={`Strike ${formatStrike(row.strike)} details`}>
       <thead>
@@ -68,8 +69,8 @@ export function RowDetailsBody({ row }: { row: ChainRow }) {
         {LINES.map((line) => (
           <tr key={line.label} className="border-t border-subtle">
             <th scope="row" className="py-space-2 text-left font-normal text-fg-muted">{line.label}{line.term && <> <TermHint term={line.term} /></>}</th>
-            <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.call)}</td>
-            <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.put)}</td>
+            <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.call, units)}</td>
+            <td className="py-space-2 text-right font-tabular text-fg">{line.value(row.put, units)}</td>
           </tr>
         ))}
       </tbody>

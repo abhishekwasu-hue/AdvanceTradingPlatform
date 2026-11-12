@@ -1,5 +1,6 @@
 """FNO-1 (owner order ATP_SESSION_FNO_WORKSPACE.md, sections 3 and 6): the ONE order ticket for an option contract the
-user picked himself on the chain - PAPER only (Phase 0).
+user picked himself on the chain. M96-Q1 (changed, owner): PAPER or LIVE on this same code path - PAPER by default; LIVE
+only where the owner's switches allow it (see "LIVE" below).
 
 The ticket is the user's own manual order: side, quantity in LOTS (units = lots x the instrument master's lot size),
 Market / Limit / SL / SL-M, MIS / NRML, and a stop-loss for the position. Every number the confirm step shows comes from
@@ -21,15 +22,31 @@ here, before anything is placed:
   loss lockout and entries-per-day limit, approval-only mode, experience gates, the F&O ban, the Risk Guardian, the
   risk engine's size within the risk per trade), in plain words. The order pipeline runs them again when it places.
 
+M96 Q2: an optional TARGET of the user's own (empty by default, never a platform value) is checked only as a price on
+the profitable side of the entry, named in the confirm step, and armed after the fill as a TARGET exit through the
+resting-exit route's own function (`resting_book.arm_exit`); a waiting order carries it and arms it when it fills.
+
 FNO-3: the same ticket takes a FUTURE (`right` "FUT", no strike): the contract is the instrument master's future (lot
 and tick size), a future needs a stop-loss on both sides (its loss has no limit without one), and its margin is the
 broker's SPAN margin, which PAPER does not have (said so, with the contract value; never invented).
 
 Placing sends ONE PAPER order through the ordinary pipeline (`execute_signal_for_user`, mode PAPER, the order state
 machine and trail) with the asked lots as the ceiling; TM-1: the fill goes through the PaperExecutionAdapter
-(`app/execution/paper_adapter.py`), the same BrokerInterface a LIVE order uses. `phase0_lock.assert_paper` is asserted right before it. Nothing
-here can reach a broker's order API, the AI never calls it (ADR-0006), and nothing here touches an exit (ADR-0004):
-exits go through `POST /api/positions/{id}/exit-now`.
+(`app/execution/paper_adapter.py`), the same BrokerInterface a LIVE order uses. `phase0_lock.assert_paper` is asserted right before it. A PAPER
+order never reaches a broker's order API, the AI never calls this (ADR-0006), and nothing here touches an exit
+(ADR-0004): exits go through `POST /api/positions/{id}/exit-now` (PAPER) and the F&O exit actions.
+
+LIVE (M96-Q1): the user picks LIVE on the ticket (never pre-selected). The same checks, preview and confirm run with mode
+LIVE (`entry_refusals` adds the plan / LIVE grant, the SEBI algo id and the broker-uncertain checks), and:
+* the owner's switches decide first - `live_owner.org_live_open` (`live_trading` on and granted to the organisation, the
+  Phase 0 lock off), read fresh; otherwise "Live trading is switched off by the admin." and nothing is sent. At Place,
+  `phase0_lock.assert_paper` is asserted as before (it raises for LIVE while the lock holds);
+* the order goes through the same pipeline (`execute_signal_for_user`, mode LIVE) to HIS OWN broker session (one
+  signed-in credential of his, never a teammate's) wrapped in the order chokepoint `RateLimitedBroker` (an ENTRY is
+  refused there too under the lock), with the ticket's idempotency key and the order record / trail of every order;
+* a LIVE order from the ticket is a Market order (the shared LIVE router sends MARKET / a protected limit only); a
+  waiting LIVE order is not kept in ATP. Both are said in plain words;
+* exits of a LIVE position go through the existing exit paths at the account that holds it (never blocked, ADR-0004).
 """
 from __future__ import annotations
 
@@ -38,7 +55,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,10 +69,15 @@ from app.instruments import master
 from app.instruments.models import ContractSpec
 from app.market_data.calendar import to_ist
 
+if TYPE_CHECKING:
+    from app.execution.resting_book import Trigger
+
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
 
-MODE = "PAPER"
+MODE = "PAPER"                 # the default mode (the basket, trigger plans and waiting orders send PAPER only)
+LIVE = "LIVE"
+MODES = (MODE, LIVE)
 STRATEGY_ID = "manual_fno"
 SIDES = ("BUY", "SELL")
 RIGHTS = ("CE", "PE")
@@ -65,6 +87,14 @@ PRODUCTS = ("MIS", "NRML")
 # M68 PR-4 (TS1-046): no ATP ceiling on the lots - an order above the exchange's freeze quantity is split (TS1-087).
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
 PRACTICE = "Practice mode (PAPER): no real order is sent and no money moves."
+# M96-Q1 (changed, owner): the LIVE path of the ticket, on the same code path as PAPER. The owner's switches decide.
+LIVE_TEXT = "LIVE: a real order goes to your own broker and real money moves."
+LIVE_OFF = "Live trading is switched off by the admin."
+LIVE_NO_BROKER = "Sign in to your own broker (Settings > Broker) to place a LIVE order."
+LIVE_MANY_BROKERS = "More than one of your brokers is signed in: a LIVE order from the ticket needs exactly one signed in."
+LIVE_MARKET_ONLY = "A LIVE order from the ticket is sent as a Market order: Limit, SL and SL-M are not sent to the broker from here yet."
+LIVE_NO_WAIT = "A LIVE order cannot wait for its price in ATP: send it as a Market order."
+LIVE_NO_REF = "A LIVE order needs the ticket's reference (refresh the page and try again)."
 # TM-1: the ticket's PAPER order fills through the PaperExecutionAdapter (a BrokerInterface), the first path moved onto it;
 # parity with the direct PaperBroker fill is tests/test_tm1_paper_adapter.py.
 PAPER_EXECUTION = "adapter"
@@ -85,6 +115,9 @@ class OrderAsk:
     price: Optional[float] = None    # LIMIT and SL: the limit price
     trigger_price: Optional[float] = None   # SL and SL-M
     stop_loss: Optional[float] = None       # the position's stop (premium); DEF-0 D7: the trader's choice on every side
+    # M96 Q2: the user's own optional target (premium). Never a platform value: empty = no target. Armed after the fill as a
+    # TARGET exit through the resting-exit route (resting_book.arm_exit); no R:R or other check reads it.
+    target: float | None = None
     chain_ltp: Optional[float] = None       # what the chain showed: a preview's price when no live price can be read
     client_ref: Optional[str] = None        # the ticket's own id: a second tap on Place never places twice
     rest_if_waiting: bool = False           # TM-2: a limit / stop the price has not reached waits for it (needs client_ref)
@@ -94,6 +127,8 @@ class OrderAsk:
     # that moment (a waiting order keeps it in its payload, so a later fill records the time he pressed Place).
     accepted_warnings: tuple[str, ...] = ()
     accepted_at: str | None = None
+    # M96-Q1 (changed): PAPER (the default; nothing pre-selects LIVE) or LIVE - the user's own choice on the ticket.
+    mode: str = MODE
 
 
 @dataclass
@@ -220,7 +255,8 @@ def ask_errors(ask: OrderAsk, tick: float, *, stop_required: bool = False) -> Li
         errors.append("Enter the limit price")
     if ask.order_type in ("SL", "SL-M") and not ask.trigger_price:
         errors.append("Enter the trigger price")
-    for name, value in (("Limit price", ask.price), ("Trigger price", ask.trigger_price), ("Stop-loss", ask.stop_loss)):
+    for name, value in (("Limit price", ask.price), ("Trigger price", ask.trigger_price), ("Stop-loss", ask.stop_loss),
+                        ("Target", ask.target)):
         if value is not None and not on_tick(float(value), tick):
             errors.append(f"{name} {value:g} is not a multiple of the tick size {tick:g}")
     if ask.order_type == "SL" and ask.price and ask.trigger_price:
@@ -243,6 +279,30 @@ def stop_errors(side: str, fill: float, stop: Optional[float], what: str = "opti
     if side == "SELL" and not stop > fill:
         return [f"The stop-loss ({stop:,.2f}) must be above the price ({fill:,.2f}) for a sold {what}"]
     return []
+
+
+def target_errors(side: str, fill: float, target: float | None, what: str = "option") -> list[str]:
+    """M96 Q2: the user's own target only has to be a price on the profitable side of the entry (no other check)."""
+    if target is None:
+        return []
+    if side == "BUY" and not target > fill:
+        return [f"The target ({target:,.2f}) must be above the price ({fill:,.2f}) for a bought {what}"]
+    if side == "SELL" and not target < fill:
+        return [f"The target ({target:,.2f}) must be below the price ({fill:,.2f}) for a sold {what}"]
+    return []
+
+
+def target_trigger(ask: OrderAsk) -> Trigger:
+    """M96 Q2: how the target exit watches its price - the option's own price (the target is a premium), on the ticket's
+    / his Trade settings' trigger (touch or candle close), else a touch, as the resting-exit route does."""
+    from app.execution import resting_book
+    return resting_book.Trigger(source=resting_book.PREMIUM, mode=ask.trigger_mode or resting_book.TOUCH,
+                                timeframe_minutes=ask.timeframe_minutes)
+
+
+def target_ref(ask: OrderAsk, trade_id: int) -> str:
+    """The armed target's own id: from the ticket's id (a second Place never arms twice), else the position's."""
+    return f"exit:target:{ask.client_ref}" if ask.client_ref else f"exit:target:t{trade_id}"
 
 
 def position_stop(side: str, stop: Optional[float], tick: float) -> float:
@@ -446,6 +506,8 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         warnings.append(text)
         warning_ids.append(wid)
     side, right = ask.side.upper(), ask.right.upper()
+    mode = (ask.mode or MODE).upper()
+    ask.mode = mode
     missing = await resolve_ask(session, user, ask)
     ask.side, ask.right = side, right
     ask.order_type = ask.order_type.upper() if ask.order_type else None
@@ -465,6 +527,13 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     tick = contract.tick_size if contract else 0.05
     from app.me.prefs import own_limits
     errors.extend(ask_errors(ask, tick, stop_required=bool((await own_limits(session, user)).get("stop_required_on_sold"))))
+    live: LiveRoute | None = None
+    if mode not in MODES:
+        errors.append("Choose Paper or Live")
+    elif mode == LIVE:
+        errors.extend(live_ask_errors(ask))
+        live = await live_status(session, user)
+        refusals.extend(live.refusals)
     lot_size = contract.lot_size if contract else None
     units = float(ask.lots * lot_size) if lot_size else None
 
@@ -481,6 +550,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     fill, fill_note = None, ""
     resting = False
     if price is not None and not errors and ask.order_type is not None:      # errors already asks for a missing order type
+        # LIVE: a Market order only (live_ask_errors) - the figures are at the live price; the broker's fill decides.
         fill, fill_note = paper_fill(ask.order_type, side, price, ask.price, ask.trigger_price)
         if fill is None and ask.rest_if_waiting and rest_errors(ask):
             errors.extend(rest_errors(ask))           # it would wait, but cannot be kept as it is
@@ -497,9 +567,15 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     reference = basis if basis is not None else (ask.price or price)
     if reference is not None and not errors:
         errors.extend(stop_errors(side, float(reference), ask.stop_loss, what))
+        errors.extend(target_errors(side, float(reference), ask.target, what))
+    if ask.target is not None:
+        from app.execution import resting_book
+        errors.extend(resting_book.trigger_errors(target_trigger(ask)))
 
     tenant = await session.get(Tenant, user.tenant_id)
-    refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, MODE, STRATEGY_ID, user=user, reserve=False))
+    if mode in MODES:
+        refusals.extend(plain(r) for r in await entry_refusals(session, tenant, user.tenant_id, mode, STRATEGY_ID, user=user, reserve=False,
+                                                               broker_name=live.broker_name if live is not None else None))
     # M75 W-8: a trigger plan's order approved by its owner carries its APPROVED proposal (origin "approval").
     gate = await approval.gate_refusal(session, user.tenant_id, deployment_id=None, origin=origin, approval_action_id=approval_action_id,
                                        user_id=user.id)
@@ -573,26 +649,32 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         smart = {"freeze_quantity": freeze, "slices": [p // contract.lot_size for p in parts],
                  "note": smart_execution.slice_note(int(units), contract.lot_size, freeze, contract.underlying)}
     return {
-        "mode": MODE, "practice": PRACTICE, "contract": contract_view, "label": label, "smart": smart,
+        "mode": mode if mode in MODES else MODE, "practice": LIVE_TEXT if mode == LIVE else PRACTICE, "contract": contract_view, "label": label, "smart": smart,
         "side": side, "lots": ask.lots, "lot_size": lot_size, "units": units, "order_type": ask.order_type, "product": ask.product,
         "price": price, "price_source": price_source, "fill_price": fill, "fill_note": fill_note or None,
         "resting": resting, "rest_level": rest_level(ask) if resting else None,
-        "stop_loss": ask.stop_loss, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
+        "stop_loss": ask.stop_loss, "target": ask.target, "margin": margin_line, "max_loss": loss, "charges": charges, "risk": risk,
         "errors": errors, "refusals": refusals, "warnings": warnings, "warning_ids": warning_ids, "can_place": can_place,
         # M68 TS-3: the ticket fields still Not set (neither on the ticket nor in his Trade settings): the ticket asks
         # for each one at its field, with "Save as my default" next to it.
         "missing": missing, "trigger_mode": ask.trigger_mode,
-        "confirm_label": f"{'Place waiting' if resting else 'Place'} PAPER order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)" if can_place and units else None,
+        "confirm_label": (f"{'Place waiting' if resting else 'Place'} {mode} order: {side.title()} {ask.lots} lot{'s' if ask.lots != 1 else ''} ({units:g} qty)"
+                          + (f", target {ask.target:,.2f}" if ask.target is not None else "")) if can_place and units else None,
         "as_of": now.isoformat(),
     }
 
 
 async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_lookup: Optional[PriceLookup],
                 now: Optional[datetime] = None, origin: str = ORIGIN_AUTOMATIC, approval_action_id: int | None = None,
-                journal_source: str = "MANUAL", margin_reader: Optional[MarginReader] = None) -> Dict[str, Any]:
-    """Checks the ticket again at the live price and places ONE PAPER order through the ordinary pipeline, or says why
-    not. Never a broker order: the mode is PAPER, asserted at the chokepoint under the Phase 0 lock. M75 W-8: a trigger
-    plan's fire comes here too (journal source PLAN; an approved plan order with its proposal id) - the same checks."""
+                journal_source: str = "MANUAL", margin_reader: Optional[MarginReader] = None, broker: Any = None,
+                account_id: int | None = None) -> Dict[str, Any]:
+    """Checks the ticket again at the live price and places ONE order through the ordinary pipeline, or says why not.
+    PAPER never reaches a broker. M75 W-8: a trigger plan's fire comes here too (journal source PLAN; an approved plan
+    order with its proposal id) - the same checks, PAPER.
+
+    M96-Q1: a LIVE order goes only to the `broker` handed in (his own session behind the order chokepoint, built by the
+    ticket's order route with `live_broker`); this function never obtains a broker itself, so every other caller (the
+    basket, Reverse, trigger plans, an approved proposal - the AI never places, ADR-0006) cannot send a LIVE order."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
@@ -609,7 +691,17 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
         await session.commit()
         return {**view, "status": "REFUSED", "reasons": view["errors"] + view["refusals"], "order_id": None, "trade_id": None, "filled": None}
     await phase0_lock.is_on(session, user.tenant_id)            # refreshes the lock state the assertion reads
-    mode = phase0_lock.assert_paper(MODE, user.tenant_id)
+    try:
+        mode = phase0_lock.assert_paper(ask.mode, user.tenant_id)
+    except phase0_lock.LiveOrderRefused:
+        return {**view, "status": "REFUSED", "reasons": [LIVE_OFF], "order_id": None, "trade_id": None, "filled": None}
+    if mode == LIVE:
+        # M96-Q1: read again right before sending - the owner's switches and his own broker session decide.
+        live = await live_status(session, user)
+        if live.refusals or broker is None:
+            return {**view, "status": "REFUSED", "reasons": live.refusals or [LIVE_NO_BROKER], "order_id": None, "trade_id": None, "filled": None}
+    else:
+        broker, account_id = None, None              # a PAPER order never carries a broker
     contract = await find_contract(session, ask.underlying, ask.expiry, ask.strike, ask.right)
     if view.get("resting"):
         return await _rest(session, user, ask, contract, view, mode, now, origin)
@@ -631,7 +723,12 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             max_quantity=float(view["units"]),
             journal_source=journal_source, manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
             paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin,
-            approval_action_id=approval_action_id)
+            approval_action_id=approval_action_id,
+            # M96-Q1: LIVE goes to his own broker session behind the order chokepoint (RateLimitedBroker: the Phase 0 lock
+            # refuses an ENTRY there too), in the broker account that holds the position (its exits go there).
+            broker=broker, account_id=account_id,
+            # The broker-side stop is his own only: no stop of his on the ticket = no stop order at the broker.
+            protective_stop=ask.stop_loss is not None)
     except Exception as exc:  # noqa: BLE001 - shown to the person; the order trail holds what the pipeline recorded
         logger.exception("FNO ticket order failed for user %s", user.id)
         await session.rollback()
@@ -644,9 +741,91 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
         # M76 MP-5: after the fill, the lines he pressed Place with go on the journal entry (queued; never raises).
         from app.paper import pretrade_warnings
         await pretrade_warnings.record_accepted(session, user, [order.trade_id], ask.accepted_warnings, ask.accepted_at)
+    target_view = None
+    if filled is not None and ask.target is not None and order.trade_id:
+        target_view = await arm_target(session, user, ask, int(order.trade_id))
     reasons = [plain(r) for r in (result.reasons or [])]
     return {**view, "status": "PLACED" if result.executed else "REFUSED", "reasons": reasons if not result.executed else [],
-            "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode}
+            "order_id": order.id, "trade_id": order.trade_id, "filled": filled, "mode": order.mode, "target_order": target_view}
+
+
+async def arm_target(session: AsyncSession, user: User, ask: OrderAsk, trade_id: int) -> dict[str, Any]:
+    """M96 Q2: after the fill, the user's own target is armed on the new position through the resting-exit route's own
+    function (`resting_book.arm_exit`, kind TARGET, a limit at his price) - the same way `POST /resting/exit` arms one.
+    The fill is already committed by the pipeline (as the stop on the position is); a target that cannot be kept is said
+    in plain words and never undoes the order. It is an exit: no entry check reads it (ADR-0004)."""
+    from app.execution import resting_book
+    assert ask.target is not None
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None:
+        return {"armed": False, "text": "The target was not armed: the position was not found. Arm it from the position."}
+    try:
+        row = await resting_book.arm_exit(session, user, trade, client_ref=target_ref(ask, trade_id), kind=resting_book.TARGET,
+                                          # a premium target waits as a limit (resting_book.arm_exit requires it)
+                                          order_type=resting_book.LIMIT, level=float(ask.target), trigger=target_trigger(ask))
+    except resting_book.RestingOrderError as exc:
+        # arm_exit refuses before it adds anything: nothing to undo (and nothing else of this order is rolled back).
+        return {"armed": False, "text": f"The target was not armed: {exc} Arm it from the position."}
+    await session.commit()
+    return {"armed": True, "text": f"Target armed at {float(ask.target):,.2f}.", "resting_order": resting_book.view(row)}
+
+
+@dataclass
+class LiveRoute:
+    """M96-Q1: where a LIVE ticket order would go - his own broker session behind the order chokepoint - or why not."""
+    refusals: list[str]
+    broker: Any = None
+    account_id: int | None = None
+    broker_name: str | None = None
+
+
+def live_ask_errors(ask: OrderAsk) -> list[str]:
+    """What the ticket itself cannot send LIVE from here (said plainly; nothing about the trade is decided)."""
+    errors: list[str] = []
+    if ask.order_type is not None and ask.order_type != "MARKET":
+        errors.append(LIVE_MARKET_ONLY)
+    if ask.rest_if_waiting:
+        errors.append(LIVE_NO_WAIT)
+    if not ask.client_ref:
+        errors.append(LIVE_NO_REF)
+    return errors
+
+
+async def _own_session(session: AsyncSession, user: User) -> tuple[LiveRoute, Any]:
+    from app.brokers import token_lifecycle
+    from app.market_data import entitlement
+    from app.platform import live_owner
+    if not await live_owner.org_live_open(session, user.tenant_id):
+        return LiveRoute(refusals=[LIVE_OFF]), None
+    usable = [r for r in await entitlement.own_records(session, user) if token_lifecycle.token_is_usable(r)]
+    if not usable:
+        return LiveRoute(refusals=[LIVE_NO_BROKER]), None
+    if len(usable) > 1:
+        return LiveRoute(refusals=[LIVE_MANY_BROKERS]), None
+    return LiveRoute(refusals=[], broker_name=usable[0].broker_name), usable[0]
+
+
+async def live_status(session: AsyncSession, user: User) -> LiveRoute:
+    """Whether a LIVE order can go now (reads only): the owner's switches first (`live_trading` on and granted to the
+    organisation, the Phase 0 lock off - `live_owner.org_live_open`, read fresh), then exactly one signed-in broker
+    session of HIS OWN (never a teammate's). Never builds a broker."""
+    return (await _own_session(session, user))[0]
+
+
+async def live_broker(session: AsyncSession, user: User) -> LiveRoute:
+    """M96-Q1, for the ticket's order route only: his own broker session wrapped in the order chokepoint
+    (`RateLimitedBroker`: the Phase 0 lock refuses an ENTRY there too), and the broker account row that will hold the
+    position (its exits go to the same session). Refusals as `live_status`; nothing is sent here."""
+    from app.accounts.service import ensure_account_for_credential
+    from app.brokers import token_lifecycle
+    from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+    status, record = await _own_session(session, user)
+    if record is None:
+        return status
+    account = await ensure_account_for_credential(session, record)
+    adapter = token_lifecycle.build_adapter(record)
+    wrapped = RateLimitedBroker(adapter, RateBudget(limits_for(adapter.name)), tenant_id=user.tenant_id)
+    return LiveRoute(refusals=[], broker=wrapped, account_id=account.id, broker_name=record.broker_name)
 
 
 # M68 TS-3: a ticket field -> its Trade settings key (the ticket's "Save as my default" writes it).

@@ -550,15 +550,22 @@ class OrderResponse(BaseModel):
     reasons: List[str]
     created_at: str
     updated_at: str
+    # Owner bug report (Terminal Orders, PAPER): an entry order's own state stays POSITION_OPEN after its position is
+    # closed (the exit is booked on the trade, not as a new order), so the row read "Filled, position open" for a
+    # closed trade. The linked trade's real state, read only: closed or not, and its exit reason. None without a trade.
+    position_closed: bool | None = None
+    exit_reason: str | None = None
 
     @classmethod
-    def from_record(cls, record: OrderRecord) -> "OrderResponse":
+    def from_record(cls, record: OrderRecord, trade: TradeRecord | None = None) -> "OrderResponse":
         return cls(
             id=record.id, mode=record.mode, strategy_id=record.strategy_id, symbol=record.symbol,
             direction=record.direction, quantity=record.quantity, status=record.status,
             idempotency_key=record.idempotency_key, broker_order_id=record.broker_order_id,
             algo_tag=record.algo_tag, trade_id=record.trade_id, reasons=json.loads(record.reasons_json),
             created_at=record.created_at.isoformat(), updated_at=record.updated_at.isoformat(),
+            position_closed=(trade.exit_time is not None) if trade is not None else None,
+            exit_reason=trade.exit_reason if trade is not None and trade.exit_time is not None else None,
         )
 
 
@@ -580,18 +587,28 @@ class OrderEventResponse(BaseModel):
 @router.get("/orders", response_model=List[OrderResponse])
 async def list_orders(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 200, mine: bool = False,
+    today: bool = False,
 ) -> List[OrderResponse]:
     """This tenant's full order ledger - every paper/live execution attempt, rejected or filled,
     most recent first. Unlike GET /api/trades (only rows that actually filled), this is the
     complete audit trail the formal order state machine produces.
 
     Trading Terminal T1 (TT-15): `?mine=true` returns only the caller's own orders (tenant AND user); without it the
-    answer is exactly as before."""
+    answer is exactly as before. `?today=true` (the Terminal's Orders tab, as a broker's order book): only the orders
+    placed since the start of the current IST trading day (calendar.trading_day_start, the boundary the daily limits use);
+    older orders stay in the ledger and in My trades > Orders. Without it the answer is exactly as before."""
     query = select(OrderRecord).where(OrderRecord.tenant_id == user.tenant_id)
     if mine:
         query = query.where(OrderRecord.user_id == user.id)
-    rows = await session.scalars(query.order_by(OrderRecord.created_at.desc()).limit(limit))
-    return [OrderResponse.from_record(r) for r in rows]
+    if today:
+        from app.market_data.calendar import trading_day_start
+        query = query.where(OrderRecord.created_at >= trading_day_start())
+    rows = list(await session.scalars(query.order_by(OrderRecord.created_at.desc()).limit(limit)))
+    # The linked trades in one read (same tenant only), so each row says whether its position is still open.
+    ids = {r.trade_id for r in rows if r.trade_id is not None}
+    trades = {t.id: t for t in await session.scalars(select(TradeRecord).where(
+        TradeRecord.id.in_(ids), TradeRecord.tenant_id == user.tenant_id))} if ids else {}
+    return [OrderResponse.from_record(r, trades.get(r.trade_id) if r.trade_id is not None else None) for r in rows]
 
 
 @router.get("/orders/{order_id}/events", response_model=List[OrderEventResponse])

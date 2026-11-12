@@ -33,6 +33,9 @@ export interface OrderRow {
   reasons: string[];
   created_at: string;
   updated_at: string;
+  /** The linked position's real state (the order's own state stays POSITION_OPEN after an exit); absent without a trade. */
+  position_closed?: boolean | null;
+  exit_reason?: string | null;
 }
 
 export interface OrderEvent { id: number; from_status: string | null; to_status: string; detail: string; created_at: string }
@@ -52,7 +55,7 @@ export function terminalApi(fetcher: typeof request = request): TerminalApi {
   return {
     status: () => fetcher<TerminalStatus>("/terminal/status"),
     positions: () => fetcher<TradeRecord[]>("/positions?mine=true"),
-    orders: () => fetcher<OrderRow[]>("/orders?mine=true&limit=100"),
+    orders: () => fetcher<OrderRow[]>("/orders?mine=true&today=true&limit=100"),
     events: (orderId) => fetcher<OrderEvent[]>(`/orders/${orderId}/events`),
     loadLayouts: async () => {
       const r = await fetcher<PrefsRead>("/me/prefs");
@@ -90,4 +93,13 @@ export function statusWords(status: string): string {
     CANCELLED: "Cancelled",
   };
   return words[status] ?? "Updated";
+}
+
+/** An order row's words: the order's state, except that a filled entry whose position has since closed says so (with
+ * the exit's own reason) instead of "position open" - the exit is booked on the trade, not as a new order. */
+export function orderRowWords(o: Pick<OrderRow, "status" | "position_closed" | "exit_reason">): string {
+  if (o.status === "POSITION_OPEN" && o.position_closed) {
+    return o.exit_reason ? `Filled, position closed (${o.exit_reason})` : "Filled, position closed";
+  }
+  return statusWords(o.status);
 }

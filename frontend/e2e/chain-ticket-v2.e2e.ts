@@ -34,7 +34,7 @@ function preview(body: Record<string, unknown>) {
   return {
     mode: "PAPER", practice: "Practice mode (PAPER): no real order is sent and no money moves.", contract: CONTRACT, label: CONTRACT.label,
     side: body.side, lots, lot_size: 75, units, order_type: body.order_type, product: body.product, price: 150, price_source: "live", fill_price: fill,
-    fill_note: `Fills at the live price ${fill.toFixed(2)}`, stop_loss: body.stop_loss ?? null,
+    fill_note: `Fills at the live price ${fill.toFixed(2)}`, stop_loss: body.stop_loss ?? null, target: body.target ?? null,
     margin: { value: fill * units, basis: "Long options only: the premium paid.", estimated: true },
     max_loss: { value: fill * units, basis: "The premium you pay, if the option expires worthless." }, charges: { total: 42.5, estimated: true },
     risk: { risk_per_trade: 50000, allowed_lots: 4 },
@@ -83,6 +83,8 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    // M96-Q1: the ticket reads whether LIVE can go (off here, as by default).
+    if (url.pathname.endsWith("/live-status")) return route.fulfill({ json: { open: false, text: "Live trading is switched off by the admin." } });
     if (url.pathname.endsWith("/contract")) return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right") } });
     if (url.pathname.endsWith("/held")) { seen.held += 1; return route.fulfill({ json: held }); }
     // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
@@ -190,7 +192,7 @@ test.describe("Chain ticket v2 flows", () => {
     const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
     expect(placed).toHaveLength(1);
     expect(placed[0].body).toMatchObject({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "BUY", lots: 2, order_type: "LIMIT", price: 149.5 });
-    expect(placed[0].body).not.toHaveProperty("mode");
+    expect(placed[0].body).toHaveProperty("mode", "PAPER");                 // M96-Q1: PAPER unless he picks LIVE
     await ticket.locator("[data-ticket='done']").tap();
     await expect(page.locator("tr[data-strike='24500'] [data-held='call']")).toBeVisible();
   });
@@ -475,3 +477,49 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
     });
   });
 }
+
+test.describe("M96 ticket Target at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("the Target field is empty; his own value is sent with the order and named in the confirm step", async ({ page }) => {
+    const seen = await open(page, "light");
+    await callCell(page).tap();
+    await page.locator("[data-chain-actions] [data-action='buy']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await pickProduct(ticket);
+    const target = ticket.locator("[data-ticket='target']");
+    await expect(target).toHaveValue("");                                     // never a platform value
+    await target.fill("180");
+    await expect(ticket.locator("[data-ticket='advanced-summary']")).toHaveText("NRML · no stop-loss · target 180");
+    await target.scrollIntoViewIfNeeded();
+    if (process.env.M96_PROOF) await ticket.screenshot({ path: process.env.M96_PROOF, animations: "disabled" });
+    await ticket.locator("[data-ticket='review']").tap();
+    await expect(ticket.locator("[data-line='target']")).toContainText("180.00");
+    const ask = seen.posts.find((p) => p.url.endsWith("/order/preview"))?.body as Record<string, unknown>;
+    expect(ask.target).toBe(180);
+  });
+});
+
+test.describe("M96-Q1 ticket mode at 390", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("PAPER unless he picks LIVE; while LIVE is off it says so and cannot be reviewed or placed", async ({ page }) => {
+    const seen = await open(page, "light");
+    await callCell(page).tap();
+    await page.locator("[data-chain-actions] [data-action='buy']").tap();
+    const ticket = page.locator("[data-order-ticket]");
+    await expect(ticket.locator("[data-ticket='mode'] [data-option='PAPER']")).toHaveAttribute("aria-checked", "true");
+    await expect(ticket.locator("[data-mode-badge='paper']")).toBeVisible();
+    await pickProduct(ticket);
+    await ticket.locator("[data-ticket='mode'] [data-option='LIVE']").tap();
+    await expect(ticket.locator("[data-mode-badge='live']")).toBeVisible();
+    await expect(ticket.locator("[data-ticket='live-off']")).toHaveText("Live trading is switched off by the admin.");
+    await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();
+    if (process.env.M96_LIVE_PROOF) await ticket.screenshot({ path: process.env.M96_LIVE_PROOF, animations: "disabled" });
+    expect(seen.posts.filter((p) => /\/paper\/fno\/order/.test(p.url))).toEqual([]);
+    // Back to PAPER: the ticket is as before.
+    await ticket.locator("[data-ticket='mode'] [data-option='PAPER']").tap();
+    await expect(ticket.locator("[data-ticket='live-off']")).toHaveCount(0);
+    await expect(ticket.locator("[data-ticket='review']")).toBeEnabled();
+  });
+});

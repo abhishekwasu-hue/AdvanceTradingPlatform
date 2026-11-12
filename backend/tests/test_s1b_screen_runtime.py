@@ -232,6 +232,9 @@ def test_breakout_series_u6_bk1():
     assert _ev("RelVolume(5)", data).dropna().eq(1.0).all()                    # constant volume
     assert _ev("ATRPercentile(14, 50)", data).dropna().between(0, 100).all()
     assert set(_ev("DowTrend(0)", data).dropna().unique()) <= {"UP", "DOWN", "RANGE"}
+    # M99 B1-c (flag m99_primitives): per-bar structure events and regime (deeper checks: tests/test_m99_b1_structure.py)
+    assert set(_ev("StructureEventSeries()", data).unique()) <= {"BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""}
+    assert set(_ev("RegimeTag()", data).dropna().unique()) <= {"UP", "DOWN", "UP_WEAK", "DOWN_WEAK", "RANGE"}
 
 
 def test_intraday_breakout_series_u6_bk2():
@@ -604,6 +607,21 @@ def test_m97_supply_demand_zone_functions():
     dist = _ev('SDZoneDistancePct("demand")', d)
     assert dist.iloc[formed] == pytest.approx((100.8 - 97.7) / 100.8 * 100) and np.isnan(dist.iloc[-1])
     assert _ev('SDZoneEdge("demand", "proximal", edge="body")', d).iloc[formed] == 97.3
+
+
+def test_m99_bar_class_functions():
+    """M99 B1-a: the per-bar classifier (the full fixtures: tests/test_m99_b1a_bar_class.py) - a wide, high-volume up bar
+    closing in its top third after four equal bars."""
+    rows = [(0.0, 2.0, 0.0, 1.0)] * 4 + [(1.0, 3.0, 0.0, 2.9)]
+    o, h, lo, c = (np.array(col, dtype=float) for col in zip(*rows))
+    f = pd.DataFrame({"open": o, "high": h, "low": lo, "close": c, "volume": [100.0] * 4 + [150.0]},
+                     index=pd.date_range("2026-03-02 03:45", periods=5, freq="5min", tz="UTC"))
+    d = SymbolData("S", {"5m": f})
+    assert _ev("RelRange(4)", d).iloc[-1] == pytest.approx(1.5) and np.isnan(_ev("RelRange(4)", d).iloc[3])
+    assert _ev("SpreadClass(4)", d).iloc[-1] == "WIDE" and _ev("SpreadClass(4)", d).iloc[3] is None
+    assert _ev("ClosePosition()", d).tolist() == ["MIDDLE"] * 4 + ["HIGH"]
+    assert _ev("BarDirection()", d).tolist() == [None, "LEVEL", "LEVEL", "LEVEL", "UP"]
+    assert _ev("VolumeClass(4)", d).iloc[-1] == "HIGH" and _ev("VolumeClass(4, high=1.6, ultra=2)", d).iloc[-1] == "AVERAGE"
 
 
 def test_every_registry_entry_has_a_runtime_test():

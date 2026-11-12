@@ -69,7 +69,8 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
-        reasons.append("Plan does not include live trading - order refused")
+        from app.platform.live_switch import LIVE_OFF
+        reasons.append(LIVE_OFF)                     # LIVE-1: the one live switch (live_trading) is off
     if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE:
         # D1: the registered id, or the broker's generic one while the OPS throttle keeps us under the threshold.
         problem = algo_ids.live_problem(tenant.algo_id if tenant else None, broker_name)
@@ -134,6 +135,7 @@ async def execute_signal_for_user(
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
     manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
     paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
+    protective_stop: bool = True,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -442,8 +444,9 @@ async def execute_signal_for_user(
             is_option=(contract.kind.value == "OPTION") if contract is not None else None,
             paper_execution=paper_execution, freeze_quantity=freeze_quantity,
             # DEF-0 D3: an Autopilot option with no premium stop of the trader's own gets no broker stop at its premium
-            place_protective_stop=not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
-                                       and plan.meta.get("premium_stop_pct") is None),
+            # M96-Q1: a manual ticket order without a stop of the user's own gets no broker stop either (`protective_stop`).
+            place_protective_stop=protective_stop and not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
+                                                           and plan.meta.get("premium_stop_pct") is None),
             order_ref=order.id,
             # M68 PR-7 (TS1-069): a PAPER fill pays his own brokerage / slippage (Not set: statutory charges only).
             paper_charges=await paper_settings.charges_for(session, user) if execution_mode == ExecutionMode.PAPER else None,

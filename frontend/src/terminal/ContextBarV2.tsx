@@ -38,7 +38,7 @@ export function contextFigures(chain: OptionChainData, spot: TerminalSpot | null
   return {
     spot: ltp,
     moved: spotChange(ltp, prevClose),
-    pcr: s?.pcr_oi ?? null,
+    pcr: s?.pcr_oi_atm ?? null,                    // M96: Trade's PCR over ATM ± 6 (the chain banner's, one definition)
     dte: s?.days_to_expiry ?? null,
     atm: s?.atm_strike ?? null,
     vix: vixBand(vix),

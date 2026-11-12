@@ -1,7 +1,8 @@
-"""Z10-c (G6, Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock, flag `phase0_paper_only`.
+"""Z10-c (G6, Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock.
 
-Off by default and never turned on by code. While on, every new LIVE entry is refused - at the entry checks and at the
-broker-order chokepoint - and exits of an existing LIVE position still reach the broker (ADR-0004)."""
+LIVE-1 (owner order: ONE live switch): the lock is derived from `live_trading` - locked while it is OFF (the default),
+unlocked while it is ON. While locked, every new LIVE entry is refused - at the entry checks and at the broker-order
+chokepoint - and exits of an existing LIVE position still reach the broker (ADR-0004)."""
 import asyncio
 from datetime import timedelta
 from typing import List, Optional
@@ -37,9 +38,11 @@ def _run(coro):
 
 
 async def _store_lock(session, on: bool, tenants: Optional[List[int]] = None) -> None:
-    """What Admin Console -> Feature flags stores (the admin route's own audit is covered by the Phase N tests)."""
+    """Locks or unlocks the way the owner does it now (LIVE-1): the lock follows `live_trading`, so "locked" (on, or locked
+    for listed organisations) stores live_trading OFF and "unlocked" stores it ON. The admin route's own audit and the
+    owner checks are covered by tests/test_m55_s1_owner_live.py."""
     flags = dict((await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {})
-    flags[phase0_lock.FLAG] = {"on": on, "tenants": sorted(tenants or [])}
+    flags["live_trading"] = {"on": not (on or tenants), "tenants": []}
     await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
     await session.commit()
 
@@ -49,6 +52,19 @@ def _set_lock(on: bool, tenants: Optional[List[int]] = None) -> None:
         async with _session_factory() as session:
             await _store_lock(session, on, tenants)
     _run(go())
+
+
+def _clear_lock() -> None:
+    """Drops the stored switch entries, so the defaults (or a test's LIVE posture fixture) apply again."""
+    async def go():
+        async with _session_factory() as session:
+            flags = dict((await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {})
+            flags.pop("live_trading", None)
+            flags.pop(phase0_lock.FLAG, None)
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(go())
+    phase0_lock.reset_cache()
 
 
 def _flags() -> dict:
@@ -92,7 +108,7 @@ def _wrapped(tenant_id: Optional[int] = 7):
 
 def test_flag_is_registered_on_by_default_and_live_trading_is_off_by_default():
     flags = _flags()
-    assert flags[phase0_lock.FLAG]["on"] is True             # M55 S1 (owner order): the lock ON by default, every mode
+    assert flags[phase0_lock.FLAG]["on"] is True             # M55 S1 / LIVE-1: locked by default (live_trading OFF)
     assert phase0_lock.FLAG in controls.DEFAULT_ON_FLAGS and phase0_lock.FLAG not in controls.DEFAULT_OFF_FLAGS
     assert flags["live_trading"]["on"] is False                # M55 S1: LIVE OFF by default; only the owner switches it on
     assert "live_trading" in controls.DEFAULT_OFF_FLAGS
@@ -165,6 +181,24 @@ def test_chokepoint_honours_the_tenant_allow_list():
         phase0_lock.reset_cache()
 
 
+def test_a_stored_lock_entry_is_ignored_the_lock_follows_live_trading():
+    """LIVE-1: the lock is not a second switch - a stored phase0_paper_only entry (either way) changes nothing."""
+    async def go(lock_on: bool, live_on: bool):
+        async with _session_factory() as session:
+            flags = dict((await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {})
+            flags[phase0_lock.FLAG] = {"on": lock_on, "tenants": [5]}
+            flags["live_trading"] = {"on": live_on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+            return (await controls.feature_flags(session))[phase0_lock.FLAG], await phase0_lock.is_on(session, 5)
+    try:
+        assert _run(go(False, False)) == ({"on": True, "tenants": [], "description": controls.FEATURE_FLAGS[phase0_lock.FLAG]}, True)
+        assert _run(go(True, True))[1] is False
+    finally:
+        _clear_lock()
+        phase0_lock.reset_cache()
+
+
 def test_entry_blocks_name_the_lock_for_live_only():
     async def go(on: bool, mode: str):
         async with _session_factory() as session:
@@ -176,7 +210,7 @@ def test_entry_blocks_name_the_lock_for_live_only():
         assert phase0_lock.ENTRY_REASON not in _run(go(True, "PAPER"))
         assert phase0_lock.ENTRY_REASON not in _run(go(False, "LIVE"))
     finally:
-        _set_lock(False)
+        _clear_lock()
 
 
 def test_worker_refuses_a_live_entry_but_paper_still_trades(monkeypatch):
@@ -191,7 +225,7 @@ def test_worker_refuses_a_live_entry_but_paper_still_trades(monkeypatch):
     try:
         report = _run(worker.run_cycle(now=OPEN_NOW))
     finally:
-        _set_lock(False)
+        _clear_lock()
     assert broker.placed == []                                            # nothing reached the broker
     assert phase0_lock.ENTRY_REASON in (_get(StrategyDeploymentRecord, live_id).last_error or "")
     assert report.signals_executed == 1 and [tr.mode for tr in _trades(t["tenant_id"])] == ["PAPER"]
@@ -238,7 +272,7 @@ def test_worker_exits_an_existing_live_position_while_locked(monkeypatch):
         _force_signal(monkeypatch, lambda: _signal(ts=BAR_TS + timedelta(hours=4, minutes=46)))
         report = _run(worker.run_cycle(now=LATE_NOW))
     finally:
-        _set_lock(False)
+        _clear_lock()
     closed = _trades(t["tenant_id"])
     assert report.positions_closed == 1 and closed[0].exit_reason == "Intraday square-off"
     assert len(closed) == 1                                               # no new entry
@@ -283,7 +317,7 @@ def test_a_live_option_structure_is_refused_while_locked(monkeypatch):
     try:
         result = _run(layer1(broker))
     finally:
-        _set_lock(False)
+        _clear_lock()
     assert not result.executed and phase0_lock.ENTRY_REASON in result.reasons and broker.placed == []
     try:
         ok, failure = _run(layer2(broker))

@@ -3,10 +3,12 @@ chain ("P"), and the one order ticket (preview with the confirm figures, then pl
 account (`paper_account`, whose "Exit now" is the exit path of these positions): 404 while either is off.
 
 Every answer is the caller's own (tenant + user). The only order this can lead to is ONE PAPER order through the
-ordinary pipeline (app/paper/fno_ticket.py); there is no mode in the body and no LIVE path. Nothing here touches an exit.
+ordinary pipeline (app/paper/fno_ticket.py). M96-Q1 (changed, owner): the body's `mode` (PAPER by default) may be
+LIVE - the user's own Market order to his own broker session, refused while the owner's switches say no.
 
 - `GET  /api/paper/fno/contract`       the contract from the instrument master (trading symbol, lot and tick size); an
   option (`right` CE / PE with its strike) or, FNO-3, a future (`right` FUT, no strike).
+- `GET  /api/paper/fno/live-status`    M96-Q1: whether the ticket's LIVE choice can be placed now, and why not.
 - `GET  /api/paper/fno/held`           the caller's open PAPER option positions on one underlying and expiry.
 - `POST /api/paper/fno/order/preview`  the ticket checked: price, units, margin, max loss, risk checks in plain words.
 - `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again). TM-2: with
@@ -114,6 +116,8 @@ class OrderBody(BaseModel):
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     trigger_price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    # M96 Q2: the user's own optional target (premium); not sent = no target (never a platform value).
+    target: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     chain_ltp: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     client_ref: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
     # TM-2: "wait for my price" - a limit / stop the price has not reached rests in the resting book (needs client_ref).
@@ -123,6 +127,9 @@ class OrderBody(BaseModel):
     # M76 MP-5 (flag trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. Unknown
     # ids are dropped (never a reason to refuse the order); no check, price or size reads them.
     accepted_warnings: list[str] | None = Field(default=None, max_length=40)
+    # M96-Q1 (changed): the mode the user picked on the ticket. Not sent = PAPER (never LIVE by default). LIVE is refused
+    # while the owner's switches say so (phase0_paper_only on, live_trading off or not granted) - read in fno_ticket.
+    mode: Literal["PAPER", "LIVE"] = "PAPER"
 
     @model_validator(mode="after")
     def _strike_for_options_only(self) -> "OrderBody":
@@ -161,6 +168,15 @@ async def held(underlying: str = Query(pattern=SYMBOL), expiry: date = Query(), 
     return await fno_ticket.held(session, user, _name(underlying), expiry)
 
 
+@router.get("/live-status")
+async def live_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M96-Q1: whether the ticket's LIVE choice can be placed for the caller now (the owner's switches, his own broker
+    session), with the plain sentence why not. Reads only; changes nothing."""
+    await _enabled(session, user)
+    status = await fno_ticket.live_status(session, user)
+    return {"open": not status.refusals, "text": status.refusals[0] if status.refusals else None}
+
+
 @router.post("/order/preview", dependencies=[Depends(preview_rate_limit)])
 async def preview(body: OrderBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
@@ -173,11 +189,15 @@ async def preview(body: OrderBody, user: User = Depends(require_trader), session
 
 @router.post("/order", dependencies=[Depends(place_rate_limit)])
 async def place(body: OrderBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """Places one PAPER order, or says why not. Answers 200 either way, with the status."""
+    """Places one order (PAPER, or LIVE where the owner's switches allow it), or says why not. Answers 200 either way."""
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
-    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL, margin_reader=fno_ticket.read_broker_margin)
+    # M96-Q1: LIVE only when the user picked it - his own broker session behind the order chokepoint (refused, and never
+    # built, while the owner's switches say no). PAPER never gets a broker.
+    live = await fno_ticket.live_broker(session, user) if body.mode == fno_ticket.LIVE else None
+    return await fno_ticket.place(session, user, body.ask(), price_lookup=lookup, origin=MANUAL, margin_reader=fno_ticket.read_broker_margin,
+                                  broker=live.broker if live is not None else None, account_id=live.account_id if live is not None else None)
 
 
 # --- TM-2: the caller's own waiting orders and armed exits -------------------------------------------------------------

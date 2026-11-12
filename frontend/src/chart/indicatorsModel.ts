@@ -40,6 +40,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   // M97 PR-4: supply / demand zones on the chosen timeframes (the chart's own and higher ones), off until turned on.
   { id: "sd_zones", group: "layers", label: "Supply & Demand zones", note: "Bases between two strong candles, drawn from where they formed.",
     flag: "sd_pack", keywords: "supply demand zones dbr rbr rbd dbd base proximal distal" },
+  // M96 N1: the expected move the nearest expiry's option prices imply (ATM straddle and ATM IV), off until turned on.
+  { id: "options_expected_move", group: "layers", label: "Expected move (from the option prices)",
+    note: "The range the nearest expiry's ATM straddle and ATM IV imply around the spot.", flag: "ui_v2", keywords: "expected move straddle iv option range" },
 ];
 
 /** What the menu reads and changes. */

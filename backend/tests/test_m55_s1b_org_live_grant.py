@@ -2,7 +2,11 @@
 
 The grant is the `live_trading` flag's organisation allow-list. Only the owner identity (LIVE_OWNER_USER_ID, a recent
 two-factor check, the typed confirmation) grants or revokes it, every attempt is audited, and the plan check passes
-for an organisation only when the global switch is on, the PAPER-only lock is off and the organisation is granted."""
+for an organisation only when the global switch is on, the PAPER-only lock is off and the organisation is granted.
+
+LIVE-1 (owner order: ONE live switch): the grant is folded into `live_trading` - the global switch alone decides (ON =
+LIVE for every organisation, OFF = for none, a grant or not). The owner-only, audited grant route still stores the list
+(nothing deleted) but the list decides nothing, and the admin list no longer offers it."""
 import asyncio
 
 import pytest
@@ -74,25 +78,35 @@ def test_the_defaults_grant_no_organisation(monkeypatch):
     assert _run(go()) == []
 
 
-def test_without_the_grant_live_is_refused_even_with_the_switch_on_and_the_lock_off(monkeypatch):
+def test_live_one_switch_on_allows_every_organisation_without_a_grant(monkeypatch):
+    """LIVE-1 (was test_without_the_grant_live_is_refused_...): the switch ON is LIVE for everyone - no grant needed."""
     _, me = _admin("m55b-nogrant@example.com")
     _switch_on_lock_off()
-    assert _allowed(me["tenant_id"]) is False
-    assert _deployment_refused(me["tenant_id"]) is True
+    assert _allowed(me["tenant_id"]) is True
+    assert _deployment_refused(me["tenant_id"]) is False
 
 
-def test_with_the_grant_the_plan_check_passes_and_needs_the_switch_and_the_lock(monkeypatch):
+def test_live_one_switch_off_refuses_even_a_granted_organisation_and_a_stored_lock_is_ignored(monkeypatch):
+    """LIVE-1 (was test_with_the_grant_...): only the switch decides. OFF refuses a granted organisation (with the plain
+    sentence); a stored phase0_paper_only entry - on or off, for anyone - changes nothing."""
+    from app.platform import live_switch
     _, me = _admin("m55b-grant@example.com")
     tid = me["tenant_id"]
-    _switch_on_lock_off([tid])
-    assert _allowed(tid) is True and _deployment_refused(tid) is False
-    # Granted, but the switch off or the lock on: refused exactly as before.
     _set_stored({"live_trading": {"on": False, "tenants": [tid]}, "phase0_paper_only": {"on": False, "tenants": []}})
     assert _allowed(tid) is False and _deployment_refused(tid) is True
-    _set_stored({"live_trading": {"on": True, "tenants": [tid]}, "phase0_paper_only": {"on": True, "tenants": []}})
-    assert _allowed(tid) is False
-    _set_stored({"live_trading": {"on": True, "tenants": [tid]}, "phase0_paper_only": {"on": False, "tenants": [tid]}})
-    assert _allowed(tid) is False
+
+    async def refusal():
+        async with _session_factory() as session:
+            try:
+                await limits.check_can_add_deployment(session, await session.get(Tenant, tid), live=True, adding=False)
+            except limits.PlanLimitExceeded as exc:
+                return str(exc)
+            return None
+    assert live_switch.LIVE_OFF in (_run(refusal()) or "")
+    _set_stored({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": []}})
+    assert _allowed(tid) is True
+    _set_stored({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": False, "tenants": [tid]}})
+    assert _allowed(tid) is True
 
 
 def test_the_owner_grants_and_revokes_and_both_are_audited(monkeypatch):
@@ -102,7 +116,7 @@ def test_the_owner_grants_and_revokes_and_both_are_audited(monkeypatch):
     res = client.put(f"{LIVE_ORGS}/{tid}", headers=headers, json={"granted": True, **CONFIRM})
     assert res.status_code == 200, res.text
     body = res.json()["live_trading"]
-    assert body["tenants"] == [tid] and body["live_orgs"][0]["id"] == tid and body["on"] is False   # the switch unchanged
+    assert body["tenants"] == [tid] and body["on"] is False   # the switch unchanged; LIVE-1: the list is not shown
     assert len(_audit(live_owner.GRANTED_EVENT)) == granted_before + 1
     # Switching LIVE on or off keeps the granted list; the switch cannot set the list.
     assert client.put(f"{FLAGS}/live_trading", headers=headers, json={"on": True, **CONFIRM}).status_code == 200
@@ -115,10 +129,11 @@ def test_the_owner_grants_and_revokes_and_both_are_audited(monkeypatch):
     # Revoke.
     res = client.put(f"{LIVE_ORGS}/{tid}", headers=headers, json={"granted": False, **CONFIRM})
     assert res.status_code == 200, res.text
-    assert res.json()["live_trading"]["tenants"] == [] and res.json()["live_trading"]["live_orgs"] == []
+    assert res.json()["live_trading"]["tenants"] == [] and "live_orgs" not in res.json()["live_trading"]
     assert len(_audit(live_owner.REVOKED_EVENT)) == revoked_before + 1
+    # LIVE-1: revoked or not, the switch alone decides.
     _switch_on_lock_off(_resolved()["live_trading"]["tenants"])
-    assert _allowed(tid) is False
+    assert _allowed(tid) is True
 
 
 def test_a_non_owner_cannot_grant_or_revoke_403_and_audited(monkeypatch):

@@ -151,6 +151,12 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
+    "RelRange": ["RelRange(20)", "RelRange(5)@1h"],
+    "SpreadClass": ["SpreadClass(20)", "SpreadClass(10, narrow=0.9, wide=1.1, ultra=1.5)", "SpreadClass(5)@1h"],
+    "ClosePosition": ["ClosePosition()", "ClosePosition(part=0.25)", "ClosePosition()@1h"],
+    "BarDirection": ["BarDirection()", "BarDirection()@1h"],
+    "VolumeClass": ["VolumeClass(20)", "VolumeClass(10, low=0.9, high=1.1, ultra=1.5)", "VolumeClass(5)@1h"],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],
@@ -222,6 +228,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
+    # M99 B1-c (flag m99_primitives): the structure tracker's per-bar BOS / CHoCH and regime (one bar at a time)
+    "StructureEventSeries": ["StructureEventSeries()", "StructureEventSeries(pivot_n=3, swing_k=1)", "StructureEventSeries()@15m",
+                             'Count(50, StructureEventSeries() != "")'],
+    "RegimeTag": ["RegimeTag()", "RegimeTag(range_width=4, range_swings=4)", "RegimeTag(swing_k=1)@15m"],
     # U6 BK2 intraday session functions (the session clock, VWAP from the open, time-of-day volume from prior sessions)
     "ORBreakout": ['ORBreakout("up", 15, 0, FALSE, 15, 0)', 'ORBreakout("down", 30, 0, FALSE, 0, 0)@15m'],
     "DayLevelBreak": ['DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)', 'DayLevelBreak("down", "first_hour", 0, FALSE, 0, 0)',
@@ -647,6 +657,19 @@ def _register_structure() -> None:
             return [(pos[e.timestamp], e.event, e.direction, e.level) for e in analyze_market_structure(f, window).events]
         register(f"structure.events_window_{window}", events, kind=EVENTS, group="structure", known_at=lambda r: r[0], samples=30, length=300)
     register("structure.trend", lambda f: analyze_market_structure(f, 3).trend.value, kind=LAST_BAR, group="structure", samples=6)
+    # M99 B1-c: the per-bar structure facade (swings from their confirm bar, BOS / CHoCH, state, regime), the causal swing
+    # engine's per-bar view, and the trend line / channel facade (chosen from the bars before each bar)
+    from app.price_action import lines_helper
+    from app.price_action import structure_series as ss
+
+    def facade(f: pd.DataFrame, **kw: Any) -> pd.DataFrame:
+        return ss.structure_series(f, "5m", ss.settings(**kw)).frame()
+    register("structure.series_facade", facade, group="structure", samples=8)
+    register("structure.series_facade_range_width", partial(facade, range_width=4.0, swing_k=1.0), group="structure", samples=6)
+    register("structure.causal_pivot_series_d0", lambda f: ss.causal_pivot_series(f, 0).__dict__, group="structure", samples=6)
+    for direction in lines_helper.DIRECTIONS:
+        register(f"structure.lines_helper_{direction}", partial(lambda f, d: lines_helper.line_series(f, d).frame(f.index), d=direction),
+                 group="structure", samples=6)
     register("structure.sr_engine_zones", lambda f: [z.model_dump() for z in SupportResistanceEngine().build_zones(f, "5m")],
              kind=LAST_BAR, group="structure", samples=3)
 
@@ -680,7 +703,7 @@ def _register_screenql() -> None:
                 register(f"screenql.{text}", _screenql(text, "15m"), group="screenql", **AREA_GATE_CASE)
                 continue
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
-                                            "RsiDivergence", "SwingLabel", "Wave", "SDZone"))
+                                            "RsiDivergence", "SwingLabel", "Wave", "StructureEventSeries", "RegimeTag", "SDZone"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

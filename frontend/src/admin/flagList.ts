@@ -70,6 +70,7 @@ function matches(name: string, flag: FeatureFlag, query: string): boolean {
 export function groupFlags(flags: FeatureFlags, query = "", filter: FlagFilter = "all"): FlagGroup[] {
   const groups = new Map<string, FlagGroup>();
   for (const [name, flag] of Object.entries(flags)) {
+    if (flag.follows) continue;                  // LIVE-1: a derived flag is not a switch (it follows the one live switch)
     if (!matches(name, flag, query) || !passes(flag, filter)) continue;
     const area = flag.group ?? flag.area ?? "platform";
     const group = groups.get(area) ?? { area, label: flag.group_label ?? flag.area_label ?? "Other", rows: [] };

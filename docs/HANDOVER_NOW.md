@@ -1,10 +1,8 @@
-# HANDOVER_NOW (7 Nov 2026)
-Owner: credit limit near - finish open work only, no new work.
-Merged 6-7 Nov: #922-#933 (FN2-a..k minus e-proof, FN2-e PCR / OI from stored snapshots same-session, P2-3 templates,
-P3-4 D8/D11/D25/B7, chart reader key passthrough, Copilot "Last close · date"). Open: #934 chart reader on each user's
-OWN Claude key (owner decision 7 Nov) - merge when CI is green.
-Deploy: last run by owner = d6bbaeb (or 3ed1e9e); next block pinned to main tip after #934, tail -n 80 to see NIFTY
-lake rows. Migrations a7d3e9b1c4f6 + b3d5f7a9c1e4 apply in the deploy if not yet applied.
-Open data check: NIFTY stored Daily looks stuck at 30 Oct (card 23,053.10 vs strip 25,030); FINNIFTY D/W one session
-short - read the deploy health rows first.
-Owner-only: R2 keys, Telegram token, lawyer items (notice languages), FN7 phone proof, LIVE.
+# HANDOVER_NOW (12 Nov 2026)
+State: M95-M99, LIVE-1, PHONE-1 built; most merged, rest in CI. Living file.
+Merged: M96 #995-#999 #1002; LIVE-1 #1006; PHONE-1 #1027; M99 #1013-#1016 #1018 #1024 (B0 docs #1012).
+In CI: M99 #1019 #1020 #1021 #1023 #1026; M97 stack + M99 P1 as #1017 (replaces #1004-#1009).
+Deploy pending, runs after 15:30 IST: migrations b4d6f8a0c2e3 / b4d6f8a0c2e5.
+Flags OFF: sd_pack, vsa_pack, wyckoff_pack, fib_ew_pack, pa_pack, risk_options, m99_primitives, intraday_pack.
+Open: LIVE-2 (basket + Reverse LIVE on the one switch); ORD-1 (Orders = today only, PAPER expiry settlement);
+M60 e2e race (traces uploaded via #1022); owner's check + ✅ on the real site.

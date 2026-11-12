@@ -110,6 +110,16 @@ async def _fundamentals_check(ast: Any) -> None:
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+def _primitives_check(ast: Any) -> None:
+    """M99 B1-b: alert rules do not read the shared primitives (flag m99_primitives) yet - refused with the reason."""
+    from app.screener import nodes
+    from app.screener import primitives as primitives_gate
+    names = primitives_gate.flagged_calls(nodes.from_json(ast) if isinstance(ast, dict) else ast)
+    if names:
+        why = primitives_gate.alert_refusal(names)
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
     """Z7a-3 (the U6 BK1 pattern): a rule (instrument condition or saved screen) using a market-zone function needs
     `market_zones` on, and fires on bar close only - never intrabar."""
@@ -260,6 +270,7 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _wyckoff_check(session, user, ast, fire_on)
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
+    _primitives_check(ast)
     _ranking_check(ast)
     _ownership_check(ast)
     await _venue_check(session, user, ast, exchange)
@@ -316,6 +327,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     await _vsa_check(session, user, ast, body.fire_on)
     await _wyckoff_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
+    _primitives_check(ast)
     await _amw_check(session, user, ast, body.fire_on)
     _ownership_check(ast)
     await _venue_check(session, user, ast, body.exchange)

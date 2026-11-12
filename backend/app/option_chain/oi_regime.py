@@ -76,13 +76,27 @@ class PcrBands(BaseModel):
         return self
 
 
-ALERT_TYPES = ("DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND", "MAX_PAIN_MOVE", "OI_WALL", "DTE", "COLLECTOR_STALE")
+BANNER_ALERT_TYPES = ("DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND", "MAX_PAIN_MOVE", "OI_WALL", "DTE", "COLLECTOR_STALE")
+# M96 N1: the user's own threshold alerts - an OI change at one strike reaching his level, the PCR crossing his level.
+# Not in the default `types`: each is OFF until he ticks it, and it has no threshold until he types one.
+THRESHOLD_ALERT_TYPES = ("STRIKE_OI_CHANGE", "PCR_CROSS")
+ALERT_TYPES = BANNER_ALERT_TYPES + THRESHOLD_ALERT_TYPES
+
+
+class StrikeOIRule(BaseModel):
+    """M96 N1: notify when the OI change of one strike's call (CE) or put (PE) since the day's first reading reaches
+    `threshold` (the broker's OI units, as the chain shows them). The user's own numbers only - nothing pre-set."""
+    strike: float = Field(gt=0)
+    side: Literal["CE", "PE"]
+    threshold: float = Field(gt=0)
 
 
 class OIAlertSettings(BaseModel):
     """O4: which banner changes notify, how often, and when not (all off until the tenant turns alerts on)."""
     enabled: bool = False
-    types: List[str] = Field(default_factory=lambda: list(ALERT_TYPES))
+    types: list[str] = Field(default_factory=lambda: list(BANNER_ALERT_TYPES))
+    strike_rules: list[StrikeOIRule] = Field(default_factory=list, max_length=20)   # M96 N1: none until he adds one
+    pcr_level: float | None = Field(default=None, gt=0, le=20)                   # M96 N1: none until he types one
     cooldown_minutes: int = Field(default=15, ge=0, le=1440)            # per alert type and underlying
     max_pain_strikes: int = Field(default=2, ge=1, le=50)               # a move of this many strikes notifies
     dte_milestones: List[int] = Field(default_factory=lambda: [1, 0])   # expiry tomorrow / today

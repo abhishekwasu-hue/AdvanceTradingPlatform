@@ -36,12 +36,13 @@ from app.strategy_templates.schema import Template
 FLAG = "strategy_templates"
 FAMILY_NAMES: Dict[str, str] = {"A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
                                 "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves",
-                                "H": "Intraday"}
+                                "H": "Intraday", "J": "Volume spread"}
 FETCH_DEPENDENT_DEGREE = 2      # swings of this degree and larger depend on how much history is loaded (registry SC-14)
 # A family that is listed only while its own flag is on as well (family G, the wave templates: `screener_waves`). While
 # that flag is off its templates are not shown and cannot be adopted (404), not merely shown as unavailable.
 # M94 (F2): family H "Intraday" is listed only while `intraday_pack` is on.
-FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack"}
+# M99 P3: family J "Volume spread" is listed only while `vsa_pack` is on.
+FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack", "J": "vsa_pack"}
 # M94 (F8): the label of a template whose defaults are reference values from a study (a label only; nothing is enforced)
 REFERENCE_LABEL = "Reference values - edit before use"
 # M94-Q7: an intraday template carries no time-of-day rule; the optional window is the user's own operational setting
@@ -204,6 +205,21 @@ def _exit_choices(strategy: TemplateStrategy) -> Dict[str, Any]:
         "ratio": {"min": exit_settings.RATIO_BOUNDS[0], "max": exit_settings.RATIO_BOUNDS[1]},
         # M94 F10: the levels a TEMPLATE_LEVEL target may sit at (empty: the rule is not offered)
         "levels": [{"value": lv, "label": exit_settings.LEVEL_WORDS[lv]} for lv in caps.levels],
+        # M99 P2: the trade-management options (None: not offered by this template); all off by default
+        "management": _management_choices() if caps.management else None,
+    }
+
+
+def _management_choices() -> Dict[str, Any]:
+    from app.strategy_templates import management as mg
+    return {
+        "classes": sorted(exit_settings.MANAGEMENT_CLASSES),
+        "trails": [{"value": "SWING", "label": "By the swings"}, {"value": "ATR", "label": "By ATR from the best price"},
+                   {"value": "MA", "label": "At a moving average"}],
+        "averages": list(mg.AVERAGES),
+        "bounds": {"trail_degree": list(mg.DEGREE_BOUNDS),
+                   "trail_n": list(mg.N_BOUNDS), "trail_k": list(mg.K_BOUNDS), "bars": list(mg.BARS_BOUNDS)},
+        "reference": dict(mg.REFERENCE), "reference_label": mg.REF_LABEL,
     }
 
 

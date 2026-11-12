@@ -20,6 +20,7 @@ from app.db.models import AiActionRecord, ExecutionIntentRecord, NotificationRec
 from app.execution import approval
 from app.execution.core import dispatcher, intents, policy
 from app.platform import controls, phase0_lock
+from tests.live_switch_helpers import set_live
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import CLOSED_NOW, _FakeBroker, _tenant, _worker
@@ -263,12 +264,12 @@ def test_auto_live_is_always_refused_and_names_the_phase0_lock_when_it_is_on():
     t = _org("live")
     plain, _ = _submit(t, "AUTO_LIVE")
     _drain()
-    _flag(phase0_lock.FLAG, t["tenant_id"])
+    set_live(False)                        # LIVE-1: the lock follows live_trading
     try:
         locked, _ = _submit(t, "AUTO_LIVE")
         _drain()
     finally:
-        _flag(phase0_lock.FLAG, t["tenant_id"], on=False)
+        set_live(None)                          # LIVE-1: back to the posture
         phase0_lock.reset_cache()
     assert _intent(plain).status == intents.REFUSED and _intent(plain).reason == policy.WHY_LIVE
     assert _intent(locked).status == intents.REFUSED and _intent(locked).reason == policy.WHY_LIVE_LOCKED

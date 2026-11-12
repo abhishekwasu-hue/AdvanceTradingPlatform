@@ -13,6 +13,12 @@ ON, read order (`app.market_store`, docs/design/M71_READ_PATHS.md row 8):
 Every budgeted call here is taken only if a token is there now (`api_budget.no_wait`): a data read never waits, so the
 worker's cycle (and the next cycle's exits) is never held up; a refused read is a plain reason, retried next cycle.
 
+An index (no traded volume of its own; M99 B1-a): its frames carry the volume of its near-month future, read through the
+same path as the index's own bars (`market_data.index_volume`: the near-month contract in the instrument master, the
+future's bar at the same instant, 0 where it has none) - as the chart and the screener do, so the scan and the live
+worker read the same volume (the backtest's bar source too, M99 B1-d). The future's bars not read: the index's
+own bars as before (never a failed cycle for it).
+
 Closed bars only (no look-ahead; the worker drops the forming bar of the higher timeframes as before). A missing bar is
 never zero-filled: no bars, the newest bars not read or a hole inside the window -> `BarsNotRead` with a plain line, and
 the worker skips the deployment's entry for this cycle ("waiting for data", never paused) exactly as on a failed read.
@@ -119,12 +125,39 @@ async def frames(session: AsyncSession, user: Any, market_data: Any, symbol: str
     `store` None: read the flag for the member's organisation."""
     if store is None:
         store = await store_reads_on(session, int(getattr(user, "tenant_id", 0) or 0))
+    got = await _read(session, user, market_data, symbol, exchange, base_timeframe, timeframes, now=now, store=store)
+    return await _future_volume(session, user, market_data, symbol, exchange, base_timeframe, timeframes, got, now=now, store=store)
+
+
+async def _read(session: AsyncSession, user: Any, market_data: Any, symbol: str, exchange: str, base_timeframe: str,
+                timeframes: list[str], *, now: datetime | None, store: bool) -> dict[str, pd.DataFrame]:
     if not store:
         return await market_data.get_frames(symbol, exchange, base_timeframe, timeframes)
     from app.market_data import api_budget
     with api_budget.no_wait():
         return await _store_frames(session, user, market_data, symbol, exchange, base_timeframe, timeframes,
                                    now=now or datetime.now(UTC))
+
+
+async def _future_volume(session: AsyncSession, user: Any, market_data: Any, symbol: str, exchange: str, base_timeframe: str,
+                         timeframes: list[str], got: dict[str, pd.DataFrame], *, now: datetime | None,
+                         store: bool) -> dict[str, pd.DataFrame]:
+    """M99 B1-a: an index's frames with its near-month future's volume (`index_volume.replace_frame_volume`); every
+    other symbol's frames, and an index's when the future or its bars cannot be read, unchanged."""
+    from app.market_data import index_volume
+    if not got or index_volume.index_underlying(symbol, exchange) is None:
+        return got
+    try:
+        fut = await index_volume.near_future(session, symbol, exchange, (now or datetime.now(UTC)).astimezone(IST).date())
+        if fut is None:
+            return got
+        fut_frames = await _read(session, user, market_data, fut.symbol, fut.exchange, base_timeframe, timeframes, now=now, store=store)
+    except Exception as exc:  # noqa: BLE001 - the index's own bars still make the cycle (as the screener, SCR-FIX A7)
+        logger.info("future volume not loaded for %s:%s: %s", exchange, symbol, exc)
+        return got
+    if not fut_frames:
+        return got
+    return {tf: index_volume.replace_frame_volume(frame, fut_frames.get(tf)) for tf, frame in got.items()}
 
 
 async def _store_frames(session: AsyncSession, user: Any, market_data: Any, symbol: str, exchange: str, base_timeframe: str,

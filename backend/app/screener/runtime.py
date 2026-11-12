@@ -54,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import BAR_CLASS_KWARGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF, VSA_KWARGS
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -297,6 +297,30 @@ class _Eval:
                 raise ScreenRuntimeError(str(exc)) from exc
             self._session_bars[key] = b
         return self._session_bars[key]
+
+    def level_grade(self, tf: str, level: str, what: str, near: float, look: int, touches: float, recent: int, tier: float,
+                    step: float) -> pd.Series:
+        """M99 P2: `LevelGrade` - the key levels of this frame (previous session, pre-open, the session so far) and the grade
+        or one part of it (app/screener/level_grade.py) on every bar; the ATR of 14 bars is the band's unit."""
+        from app.price_action import level_strength as ls
+        from app.screener import level_grade as lg
+        f = self.frame(tf)
+        levels = {"PDC": _operand(f, "PDC"), "PDH": _operand(f, "PDH"), "PDL": _operand(f, "PDL"),
+                  "PREOPEN_HIGH": self.session_series(tf, "pre_high"), "PREOPEN_LOW": self.session_series(tf, "pre_low"),
+                  "SESSION_HIGH": self.session_series(tf, "high"), "SESSION_LOW": self.session_series(tf, "low")}
+        arrays = {k: v.reindex(f.index).to_numpy(dtype=float) for k, v in levels.items()}
+        if step > 0:
+            steps: list[float] = [float(step)]
+        else:
+            by = ls._s(None)["zone_round_steps"]
+            steps = [float(x) for x in by.get(str(self.data.symbol).upper(), by["DEFAULT"])]
+        try:
+            values = lg.grade_series(arrays, level, f["high"].to_numpy(float), f["low"].to_numpy(float), _atr(f, 14).to_numpy(float),
+                                     what=what, near=near, look=look, touches=int(touches), recent=recent, tier=int(tier),
+                                     round_steps=steps)
+        except ValueError as exc:
+            raise ScreenRuntimeError(str(exc)) from exc
+        return pd.Series(values, index=f.index, dtype=float)
 
     def session_series(self, tf: str, what: str) -> pd.Series:
         """M94: one of the session's running values (high / low / volume so far) or the pre-open bars' levels (pre_high /
@@ -575,9 +599,21 @@ class _Eval:
             "PriorSwingHigh": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "H"),
             "PriorSwingLow": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "L"),
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py), settings as named arguments
+            "RelRange": lambda: _bar_class(f, name, win(0, 20), {}),
+            "SpreadClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "ClosePosition": lambda: _bar_class(f, name, 0, {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "BarDirection": lambda: _bar_class(f, name, 0, {}),
+            "VolumeClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            # M99 P3 (flag vsa_pack): the volume spread detectors (app/price_action/vsa.py), settings as named arguments
+            "VSA": lambda: _vsa(f, _text(0, "no_demand"), _text(1, "any"), {k: kw(k) for k in VSA_KWARGS}),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
+            # M99 B1-b (flag m99_primitives): Fibonacci levels of the confirmed swings and the nearest price cluster
+            "FibLevel": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "level"),
+            "FibDistancePct": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "distance"),
+            "ClusterDistancePct": lambda: _cluster_distance(f, num(0, float("nan")), _text(1, "pct"), int(num(2, 0))),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
@@ -622,6 +658,9 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # M99 B1-c (flag m99_primitives): the structure tracker's per-bar BOS / CHoCH and regime (structure_series.py)
+            "StructureEventSeries": lambda: _structure_series(f, tf, "event", {k: kw(k) for k in ("pivot_n", "swing_k")}),
+            "RegimeTag": lambda: _structure_series(f, tf, "regime", {k: kw(k) for k in ("pivot_n", "swing_k", "range_width", "range_swings")}),
             # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
             "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
                 "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
@@ -644,6 +683,9 @@ class _Eval:
             "PreOpenHigh": lambda: self.session_series(tf, "pre_high"),
             "PreOpenLow": lambda: self.session_series(tf, "pre_low"),
             "PreOpenVolume": lambda: self.session_series(tf, "pre_volume"),
+            # M99 P2: the information grade of a key level (app/screener/level_grade.py)
+            "LevelGrade": lambda: self.level_grade(tf, _text(0, ""), _text(1, "grade"), num(2, 0.0), win(3, 400), num(4, 2.0), win(5, 200),
+                                                   num(6, 2.0), num(7, 0.0)),
             # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
             "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
                 "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
@@ -1019,6 +1061,38 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     return hi, lo, d
 
 
+def _fib(f: pd.DataFrame, kind: str, ratio: float, degree: int, what: str) -> pd.Series:
+    """M99 B1-b: FibLevel / FibDistancePct - the level of `kind` at `ratio` from the pivots CONFIRMED by each bar
+    (app/price_action/fib_causal.py, default price-action settings), or the close's distance from it in %."""
+    from app.price_action import fib_causal
+    if kind not in fib_causal.FIB_KINDS:
+        raise ScreenRuntimeError(f"unknown Fibonacci kind {kind!r} (one of {', '.join(fib_causal.FIB_KINDS)})")
+    if not np.isfinite(ratio) or ratio < 0:
+        raise ScreenRuntimeError(f"the Fibonacci ratio must be a number at or above 0, not {ratio!r}")
+    try:
+        level = fib_causal.fib_series(f, kind, float(ratio), degree)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what == "distance":
+        return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), level), index=f.index)
+    return pd.Series(level, index=f.index)
+
+
+def _cluster_distance(f: pd.DataFrame, band: float, mode: str, degree: int) -> pd.Series:
+    """M99 B1-b: ClusterDistancePct - the close's distance in % from the centre of the nearest price cluster known at each
+    bar (app/price_action/fib_causal.py `cluster_series`, the reference ratios, two or more levels)."""
+    from app.price_action import fib_causal, price_clusters
+    if mode not in price_clusters.BAND_MODES:
+        raise ScreenRuntimeError(f"unknown band mode {mode!r} (one of {', '.join(price_clusters.BAND_MODES)})")
+    if not np.isfinite(band) or band < 0:
+        raise ScreenRuntimeError(f"the cluster band must be a number at or above 0, not {band!r}")
+    try:
+        c = fib_causal.cluster_series(f, float(band), mode, degree)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), c["centre"]), index=f.index)
+
+
 PRIOR_SWING_BACK: Dict[str, int] = {"one": 1, "two": 2, "three": 3}
 
 
@@ -1360,6 +1434,21 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
 
 
+def _structure_series(f: pd.DataFrame, tf: str, what: str, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-c: StructureEventSeries ("event": "" on bars without one) / RegimeTag ("regime": missing in warm-up) from
+    app/price_action/structure_series.py - the tracker fed the frame's closed bars one at a time (bars <= t decide t)."""
+    from app.price_action import structure_series as ss
+    try:
+        s = ss.settings(**{k: v for k, v in given.items() if v is not None})
+        out = ss.structure_series(f, tf, s)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    values = getattr(out, what)
+    if what == "regime":
+        values = np.where(values == "", None, values)
+    return pd.Series(values, index=f.index, dtype=object)
+
+
 def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
     from app.screener.breakouts.screens import Bars
     try:
@@ -1394,6 +1483,42 @@ def _ownership(data: SymbolData, f: pd.DataFrame, tf: str, what: str, arg: str, 
 def _fundamental(data: SymbolData, f: pd.DataFrame, tf: str, measure: str) -> pd.Series:
     from app.screener.fundamentals import series
     return series(data, f, tf, measure)
+
+
+def _bar_class(f: pd.DataFrame, fn: str, n_: int, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-a: one classifier series per bar (app/price_action/bar_class.py) - RelRange a ratio (NaN while missing), the
+    classes text (None while missing). `given`: the named arguments of the call (None: left out, the reference value)."""
+    from app.price_action import bar_class as bc
+    names = dict(BAR_CLASS_KWARGS.get(fn, ()))
+    values: dict[str, Any] = {names[k]: v for k, v in given.items() if v is not None}
+    if n_:
+        values["avg_n"] = n_
+    try:
+        s = bc.settings_from(values)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if fn == "RelRange":
+        return bc.relative_range(f, s.avg_n)
+    if fn == "SpreadClass":
+        return bc.spread_class(f, s)
+    if fn == "ClosePosition":
+        return bc.close_position(f, s)
+    if fn == "BarDirection":
+        return bc.bar_direction(f)
+    return bc.volume_class(f, s)
+
+
+def _vsa(f: pd.DataFrame, name: str, side: str, given: dict[str, Any]) -> pd.Series:
+    """M99 P3: one volume spread detector as a series - 1.0 where it holds, 0.0 where not, NaN where it cannot be read (no
+    volume data, or the warm-up: "not checked" on the last bar). One evaluation per frame and settings (vsa.cached)."""
+    from app.price_action import vsa
+    try:
+        s = vsa.settings_from({VSA_KWARGS[k]: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if name not in vsa.DETECTORS or side not in vsa.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"VSA: unknown reading {name!r} or side {side!r}")
+    return pd.Series(vsa.cached(f, s).value(name, side), index=f.index, dtype=float)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
@@ -1654,7 +1779,7 @@ def last_match(symbol: str, value: Any) -> Match:
 # CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
 # VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
 VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower", "SessionVolume",
-                              "PreOpenVolume"})
+                              "PreOpenVolume", "VolumeClass", "VSA"})     # M99 B1-a: VolumeClass; M99 P3: VSA
 
 
 def no_index_volume(universe: list[SymbolData]) -> None:

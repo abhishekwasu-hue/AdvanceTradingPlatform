@@ -82,7 +82,13 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
     bk4 = {"TrendlineBreakout", "PatternBreakout", "GapBreakout", "GapType", "RetestEntry", "LineBreakoutRef",
            "RetestEntryRef", "PatternBreakoutRef", "GapBreakoutRef", "ChannelLine"}   # ChannelLine: idea library IDEA-12   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
     m94 = {"SessionHigh", "SessionLow", "SessionVolume", "SessionCount", "PreOpenHigh", "PreOpenLow", "PreOpenVolume"}   # tests/test_m94_pr1_functions.py
-    assert set(want) | bk2 | bk3 | bk4 | m94 == set(BREAKOUT_FUNCTIONS)
+    m99_p2 = {"LevelGrade"}   # tests/test_m99_p2_intraday.py (its own settings, not breakout parameters - checked below)
+    assert set(want) | bk2 | bk3 | bk4 | m94 | m99_p2 == set(BREAKOUT_FUNCTIONS)
+    from app.screener import level_grade as lg
+    grade = {a.name: a.default for a in FUNCTIONS["LevelGrade"].args}
+    assert grade == {"level": None, "what": "grade", "near": 0.0, "look": lg.DEFAULT_LOOK, "touches": 2, "recent": lg.DEFAULT_RECENT,
+                     "tier": 2, "step": 0.0}
+    assert FUNCTIONS["LevelGrade"].flag == "screener_breakouts"
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():

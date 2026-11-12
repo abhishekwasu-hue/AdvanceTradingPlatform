@@ -1,12 +1,12 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from app.core.enums import SignalDirection
 from app.core.models import RiskConfig, RiskDecision, Signal
 from app.instruments.models import ContractSpec
-from app.risk_engine import risk_limits
+from app.risk_engine import risk_limits, risk_options
 
 # M68 PR-2 (TS1-017): no size of the trader's own - one sentence everywhere (app/execution/position_size.py imports it;
 # defined here because the execution layer imports this module).
@@ -44,6 +44,13 @@ class TradingDayState:
     # reached today (now or earlier). None / False: the check is off or nothing was read.
     day_peak_pnl: float | None = None
     giveback_reached: bool = False
+    # M99 P7 (app/risk_engine/risk_options.py, flag `risk_options`): the facts the trader's own options read - today's
+    # lowest closed P&L and whether the worker stored the daily loss limit as reached today (the daily loss lock), and the
+    # closed trades' P&L newest first (all recent ones, and today's) for the size step-down. Empty: the options are off.
+    day_trough_pnl: float = 0.0
+    daily_loss_marked: bool = False
+    closed_pnls: list[float | None] = field(default_factory=list)
+    today_pnls: list[float | None] = field(default_factory=list)
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -83,6 +90,7 @@ class RiskManager:
     def __init__(self, config: RiskConfig, *, one_lot_if_unsized: bool = False) -> None:
         self.config = config
         self.one_lot_if_unsized = one_lot_if_unsized
+        self._step: float | None = None       # M99 P7: the step-down % of the current check (None = full size)
 
     def validate_and_size(
         self, signal: Signal, state: TradingDayState, contract_spec: Optional[ContractSpec] = None,
@@ -97,6 +105,7 @@ class RiskManager:
         not risk-based: it is `requested_quantity` (the trader's own size) when given, else - M68 PR-2 - no size at all:
         the entry is refused with "Needs your setting: Lots" (a backtest's `one_lot_if_unsized`: one lot, as before).
         """
+        self._step = None
         if not signal.is_tradeable:
             return RiskDecision(approved=False, reasons=["This signal says no trade."])
         if signal.entry is None or signal.stop_loss is None:
@@ -122,7 +131,11 @@ class RiskManager:
 
         daily_limit = cfg.daily_loss_amount()
         if daily_limit is not None and state.daily_pnl <= -daily_limit:
-            blocks.append(risk_limits.daily_loss_block(-state.daily_pnl, daily_limit))
+            blocks.append(risk_limits.daily_loss_block(-state.daily_pnl, daily_limit, locked=cfg.daily_loss_lock))
+        elif risk_options.lock_holds(cfg, daily_limit, daily_pnl=state.daily_pnl, day_trough=state.day_trough_pnl,
+                                     marked=state.daily_loss_marked) and daily_limit is not None:
+            # M99 P7: the daily loss lock - the limit was reached earlier today and new entries stay off all day.
+            blocks.append(risk_limits.daily_lock_block(state.daily_pnl, daily_limit))
         # M94 R3: the profit give-back stop, only when the trader switched it on (entries only, ADR-0004).
         if cfg.giveback_pct is not None and state.day_peak_pnl is not None:
             from app.risk_engine import giveback
@@ -131,6 +144,8 @@ class RiskManager:
 
         if blocks:
             return self._refused(blocks)
+        # M99 P7: the size step-down after losses in a row (the trader's own % of his own size; never above it).
+        self._step = risk_options.step_pct(cfg, state.closed_pnls, state.today_pnls)
 
         risk_amount = cfg.risk_amount()
         # TS1-018: the unit is the contract's lot (a fact); a cash symbol's unit is the organisation's own saved unit, else
@@ -179,6 +194,10 @@ class RiskManager:
         N?"); a size risk-based sizing worked out is lowered to it, said in a note (both limits are his own)."""
         limit = self.config.max_lots_per_order
         lot = float(unit) if unit and unit > 0 else 1.0
+        # M99 P7: the step-down first (it only lowers the size), then the max lots per order on the stepped size.
+        quantity, step_note = risk_options.apply_step(quantity, lot, self._step)
+        if step_note:
+            warnings.append(step_note)
         if limit is not None and limit > 0 and quantity > limit * lot + 1e-9:
             if typed:
                 return self._refused([risk_limits.max_lots_block(int(limit), quantity / lot)], warnings)

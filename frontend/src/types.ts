@@ -315,6 +315,9 @@ export interface ExitRules {
   break_even_at_r?: number | null;
   time_exit_minutes?: number | null;
   time_exit_at?: string | null;
+  /** M99 P7 (flag risk_options): the user's own scale-out - level in R and share of the lots, %. */
+  scale_out_at_r?: number | null;
+  scale_out_pct?: number | null;
 }
 
 export interface AnalyticsBucket { key: string; trades: number; pnl: number; win_rate: number; avg_pnl: number }

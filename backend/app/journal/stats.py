@@ -138,6 +138,39 @@ def breakdown(decisions: Iterable[Decision], key: str) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda g: (-g["trades"], g[key]))
 
 
+def risk_metrics(decisions: Iterable[Decision]) -> dict[str, Any]:
+    """M99 P7 (flag `risk_options`): the journal's discipline numbers over the closed decisions in entry order - the
+    largest fall of the running net P&L from its high (rupees, from 0), the longest runs of wins and of losses and the
+    run now (a flat result ends a run), and the rule breaches counted (never blocked, nothing is changed by them): a loss
+    larger than the risk to the initial stop ("loss beyond plan", below -1R) and a trade with no named setup. Numbers
+    only. Pure."""
+    closed = sorted((d for d in decisions if d.pnl is not None),
+                    key=lambda d: (d.entry_time or datetime.min.replace(tzinfo=UTC), d.unit))
+    running = peak = 0.0
+    max_dd = 0.0
+    best = {"win": 0, "loss": 0}
+    kind_now, length = "", 0
+    for d in closed:
+        running += float(d.pnl or 0.0)
+        peak = max(peak, running)
+        max_dd = max(max_dd, peak - running)
+        kind = outcome_of(d.pnl)
+        if kind in ("win", "loss"):
+            length = length + 1 if kind == kind_now else 1
+            kind_now = kind
+            best[kind] = max(best[kind], length)
+        else:
+            kind_now, length = "", 0
+    beyond = sum(1 for d in closed if d.r is not None and d.r < -1.0 - 1e-9)
+    no_setup = sum(1 for d in closed if not (d.setup or "").strip())
+    return {
+        "closed": len(closed), "max_drawdown": round(max_dd, 2), "longest_win_streak": best["win"],
+        "longest_loss_streak": best["loss"], "streak_now": {"kind": kind_now or None, "length": length},
+        "breaches": {"loss_beyond_plan": beyond, "no_named_setup": no_setup, "total": beyond + no_setup},
+        "note": "Breaches are counted only; nothing is blocked or changed by them.",
+    }
+
+
 def stats_payload(decisions: Sequence[Decision]) -> dict[str, Any]:
     return {"totals": summary(decisions), "by_setup": breakdown(decisions, "setup"),
             "by_timeframe": breakdown(decisions, "timeframe"), "by_weekday": breakdown(decisions, "weekday")}

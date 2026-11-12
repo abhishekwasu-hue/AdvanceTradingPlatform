@@ -14,10 +14,11 @@ from app.execution.exit_settings import in_window
 from app.execution.paper_charges import STATUTORY_ONLY, PaperCharges
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.instruments.registry import get_contract_spec
+from app.risk_engine import risk_options
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
-from app.trading.exit_rules import ExitRules, apply_exit_rules
+from app.trading.exit_rules import ExitRules, apply_exit_rules, scale_out_lots
 
 __all__ = ["resample_ohlc", "run_backtest"]
 
@@ -89,6 +90,10 @@ def run_backtest(
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
     contract_spec = get_contract_spec(symbol)
+    # M99 P7 (app/risk_engine/risk_options.py): the trader's own options read the closed trades as the worker does -
+    # today's lowest closed P&L (the daily loss lock) and the P&L newest first (the size step-down). Off: nothing kept.
+    track_options = risk_options.any_on(risk_config)
+    scaled_out = False
 
     open_trade: Trade | None = None
     trades: list[Trade] = []
@@ -127,6 +132,8 @@ def run_backtest(
             # CP6-15: "Pause until the next session" starts the losses in a row again here; "until I resume" keeps them
             # (nobody resumes a test, so that pause holds to the end of the run).
             state.consecutive_losses = streak.new_session()
+            state.day_trough_pnl = 0.0          # M99 P7: the daily loss lock and "next_day" step-down end at the day roll
+            state.today_pnls = []
 
         if pending is not None and pending[2] == i:
             # N7 C2b: the deferred entry fills at this bar's OPEN (the only number of this bar it reads); this bar's
@@ -140,6 +147,7 @@ def run_backtest(
                 open_trade.expected_price = signal.entry
                 initial_stop = open_trade.stop_loss
                 best_price = None
+                scaled_out = False
                 first_after, mgmt_exit = i, None
                 state.trades_today += 1
                 state.open_positions += 1
@@ -179,6 +187,23 @@ def run_backtest(
                 # REV-S1: the live INTRADAY square-off, at the price of the moment it runs (this bar's close)
                 outcome = (f"Square-off ({square_off_at.strftime('%H:%M')} IST)", float(bar["close"]))
                 exit_at = bar_close_at
+            if outcome is None and rules is not None and update.scale_out_level is not None and not scaled_out:
+                # M99 P7: the trader's own scale-out - his share of the lots closes at his level, once; the rest stays
+                # open (the worker closes the same lots through the one partial-exit path, fno_position_actions.exit_part).
+                scaled_out = True
+                unit = float(contract_spec.lot_size) if contract_spec is not None else float(risk_config.lot_size or 1)
+                part_lots = scale_out_lots(rules, int(round(open_trade.quantity / unit)))
+                if part_lots:
+                    part = broker.close_trade(open_trade.model_copy(update={"quantity": part_lots * unit}), update.scale_out_level,
+                                              current_time, f"Scale-out ({rules.scale_out_pct:g}% at {rules.scale_out_at_r:g}R)")
+                    open_trade.quantity = round(open_trade.quantity - part_lots * unit, 8)
+                    trades.append(part)
+                    equity += part.pnl or 0.0
+                    equity_curve.append(equity)
+                    state.daily_pnl += part.pnl or 0.0
+                    state.consecutive_losses = streak.closed(part.pnl, current_time)
+                    state.last_loss_at = streak.last_loss_at
+                    risk_options.note_closed(state, part.pnl, track_options)
             if outcome is None and rules is not None:
                 best_price = update.best_price
                 if update.stop_changed:
@@ -216,6 +241,7 @@ def run_backtest(
                 state.open_positions = max(0, state.open_positions - 1)
                 state.consecutive_losses = streak.closed(closed.pnl, current_time)
                 state.last_loss_at = streak.last_loss_at
+                risk_options.note_closed(state, closed.pnl, track_options)
                 open_trade = None
 
         if open_trade is None and pending is None:
@@ -245,6 +271,7 @@ def run_backtest(
                     open_trade.expected_price = signal.entry
                     initial_stop = open_trade.stop_loss
                     best_price = None
+                    scaled_out = False
                     first_after, mgmt_exit = i + 1, None
                     state.trades_today += 1
                     state.open_positions += 1

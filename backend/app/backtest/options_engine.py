@@ -68,6 +68,7 @@ from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, can_hold_for_days, plan_structure, structure_metrics
 from app.market_data.calendar import IST
+from app.risk_engine import risk_options
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
@@ -292,6 +293,7 @@ def run_option_backtest(
     risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
+    track_options = risk_options.any_on(risk_config)          # M99 P7: the trader's own risk options (as engine.py)
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
     exit_at = time_rules.exit_time_of_day() if time_rules else None
     # Strategy templates R5 / section 5: the template's exit signal (the user's TEMPLATE_EXIT choice), read on a bar close
@@ -343,6 +345,7 @@ def run_option_backtest(
         state.open_positions = max(0, state.open_positions - 1)
         state.consecutive_losses = streak.closed(pnl, when)
         state.last_loss_at = streak.last_loss_at
+        risk_options.note_closed(state, pnl, track_options)       # M99 P7: as app/backtest/engine.py
         if reason.startswith("Expiry"):
             settlements += 1
         structures.append({
@@ -390,6 +393,8 @@ def run_option_backtest(
             state.daily_pnl = 0.0
             state.trades_today = 0
             state.consecutive_losses = streak.new_session()   # CP6-15: as app/backtest/engine.py
+            state.day_trough_pnl = 0.0                        # M99 P7: as app/backtest/engine.py
+            state.today_pnls = []
         vol.update(closes[max(0, i - config.realised_vol_window): i + 1])
         high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
 

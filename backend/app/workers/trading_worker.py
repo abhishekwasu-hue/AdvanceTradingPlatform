@@ -618,6 +618,15 @@ class TradingWorker:
                     logger.exception("Profit give-back peak sweep failed")
                     report.errors.append(f"give-back peak: {exc}")
                     await session.rollback()
+                # M99 P7 (flag risk_options): the daily loss lock's mark - when an organisation that keeps the lock all
+                # day reached its daily loss limit today (after the exits; never places, blocks or changes an order).
+                try:
+                    from app.risk_engine import risk_options
+                    await risk_options.sweep(session, now)
+                except Exception as exc:  # noqa: BLE001 - bookkeeping; never breaks trading
+                    logger.exception("Daily loss lock sweep failed")
+                    report.errors.append(f"daily loss lock: {exc}")
+                    await session.rollback()
                 # Z5 (Trade check_vix_spike_halt): the India VIX reading for each organisation with the gate on, from 09:20 IST.
                 if nse.is_open:
                     try:

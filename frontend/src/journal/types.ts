@@ -230,8 +230,21 @@ export interface StatsGroup {
   excursion_trades: number;
 }
 
+/** M99 P7 (flag risk_options): the discipline numbers - counted only, nothing is blocked by them. */
+export interface JournalRiskMetrics {
+  closed: number;
+  max_drawdown: number;
+  longest_win_streak: number;
+  longest_loss_streak: number;
+  streak_now: { kind: "win" | "loss" | null; length: number };
+  breaches: { loss_beyond_plan: number; no_named_setup: number; total: number };
+  note: string;
+}
+
 export interface JournalStatsResponse {
   totals: StatsGroup;
+  /** M99 P7: only with the `risk_options` flag on. */
+  risk_metrics?: JournalRiskMetrics;
   by_setup: (StatsGroup & { setup: string })[];
   by_timeframe: (StatsGroup & { timeframe: string })[];
   by_weekday: (StatsGroup & { weekday: string })[];

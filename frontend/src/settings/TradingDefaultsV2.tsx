@@ -96,6 +96,7 @@ export default function TradingDefaultsV2(_props: PageProps = {}) {
       {failed && !form ? <CardV2 title="My trading defaults"><LoadFailedV2 what="your defaults" /></CardV2>
         : !form ? <CardV2 title="My trading defaults"><LoadingRowsV2 rows={4} /></CardV2>
         : <DefaultsFormV2 form={form} onChange={(f) => { setForm(f); setNote(null); }} approvalAllowed={approvalAllowed} busy={busy} note={note}
+            scaleOutOn={features.on("risk_options")}
             limits={limits} onLimits={(f) => { setLimits(f); setNote(null); }}
             onSave={() => void save(form, limits)} onClear={() => void save(formOf(EMPTY_DEFAULTS), limitsFormOf(LIMITS_OFF), true)} />}
       {/* TM Part 7 (flag smart_execution): his own numbers for multi-leg orders and the delivery warning. */}
@@ -133,11 +134,13 @@ function NumberBox({ id, value, onChange, placeholder = "Off", decimal = false }
 }
 
 /** The page's form (no data loading: tested on its own). */
-export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, onSave, onClear, limits, onLimits }: {
+export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, onSave, onClear, limits, onLimits, scaleOutOn = false }: {
   form: DefaultsForm; onChange: (f: DefaultsForm) => void; approvalAllowed: boolean; busy: boolean;
   note: { kind: "done" | "warn"; text: string } | null; onSave: () => void; onClear: () => void;
   /** FNO-8B-28: his own liquidity limits (absent: the card is not shown). */
   limits?: LimitsForm; onLimits?: (f: LimitsForm) => void;
+  /** M99 P7 (flag risk_options): the scale-out fields. */
+  scaleOutOn?: boolean;
 }) {
   const base = useId();
   const id = (k: string) => `${base}-${k}`;
@@ -226,6 +229,15 @@ export function DefaultsFormV2({ form, onChange, approvalAllowed, busy, note, on
             <input id={id("at")} className={FIELD} value={form.time_exit_at} placeholder="Off" autoComplete="off" inputMode="numeric"
               onChange={(e) => set("time_exit_at", e.target.value)} />
           </Field>
+          {/* M99 P7 (flag risk_options): his own scale-out - part of the lots at his level, the rest keeps its stop and target */}
+          {scaleOutOn && <>
+            <Field id={id("so-r")} label="Scale out at R" hint="Empty unless you set one. Both or neither.">
+              <NumberBox id={id("so-r")} value={form.scale_out_at_r ?? ""} onChange={(v) => set("scale_out_at_r", v)} decimal />
+            </Field>
+            <Field id={id("so-pct")} label="Scale out share of lots %" hint="Whole lots, at least one; the rest stays open.">
+              <NumberBox id={id("so-pct")} value={form.scale_out_pct ?? ""} onChange={(v) => set("scale_out_pct", v)} decimal />
+            </Field>
+          </>}
         </div>
       </CardV2>
 

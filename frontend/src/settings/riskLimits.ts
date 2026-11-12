@@ -18,12 +18,15 @@ export interface RiskLimitField {
 }
 
 export interface RiskLimitCheck {
-  id: string; label: string; help: string; group: "main" | "more"; enabled: boolean; saved: boolean; fields: RiskLimitField[];
+  /** "options": M99 P7's risk options (flag risk_options) - sent only when the flag is on. */
+  id: string; label: string; help: string; group: "main" | "more" | "options"; enabled: boolean; saved: boolean; fields: RiskLimitField[];
 }
 
 export type PausePick = "next_session" | "until_resume";
 /** M68 PR-5 (TS1-052): may two of your bots hold opposite positions on one symbol? Not set = allowed. */
 export type OppositePick = "allow" | "deny";
+/** M99 P7: when the full size returns after the step-down - Not set until the trader picks one. */
+export type StepResetPick = "wins" | "next_day";
 
 export interface RiskLimitsView {
   checks: RiskLimitCheck[];
@@ -31,6 +34,9 @@ export interface RiskLimitsView {
   /** M68 PR-5 (TS1-051 / 052): null = Not set (ATP pre-picks neither). */
   loss_streak_pause: PausePick | null;
   opposite_positions?: OppositePick | null;
+  /** M99 P7 (flag risk_options): the step-down's reset choice (null = Not set) and its choices; absent with the flag off. */
+  step_down_reset?: StepResetPick | null;
+  step_down_resets?: { value: StepResetPick; label: string }[];
   on: number;
   exits: string;
   /** The PAPER ticket's own values of the same checks (saved there before), {check: {field: value}}. */
@@ -50,6 +56,7 @@ export interface RiskLimitsDraft {
   capital: string;
   pause: PausePick | "";
   opposite: OppositePick | "";
+  reset: StepResetPick | "";
 }
 
 const text = (v: number | null | undefined): string => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
@@ -59,7 +66,8 @@ export function draftOf(view: RiskLimitsView): RiskLimitsDraft {
   for (const c of view.checks) checks[c.id] = { enabled: c.enabled, values: Object.fromEntries(c.fields.map((f) => [f.key, text(f.value)])) };
   const pause = view.loss_streak_pause === "until_resume" || view.loss_streak_pause === "next_session" ? view.loss_streak_pause : "";
   const opposite = view.opposite_positions === "allow" || view.opposite_positions === "deny" ? view.opposite_positions : "";
-  return { checks, capital: text(view.capital), pause, opposite };
+  const reset = view.step_down_reset === "wins" || view.step_down_reset === "next_day" ? view.step_down_reset : "";
+  return { checks, capital: text(view.capital), pause, opposite, reset };
 }
 
 const number = (raw: string): number | null => {
@@ -114,11 +122,18 @@ export function bodyOf(view: RiskLimitsView, draft: RiskLimitsDraft): { body: Re
       && draft.pause === "") {
     return { body: null, problem: "Cool-down after losses in a row: with no minutes set, pick when the pause ends." };
   }
+  // M99 P7: when the full size returns after the step-down is the trader's own choice (asked, never pre-picked)
+  const step = draft.checks.loss_step_down;
+  if (step?.enabled && draft.reset === "") return { body: null, problem: "Smaller size after losses in a row: pick when the full size returns." };
+  if (step?.enabled && draft.reset === "wins" && number(step.values.step_down_wins ?? "") === null) {
+    return { body: null, problem: "Smaller size after losses in a row: enter the wins in a row that bring the full size back." };
+  }
   const capital = number(draft.capital);
   if (capital !== null && (Number.isNaN(capital) || capital <= 0)) {
     return { body: null, problem: "Account basis: enter an amount above 0, or leave it empty to use your paper balance." };
   }
-  return { body: { checks, capital, loss_streak_pause: draft.pause || null, opposite_positions: draft.opposite || null }, problem: null };
+  const options = view.step_down_resets ? { step_down_reset: draft.reset || null } : {};
+  return { body: { checks, capital, loss_streak_pause: draft.pause || null, opposite_positions: draft.opposite || null, ...options }, problem: null };
 }
 
 /** "3 of 12 on" - the summary line. */

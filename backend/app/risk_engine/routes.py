@@ -66,6 +66,12 @@ def _stored_config(record: RiskSettingsRecord) -> RiskConfig:
         # M68 PR-5 (TS1-052, D3): only a saved "allow" / "deny" is a choice; anything else is Not set (= allowed).
         opposite_positions=record.opposite_positions if record.opposite_positions in (OPPOSITE_ALLOW, OPPOSITE_DENY) else None,
         giveback_pct=record.giveback_pct,     # M94 R3: NULL = not set
+        # M99 P7 (app/risk_engine/risk_options.py): NULL = not set; only a saved reset choice is one.
+        step_down_losses=record.step_down_losses, step_down_size_pct=record.step_down_size_pct,
+        step_down_wins=record.step_down_wins,
+        step_down_reset=record.step_down_reset if record.step_down_reset in ("wins", "next_day") else None,
+        stagnation_bars=record.stagnation_bars, stagnation_move_pct=record.stagnation_move_pct,
+        stagnation_bar_minutes=record.stagnation_bar_minutes,
     )
 
 
@@ -81,7 +87,11 @@ async def get_tenant_risk_config(tenant_id: int, session: AsyncSession) -> RiskC
     `RiskConfig()`, where every limit is not set (DEF-0).
     """
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant_id))
-    return _record_to_config(record) if record is not None else None
+    if record is None:
+        return None
+    # M99 P7: the risk options only while the `risk_options` flag is ON
+    from app.risk_engine import risk_options
+    return await risk_options.gate(session, _record_to_config(record), tenant_id)
 
 
 async def user_risk_config(session: AsyncSession, user: User) -> RiskConfig:
@@ -151,8 +161,8 @@ async def update_risk_settings(
     sent = set(config.model_fields_set)
     stored = risk_limits.values_of(record)
     for check in risk_limits.CHECKS:
-        if not any(f.key in sent for f in check.fields):
-            continue
+        if check.id in risk_limits.OPTION_CHECKS or not any(f.key in sent for f in check.fields):
+            continue                        # M99 P7: this older form never switches a risk option
         saved.add(check.id)
         if any(risk_limits.is_set(f.key, stored.get(f.key)) for f in check.fields):
             enabled.add(check.id)
@@ -192,6 +202,17 @@ async def get_loss_streak(user: User = Depends(get_current_user), session: Async
     pause ends and the last resume. Exits are never paused (ADR-0004)."""
     from app.trading.persistence import loss_streak_status
     return await loss_streak_status(session, user.tenant_id)
+
+
+@router.get("/stagnation")
+async def get_stagnation(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """M99 P7 (flag `risk_options`): the information-only stagnation flag of the caller's open positions - per position
+    how far the price moved over his own last N bars since the entry, and whether it stayed within his own %. Nothing is
+    closed, blocked or changed by it. `on` false: the flag or the check is off."""
+    from app.risk_engine import risk_options
+    if not await risk_options.flag_on(session, user.tenant_id):
+        return {"on": False, "positions": []}
+    return await risk_options.stagnation_of_open(session, user)
 
 
 @router.post("/loss-streak/resume", dependencies=[Depends(require_scope("risk:write"))])
@@ -255,7 +276,9 @@ async def get_risk_limits(user: User = Depends(get_current_user), session: Async
     """Settings > Risk limits: every check with its switch (OFF until the trader turns it on), its values, units, bounds
     and one-line help; the PAPER ticket's own values of the same checks (flag risk_by_default) under `paper`."""
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
-    view = risk_limits.view(record, await controls.risk_ceilings(session, user.tenant_id))
+    from app.risk_engine import risk_options
+    options = await risk_options.flag_on(session, user.tenant_id)     # M99 P7
+    view = risk_limits.view(record, await controls.risk_ceilings(session, user.tenant_id), options=options)
     view["paper"] = await _paper_twin_values(session, user)
     return view
 
@@ -270,7 +293,14 @@ async def put_risk_limits(body: dict, user: User = Depends(require_trader), sess
         raise HTTPException(status_code=422, detail="The limits could not be read. Reload the page and try again.")
     ceilings = await controls.risk_ceilings(session, user.tenant_id)
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
-    values, switches, problems = risk_limits.plan_save(record, body, ceilings)
+    from app.risk_engine import risk_options
+    options = await risk_options.flag_on(session, user.tenant_id)     # M99 P7: the risk options only with the flag ON
+    values, switches, problems = risk_limits.plan_save(record, body, ceilings, options=options)
+    # M99 P7: the step-down's reset choice - Not set stays Not set (null); a value sent must be one of the choices.
+    reset = body.get("step_down_reset", getattr(record, "step_down_reset", None) if record is not None else None) if options else (
+        getattr(record, "step_down_reset", None) if record is not None else None)
+    if reset is not None and reset not in risk_options.RESETS:
+        problems.append(risk_options.STEP_NEEDS_RESET)
     capital = body.get("capital", getattr(record, "capital", None) if record is not None else None)
     if capital is not None and (not isinstance(capital, (int, float)) or isinstance(capital, bool) or not math.isfinite(capital) or capital <= 0):
         problems.append("Account basis: enter an amount above 0, or leave it empty to use your paper balance.")
@@ -293,6 +323,7 @@ async def put_risk_limits(body: dict, user: User = Depends(require_trader), sess
     record.capital = float(capital) if capital is not None else None
     record.loss_streak_pause = pause
     record.opposite_positions = opposite
+    record.step_down_reset = reset
     record.limits_switches_json = risk_limits.switches_json(switches)
     sent = sorted((body.get("checks") or {}).keys())
     await write_audit_log(session, user.tenant_id, user.id, "risk_limits_set",
@@ -302,7 +333,7 @@ async def put_risk_limits(body: dict, user: User = Depends(require_trader), sess
     from app.me import notices
     await notices.mark_seen(session, user, notices.RISK_LIMITS_OFF)
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
-    view = risk_limits.view(record, ceilings)
+    view = risk_limits.view(record, ceilings, options=options)
     view["paper"] = await _paper_twin_values(session, user)
     view["note"] = note
     return view

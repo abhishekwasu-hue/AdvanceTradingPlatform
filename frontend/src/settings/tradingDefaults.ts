@@ -38,6 +38,9 @@ export interface ExitDefaults {
   break_even_at_r: number | null;
   time_exit_minutes: number | null;
   time_exit_at: string | null;
+  /** M99 P7 (flag risk_options): his own scale-out - the level in R and the share of the lots (both or none). */
+  scale_out_at_r?: number | null;
+  scale_out_pct?: number | null;
 }
 
 export interface TicketDefaults {
@@ -129,6 +132,7 @@ export function readDefaults(raw: unknown): TradingDefaults {
     break_even_at_r: numIn(e.break_even_at_r, 0, NO_TOP, { above: true }),
     time_exit_minutes: numIn(e.time_exit_minutes, 1, NO_TOP, { int: true }),
     time_exit_at: typeof e.time_exit_at === "string" && TIME.test(e.time_exit_at) ? e.time_exit_at : null,
+    ...scaleOutOf(numIn(e.scale_out_at_r, 0, NO_TOP, { above: true }), numIn(e.scale_out_pct, 0, 99.99, { above: true })),
   } : null;
   const ticket: TicketDefaults | null = t ? {
     lots: numIn(t.lots, 1, Infinity, { int: true }),          // M68 PR-4 (TS1-046 / 047): no ATP ceiling
@@ -207,7 +211,13 @@ export function exitsFrom(d: TradingDefaults | null | undefined): ExitRules | nu
   if (e.break_even_at_r !== null) r.break_even_at_r = e.break_even_at_r;
   if (e.time_exit_minutes !== null) r.time_exit_minutes = e.time_exit_minutes;
   if (e.time_exit_at !== null) r.time_exit_at = e.time_exit_at;
+  if (e.scale_out_at_r != null && e.scale_out_pct != null) { r.scale_out_at_r = e.scale_out_at_r; r.scale_out_pct = e.scale_out_pct; }
   return Object.keys(r).length ? r : null;
+}
+
+/** M99 P7: the scale-out keys only when both are set (one without the other is not a rule). */
+function scaleOutOf(r: number | null, pct: number | null): { scale_out_at_r?: number; scale_out_pct?: number } {
+  return r !== null && pct !== null ? { scale_out_at_r: r, scale_out_pct: pct } : {};
 }
 
 function exitWords(r: ExitRules): string[] {
@@ -216,6 +226,7 @@ function exitWords(r: ExitRules): string[] {
   if (r.break_even_at_r != null) out.push(`break-even at ${r.break_even_at_r}R`);
   if (r.time_exit_minutes != null) out.push(`time exit after ${r.time_exit_minutes} min`);
   if (r.time_exit_at != null) out.push(`flat at ${r.time_exit_at}`);
+  if (r.scale_out_at_r != null && r.scale_out_pct != null) out.push(`scale out ${r.scale_out_pct}% at ${r.scale_out_at_r}R`);
   return out;
 }
 
@@ -401,6 +412,9 @@ export interface FormPrefill {
   exitBreakEven?: string;
   exitMinutes?: string;
   exitAt?: string;
+  /** M99 P7: his own scale-out (both or none). */
+  exitScaleR?: string;
+  exitScalePct?: string;
   approval?: boolean;
 }
 
@@ -424,6 +438,7 @@ export function formPrefill(d: TradingDefaults | null | undefined, approvalAllow
   if (e?.break_even_at_r != null) p.exitBreakEven = String(e.break_even_at_r);
   if (e?.time_exit_minutes != null) p.exitMinutes = String(e.time_exit_minutes);
   if (e?.time_exit_at != null) p.exitAt = e.time_exit_at;
+  if (e?.scale_out_at_r != null && e?.scale_out_pct != null) { p.exitScaleR = String(e.scale_out_at_r); p.exitScalePct = String(e.scale_out_pct); }
   if (d.entry_mode === "APPROVAL" && approvalAllowed) p.approval = true;
   return p;
 }
@@ -507,6 +522,9 @@ export interface DefaultsForm {
   break_even_at_r: string;
   time_exit_minutes: string;
   time_exit_at: string;
+  /** M99 P7 (flag risk_options): absent = empty. */
+  scale_out_at_r?: string;
+  scale_out_pct?: string;
   ticket_lots: string;
   ticket_product: TicketProduct | "";
   ticket_order_type: TicketOrderType | "";
@@ -523,6 +541,7 @@ export function formOf(d: TradingDefaults): DefaultsForm {
     trailing_stop_pct: txt(d.exit_rules?.trailing_stop_pct), break_even_at_r: txt(d.exit_rules?.break_even_at_r),
     time_exit_minutes: txt(d.exit_rules?.time_exit_minutes), time_exit_at: d.exit_rules?.time_exit_at ?? "",
     ticket_lots: txt(d.ticket?.lots), ticket_product: d.ticket?.product ?? "", ticket_order_type: d.ticket?.order_type ?? "",
+    ...(d.exit_rules?.scale_out_at_r != null ? { scale_out_at_r: txt(d.exit_rules.scale_out_at_r), scale_out_pct: txt(d.exit_rules.scale_out_pct) } : {}),
   };
 }
 
@@ -538,6 +557,8 @@ export const NUMBER_RULES: Record<string, NumRule> = {
   trailing_stop_pct: { label: "Trailing stop", lo: 0, hi: 99.99, above: true },   // M68 PR-3: no ATP cap (TS1-034)
   break_even_at_r: { label: "Break-even at R", lo: 0, hi: NO_TOP, above: true },
   time_exit_minutes: { label: "Time exit", lo: 1, hi: NO_TOP, int: true },
+  scale_out_at_r: { label: "Scale out at R", lo: 0, hi: NO_TOP, above: true },
+  scale_out_pct: { label: "Scale out share", lo: 0, hi: 99.99, above: true },
   ticket_lots: { label: "Ticket lots", lo: 1, hi: Infinity, int: true },
 };
 
@@ -563,6 +584,8 @@ export function defaultsOf(f: DefaultsForm): { value: TradingDefaults; problems:
   const n = (k: keyof typeof NUMBER_RULES, raw: string) => parseNum(k, raw, problems);
   const at = f.time_exit_at.trim();
   if (at && !TIME.test(at)) problems.push("Flat at: a time like 15:10.");
+  const soR = n("scale_out_at_r", f.scale_out_at_r ?? ""), soPct = n("scale_out_pct", f.scale_out_pct ?? "");
+  if ((soR === null) !== (soPct === null)) problems.push("Scale-out: enter both the level in R and the share of the lots, or neither.");
   const value: TradingDefaults = {
     instrument_kind: f.instrument_kind || null, option_strategy: f.option_strategy || null, option_position: f.option_position || null,
     expiry_rule: f.expiry_rule || null, strike_rule: f.strike_rule || null,
@@ -573,6 +596,7 @@ export function defaultsOf(f: DefaultsForm): { value: TradingDefaults; problems:
     exit_rules: {
       trailing_stop_pct: n("trailing_stop_pct", f.trailing_stop_pct), break_even_at_r: n("break_even_at_r", f.break_even_at_r),
       time_exit_minutes: n("time_exit_minutes", f.time_exit_minutes), time_exit_at: at && TIME.test(at) ? at : null,
+      ...scaleOutOf(soR, soPct),
     },
     ticket: { lots: n("ticket_lots", f.ticket_lots), product: f.ticket_product || null, order_type: f.ticket_order_type || null },
   };

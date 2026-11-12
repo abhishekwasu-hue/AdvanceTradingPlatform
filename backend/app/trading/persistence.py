@@ -138,12 +138,18 @@ async def build_trading_day_state(session: AsyncSession, user: User, *, now: Opt
     # M94 R3: today's peak profit and whether the trader's own give-back stop holds (None: the check is off).
     from app.risk_engine import giveback
     peak = await giveback.state_for(session, tenant_id, daily_pnl, now=now)
+    # M99 P7 (flag `risk_options`): the facts the trader's own options read - the daily loss lock and the size step-down
+    # (empty while they are off; app/risk_engine/risk_options.py).
+    from app.risk_engine import risk_options
+    facts = await risk_options.entry_facts(session, tenant_id, now=now)
 
     return TradingDayState(
         trades_today=trades_today or 0, daily_pnl=daily_pnl,
         consecutive_losses=streak["losses_in_a_row"], open_positions=open_positions or 0,
         last_loss_at=streak.get("last_loss_at"), as_of=now or datetime.now(UTC),
         day_peak_pnl=peak.peak if peak is not None else None, giveback_reached=peak.hit if peak is not None else False,
+        day_trough_pnl=facts.day_trough, daily_loss_marked=facts.marked,
+        closed_pnls=list(facts.closed_newest_first), today_pnls=list(facts.today_newest_first),
     )
 
 

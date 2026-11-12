@@ -916,6 +916,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/risk-settings"): "trader",
     ("GET", "/api/risk-settings/ceilings"): "member",
     ("GET", "/api/risk-settings/loss-streak"): "member",
+    ("GET", "/api/risk-settings/stagnation"): "member",      # M99 P7: the caller's own positions only (get_current_user)
     ("GET", "/api/risk-settings/limits"): "member",
     ("PUT", "/api/risk-settings/limits"): "trader",
     ("POST", "/api/risk-settings/loss-streak/resume"): "trader",

@@ -37,7 +37,7 @@ from app.brokers.token_lifecycle import build_adapter, get_credential_record, to
 from app.compliance.algo_id import audit_order, order_algo_id
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.db.savepoint import guarded
 from app.execution import approval as approval_policy
 from app.execution.products import product_for_trade
@@ -1327,6 +1327,45 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
     return update.time_exit_reason
 
 
+SCALE_OUT_REF = "scale-out-{trade_id}"
+
+
+async def _scale_out(session: AsyncSession, trade: TradeRecord, price: float) -> CloseOutcome | None:
+    """M99 P7 (flag `risk_options`): the trader's own scale-out - once the price NOW is his level (R) in the trade's
+    favour, his share of the open lots closes through the one partial-exit path (`fno_position_actions.exit_part`, the
+    same split and exit as "Exit part", LIVE included), once per position: the reference is the position's, so a repeat
+    is a no-op. Never on a loss (judged on the price now). A part that cannot be closed (e.g. a LIVE broker-side stop
+    covering the whole position) is logged and the position stays fully protected by its own stop and target."""
+    from app.trading.exit_rules import scale_out_level, scale_out_lots
+    rules = ExitRules.from_json(trade.exit_rules)
+    if not rules.scale_out_ready or (trade.instrument_kind or "UNDERLYING") == "OPTION":
+        return None                     # an option's levels are on its underlying (Phase F4): its R is not the premium's
+    initial = trade.initial_stop_loss if trade.initial_stop_loss is not None else trade.stop_loss
+    if initial is None or scale_out_level(rules, direction=trade.direction, entry_price=float(trade.entry_price),
+                                          initial_stop=float(initial), high=price, low=price) is None:
+        return None
+    from app.paper.fno_position_actions import _part_done, exit_part, lots_of, ref_tag
+    held, _ = lots_of(trade)
+    lots = scale_out_lots(rules, held)
+    ref = SCALE_OUT_REF.format(trade_id=trade.id)
+    holder = await session.get(User, trade.user_id) if lots and trade.user_id is not None else None
+    if holder is None or await _part_done(session, holder, trade, ref_tag(ref)) is not None:
+        return None
+    from app.risk_engine import risk_options
+    if not await risk_options.flag_on(session, trade.tenant_id):
+        return None
+    from fastapi import HTTPException
+    try:
+        done = await exit_part(session, holder, trade.id, lots=lots, client_ref=ref, confirm=True,
+                               reason=f"Scale-out {rules.scale_out_pct:g}% at {rules.scale_out_at_r:g}R")
+    except HTTPException as exc:
+        logger.warning("Scale-out of trade %s not done: %s", trade.id, exc.detail)
+        return CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Scale-out not done: {exc.detail}"])
+    closed = done.get("closed") or {}
+    return CloseOutcome(trade_id=int(closed.get("trade_id") or trade.id), closed=bool(closed.get("closed")),
+                        warnings=[f"Scale-out: {lots} of {held} lots closed"])
+
+
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, families: Optional[set] = None,
@@ -1411,6 +1450,12 @@ async def monitor_open_positions(
                         trade_broker = broker or await broker_for_trade(session, trade)
                         outcomes.append(await close_position(session, trade, price, RESUMED_EXIT_REASON, broker=trade_broker,
                                                              user_id=user_id, resume_only=True))
+                    elif trade.exit_rules:
+                        # M99 P7: the trader's own scale-out (after every protective exit above: a stop or target closes
+                        # the whole position first).
+                        part = await _scale_out(session, trade, price)
+                        if part is not None:
+                            outcomes.append(part)
                     continue
                 reason, exit_price = hit
                 if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):

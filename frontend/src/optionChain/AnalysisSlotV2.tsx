@@ -1,5 +1,6 @@
 import { fetchAnalysesShared } from "./analyses";
 import { AnalysisTabs } from "./AnalysisTabsV2";
+import ChainAnalyticsV2 from "./ChainAnalyticsV2";
 import { MyAnalyses } from "./MyAnalysesV2";
 
 /**
@@ -25,6 +26,7 @@ export default function AnalysisSlotV2({ symbol, expiry, refreshKey }: AnalysisS
       data-refresh-key={refreshKey ?? ""}>
       {/* MO4 slice 2: the shared read, so the summary on top of the page (ChainDishV2) costs no second chain read. */}
       <AnalysisTabs symbol={symbol} expiry={expiry} refreshKey={key} load={fetchAnalysesShared} />
+      <ChainAnalyticsV2 symbol={symbol} expiry={expiry} refreshKey={key} />{/* M96 N1: chain analytics, the same shared read */}
       <MyAnalyses symbol={symbol} expiry={expiry} refreshKey={key} />
     </div>
   );

@@ -585,6 +585,12 @@ def test_m94_session_functions():
     assert _ev("SessionVolume()", d).tolist()[2:] == [1000.0, 3000.0, 4500.0]
     assert _ev("SessionCount(close > close[1])", d).tolist()[2:] == [1.0, 2.0, 2.0]
     assert (_ev("PreOpenHigh()", d).tolist()[2:], _ev("PreOpenLow()", d).tolist()[2:]) == ([102.0] * 3, [99.0] * 3)
+    # M99 P2: LevelGrade on the session's own high (tier 3; the full fixtures: tests/test_m99_p2_intraday.py) - one visit so
+    # far on each regular bar, the high made on this bar or one bar ago; missing on the pre-open bars
+    assert _ev('LevelGrade("SESSION_HIGH", "source")', d).tolist()[2:] == [3.0] * 3
+    assert _ev('LevelGrade("SESSION_HIGH", "bars_since")', d).tolist()[2:] == [0.0, 0.0, 1.0]
+    assert np.isnan(_ev('LevelGrade("SESSION_HIGH", "grade")', d).iloc[1])
+    COVERED.add("LevelGrade")
     assert _ev("PreOpenVolume()", d).tolist()[2:] == [1200.0] * 3
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
@@ -618,6 +624,26 @@ def test_m97_supply_demand_zone_functions():
     near = _ev('SDZoneScore("demand")', d)
     assert np.isfinite(near.iloc[formed]) and np.isnan(near.iloc[formed - 1]) and np.isnan(near.iloc[-1])
     assert not _ev('SDZoneCompression("demand")', d).any() and not _ev('SDZoneHtfWith("demand", htf="15m")', d).any()
+
+
+def test_m99_fib_and_cluster_functions():
+    # deeper checks (exact ratios, clusters by band width, confirm-bar use, truncation, the flag) are in tests/test_m99_fib_levels.py
+    from app.price_action import fib_causal
+    walk = _sym(list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 600))))
+    bars = walk.frames["5m"]
+    close = bars["close"].to_numpy(float)
+    for kind, ratio in (("retrace", 0.618), ("extend", 1.0), ("golden", 0.5)):
+        level = fib_causal.fib_series(bars, kind, ratio)
+        v = _ev(f'FibLevel("{kind}", {ratio})', walk)
+        assert v.dtype == float and v.notna().any(), kind
+        np.testing.assert_allclose(v.to_numpy(float), level, equal_nan=True)
+        d = _ev(f'FibDistancePct("{kind}", {ratio}, 0)', walk)
+        np.testing.assert_allclose(d.to_numpy(float), (close - level) / np.abs(level) * 100, equal_nan=True)
+    for text, band, mode in (("ClusterDistancePct(0.5)", 0.5, "pct"), ('ClusterDistancePct(1, "atr")', 1.0, "atr")):
+        centre = fib_causal.cluster_series(bars, band, mode)["centre"]
+        v = _ev(text, walk)
+        assert v.dtype == float and v.notna().any(), text
+        np.testing.assert_allclose(v.to_numpy(float), (close - centre) / np.abs(centre) * 100, equal_nan=True)
 
 
 def test_m99_bar_class_functions():

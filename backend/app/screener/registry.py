@@ -190,6 +190,8 @@ PATTERN_SHAPE_DOC = ("; named arguments (flag / pennant only): pole= the pole's 
                      " flag_min= / flag_max= the consolidation's fewest / most bars, retrace= the most of the pole the consolidation"
                      " gives back (left out: the breakout parameters' defaults)")
 _INTRADAY = (INTRADAY_FLAG,)
+_LEVEL_NAMES = ("PDC", "PDH", "PDL", "PREOPEN_HIGH", "PREOPEN_LOW", "SESSION_HIGH", "SESSION_LOW")   # level_grade.LEVEL_TIERS
+_LEVEL_WHATS = ("grade", "touches", "bars_since", "source", "round", "confluence")
 _SESSION_NOTE = (" - on the exchange calendar's session (pre-open bars left out); missing on a pre-open bar and outside the"
                  " session")
 _PREOPEN_NOTE = (" - the bars of the session's date before its open, known from the session's first bar on; missing (never 0) when"
@@ -268,6 +270,16 @@ _REGIME_KWARGS: tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None
                                                     Arg("range_swings", NUM, None, False, literal_only=True, bounds=(2, 20)))
 _SDOC = (" - the structure tracker fed one closed bar at a time (a swing counts from its confirm bar, pivot_n bars after its"
          " own; swings at least swing_k median ranges apart; named settings, left out: the reference values by timeframe)")
+# M99 B1-b (owner order M99, flag `m99_primitives`, off by default): the shared Fibonacci / price-cluster primitives as
+# per-bar series from CONFIRMED swings (app/price_action/fib_causal.py). A ratio and a band are always the caller's
+# setting (a literal or a $parameter read once); the functions hold none of their own.
+FIB_KINDS: tuple[str, ...] = ("retrace", "extend", "golden")
+CLUSTER_BAND_MODES: tuple[str, ...] = ("pct", "atr")
+_FIB_KIND = Arg("kind", STR, choices=FIB_KINDS)
+_FIB_RATIO = Arg("ratio", NUM, None, True, literal_only=True, bounds=(0.0, 10.0))
+_FIB_DOC = (" - from the pivots CONFIRMED by the bar (P1 the latest): retrace = P1 - ratio x (P1 - P2); extend = P1 + ratio x"
+            " (P2 - P3), the swing before laid from P1; golden = P2 + (P1 - P2) / ratio, the end of the move from P2 when P1"
+            " sits at that share of it; missing until enough pivots are confirmed (evidence, not a target)")
 WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
@@ -727,6 +739,18 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the low of the pre-open bars" + _PREOPEN_NOTE),
     Spec("PreOpenVolume", "factor", NUM, "volume", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
          doc="the volume of the pre-open bars" + _PREOPEN_NOTE),
+    # M99 P2 (app/screener/level_grade.py): the information grade of a key level - a count of qualities, never a gate
+    Spec("LevelGrade", "factor", NUM, "count",
+         (Arg("level", STR, choices=_LEVEL_NAMES), Arg("what", STR, "grade", False, choices=_LEVEL_WHATS),
+          Arg("near", NUM, 0.0, False, literal_only=True, bounds=(0.0, 5.0)), Arg("look", "window", 400, False),
+          Arg("touches", NUM, 2, False, literal_only=True, bounds=(1.0, 50.0)), Arg("recent", "window", 200, False),
+          Arg("tier", NUM, 2, False, choices=(1, 2, 3)), Arg("step", NUM, 0.0, False, literal_only=True, bounds=(0.0, 1_000_000.0))),
+         cost=2.0, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the information grade (0-5) of a key level as of each bar - one point each for: at least `touches` separate visits"
+             " of its band (near x ATR either side; 0 = the level itself) in the last `look` bars; the last visit within `recent`"
+             " bars; its kind at or above `tier` (1 previous close, 2 previous high / low, 3 pre-open and session high / low); a"
+             " round number in the band (multiples of `step`; 0 = the symbol's own round steps); another key level in the band."
+             " `what` returns one part instead: touches / bars_since / source / round / confluence. Information only"),
     # U6 BK3: B3 VCP and the indicator breakouts B10 / B11 / B12 / B15 (app/screener/breakouts/vcp.py, indicator_breaks.py) -
     # closed bars, one signal per leg (VCPReady: a state); behind `screener_breakouts` AND `screener_breakouts_bk3`.
     Spec("VCPBreakout", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
@@ -1005,6 +1029,20 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          kwargs=SD_ALL_KWARGS, cost=6.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
          doc="true while the nearest live zone of that side and state overlaps a live zone of the same side on the higher"
              " timeframe htf (its closed candles only; the zones are never merged); false with htf none" + _SD_DOC + _SD_ODDS_DOC),
+    # M99 B1-b (flag m99_primitives): Fibonacci levels of the confirmed swings and the nearest price cluster
+    Spec("FibLevel", "factor", NUM, "price", (_FIB_KIND, _FIB_RATIO, _DEGREE), cost=3.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG, doc="the Fibonacci level of `kind` at `ratio` (a $setting)" + _FIB_DOC),
+    Spec("FibDistancePct", "factor", NUM, "pct", (_FIB_KIND, _FIB_RATIO, _DEGREE), cost=3.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG,
+         doc="(close - FibLevel(kind, ratio, degree)) / that level x 100: positive above the level" + _FIB_DOC),
+    Spec("ClusterDistancePct", "factor", NUM, "pct", (Arg("band", NUM, None, True, literal_only=True, bounds=(0.0, 10.0)),
+                                                      Arg("mode", STR, "pct", False, choices=CLUSTER_BAND_MODES), _DEGREE),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG,
+         doc="(close - the centre of the nearest price cluster) / that centre x 100. The levels: the retracements of the last"
+             " confirmed swing and of the swing before it, the extensions of the swing before from the latest pivot, the golden"
+             " projections of the last swing (reference ratios) and the two latest swing prices; in price order a level joins"
+             " a cluster when within `band` of its last member (mode pct: band % of that price; atr: band x ATR as known at the"
+             " bar); two or more levels make a cluster. Missing where there is none (evidence, not a target)"),
     # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
     Spec("RelRange", "factor", NUM, "ratio", (_BC_N,), extra_bars=1, flag=M99_FLAG,
          doc="(high - low) / the mean (high - low) of the n bars before this one; missing until those bars exist" + _BC_DOC),

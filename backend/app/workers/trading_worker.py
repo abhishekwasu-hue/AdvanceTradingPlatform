@@ -2230,7 +2230,16 @@ class TradingWorker:
             if note:
                 logger.info("Deployment %s: regime diagnostic (never blocks): %s", dep.id, note)
 
-        if getattr(strategy, "acts_on_exit_signal", False) and await self._template_exit(session, dep, strategy, frames, market_data, user.id):
+        managed_out = 0
+        if getattr(strategy, "manages", False):
+            # M99 P2: the user's trade-management options on this bar close (a tighter stop, a partial, an exit). An exit
+            # only: it never blocks or delays any other exit; a failure is logged and the position monitor's exits still run.
+            try:
+                managed_out = await self._template_manage(session, dep, strategy, frames, market_data, user.id)
+            except Exception as exc:  # noqa: BLE001 - management is an extra exit; never stop the cycle on it
+                logger.warning("Deployment %s: trade management skipped this bar: %s", dep.id, exc)
+        if managed_out or (getattr(strategy, "acts_on_exit_signal", False)
+                           and await self._template_exit(session, dep, strategy, frames, market_data, user.id)):
             # R5: an open trade closed on the template's exit signal of this bar; as in the backtests, no entry on the bar
             # the exit was read on (its trade was still open then): that bar's signal, if any, is handled
             utc = lambda v: (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)  # noqa: E731
@@ -2750,7 +2759,7 @@ class TradingWorker:
             if entered is None or entered >= bar_close:
                 continue
             side = trade.underlying_direction or trade.direction
-            if not strategy.exit_signal(frames, side):
+            if not strategy.exit_signal(frames, side, dep.symbol):
                 continue
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)
@@ -2780,6 +2789,55 @@ class TradingWorker:
                 logger.warning("Deployment %s: template exit of group %s failed: %s", dep.id, group_id, exc)
         if closed:
             logger.info("Deployment %s: %d position(s) closed on the template's exit signal", dep.id, closed)
+        return closed
+
+    async def _template_manage(self, session: AsyncSession, dep: StrategyDeploymentRecord, strategy: Any, frames, market_data: MarketDataService,
+                               user_id: int) -> int:
+        """M99 P2: the template's trade-management options (the user's switches) for the deployment's OWN open PAPER trades
+        on the last closed bar - the backtest engine's same call (`management_step`), with the bars that closed after each
+        trade's entry. A tighter stop is stored on the trade (the position monitor acts on it); a management exit closes it
+        at the current price (a partial is the scale-out of the bot's ExitRules, M99 P7 - not built here again). Returns how many trades closed in full. Exits only: nothing here blocks
+        or delays any other exit (ADR-0004); a failed close is left to the next cycle and the position monitor."""
+        from app.backtest.windows import bar_length
+        base = frames.get(strategy.label)
+        if base is None or not len(base):
+            return 0
+        length = bar_length(strategy.label)
+        utc = lambda v: (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)  # noqa: E731
+        closes_at = [utc(ts.to_pydatetime()) + length for ts in base.index]
+        trades = list(await session.scalars(select(TradeRecord).where(
+            TradeRecord.tenant_id == dep.tenant_id, TradeRecord.deployment_id == dep.id, TradeRecord.exit_time.is_(None))))
+        closed = 0
+        for trade in trades:
+            if trade.mode != ExecutionMode.PAPER.value or trade.leg_group_id or trade.entry_time is None:
+                continue                                   # templates run on paper only; a structure keeps its own exits
+            entered = utc(trade.entry_time)
+            after = sum(1 for c in closes_at if c > entered)
+            if after <= 0:
+                continue                                   # no bar has closed after the entry yet
+            step = strategy.management_step(
+                frames, trade.direction, entry=float(trade.entry_price), current_stop=float(trade.stop_loss),
+                initial_stop=float(trade.initial_stop_loss if trade.initial_stop_loss is not None else trade.stop_loss),
+                after=after)
+            try:
+                if step.stop is not None:
+                    # the backtest's order: the stop read on this bar close first, then an exit
+                    is_long = (trade.direction or "").upper() == "LONG"
+                    current = float(trade.stop_loss)
+                    if (is_long and step.stop > current) or (not is_long and step.stop < current):    # only ever tighter
+                        logger.info("Trade %s stop %s -> %s (%s)", trade.id, current, step.stop, step.stop_reason)
+                        trade.stop_loss = step.stop
+                        await session.commit()
+                if step.exit_reason:
+                    price = await market_data.get_ltp(trade.symbol, (await trade_venues(session, [trade]))[trade.id])
+                    async with guarded(session, keep=(trade,)):
+                        outcome = await close_position(session, trade, price, step.exit_reason, broker=None, user_id=user_id)
+                    closed += int(outcome.closed)
+                    continue
+            except Exception as exc:  # noqa: BLE001 - left as it is: the next cycle reads the options again
+                logger.warning("Deployment %s: trade management of trade %s failed: %s", dep.id, trade.id, exc)
+        if closed:
+            logger.info("Deployment %s: %d position(s) closed by the trade-management options", dep.id, closed)
         return closed
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:

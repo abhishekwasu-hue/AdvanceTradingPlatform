@@ -27,6 +27,8 @@ import { Chip } from "../ui/Chip";
 import { Combobox, type ComboOption } from "../ui/Combobox";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Details } from "../ui/numbersFirst";
+import { ManagementFields } from "../strategyTemplates/ManagementFields";
+import { EMPTY_MANAGEMENT, managementBody, managementOffered, managementProblem, type ManagementPick } from "../strategyTemplates/management";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import { LIVE_OFF_TEXT, useLiveAvailable } from "../settings/useLiveAvailable";
@@ -509,6 +511,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [adoptFailed, setAdoptFailed] = useState(false);
   // Section 5: the template's exits as the user's own choice (empty = the template's defaults)
   const [exitPick, setExitPick] = useState<ExitPick>(EMPTY_PICK);
+  const [mgmtPick, setMgmtPick] = useState<ManagementPick>(EMPTY_MANAGEMENT);   // M99 P2: every option off
   const urlTemplateApplied = useRef(false);
 
   useEffect(() => {
@@ -535,6 +538,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
 
   const pickedId = picked?.id ?? null;
   useEffect(() => { setExitPick(EMPTY_PICK); }, [pickedId]);
+  useEffect(() => { setMgmtPick(EMPTY_MANAGEMENT); }, [pickedId]);                // M99 P2: every option off again
 
   useEffect(() => {
     setAdoption(null); setAdoptFailed(false);
@@ -606,8 +610,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const exitChoices = picked && adoption?.exits ? adoption.exits : null;
   const cls = exitClass(adopted);
   const exitsNow = exitChoices ? effectivePick(exitPick, exitChoices, cls) : null;
-  const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) : null;
-  const exitsBody = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
+  // M99 P2: the trade-management options, where the template offers them for this instrument (all off sends nothing)
+  const mgmtChoices = exitChoices && managementOffered(exitChoices.management, cls) ? exitChoices.management ?? null : null;
+  const mgmtBody = mgmtChoices ? managementBody(mgmtPick) : null;
+  const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) ?? (mgmtChoices ? managementProblem(mgmtPick, mgmtChoices) : null) : null;
+  const exitsPicked = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
+  const exitsBody = mgmtBody ? { ...(exitsPicked ?? {}), management: mgmtBody } : exitsPicked;
   const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
   const askEntry = !mine.botOrderStyle;                     // his Trade settings has none: the form asks
   const style = mine.botOrderStyle ?? (entryStyle || null);
@@ -730,7 +738,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           {touched && problem && <p id={ids.other} role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
         </div>
         {exitChoices && exitsNow && (
-          <fieldset className="space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>
+          <fieldset className="min-w-0 space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>
             <legend className="px-space-1 text-t14 font-medium text-fg">Exits for this bot</legend>
             {stopOptions(exitChoices, cls).length > 1 ? (
               <div>
@@ -780,6 +788,10 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
             <ul id={ids.exitNotes} className="list-disc space-y-space-1 pl-space-4 text-t13 text-fg-muted" data-exit-notes>
               {exitNotes(exitsNow, cls).map((n) => <li key={n}>{n}</li>)}
             </ul>
+            {mgmtChoices && (
+              <ManagementFields choices={mgmtChoices} pick={mgmtPick} touched={touched} problem={managementProblem(mgmtPick, mgmtChoices)}
+                onChange={(patch) => { setMgmtPick((p) => ({ ...p, ...patch })); setResult(null); }} />
+            )}
             {touched && exitIssue && <p role="alert" className="text-t13 text-warn">{exitIssue}</p>}
           </fieldset>
         )}

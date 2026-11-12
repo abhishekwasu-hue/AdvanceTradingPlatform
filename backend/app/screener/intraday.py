@@ -187,6 +187,36 @@ S12 = Scanner(
      Param("ema_b", 20, "Exponential moving average on the scan's own bars.", True)))
 
 
+# M99 P2: a key level with a set information grade (LevelGrade, app/screener/level_grade.py) that the close is near. One
+# OR branch per level; the band is the user's own (the study's tolerance is another currency's amount: Not set).
+S13_LEVELS = (("PDC", "PDC()"), ("PDH", "PDH()"), ("PDL", "PDL()"), ("PREOPEN_HIGH", "PreOpenHigh()"), ("PREOPEN_LOW", "PreOpenLow()"))
+
+
+def _graded(name: str, expr: str) -> str:
+    return (f'(LevelGrade("{name}", "grade", $near, $look, $touches, $recent, $tier) >= $min_grade'
+            f" AND Abs(close - {expr}) <= $near * ATR(14))")
+
+
+def _canonical(text: str) -> str:
+    from app.screener import nodes
+    return nodes.to_text(parse(text))
+
+
+S13 = Scanner(
+    "intraday.graded_levels", "Graded Key Levels",
+    "The close is near a previous-session or pre-open level whose grade - touches, a recent visit, its kind, a round number, "
+    "a level close by - has the set points.",
+    _canonical(" OR ".join(_graded(n, e) for n, e in S13_LEVELS)),
+    "5m",
+    (Param("near", None, "The level's band either side, in average true ranges of 14 bars (also the touch, round-number and "
+           "nearby-level distance)."),
+     Param("min_grade", None, "Points the level needs, out of 5."),
+     Param("look", 400, "Bars in which the touches are counted."),
+     Param("touches", 2, "Separate visits of the band for the touches point.", True),
+     Param("recent", 200, "The last visit at most this many bars ago for the recent point."),
+     Param("tier", 2, "Kinds that earn the kind point: 1 the previous close only, 2 also the previous high / low, 3 every level.")))
+
+
 def _mirrored(long: Scanner, ident: str, name: str, definition: str) -> Scanner:
     """The short counterpart filed as its own id (M94-Q12): the long screen's text through the mirror rule."""
     m = mr.mirror(parse(long.text))
@@ -203,7 +233,7 @@ S5 = _mirrored(S4, "intraday.bottom_reversal", "Bottom Reversal",
 S8 = _mirrored(S7, "intraday.turbo_breakdown", "Turbo Breakdown",
                "A new session low on 1-minute bars with unusual 1-minute volume for the time of day.")
 
-SCANNERS: tuple[Scanner, ...] = (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12)
+SCANNERS: tuple[Scanner, ...] = (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13)
 BY_ID: dict[str, Scanner] = {s.id: s for s in SCANNERS}
 
 
@@ -229,7 +259,7 @@ def taxonomy_sample() -> dict[str, Any]:
 
 
 __all__ = ["SOURCE", "FLAG", "ALSO", "FOOTER", "REF_LABEL", "NOT_SET", "INTRADAY_TFS", "Param", "Scanner", "SCANNERS", "BY_ID",
-           "S12_LEVELS", "scanner", "payload", "taxonomy_sample"]
+           "S12_LEVELS", "S13_LEVELS", "scanner", "payload", "taxonomy_sample"]
 
 
 if __name__ == "__main__":      # python -m app.screener.intraday [taxonomy] > ../frontend/src/screener/intraday[Taxonomy]Sample.json

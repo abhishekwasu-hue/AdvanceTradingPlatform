@@ -497,3 +497,20 @@ ONE comparison page for the milestone (CLAUDE.md §6), dark theme, phone 390 + d
 4. One PAPER trade of one template: signal -> paper order -> position -> exit, on the real site.
 Tests (CI): each scanner positive / negative on fixtures; each template's trigger and invalidation on a synthetic bar
 series; risk tools: the lock refuses new entries and never an exit. Report to the owner in Marathi, at most 15 lines.
+
+---
+
+## 11. M99 P2 upgrade (flag `intraday_pack`, OFF)
+
+- **Key-level grade** - ScreenQL `LevelGrade(level, what, near, look, touches, recent, tier, step)`
+  (app/screener/level_grade.py): information only, 0-5 points - touches of the level's band, a recent visit, the level's
+  kind (1 previous close, 2 previous high / low, 3 pre-open and session levels), a round number (the user's step, or
+  `level_strength.round_distance`'s steps of the symbol), another key level in the band. `what` returns one part.
+  Scanner S13 "Graded Key Levels" (`intraday.graded_levels`): band and points Not set (the study's tolerance is another
+  currency's amount).
+- **Trade-management options** for the H templates (app/strategy_templates/management.py; `TemplateExits.management`,
+  migration b4d6f8a0c2e3): trail by swing / ATR from the best price / a moving average, exit after N bars with no new
+  extreme, exit after N bars in the trade. Every option OFF, every number the user's, stops only tighten, no exit is ever
+  blocked; one `management_step` for the backtest engine and the worker (read on a bar close, acted on at the next price).
+  A partial exit is the ExitRules scale-out (M99 P7), not built twice. OPEN_QUESTIONS M99-P2-Q1 / Q2.
+

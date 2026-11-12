@@ -79,9 +79,9 @@ def need_sessions(recipe: Recipe) -> int:
     return most
 
 
-def scan_answers(recipe: Recipe, window: pd.DataFrame) -> Dict[pd.Timestamp, Answer]:
-    """The scan path: the recipe's series over the window, one answer per bar."""
-    series = engine.compute(recipe, {recipe.settings.timeframe: window})
+def scan_answers(recipe: Recipe, window: pd.DataFrame, symbol: str = "S") -> Dict[pd.Timestamp, Answer]:
+    """The scan path: the recipe's series over the window, one answer per bar (`symbol`: as the other paths read it)."""
+    series = engine.compute(recipe, {recipe.settings.timeframe: window}, symbol)
     out: Dict[pd.Timestamp, Answer] = {}
     for t, ts in enumerate(series.index):
         d = int(series.direction[t])

@@ -53,6 +53,14 @@ export interface ChainTrading {
   openBasket?: () => void;
 }
 
+/** The ticket's prefill from a tapped call or put (the chain table or, M96 O1, the OI-difference table): the contract
+ * and its quotes ONLY - never lots, an order type, a product or a stop-loss (those come from his saved settings or what
+ * he enters, M68). */
+export function ticketTargetOf(target: ActionTarget, contract: FnoContract | null): TicketTarget {
+  return { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right,
+    label: contract?.label ?? null, lotSize: contract?.lot_size ?? null, ltp: target.leg.ltp, bid: target.leg.bid, ask: target.leg.ask };
+}
+
 export function spotSymbolOf(underlying: string): string {
   const map: Record<string, string> = { NIFTY: "NIFTY 50", BANKNIFTY: "NIFTY BANK", FINNIFTY: "NIFTY FIN SERVICE", SENSEX: "SENSEX" };
   return map[underlying] ?? underlying;
@@ -113,8 +121,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
 
   function trade(side: Side, contract: FnoContract | null) {
     if (!target) return;
-    const picked = { side, target: { underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right,
-      label: contract?.label ?? null, lotSize: contract?.lot_size ?? null, ltp: target.leg.ltp, bid: target.leg.bid, ask: target.leg.ask } };
+    const picked = { side, target: ticketTargetOf(target, contract) };
     if (onTicket) onTicket(picked);
     else setTicket(picked);
     setAction(null);
@@ -195,14 +202,16 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   };
 }
 
-/** The bottom strip of the chain (FNO-1): the key figures, tap ATM to recentre, the change toggle, the basket badge. */
+/** The bottom strip of the chain (FNO-1): the key figures, tap ATM to recentre, the change toggle, the basket badge.
+ * M96 (owner, audit issue 12): it sits in the page's flow just above the chain table - no longer pinned to the bottom,
+ * where it covered the strikes chips and the top rows of a short Terminal panel. */
 export function ChainBottomStripV2({ summary, pct, onPct, onRecentre, basketCount, onBasket }: {
   summary: ChainSummary; pct: boolean; onPct: (pct: boolean) => void; onRecentre: () => void; basketCount: number; onBasket?: () => void;
 }) {
   const seg = "min-h-9 rounded-control px-space-2 text-t12 font-semibold";
   return (
     <section aria-label="Chain figures" data-bottom-action data-block="chain-bottom-strip"
-      className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-[3] -mx-space-4 flex items-center gap-space-3 overflow-x-auto border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised md:bottom-0 md:mx-0 md:rounded-panel md:border">
+      className="flex items-center gap-space-3 overflow-x-auto rounded-panel border border-subtle bg-surface-1 px-space-3 py-space-2">
       <button type="button" onClick={onRecentre} data-strip="atm" aria-label={`Show the ATM strike ${formatStrike(summary.atm_strike)} in the middle`}
         className="inline-flex min-h-11 shrink-0 items-center gap-space-1 rounded-pill border border-border px-space-3 text-t13 font-semibold text-fg hover:bg-surface-2">
         <Crosshair size={14} aria-hidden />ATM {formatStrike(summary.atm_strike)}

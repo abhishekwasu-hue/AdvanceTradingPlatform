@@ -139,7 +139,8 @@ async def check_can_add_deployment(session: AsyncSession, tenant: Tenant, *, liv
     ensure_tenant_active(tenant)
     plan = get_plan(tenant.plan)
     if live and not await _live_granted(session, tenant):
-        raise PlanLimitExceeded(f"The {plan.name} plan is paper trading only - LIVE deployments need Pro or Business.")
+        from app.platform.live_switch import LIVE_OFF
+        raise PlanLimitExceeded(LIVE_OFF)      # LIVE-1: the one live switch decides, not the plan
     if adding:
         current = await count_active_deployments(session, tenant.id)
         if current >= plan.max_active_deployments:
@@ -185,15 +186,14 @@ def live_allowed(tenant: Optional[Tenant]) -> bool:
 
 
 async def _live_granted(session: AsyncSession, tenant: Tenant) -> bool:
-    """M55 S1b: the owner's per-organisation LIVE grant - the global `live_trading` switch on, the PAPER-only lock off
-    for this organisation and the organisation on the owner's grant list (app/platform/live_owner.py)."""
+    """LIVE-1: the one live switch (`live_trading` ON, app/platform/live_switch.py). The former per-organisation grant
+    and the PAPER-only lock are folded into it (app/platform/live_owner.py `org_live_open`)."""
     from app.platform import live_owner
     return await live_owner.org_live_open(session, tenant.id)
 
 
 async def live_allowed_for(session: AsyncSession, tenant: Optional[Tenant]) -> bool:
-    """The plan check for LIVE (M55 S1b): an active organisation the owner granted LIVE, with the switch on and the
-    lock off. Otherwise refused exactly as before."""
+    """The check for LIVE (LIVE-1): an active organisation and the one live switch ON. Otherwise refused."""
     return tenant is not None and tenant_is_active(tenant) and await _live_granted(session, tenant)
 
 

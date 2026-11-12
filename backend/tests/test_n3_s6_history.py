@@ -338,7 +338,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "WaveCap": "close > WaveCap(1) OR close > WaveOrigin(1)",                   # no fifth wave with a short third on the fixture
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
-               "DonchianBreakout", "MABreakout", "RegimeBreakout"}
+               "DonchianBreakout", "MABreakout", "RegimeBreakout", "StructureEventSeries"}
 
 
 def _sweep_cases():

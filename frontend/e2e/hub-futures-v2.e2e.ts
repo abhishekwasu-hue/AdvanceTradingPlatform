@@ -80,6 +80,8 @@ async function open(page: Page, theme: "light" | "dark", path: string, opts: { h
   });
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const url = new URL(route.request().url());
+    // M96-Q1: the ticket reads whether LIVE can go (off here, as by default).
+    if (url.pathname.endsWith("/live-status")) return route.fulfill({ json: { open: false, text: "Live trading is switched off by the admin." } });
     if (url.pathname.endsWith("/held")) return route.fulfill({ json: [] });
     // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
     if (url.pathname.endsWith("/risk-budget")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
@@ -205,7 +207,7 @@ test.describe("Symbol hub v2 flows", () => {
     const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
     expect(placed).toHaveLength(1);
     expect(placed[0].body).toMatchObject({ underlying: "NIFTY", expiry: "2026-10-27", right: "FUT", strike: null, side: "BUY", lots: 1, stop_loss: 24500 });
-    expect(placed[0].body).not.toHaveProperty("mode");
+    expect(placed[0].body).toHaveProperty("mode", "PAPER");                 // M96-Q1: PAPER unless he picks LIVE
     await ticket.locator("[data-ticket='done']").click();
 
     const badge = page.locator("[data-futures-basket]");

@@ -47,6 +47,9 @@ export interface HeldLeg {
   stop_loss: number | null;
 }
 
+/** M96-Q1 (owner): where the ticket's order goes - PAPER (the default) or LIVE (his own broker; the owner's switches decide). */
+export type OrderMode = "PAPER" | "LIVE";
+
 export interface OrderAsk {
   underlying: string;
   expiry: string;
@@ -60,16 +63,23 @@ export interface OrderAsk {
   price?: number | null;
   trigger_price?: number | null;
   stop_loss?: number | null;
+  /** M96 Q2: his own optional target (premium), armed after the fill as a TARGET exit; null / absent = none. */
+  target?: number | null;
   chain_ltp?: number | null;
   client_ref?: string | null;
   /** M76 MP-5 (trade_warnings): the check-card types shown when he pressed Place - journaled on the fill only. */
   accepted_warnings?: string[];
+  /** M96-Q1: his own choice on the ticket; not sent = PAPER. */
+  mode?: OrderMode;
 }
+
+/** M96-Q1: whether a LIVE ticket order can go now, and the plain sentence why not. */
+export interface LiveStatus { open: boolean; text: string | null }
 
 export interface MoneyLine { value: number | null; basis: string; estimated?: boolean; note?: string }
 
 export interface OrderPreview {
-  mode: "PAPER";
+  mode: OrderMode;
   practice: string;
   contract: FnoContract | null;
   label: string;
@@ -84,6 +94,8 @@ export interface OrderPreview {
   fill_price: number | null;
   fill_note: string | null;
   stop_loss: number | null;
+  /** M96 Q2: the target he entered (null = none). */
+  target?: number | null;
   margin: MoneyLine | null;
   max_loss: MoneyLine | null;
   /** M68 PR-7: `words` - his own paper charges in plain words (Not set: statutory charges only). */
@@ -108,6 +120,8 @@ export interface OrderResult extends OrderPreview {
   order_id: number | null;
   trade_id: number | null;
   filled: { price: number; quantity: number; lots: number } | null;
+  /** M96 Q2: his target after the fill - armed as a TARGET exit, or why not (null = no target asked). */
+  target_order?: { armed: boolean; text: string } | null;
 }
 
 const q = (params: Record<string, string | number | null>) =>
@@ -120,6 +134,8 @@ export const fnoApi = {
   held: (underlying: string, expiry: string) => request<HeldLeg[]>(`/paper/fno/held?${q({ underlying, expiry })}`),
   preview: (ask: OrderAsk) => request<OrderPreview>("/paper/fno/order/preview", { method: "POST", body: JSON.stringify(ask) }),
   place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order", { method: "POST", body: JSON.stringify(ask) }),
+  /** M96-Q1: whether his LIVE choice can be placed now (reads only). */
+  liveStatus: () => request<LiveStatus>("/paper/fno/live-status"),
   // M45 MA-6 (`ui_v2` + `multi_account`): the user's simulated PAPER accounts, one order on several of them, one exit.
   practiceAccounts: () => request<PracticeAccount[]>("/accounts/mine/paper"),
   placeMulti: (ask: OrderAsk, runOn: string) =>

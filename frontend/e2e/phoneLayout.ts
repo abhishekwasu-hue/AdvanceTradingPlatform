@@ -36,9 +36,22 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
       .map((e) => `${Math.round(target(e))}px ${e.tagName}:${(e.getAttribute("aria-label") ?? e.textContent ?? "").trim().slice(0, 30)}`);
     const nav = document.querySelector("nav[aria-label='Quick navigation']");
     const items = nav ? [...nav.querySelectorAll("a, button")].map((e) => e.getBoundingClientRect()) : [];
-    return { scrollWidth: document.documentElement.scrollWidth, width, overflow, small, navItems: items.map((b) => [Math.round(b.width), Math.round(b.height)]) };
+    // M99 P2 proof: the page itself may scroll inside <main> (or a wrapper around it) instead of the document - a box
+    // that is the page's own scroller (main and its ancestors) must not scroll sideways either. Wide content in its OWN
+    // scroller inside the page (a table in an overflow-x box) is still allowed.
+    const pageScrollers = [] as string[];
+    for (let a: Element | null = document.querySelector("main"); a && a !== document.documentElement; a = a.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(a).overflowX) && a.scrollWidth > a.clientWidth + 1) {
+        const wide = [...a.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > a!.getBoundingClientRect().right + 1)
+          .slice(0, 5).map((e) => e.tagName + ":" + (e.textContent ?? "").trim().slice(0, 30));
+        pageScrollers.push(`${a.tagName}${a.id ? "#" + a.id : ""} scrolls ${a.scrollWidth - a.clientWidth} px sideways (${wide.join(", ")})`);
+      }
+    }
+    return { scrollWidth: document.documentElement.scrollWidth, width, overflow, small, pageScrollers,
+      navItems: items.map((b) => [Math.round(b.width), Math.round(b.height)]) };
   });
   expect(report.scrollWidth, `page wider than the screen: ${report.overflow.join(", ")}`).toBeLessThanOrEqual(report.width);
+  expect(report.pageScrollers, "the page's own scroller scrolls sideways").toEqual([]);
   expect(report.small, "touch targets under 44 px").toEqual([]);
   // Today, Charts, Signals, My trades and More; P1-8 (2): Watchlist too while `watchlists` is on.
   expect([5, 6]).toContain(report.navItems.length);

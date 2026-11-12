@@ -214,14 +214,22 @@ def test_the_screenql_functions_read_the_causal_series():
                                (close - centre) / centre * 100, equal_nan=True)
     assert {"FibLevel", "FibDistancePct", "ClusterDistancePct"} <= set(M99_FUNCTIONS)
     assert all(FUNCTIONS[name].flag == M99_FLAG == "m99_primitives" for name in M99_FUNCTIONS)
+    # the two gates of the one flag never share a function: Fibonacci / clusters here, bar classes / structure in m99_gate
+    from app.screener import m99_gate, primitives
+    assert primitives.FIB_FUNCTIONS == {"FibLevel", "FibDistancePct", "ClusterDistancePct"} <= set(M99_FUNCTIONS)
+    fib = parse('FibLevel("retrace", 0.5) > 0 AND SpreadClass(20) == "WIDE"')
+    assert primitives.flagged_calls(fib) == ["FibLevel"] and m99_gate.flagged_calls(fib) == ["SpreadClass"]
 
 
 def test_the_flag_is_off_by_default_and_unfinished():
     from app.platform import controls
     from app.platform.flag_catalog import FLAG_INFO
     from app.platform.flag_state import FLAG_STATUS
-    text = "M99 shared primitives (bar classifier, Fibonacci, clusters, structure) - unfinished"
-    assert controls.FEATURE_FLAGS[M99_FLAG] == text and FLAG_INFO[M99_FLAG].plain == text
+    from app.platform.trader_pack import EXCLUDED_REASONS
+    assert "places no orders" in controls.FEATURE_FLAGS[M99_FLAG] and FLAG_INFO[M99_FLAG].status == "unfinished"
+    # one entry per flag table, and each text names everything the flag covers
+    for text in (controls.FEATURE_FLAGS[M99_FLAG], FLAG_INFO[M99_FLAG].plain, EXCLUDED_REASONS[M99_FLAG]):
+        assert all(part in text for part in ("bar classes", "structure", "Fibonacci levels", "price clusters")), text
     assert M99_FLAG in controls.DEFAULT_OFF_FLAGS and FLAG_STATUS[M99_FLAG].state == "not_built"
 
 

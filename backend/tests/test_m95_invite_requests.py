@@ -141,7 +141,9 @@ def test_the_migration_is_additive_rollback_safe_and_the_one_head():
     source = MIGRATION.read_text(encoding="utf-8")
     assert risky_operations(source) == [] and not hasattr(module, "ROLLBACK_SAFE_REASON")
     assert not [p for p in lint() if p.startswith(MIGRATION.name)]
-    assert ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini"))).get_heads() == ["a3c5e7f9b1d4"]
+    script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
+    heads = script.get_heads()                                       # one head; later migrations chain on top (M99 P2)
+    assert len(heads) == 1 and "a3c5e7f9b1d4" in {r.revision for r in script.walk_revisions("base", heads[0])}
 
 
 def test_the_migration_runs_up_and_down_on_sqlite(tmp_path):

@@ -10,13 +10,16 @@ In Phase 0 mode:
    survives every restart and redeploy (the rule is "seed absent entries only"). Until the seed is written (the moment
    between start and the first write, or a database error during it), the same two values are the resolved defaults
    (`default_for`), so the platform is never less safe than the seed in this mode.
-2. **No LIVE entry path.** While `phase0_paper_only` is on, LIVE entries are refused by layer 1
+2. **No LIVE entry path.** While `live_trading` is off (LIVE-1: the PAPER-only lock `phase0_paper_only` is derived
+   from it - app/platform/live_switch.py), LIVE entries are refused by layer 1
    (`controls.entry_blocks`) and layer 2 (the broker-order chokepoint, `phase0_lock`), and the trading worker does not
    evaluate LIVE deployments at all (no LIVE entry is ever built). Exits of existing LIVE positions, protective stops,
    square-off and reconciliation always run (ADR-0004). `GET /api/system/health/deep` (`checks.live_paths`), the
    worker log and `scripts/flag_posture.py` (read by `deploy/atp.sh health`) say why.
-3. **Admin refusal.** Admin -> Controls refuses to turn `live_trading` on (globally or for any organisation) while
-   `phase0_paper_only` is on, with a clear message and an audit row (`feature_flag_refused`).
+3. **One switch (LIVE-1, owner order).** The former admin refusal "no `live_trading` while `phase0_paper_only` is on" is
+   folded into the one live switch: the lock follows `live_trading`, so turning `live_trading` on (the owner only,
+   app/platform/live_owner.py) is the single step that opens LIVE. The seed below still writes both entries; the stored
+   `phase0_paper_only` entry is no longer read.
 
 Why a flag may default on here, against the standing rule "code never turns a flag on": it is the owner's instruction
 (2026-10-12: "the owner cannot set Admin -> Controls before the app is deployed, so a Phase 0 deployment must start in the
@@ -49,10 +52,7 @@ SEED: Dict[str, bool] = {LIVE_TRADING: False, PAPER_ONLY: True}
 
 SEED_AUDIT_EVENT = "phase0_flag_seeded"
 SEED_ATTEMPTS = 3
-REFUSAL_AUDIT_EVENT = "feature_flag_refused"
-LIVE_TRADING_REFUSAL = ("Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): live_trading cannot be turned on while "
-                        "phase0_paper_only is on - Phase 0 is PAPER only. Nothing was changed.")
-LIVE_PATHS_NOT_STARTED = ("phase0_paper_only is on: LIVE entry paths not started (LIVE deployments are not evaluated, "
+LIVE_PATHS_NOT_STARTED = ("live_trading is off: LIVE entry paths not started (LIVE deployments are not evaluated, "
                           "new LIVE entries are refused); exits of existing LIVE positions still run")
 
 
@@ -70,13 +70,6 @@ def default_for(name: str) -> Optional[bool]:
     if is_phase0() and name in SEED:
         return SEED[name]
     return None
-
-
-def _entry_on(entry: Optional[dict]) -> bool:
-    """On for anyone: globally, or for at least one organisation through the allow-list."""
-    if not entry:
-        return False
-    return bool(entry.get("on")) or bool(entry.get("tenants"))
 
 
 async def _seed_once(session: AsyncSession, process: str) -> List[str]:
@@ -134,18 +127,18 @@ async def seed_flags(session: AsyncSession, process: str = "api") -> List[str]:
 async def live_paths(session: AsyncSession) -> Dict[str, object]:
     """What health and the logs say about LIVE entry paths. Read-only (it refreshes the chokepoint's cached lock state,
     which only ever adds refusals)."""
-    from app.platform import phase0_lock
+    from app.platform import live_switch, phase0_lock
     from app.platform.controls import feature_flags
     flags = await feature_flags(session)
-    paper_only = _entry_on(flags.get(PAPER_ONLY))
+    live = live_switch.live_on(flags)                 # LIVE-1: the one switch; the lock is derived from it
     await phase0_lock.is_on(session, None)            # the broker chokepoint in this process reads the same state
     return {
         "deployment_phase": current_phase() or "none",
-        "phase0_paper_only": paper_only,
-        "live_trading": _entry_on(flags.get(LIVE_TRADING)),
-        "live_entries": "refused" if paper_only else "flag-controlled",
+        "phase0_paper_only": not live,
+        "live_trading": live,
+        "live_entries": "flag-controlled" if live else "refused",
         "exits": "always allowed",
-        "detail": LIVE_PATHS_NOT_STARTED if paper_only else "phase0_paper_only is off: LIVE entries follow the flags and plans",
+        "detail": "live_trading is on: each user picks PAPER or LIVE" if live else LIVE_PATHS_NOT_STARTED,
     }
 
 
@@ -178,20 +171,6 @@ async def on_startup(session: AsyncSession, process: str) -> Dict[str, object]:
     if state["phase0_paper_only"]:
         logger.warning("%s start-up (deployment phase %s): %s", process, state["deployment_phase"], LIVE_PATHS_NOT_STARTED)
     else:
-        logger.info("%s start-up (deployment phase %s): phase0_paper_only is off", process, state["deployment_phase"])
+        logger.info("%s start-up (deployment phase %s): live_trading is on", process, state["deployment_phase"])
     return state
 
-
-async def refuse_live_trading_on(session: AsyncSession, user_id: Optional[int], *, on: bool, tenants: Optional[List[int]]) -> None:
-    """Admin -> Controls in Phase 0 mode: refuses turning `live_trading` on for anyone while `phase0_paper_only` is on.
-    The refusal is audited (and committed) before the ValueError the route turns into a 400."""
-    if not is_phase0() or not (on or tenants):
-        return
-    from app.platform.controls import feature_flags
-    if not _entry_on((await feature_flags(session)).get(PAPER_ONLY)):
-        return
-    await write_audit_log(session, None, user_id, REFUSAL_AUDIT_EVENT,
-                          f"{LIVE_TRADING}: on={on} tenants={sorted(int(t) for t in tenants or []) or '-'} refused - "
-                          "phase0_paper_only is on (ATP_DEPLOYMENT_PHASE=phase0)")
-    await session.commit()
-    raise ValueError(LIVE_TRADING_REFUSAL)

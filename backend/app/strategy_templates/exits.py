@@ -20,6 +20,10 @@ as the stop and no target; a structure keeps its credit levels. The premium stop
 safety nets that stay as set (R4: the first one hit exits; ADR-0004: nothing here ever blocks or delays an exit). The
 trailing / break-even / time exits (ExitRules) are unchanged.
 
+M99 P2: `management` - the trade-management options of an intraday template bot (family H, a bot that trades the symbol
+it reads): a trail by swing / ATR / average, no-new-extreme and bars-in-trade exits (a partial exit is the ExitRules
+scale-out, M99 P7) (app/strategy_templates/management.py). NULL = none (every existing row). They only tighten a stop or add an exit.
+
 The precedence per instrument (R4; docs/design/STRATEGY_TEMPLATES_IMPL.md, "Exits as settings"):
 
 | instrument            | stop_source (first = default)          | target_rule (first = default)                          |
@@ -50,6 +54,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.strategy_templates.language import _WAVE_NAME_WORDS
+from app.strategy_templates.management import Management
 
 # The spec's full lists (section 5 + WAVE section 4) and what this build offers
 STOP_SOURCES: Tuple[str, ...] = ("TEMPLATE_INVALIDATION", "PREMIUM_PCT", "CREDIT_PCT", "NONE")
@@ -94,6 +99,10 @@ LEVEL_WORDS: dict[str, str] = {
 LEVEL_SHORT_WORDS: dict[str, str] = {"VWAP": "the session VWAP", "SESSION_EXTREME": "the session high / low",
                                      "PREV_CLOSE": "the previous close", "OR_FAR_SIDE": "the far side of the opening range"}
 LEVEL_FAMILIES = frozenset({"H"})         # the intraday templates (their functions are session functions)
+MANAGEMENT_FAMILIES = frozenset({"H"})    # M99 P2: the management options are offered on the intraday templates
+# M99 P2: the instruments the options run on - the bot trades the symbol its template reads, so the trail levels and the
+# R of the trade are on the same prices (a future's levels are transplanted, an option's are on the underlying: not yet).
+MANAGEMENT_CLASSES = frozenset({UNDERLYING})
 
 
 def base_waves() -> Tuple[str, ...]:
@@ -119,6 +128,7 @@ class Capabilities:
     exit_signal: bool = False
     wave_projection: bool = False
     levels: tuple[str, ...] = ()               # M94 F10: the TEMPLATE_LEVEL levels this template offers (LEVELS keys)
+    management: bool = False                   # M99 P2: the trade-management options (family H)
 
 
 def level_parts(template: Any, settings: Any, level: str) -> dict[str, Any]:
@@ -155,7 +165,8 @@ def capabilities(recipe: Any) -> Capabilities:
     has_exit = any(recipe.part("exit_signal", side) is not None for side in sides)
     types = {p.key: p.type for p in recipe.template.params}
     waves = types.get("wave_degree") == "int" and types.get("wave_tf") == "timeframe"
-    return Capabilities(exit_signal=has_exit, wave_projection=waves, levels=offered_levels(recipe.template, recipe.settings))
+    return Capabilities(exit_signal=has_exit, wave_projection=waves, levels=offered_levels(recipe.template, recipe.settings),
+                        management=recipe.template.family in MANAGEMENT_FAMILIES)
 
 
 @dataclass(frozen=True)
@@ -167,6 +178,10 @@ class TemplateExits:
     target_base_wave: Optional[str] = None
     target_ratio: Optional[float] = None
     target_level: str | None = None          # M94 F10: the TEMPLATE_LEVEL level (LEVELS key)
+    management: str | None = None            # M99 P2: the management options (Management.to_json; NULL = none)
+
+    def manage(self) -> Management:
+        return Management.from_json(self.management)
 
     @property
     def is_default(self) -> bool:
@@ -232,6 +247,16 @@ class TemplateExits:
                 out.append("Pick the level to take profit at from the list")
         elif self.target_level is not None:
             out.append("The level is for the level target only")
+        if self.management is not None:
+            m = self.manage()
+            if not caps.management:
+                out.append("The trade-management options are for the intraday templates only")
+            elif cls_ not in MANAGEMENT_CLASSES:
+                out.append("The trade-management options work on a bot that trades the symbol itself for now")
+            elif not m.active:
+                out.append("Turn on at least one trade-management option, or leave them all off")
+            else:
+                out.extend(m.problems())
         return out
 
     def describe(self) -> str:
@@ -251,6 +276,8 @@ class TemplateExits:
             parts.append(f"target at {level_words(self.target_level)}")
         elif self.target_rule == "NONE":
             parts.append("no fixed target")
+        if self.management is not None and self.manage().describe():
+            parts.append(self.manage().describe())
         return ", ".join(parts)
 
 
@@ -260,6 +287,22 @@ DEFAULT = TemplateExits()
 def level_words(level: str) -> str:
     """The level in a sentence: "the session VWAP" (the form shows LEVEL_WORDS)."""
     return LEVEL_SHORT_WORDS.get(level, level)
+
+
+class ManagementBody(BaseModel):
+    """M99 P2: the request shape of the management options (every field off by default; checked with
+    `Management.problems` through `TemplateExits.problems`)."""
+    model_config = ConfigDict(extra="forbid")
+    trail: str | None = Field(default=None, max_length=8)
+    trail_degree: int | None = None
+    trail_n: int | None = None
+    trail_k: float | None = None
+    trail_ma: str | None = Field(default=None, max_length=8)
+    stall_bars: int | None = None
+    max_bars: int | None = None
+
+    def to_management(self) -> Management:
+        return Management(**self.model_dump())
 
 
 class TemplateExitsBody(BaseModel):
@@ -272,9 +315,13 @@ class TemplateExitsBody(BaseModel):
     target_base_wave: Optional[str] = Field(default=None, max_length=16)
     target_ratio: Optional[float] = None
     target_level: str | None = Field(default=None, max_length=24)
+    management: ManagementBody | None = None          # M99 P2 (omitted = none)
 
     def to_exits(self) -> TemplateExits:
-        return TemplateExits(**self.model_dump())
+        data = self.model_dump(exclude={"management"})
+        # options that are all off are stored as none (NULL), exactly as before; anything typed is kept to be checked
+        text = self.management.to_management().to_json() if self.management is not None else None
+        return TemplateExits(**data, management=text)
 
 
 def projection_text(exits: TemplateExits) -> str:
@@ -328,4 +375,4 @@ def underlying_stop_on(exits: TemplateExits, instrument_kind: Optional[str], opt
 __all__ = ["TemplateExitsBody", "checked", "STOP_SOURCES", "TARGET_RULES", "NOT_BUILT", "PRECEDENCE", "TemplateExits", "Capabilities", "capabilities",
            "instrument_class", "target_level", "projection_text", "underlying_stop_on", "base_waves", "base_wave_words",
            "EXIT_REASON", "DEFAULT", "TARGET_R_BOUNDS", "RATIO_BOUNDS", "LEVELS", "LEVEL_WORDS", "LEVEL_SHORT_WORDS", "LEVEL_FAMILIES", "level_parts",
-           "offered_levels", "level_words"]
+           "offered_levels", "level_words", "ManagementBody", "MANAGEMENT_FAMILIES", "MANAGEMENT_CLASSES"]

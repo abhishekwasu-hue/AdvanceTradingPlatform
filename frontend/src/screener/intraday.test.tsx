@@ -31,22 +31,22 @@ describe("Intraday pack chip (M94 PR-2)", () => {
   });
 
   it("offers Intraday with its count when the pack is on, and every screen without it", () => {
-    expect(packsShown(on)).toEqual([{ id: "intraday", label: "Intraday", count: 12 }]);
+    expect(packsShown(on)).toEqual([{ id: "intraday", label: "Intraday", count: 13 }]);
     const html = render(on);
     expect(html).toContain('role="group" aria-label="Pack"');
     expect(text(html)).toContain(`All screens ${on.total}`);
-    expect(text(html)).toContain("Intraday 12");
+    expect(text(html)).toContain("Intraday 13");
     expect(cards(html)).toHaveLength(on.screens.length);
   });
 
-  it("filters to the twelve scanners; the rail, chips, count and matrix follow", () => {
+  it("filters to the thirteen scanners (M99 P2: Graded Key Levels); the rail, chips, count and matrix follow", () => {
     const html = render(on, { pack: "intraday" });
     expect(cards(html)).toEqual(lib.scanners.map((s) => s.id));
     expect(cards(html).every((id) => id.startsWith("intraday."))).toBe(true);
-    expect(text(html)).toContain("12 screens · All methods → All setups");
+    expect(text(html)).toContain("13 screens · All methods → All setups");
     const picked = inPack(on, "intraday");
-    expect(picked.total).toBe(12);
-    expect(Object.values(picked.matrix).flatMap((r) => Object.values(r)).reduce((a, b) => a + b, 0)).toBe(12);
+    expect(picked.total).toBe(13);
+    expect(Object.values(picked.matrix).flatMap((r) => Object.values(r)).reduce((a, b) => a + b, 0)).toBe(13);
     expect(html).toMatch(/aria-pressed="true"[^>]*>Intraday/);
     // a setup chip within the pack: the reversal scanners only
     const rev = render(on, { pack: "intraday", setup: "reversal" });
@@ -55,8 +55,8 @@ describe("Intraday pack chip (M94 PR-2)", () => {
 
   it("puts the footer on each intraday card and on no other", () => {
     const html = render(on);
-    expect(html.match(/data-testid="screen-source-note"/g)).toHaveLength(12);
-    expect(html.split(FOOTER).length - 1).toBe(12);
+    expect(html.match(/data-testid="screen-source-note"/g)).toHaveLength(13);
+    expect(html.split(FOOTER).length - 1).toBe(13);
     const breakouts = render(on, { ...NO_FILTER, query: "Opening range" });
     expect(cards(breakouts).length).toBeGreaterThan(0);
     expect(breakouts).not.toContain(FOOTER);
@@ -64,7 +64,7 @@ describe("Intraday pack chip (M94 PR-2)", () => {
 
   it("shows each scanner's settings: reference values, ATP defaults and Not set", () => {
     const html = render(on, { pack: "intraday" });
-    expect(html.match(/data-testid="scanner-settings"/g)).toHaveLength(12);
+    expect(html.match(/data-testid="scanner-settings"/g)).toHaveLength(13);
     const t = text(html);
     expect(t).toContain("Settings (4) · Not set: 3 of 4. The run asks for them.");                 // Gappers
     expect(t).toContain("Reference value - edit before use");

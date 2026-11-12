@@ -90,7 +90,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "marketplace": _decision("The marketplace is the last phase; off until you decide"),
     "public_api": _ready(),
     "backtest_optimizer": _ready(),
-    "live_trading": _decision("LIVE only on your words: the go-live checklist and two-factor", SAFETY),
+    "live_trading": _decision("The one live switch, only on your words: the go-live checklist and two-factor", SAFETY),
     "phase0_paper_only": _behind(),
     "self_signup": _decision("Open sign-up: off for the invite-only beta"),
     "news_feed": _ready(),

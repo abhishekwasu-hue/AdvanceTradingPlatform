@@ -1,13 +1,13 @@
-"""Z10-c (Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock, feature flag `phase0_paper_only`.
+"""Z10-c (Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock.
 
-M55 S1 (owner order): ON by default in every deployment mode (controls.DEFAULT_ON_FLAGS), and only the owner may turn
-it off (app/platform/live_owner.py). Before M55 S1 it was OFF by default except in the explicit Phase 0 deployment mode (`ATP_DEPLOYMENT_PHASE=phase0`,
-set by the Z11 bundle for the Hostinger host): it seeds this flag ON (and `live_trading` OFF) where no entry is stored yet,
-by the owner's decision of 2026-10-12 - the restrictive direction only (app/platform/deployment_phase.py,
-docs/OPERATIONS.md 1.6aj, OPEN_QUESTIONS Z10-3). No other code, migration or script turns it on.
-The tenant allow-list works as for every flag: OFF with tenants listed locks those tenants only.
+LIVE-1 (owner order, binding: ONE live switch): the lock is no longer a switch of its own. It is DERIVED from the
+`live_trading` flag - `controls.feature_flags` answers `phase0_paper_only` = NOT `live_trading` for everyone (a stored
+`phase0_paper_only` entry is ignored, and Admin -> Controls refuses to set it). So: `live_trading` OFF (the production
+default) = locked, no new LIVE entry is sent anywhere; `live_trading` ON = unlocked, each user picks PAPER or LIVE.
+The shared decision is app/platform/live_switch.py (`live_allowed`); this module keeps the layers that enforce it.
+Before LIVE-1 the lock was the flag `phase0_paper_only` (M55 S1: ON by default, the owner alone could turn it off).
 
-While it is on, no new LIVE entry is sent anywhere. Two layers:
+While it is on (live_trading OFF), no new LIVE entry is sent anywhere. Two layers:
 1. `platform.controls.entry_blocks` refuses every new LIVE entry (single-leg and multi-leg pipelines alike) before any
    sizing or routing, with a reason on the order trail;
 2. the broker-order chokepoint (`brokers.rate_budget.RateLimitedBroker.place_order`, the wrapper every worker LIVE
@@ -30,7 +30,8 @@ from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrd
 
 FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
-ENTRY_REASON = "Phase 0 PAPER-only lock (phase0_paper_only) is on: new LIVE entries are refused - exits still run"
+# LIVE-1: one plain sentence (the switch, not a flag name) - the same words as live_switch.LIVE_OFF.
+ENTRY_REASON = "Live trading is switched off by the admin: new LIVE entries are refused - exits still run"
 # What a LIVE deployment says while the lock is on: the trading worker does not evaluate it (no LIVE entry path is started).
 WORKER_NOT_EVALUATED = ENTRY_REASON + " (LIVE deployment not evaluated)"
 
@@ -84,9 +85,9 @@ class LiveOrderRefused(RuntimeError):
 
 
 def assert_paper(mode: str, tenant_id: Optional[int]) -> str:
-    """FNO-1 (owner order "every order is PAPER under Phase 0"): the assertion an order path that picks its own mode
-    makes at its chokepoint - the manual order ticket (app/paper/fno_ticket.py) calls it right before the order pipeline.
-    While the lock holds for the organisation, only PAPER passes; a LIVE request raises `LiveOrderRefused` and nothing is
+    """FNO-1 / LIVE-1: the assertion an order path that picks its own mode makes at its chokepoint - the manual order
+    ticket (app/paper/fno_ticket.py) calls it right before the order pipeline. While the lock holds (live_trading OFF),
+    only PAPER passes; a LIVE request raises `LiveOrderRefused` and nothing is
     placed. Reads the state the last flag read left (`is_on` refreshes it). Entries only: no exit path calls this, and
     exits of an existing position are never refused (ADR-0004). Returns the mode it allowed."""
     value = str(mode or "").upper()

@@ -37,7 +37,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import bands as band_gate
 from app.screener import chains as chain_gate
-from app.screener import compile_screen, fib_ew_gate, nodes, reasons
+from app.screener import compile_screen, fib_ew_gate, m99_gate, nodes, reasons
 from app.screener import fib_ew_scanners as fes  # registers the `fib_ew` template source (M99 P5)
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import intraday as itd  # registers the `intraday` template source (M94 PR-2)
@@ -373,14 +373,16 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
     the U7 LG3 fundamentals functions (`screener_fundamentals`), N3 S8a's ownership functions (`screener_ownership`), the
-    wave count functions (`screener_waves`), the M99 shared primitives (`m99_primitives`), the Fibonacci + Elliott functions (`fib_ew_pack`), the AMW-3 functions, v2 candles and confirmation statuses
-    (`screenql_amw_functions`; `params` resolves a `$parameter` pattern name), N3 S8c's venue matrix (`screener_venues`,
+    wave count functions (`screener_waves`), M99's bar classifier and structure functions and its Fibonacci / cluster functions
+    (`m99_primitives`), the Fibonacci + Elliott functions (`fib_ew_pack`), the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves
+    a `$parameter` pattern name), N3 S8c's venue matrix (`screener_venues`,
     with an exchange) and N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or this
     organisation's own). With the AMW-3 flag off, Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`).
     Every gate runs; RankScore's check is last so its early return skips none."""
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
-    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, primitives_gate, fib_ew_gate):   # M99 P5
+    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, m99_gate, primitives_gate,
+                 fib_ew_gate):   # M99 P5
         # the wave gate resolves a `$parameter` RetestEntry choice (R7: of wave_line / wave_end) from the screen's parameters
         blocked = await (waves_gate.blocked_calls(session, user.tenant_id, ast, params or {}) if gate is waves_gate
                          else gate.blocked_calls(session, user.tenant_id, ast))

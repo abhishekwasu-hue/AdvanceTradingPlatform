@@ -631,7 +631,8 @@ def test_scan_equals_backtest_equals_options_equals_worker(tid, params, seed):
     assert parity.compare(scan, answers, "backtest") == []
     assert trades and parity.compare_trades(scan, trades, lambda ts: ts) == []
     config = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2)
-    assert parity.compare(scan, parity.options_answers(strat, window, "NIFTY 50", config, RISK), "options") == []
+    index_scan = parity.scan_answers(strat.recipe, window, "NIFTY 50")       # M99 B1-d: the scan of the same (index) symbol
+    assert parity.compare(index_scan, parity.options_answers(strat, window, "NIFTY 50", config, RISK), "options") == []
     signal_at = [i for i, a in enumerate(scan.values()) if a.direction]
     at = sorted({j for i in signal_at for j in (i - 1, i, i + 1) if 0 <= j < len(window)} | set(range(0, len(window), 25)) | {len(window) - 1})
     worker = parity.worker_answers(strat, window, "S", at)

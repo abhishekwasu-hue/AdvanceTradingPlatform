@@ -54,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FIB_EW_SETTINGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import BAR_CLASS_KWARGS, FIB_EW_SETTINGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -297,6 +297,30 @@ class _Eval:
                 raise ScreenRuntimeError(str(exc)) from exc
             self._session_bars[key] = b
         return self._session_bars[key]
+
+    def level_grade(self, tf: str, level: str, what: str, near: float, look: int, touches: float, recent: int, tier: float,
+                    step: float) -> pd.Series:
+        """M99 P2: `LevelGrade` - the key levels of this frame (previous session, pre-open, the session so far) and the grade
+        or one part of it (app/screener/level_grade.py) on every bar; the ATR of 14 bars is the band's unit."""
+        from app.price_action import level_strength as ls
+        from app.screener import level_grade as lg
+        f = self.frame(tf)
+        levels = {"PDC": _operand(f, "PDC"), "PDH": _operand(f, "PDH"), "PDL": _operand(f, "PDL"),
+                  "PREOPEN_HIGH": self.session_series(tf, "pre_high"), "PREOPEN_LOW": self.session_series(tf, "pre_low"),
+                  "SESSION_HIGH": self.session_series(tf, "high"), "SESSION_LOW": self.session_series(tf, "low")}
+        arrays = {k: v.reindex(f.index).to_numpy(dtype=float) for k, v in levels.items()}
+        if step > 0:
+            steps: list[float] = [float(step)]
+        else:
+            by = ls._s(None)["zone_round_steps"]
+            steps = [float(x) for x in by.get(str(self.data.symbol).upper(), by["DEFAULT"])]
+        try:
+            values = lg.grade_series(arrays, level, f["high"].to_numpy(float), f["low"].to_numpy(float), _atr(f, 14).to_numpy(float),
+                                     what=what, near=near, look=look, touches=int(touches), recent=recent, tier=int(tier),
+                                     round_steps=steps)
+        except ValueError as exc:
+            raise ScreenRuntimeError(str(exc)) from exc
+        return pd.Series(values, index=f.index, dtype=float)
 
     def session_series(self, tf: str, what: str) -> pd.Series:
         """M94: one of the session's running values (high / low / volume so far) or the pre-open bars' levels (pre_high /
@@ -575,6 +599,12 @@ class _Eval:
             "PriorSwingHigh": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "H"),
             "PriorSwingLow": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "L"),
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py), settings as named arguments
+            "RelRange": lambda: _bar_class(f, name, win(0, 20), {}),
+            "SpreadClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "ClosePosition": lambda: _bar_class(f, name, 0, {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "BarDirection": lambda: _bar_class(f, name, 0, {}),
+            "VolumeClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
@@ -654,6 +684,9 @@ class _Eval:
             "PreOpenHigh": lambda: self.session_series(tf, "pre_high"),
             "PreOpenLow": lambda: self.session_series(tf, "pre_low"),
             "PreOpenVolume": lambda: self.session_series(tf, "pre_volume"),
+            # M99 P2: the information grade of a key level (app/screener/level_grade.py)
+            "LevelGrade": lambda: self.level_grade(tf, _text(0, ""), _text(1, "grade"), num(2, 0.0), win(3, 400), num(4, 2.0), win(5, 200),
+                                                   num(6, 2.0), num(7, 0.0)),
             # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
             "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
                 "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
@@ -1471,6 +1504,29 @@ def _fundamental(data: SymbolData, f: pd.DataFrame, tf: str, measure: str) -> pd
     return series(data, f, tf, measure)
 
 
+def _bar_class(f: pd.DataFrame, fn: str, n_: int, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-a: one classifier series per bar (app/price_action/bar_class.py) - RelRange a ratio (NaN while missing), the
+    classes text (None while missing). `given`: the named arguments of the call (None: left out, the reference value)."""
+    from app.price_action import bar_class as bc
+    names = dict(BAR_CLASS_KWARGS.get(fn, ()))
+    values: dict[str, Any] = {names[k]: v for k, v in given.items() if v is not None}
+    if n_:
+        values["avg_n"] = n_
+    try:
+        s = bc.settings_from(values)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if fn == "RelRange":
+        return bc.relative_range(f, s.avg_n)
+    if fn == "SpreadClass":
+        return bc.spread_class(f, s)
+    if fn == "ClosePosition":
+        return bc.close_position(f, s)
+    if fn == "BarDirection":
+        return bc.bar_direction(f)
+    return bc.volume_class(f, s)
+
+
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
     from app.price_action.breaks import median_range
     return pd.Series(median_range(f, max(1, n_)), index=f.index)
@@ -1729,7 +1785,7 @@ def last_match(symbol: str, value: Any) -> Match:
 # CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
 # VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
 VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower", "SessionVolume",
-                              "PreOpenVolume"})
+                              "PreOpenVolume", "VolumeClass"})     # M99 B1-a: VolumeClass
 
 
 def no_index_volume(universe: list[SymbolData]) -> None:

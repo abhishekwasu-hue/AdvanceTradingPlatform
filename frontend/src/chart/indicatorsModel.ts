@@ -40,6 +40,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   // M99 P5: the Fibonacci tool, clusters and the wave count with its rules and invalidation lines, each reading with a Why?.
   { id: "fib_ew", group: "layers", label: "Fibonacci + Elliott", note: "Fibonacci levels and clusters of the latest swings, the wave count with its rule checks and invalidation lines, each reading with a Why?.",
     flag: "fib_ew_pack", keywords: "fibonacci fib retracement extension golden cluster elliott wave count impulse zigzag triangle diagonal" },
+  // M96 N1: the expected move the nearest expiry's option prices imply (ATM straddle and ATM IV), off until turned on.
+  { id: "options_expected_move", group: "layers", label: "Expected move (from the option prices)",
+    note: "The range the nearest expiry's ATM straddle and ATM IV imply around the spot.", flag: "ui_v2", keywords: "expected move straddle iv option range" },
 ];
 
 /** What the menu reads and changes. */

@@ -87,6 +87,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Intraday pack: 12 scanners, 10 templates, 3 risk tools (10 Nov) | DECISIONS.md 10 Nov (M94) | M94 | merged, waits for deploy + flag |
 | - | Front door + link preview: explain the app on the shared link and the login page (10 Nov) | DECISIONS.md 10 Nov (M95) | M95 | merged, waits for deploy + flags + owner ✅ |
 | - | Audit every pre-built screen (48) on real data, annotated charts (9 Nov) | DECISIONS.md 9 Nov (M93) | SCR-AUDIT | in progress |
+| - | Book-study scanners + strategy templates, pack upgrades (11 Nov) | DECISIONS.md 11 Nov (M99) | M99 | in progress |
 | - | Other projects on the ATP host share its Caddy (5 Nov) | ../deploy/HOSTINGER_RUNBOOK.md 5a | OPS-SHARE | done |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

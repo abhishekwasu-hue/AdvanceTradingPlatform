@@ -161,7 +161,7 @@ def test_a_live_leg_that_does_not_fill_stops_the_remaining_entries(desk, monkeyp
     out = _post(t, "basket/execute", {"legs": legs, "product": "MIS", "mode": "LIVE", "basket_ref": _ref()})
     assert out["status"] == "PARTIAL" and out["placed"] == 1, out
     assert [r["status"] for r in out["legs"]] == ["PLACED", "FAILED", "NOT_PLACED"]
-    # PAPER would still send the second sold leg (its hedge filled); LIVE stops at the first leg that did not fill.
+    # The first leg that does not fill stops the rest (PAPER does the same: tests/test_fno2_basket.py).
     assert calls == [("BUY", base + 100, "LIVE"), ("SELL", base, "LIVE")]
     assert out["legs"][2]["reasons"] == ["Not placed: an earlier leg did not fill, so nothing more was sent."]
     assert [o.symbol for o in _entries(spy)] == [hedge]                         # what filled stays; nothing else went

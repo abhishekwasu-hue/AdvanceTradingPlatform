@@ -27,6 +27,7 @@ import { OptionChainView } from "../optionChain/OptionChainPageV2";
 import TerminalClassicV2 from "./TerminalClassicV2";
 import { ContextBarV2, useStripFigures } from "./ContextBarV2";
 import { modeChip } from "./statusModel";
+import { liveAvailableFrom } from "../settings/useLiveAvailable";
 import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_HEIGHT, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns,
@@ -312,7 +313,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {/* TERM-2 step 5: one line; every order is still shown to you before it is placed (the ticket's Review step). */}
       <PageIntro id="terminal" lines={["One symbol and expiry for the chart, chain, basket and your positions."]} />
       <ContextBarV2 symbol={underlying} onSymbol={setUnderlying}
-        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null)} compact={narrow} />
+        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null, liveAvailableFrom(features))} compact={narrow} />
       {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}
       {!narrow && <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
         <div className="flex flex-wrap items-center gap-space-2" data-tour="terminal-layouts">

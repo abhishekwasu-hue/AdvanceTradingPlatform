@@ -14,8 +14,9 @@ ticket, it needs a stop-loss on either side.
   that the user's open-position and trades-per-day limits leave room for every leg, and the total margin and max loss.
 * **execute** - checks everything again at the live price; if anything would refuse, nothing is placed. Then each leg
   is ONE PAPER order through the same ticket (`fno_ticket.place`, which asserts `phase0_lock.assert_paper` at the
-  chokepoint): every BUY (hedge) leg first, then the SELL legs, so the protection is in place before the short. A sold
-  leg is never placed after its hedges failed (it would be uncovered): it is reported "not placed" instead. A leg that
+  chokepoint): every BUY (hedge) leg first, then the SELL legs, so the protection is in place before the short. LIVE-2
+  (one code path for PAPER and LIVE): the first leg that does not fill stops every later leg - a sold leg after a failed
+  hedge is said to be uncovered, any other "an earlier leg did not fill" - so a PAPER run is what LIVE would do. A leg that
   fails is reported plainly with what the user can do; nothing is retried by itself and nothing that filled is undone
   (the user exits it with "Exit now" - exits are never blocked, ADR-0004). The AI never calls this (ADR-0006).
 
@@ -23,8 +24,8 @@ LIVE-2 (owner order LIVE-1, binding: one switch): the user picks PAPER or LIVE f
 LIVE basket runs the SAME preview and execute: the one live switch decides first (`live_switch.live_refusal`, read by the
 route through `fno_ticket.live_route`; nothing is built or sent while it is off), every leg goes through `fno_ticket.place`
 with mode LIVE to his own broker session behind the order chokepoint (`RateLimitedBroker`, `phase0_lock.assert_paper`),
-with the leg's idempotency key (`fno:<user>:<basket_ref>-<seq>`), and the first leg that does not fill stops every later
-entry leg (reported "not placed"). What filled stays; nothing is placed or exited by itself; exits stay unblocked.
+with the leg's idempotency key (`fno:<user>:<basket_ref>-<seq>`), and - as for PAPER - the first leg that does not fill
+stops every later entry leg (reported "not placed"). What filled stays; nothing is placed or exited by itself; exits stay unblocked.
 """
 from __future__ import annotations
 
@@ -495,7 +496,7 @@ async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *,
     rows: List[Dict[str, Any]] = []
     user_id = user.id
     hedge_failed = False
-    stopped = False                  # LIVE-2: a LIVE leg that did not fill stops every later entry leg
+    stopped = False                  # LIVE-2: a leg that did not fill stops every later entry leg (PAPER and LIVE alike)
     for seq, (i, leg) in enumerate(hedge_first(legs), start=1):
         name = label(leg)
         if (leg.side == "SELL" and hedge_failed) or stopped:
@@ -510,7 +511,7 @@ async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *,
         status = result.get("status", "FAILED")
         if status != "PLACED" and leg.side == "BUY":
             hedge_failed = True
-        if status != "PLACED" and is_live:
+        if status != "PLACED":
             stopped = True
         rows.append({"seq": seq, "leg": i, "label": result.get("label") or name, "side": leg.side, "lots": leg.lots,
                      "status": status if status == "PLACED" else ("FAILED" if status == "FAILED" else "REFUSED"),

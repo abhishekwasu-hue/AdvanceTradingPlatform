@@ -7,6 +7,8 @@ import { ConfirmModeLine, OrderModeChoice, liveIsOff } from "./OrderModeV2";
 import { canReverse, positionActionsApi, reverseCopy, runAction, type PositionActionsApi, type ReverseResult } from "./positionActions";
 import { LIVE_OFF_TEXT } from "./ticketModel";
 import type { TradeRecord } from "../types";
+import type { TerminalStatus } from "../terminal/api";
+import { LIVE_ON_TITLE, PAPER_ONLY_TITLE, modeChip } from "../terminal/statusModel";
 
 /**
  * LIVE-2 (owner LIVE-1, binding): the basket's and Reverse's PAPER / LIVE choice is the ticket's control - PAPER unless
@@ -80,5 +82,14 @@ describe("LIVE-2 mode control", () => {
     expect(canReverse({ ...base, mode: "LIVE" } as TradeRecord)).toBe(true);
     expect(canReverse({ ...base, mode: "PAPER" } as TradeRecord)).toBe(true);
     expect(canReverse({ ...base, mode: "LIVE", leg_group_id: "g1" } as TradeRecord)).toBe(false);
+  });
+
+  it("the Terminal's mode chip follows the one switch and never says LIVE is unavailable while it is ON", () => {
+    const status = (mode: "PAPER" | "LIVE") => ({ mode: { mode, live_allowed: true, message: "" } }) as unknown as TerminalStatus;
+    expect(modeChip(null)).toEqual({ label: "Paper", title: PAPER_ONLY_TITLE });
+    expect(PAPER_ONLY_TITLE).toBe("Paper only - live trading is switched off by the admin.");
+    expect(modeChip(status("PAPER"), true)).toEqual({ label: "Paper", title: LIVE_ON_TITLE });
+    expect(modeChip(status("LIVE"), true)).toEqual({ label: "Live", title: LIVE_ON_TITLE });
+    expect(LIVE_ON_TITLE).not.toMatch(/off|unavailable|only/i);
   });
 });

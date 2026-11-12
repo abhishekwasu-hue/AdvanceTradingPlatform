@@ -35,10 +35,15 @@ export function feedChip(state: FeedState | undefined): { label: string; tone: T
   }
 }
 
-/** The mode chip: shown, never changed (T9). */
-export function modeChip(s: TerminalStatus | null): { label: string; title: string } {
-  if (!s || s.mode.mode === "PAPER") return { label: "Paper", title: s?.mode.message ?? "Practice mode: no real order is sent and no money moves." };
-  return { label: "Live", title: s.mode.message };
+/** LIVE-1 / LIVE-2: the words of the mode chip, by the one live switch (never "LIVE unavailable" while it is ON). */
+export const PAPER_ONLY_TITLE = "Paper only - live trading is switched off by the admin.";
+export const LIVE_ON_TITLE = "Live trading is on: each order and bot uses the mode you pick on it (Paper unless you pick Live).";
+
+/** The mode chip: shown, never changed (T9). LIVE-2: it follows the one live switch (`liveAvailableFrom(useFeatures())`):
+ *  OFF - Paper only, said so; ON - the mode of the page's order (Paper unless he picked Live), with his choice explained. */
+export function modeChip(s: TerminalStatus | null, liveAvailable = false): { label: string; title: string } {
+  if (!liveAvailable) return { label: "Paper", title: PAPER_ONLY_TITLE };
+  return { label: s?.mode.mode === "LIVE" ? "Live" : "Paper", title: LIVE_ON_TITLE };
 }
 
 /** The margin line: always labelled an estimate; the positions it could not estimate are said, never guessed. */

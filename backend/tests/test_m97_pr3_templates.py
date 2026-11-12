@@ -79,9 +79,10 @@ def test_family_i_is_a_schema_change_and_the_other_families_are_unchanged():
         if t.family == "I":
             assert t.id in I_IDS and t.reference_values and t.style == "Both"
         else:
-            assert t.id[0] == t.family and t.family in "ABCDEFGHJK", t.id         # M99 P3 J and P4 K are their own families
+            assert t.id[0] == t.family and t.family in "ABCDEFGHJKLM", t.id       # M99 J, K, L and M are their own families
     assert FAMILY_NAMES["I"] == "Supply & Demand" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack", "I": "sd_pack",
-                                                                         "J": "vsa_pack", "K": "wyckoff_pack"}
+                                                                         "J": "vsa_pack", "K": "wyckoff_pack",
+                                                                         "L": "fib_ew_pack", "M": "pa_pack"}
     assert ids.COMPACT_FAMILIES == {"G", "H", "I"} and pages.PAGE_FAMILIES == {"H", "I"}
     assert X.LEVEL_FAMILIES == {"H", "I"} and X.FAMILY_LEVELS["I"] == ("OPPOSING_ZONE",)
     assert X.FAMILY_LEVELS["H"] == ("VWAP", "SESSION_EXTREME", "PREV_CLOSE", "OR_FAR_SIDE")        # family H as before

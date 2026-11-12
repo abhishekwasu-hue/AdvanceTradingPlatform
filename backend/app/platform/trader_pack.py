@@ -98,6 +98,8 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "m99_primitives": "Unfinished: the shared building blocks for screens (bar classes, structure, Fibonacci levels and price clusters); the packs that use them are still being built (M99)",
     "fib_ew_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P5)",
     "intraday_pack": "Unfinished: the intraday scanners, templates and risk tools are still being built (M94)",
+    "wyckoff_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P4)",
+    "vsa_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P3)",
     "chart_analyze": "Unfinished: beta, needs an AI key with image support",
     "chart_analyze_strikes": "Unfinished (needs Analyze a chart)",
     "chart_analyze_share": "Unfinished (needs Analyze a chart)",

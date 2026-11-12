@@ -323,6 +323,17 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:e2e
 
+      # The config keeps a trace for each failed test (trace: retain-on-failure); upload them so a CI-only e2e failure
+      # can be root-caused from its network / console trace (shell-v2 M60 and admin-console reload, 11 Nov).
+      - name: Upload Playwright traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-failed-traces
+          path: frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Generated palette is up to date (scripts/gen-palette.mjs)
         run: npm run gen:palette && git diff --exit-code -- src/styles/palette.css
 

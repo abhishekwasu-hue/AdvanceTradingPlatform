@@ -36,13 +36,15 @@ from app.strategy_templates.schema import Template
 FLAG = "strategy_templates"
 FAMILY_NAMES: Dict[str, str] = {"A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
                                 "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves",
-                                "H": "Intraday", "L": "Fibonacci + Elliott"}
+                                "H": "Intraday", "J": "Volume spread", "K": "Wyckoff", "L": "Fibonacci + Elliott"}
 FETCH_DEPENDENT_DEGREE = 2      # swings of this degree and larger depend on how much history is loaded (registry SC-14)
 # A family that is listed only while its own flag is on as well (family G, the wave templates: `screener_waves`). While
 # that flag is off its templates are not shown and cannot be adopted (404), not merely shown as unavailable.
 # M94 (F2): family H "Intraday" is listed only while `intraday_pack` is on.
+# M99 P3: family J "Volume spread" is listed only while `vsa_pack` is on.
+# M99 P4: family K "Wyckoff" is listed only while `wyckoff_pack` is on.
 # M99 P5: family L "Fibonacci + Elliott" is listed only while `fib_ew_pack` is on.
-FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack", "L": "fib_ew_pack"}
+FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack", "J": "vsa_pack", "K": "wyckoff_pack", "L": "fib_ew_pack"}
 # M94 (F8): the label of a template whose defaults are reference values from a study (a label only; nothing is enforced)
 REFERENCE_LABEL = "Reference values - edit before use"
 # M94-Q7: an intraday template carries no time-of-day rule; the optional window is the user's own operational setting

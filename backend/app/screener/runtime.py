@@ -54,7 +54,17 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import BAR_CLASS_KWARGS, FIB_EW_SETTINGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import (
+    BAR_CLASS_KWARGS,
+    FIB_EW_SETTINGS,
+    FUNCTIONS,
+    FUNDAMENTALS_FLAG,
+    PATTERN_SHAPE_KWARGS,
+    PREOPEN_FUNCTIONS,
+    RETEST_WAVE_OF,
+    VSA_KWARGS,
+    WYCKOFF_KWARGS,
+)
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -605,6 +615,11 @@ class _Eval:
             "ClosePosition": lambda: _bar_class(f, name, 0, {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
             "BarDirection": lambda: _bar_class(f, name, 0, {}),
             "VolumeClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            # M99 P3 (flag vsa_pack): the volume spread detectors (app/price_action/vsa.py), settings as named arguments
+            "VSA": lambda: _vsa(f, _text(0, "no_demand"), _text(1, "any"), {k: kw(k) for k in VSA_KWARGS}),
+            # M99 P4 (flag wyckoff_pack): the Wyckoff range reader (app/price_action/wyckoff.py), settings as named arguments
+            "Wyckoff": lambda: _wyckoff(f, tf, _text(0, "shake"), _text(1, "any"), {k: kw(k) for k in WYCKOFF_KWARGS}),
+            "WyckoffLevel": lambda: _wyckoff(f, tf, _text(0, "range_top"), None, {k: kw(k) for k in WYCKOFF_KWARGS}),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
@@ -1527,6 +1542,38 @@ def _bar_class(f: pd.DataFrame, fn: str, n_: int, given: dict[str, Any]) -> pd.S
     return bc.volume_class(f, s)
 
 
+def _vsa(f: pd.DataFrame, name: str, side: str, given: dict[str, Any]) -> pd.Series:
+    """M99 P3: one volume spread detector as a series - 1.0 where it holds, 0.0 where not, NaN where it cannot be read (no
+    volume data, or the warm-up: "not checked" on the last bar). One evaluation per frame and settings (vsa.cached)."""
+    from app.price_action import vsa
+    try:
+        s = vsa.settings_from({VSA_KWARGS[k]: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if name not in vsa.DETECTORS or side not in vsa.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"VSA: unknown reading {name!r} or side {side!r}")
+    return pd.Series(vsa.cached(f, s).value(name, side), index=f.index, dtype=float)
+
+
+def _wyckoff(f: pd.DataFrame, tf: str, name: str, side: str | None, given: dict[str, Any]) -> pd.Series:
+    """M99 P4: one Wyckoff reading as a series - 1.0 where it holds, 0.0 where not, NaN where it cannot be read (no volume
+    data, or the warm-up) - or, with `side` None, a level of the range (NaN where there is none). One evaluation per
+    frame, settings and timeframe (wyckoff.cached)."""
+    from app.price_action import wyckoff
+    try:
+        s = wyckoff.settings_from({WYCKOFF_KWARGS[k]: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    r = wyckoff.cached(f, s, tf)
+    if side is None:
+        if name not in wyckoff.LEVELS:
+            raise ScreenRuntimeError(f"WyckoffLevel: unknown level {name!r}")
+        return pd.Series(r.level(name), index=f.index, dtype=float)
+    if name not in wyckoff.NAMES_ALL or side not in wyckoff.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"Wyckoff: unknown reading {name!r} or side {side!r}")
+    return pd.Series(r.value(name, side), index=f.index, dtype=float)
+
+
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
     from app.price_action.breaks import median_range
     return pd.Series(median_range(f, max(1, n_)), index=f.index)
@@ -1785,7 +1832,8 @@ def last_match(symbol: str, value: Any) -> Match:
 # CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
 # VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
 VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower", "SessionVolume",
-                              "PreOpenVolume", "VolumeClass"})     # M99 B1-a: VolumeClass
+                              "PreOpenVolume", "VolumeClass", "VSA", "Wyckoff", "WyckoffLevel"})
+# M99 B1-a: VolumeClass; M99 P3: VSA; M99 P4: Wyckoff / WyckoffLevel
 
 
 def no_index_volume(universe: list[SymbolData]) -> None:

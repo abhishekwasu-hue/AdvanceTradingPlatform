@@ -723,6 +723,9 @@ class StrategyDeploymentRecord(Base):
     # M94 F10 (alembic f2b4d6e8a0c1): TEMPLATE_LEVEL's level - VWAP / SESSION_EXTREME / PREV_CLOSE / OR_FAR_SIDE
     # (app/strategy_templates/exits.py LEVELS). NULL = no level target (every existing row).
     target_level: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # M99 P2 (alembic b4d6f8a0c2e3): the intraday templates' trade-management options as JSON text
+    # (app/strategy_templates/management.py). NULL = none (every existing row).
+    management: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

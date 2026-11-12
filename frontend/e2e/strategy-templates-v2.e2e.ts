@@ -48,6 +48,14 @@ const EXITS = {
   },
   exit_signal: true, wave_projection: false, base_waves: [], target_r: { min: 0.1, max: 20 }, ratio: { min: 0, max: 10 },
 };
+// M99 P2: an intraday template's trade-management options (the shape the server sends; made-up references)
+const MANAGEMENT = {
+  classes: ["UNDERLYING", "FUTURE", "OPTION_SINGLE"],
+  trails: [{ value: "SWING", label: "By the swings" }, { value: "ATR", label: "By ATR from the best price" }, { value: "MA", label: "At a moving average" }],
+  averages: ["EMA", "SMA"],
+  bounds: { trail_degree: [0, 3], trail_n: [1, 500], trail_k: [0.1, 20], bars: [1, 1000] },
+  reference: { trail_degree: 0, trail_n_atr: 22, trail_k: 3, trail_n_ma: 20, trail_ma: "EMA", stall_bars: 2 }, reference_label: "Reference - edit before use",
+};
 
 interface Server { sent: { method: string; url: string; body: unknown }[] }
 
@@ -56,7 +64,7 @@ const PACK = { id: "F1", version: 2, name: "Trend side pack", family: "F", famil
   idea: "Reads the side of a trend turn for the option structure you set up.", difficulty: "Intermediate", style: "Both", timeframes: TF,
   default_timeframe: "15m", sides_default: "both", params: [], rules: [], available: true };
 
-async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean; exits?: boolean; packs?: boolean } = {}): Promise<Server> {
+async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; templatesOff?: boolean; exits?: boolean; packs?: boolean; management?: boolean } = {}): Promise<Server> {
   const server: Server = { sent: [] };
   await page.clock.install({ time: new Date(NOW) });
   await page.addInitScript((theme) => {
@@ -91,7 +99,7 @@ async function open(page: Page, o: { theme?: "light" | "dark"; path?: string; te
       deployment: { strategy_id: sid, timeframe: LABEL[tf], holding: tf === "1d" ? "SWING" : "INTRADAY", mode: "PAPER" },
       settings: { timeframe: tf, sides: "both", params: {} },
       notes: ["Signals only: what to trade, how much and when to get out stay your own choices.", "Paper money only. Nothing starts until you confirm it."],
-      ...(o.exits ? { exits: EXITS } : {}) } });
+      ...(o.exits ? { exits: o.management ? { ...EXITS, management: MANAGEMENT } : EXITS } : {}) } });
   });
   await page.route(api("/deployments(\\?.*)?$"), (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: [BOT] });
@@ -152,6 +160,18 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
       test("with the exits shown: no sideways scroll, 44 px targets", async ({ page }) => {
         await open(page, { path: "/deployments?template=D2", exits: true });
         await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
+        await expectPhoneLayout(page);
+      });
+
+      test("M99 P2: the trade-management options with the ATR trail and both exits on: no sideways scroll", async ({ page }) => {
+        await open(page, { path: "/deployments?template=D2", exits: true, management: true });
+        await pickNifty(page);
+        const block = form(page).locator("[data-management]");
+        await choose(page, block.getByLabel("Trail the stop"), { label: "By ATR from the best price" });
+        await block.getByText("Exit when no new high").click();
+        await block.getByText("Exit after a number of bars").click();
+        await expect(block.getByText("Reference - edit before use: 22")).toHaveCount(1);       // the hint once, no placeholder copy
+        await expect(block.getByLabel("ATR bars")).not.toHaveAttribute("placeholder", /.+/);
         await expectPhoneLayout(page);
       });
     }

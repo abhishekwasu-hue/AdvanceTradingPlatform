@@ -569,7 +569,7 @@ def test_migration_adds_nullable_columns_writes_nothing_and_goes_down():
     spec = importlib.util.spec_from_file_location("m99_p7_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.ROLLBACK_SAFE is True and module.down_revision == "a3c5e7f9b1d4"
+    assert module.ROLLBACK_SAFE is True and module.down_revision == "b4d6f8a0c2e3"   # after M99 P2 (#1024)
     engine = sa.create_engine("sqlite://")
     with engine.begin() as conn:
         conn.execute(sa.text("CREATE TABLE risk_settings (id INTEGER PRIMARY KEY, tenant_id INTEGER, daily_loss_rupees FLOAT)"))

@@ -544,6 +544,8 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M94-Q23 | M94 H1 (Fallen angel): the base is read on the bars before the signal bar and inside the session (a break no longer widens its own base) | Default: as built |
 | M94-Q24 | M94 H1-H5 defaults with no number in the spec: base_n 5, base_atr 1.0 (a tightness limit has no "0 = none"), expiry 12, turn_n 1, exit_n 1 (labelled reference values) | Default: as built |
 | M94-Q25 | M94 not built in H1-H5: T1's optional support evidence (would show developer text) and the flags' "new 1-minute and new 5-minute high together" (needs two timeframes) | Default: left out of M94 |
+| M99-P2-Q1 | M99 P2 trade-management options (trail by swing / ATR / average, no new extreme, bars in the trade) run on a template bot that trades the symbol it reads; a future (its levels are transplanted) and an option (its levels are on the underlying) are refused in a plain sentence for now | Default: the symbol itself only; futures / options in a follow-up PR on the same `management_step` |
+| M99-P2-Q2 | M99 P2: no second partial exit for the H templates - a part is booked through the ExitRules scale-out (M99 P7, #1023); a break-even "after the partial" is not built (the existing break-even at an R multiple stays) | Default: as built |
 
 ## M94: Intraday pack spec review (10 Nov, docs/design/M94_INTRADAY_PACK.md)
 
@@ -573,6 +575,15 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M95-Q6 | FAQ "cost" with no price decided | "Free during the beta." until Abhi sets a price |
 | M95-Q7 | WhatsApp / Telegram preview proof before deploy | Render at their sizes now; Abhi's real screenshot after deploy |
 
+## LIVE-1: one live switch (owner order 11 Nov, BINDING; PR `claude/live-1-one-switch`)
+| ID | Question | Default (provisional, until Abhi answers) |
+|---|---|---|
+| LIVE-1-Q1 | Two-factor step-up before creating / resuming a LIVE bot (only when the team owner set `require_mfa_for_live`, always for a platform admin) - a LIVE gate or account security? | Kept as account security (it also guards broker logins); not a LIVE switch |
+| LIVE-1-Q2 | Verified email for LIVE (operator setting EMAIL_VERIFICATION_REQUIRED) and the SEBI algo id (ALGO_ID_REQUIRED_FOR_LIVE), both off by default | Kept: identity / regulatory facts, like "his own signed-in broker"; not LIVE switches |
+| LIVE-1-Q3 | A team owner can still deny one member `trading:live` (Team page scopes) | Kept as a team permission; every USER now has it by default |
+| LIVE-1-Q4 | Screener "then" action Auto LIVE (N1 execution core) has no LIVE order path at all | Stays refused (no path is built; not one of the named order paths); the reason now says "live trading is switched off" only when it is |
+| LIVE-1-Q5 | F&O ticket, basket and Reverse LIVE | The ticket's LIVE path is #1002 (it reads `live_owner.org_live_open`, which is now the one switch); the basket and Reverse follow once #1002 merges (LIVE-2) |
+| LIVE-1-Q6 | The stored organisation list of `live_trading` (former "LIVE for organisations") | Kept stored, owner-only route kept; it decides nothing and the admin list no longer shows it |
 ## M96-Q1 (changed): the F&O ticket's LIVE path (PR `claude/m96-ticket-live`)
 | ID | Question | Default (provisional, built) | Where | Status |
 |---|---|---|---|---|

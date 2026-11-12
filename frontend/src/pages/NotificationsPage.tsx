@@ -98,13 +98,13 @@ export default function NotificationsPage() {
                 className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-surface-2/50"} ${target === n.id ? "ring-2 ring-brand" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className={`rounded border px-1.5 py-0.5 text-xs font-semibold uppercase ${severityClasses(n.severity)}`}>
                       {n.severity}
                     </span>
                     <span className="text-xs text-fg-muted" data-event-kind>{notificationEventWords(n.event_type)}</span>
                   </div>
-                  <span className="text-xs text-fg-muted whitespace-nowrap">{formatDateTimeIST(n.created_at)}</span>
+                  <span className="shrink-0 text-xs text-fg-muted whitespace-nowrap">{formatDateTimeIST(n.created_at)}</span>
                 </div>
                 <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}

@@ -11,7 +11,7 @@ day). No row is written and no stored value changes.
 Run after 15:30 IST (owner, DECISIONS 25 Oct).
 
 Revision ID: b4d6f8a0c2e5
-Revises: a3c5e7f9b1d4
+Revises: b4d6f8a0c2e3
 Create Date: 2026-11-11 12:00:00
 """
 from typing import Sequence, Union
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b4d6f8a0c2e5'
-down_revision: Union[str, Sequence[str], None] = 'a3c5e7f9b1d4'
+down_revision: Union[str, Sequence[str], None] = 'b4d6f8a0c2e3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - nullable columns with no default; the previous release never reads or writes them, so it runs

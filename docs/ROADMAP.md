@@ -71,6 +71,7 @@ LIVE stays OFF (the owner's switch). Marketplace, public API, self-signup and pa
 | M95 | Front door + link preview: link preview image and text (F1), login page as the front door (F2), read-only guest demo on EOD data (F3), video slot (F4), MR / HI / EN switch (F5), rules F6, marketing_site pages finished (F7) | owner 10 Nov | INBOX / DECISIONS 10 Nov (M95) |
 | LIVE-1 | One live switch: audit every PAPER / LIVE gate and fold them into the single `live_trading` flag; when ON every order path offers PAPER and LIVE, the user chooses | owner 11 Nov (binding) | DECISIONS 11 Nov |
 | M97 | Supply & Demand pack: zone detector (Z1), states (Z2), chart overlay (Z3), scanners (Z4), templates (Z5), style presets (Z6), Copilot facts (Z7) | owner 11 Nov | INBOX 11 Nov (M97) |
+| M99 | Book-study scanners + templates: B0 audit, B1 shared primitives, P1 S&D upgrade, P3 VSA, P4 Wyckoff, P5 Fib + Elliott, P6 PA patterns, P2 Intraday upgrade, P7 risk options | owner 11 Nov | INBOX 11 Nov (M99) |
 | COP-2 | Copilot: stale answers leave the screen (A), Read chart for any symbol (B), headline trend = card trend (C), EOD timing audit (D) | owner 11 Nov | INBOX / DECISIONS 11 Nov |
 | M96 | Terminal option chain: audit (A1), banner + OI-difference table on top (L1), order from the OI-difference table (O1), trader analysis features (N1), tests (T1) | owner 11 Nov | INBOX 11 Nov (M96) |
 | DEF-0 | No platform defaults in order placement / risk: D1 RiskConfig all optional, D2 hard-coded capital, D3 hidden exits (AP-FIX AP7), D4 experience levels a user opt-in, D5 override multipliers, D6 ticket truth, D7 stop-loss source, D8 margin estimate, D9 My limits card, D10 migration (extends TT-12; merges AP-FIX AP4 / AP7) | ATP_ORDER_DEF0.md | first report per D-item; tests (no-settings user can place / Autopilot can enter; each setting applies; exits never blocked; PAPER = LIVE); CI grep guard; PROOF page; owner ✅ |
@@ -312,6 +313,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M96 | in progress (owner 11 Nov) | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
 | LIVE-1 | in progress (owner 11 Nov) | audit of all gates, then one PR | DECISIONS 11 Nov |
 | M97 | in progress (owner 11 Nov) | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
+| M99 | in progress (owner 11 Nov) | all built as draft PRs: B0 #1012, B1 #1013 (merged) #1014 #1015 #1016, P1 #1017, P3 #1018, P4 #1019, P5 #1020, P6 #1021, P7 #1023, P2 #1024; flags OFF per pack; waits for green CI, merges, deploy and the owner's flag decisions + ✅ | INBOX 11 Nov (M99, M100, M101) |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

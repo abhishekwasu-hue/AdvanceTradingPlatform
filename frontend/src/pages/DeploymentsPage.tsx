@@ -1,3 +1,4 @@
+import { LIVE_OFF_TEXT, useLiveAvailable } from "../settings/useLiveAvailable";
 import { errorSentence } from "../api/errors";
 import { AlertTriangle, Bot, CircleDot, Pause, Play, Plus, Square, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -161,6 +162,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
   // Settings part C: on the v2 Trading bot page only (paperOnly, so PAPER), the user's own defaults pre-fill this form once;
   // each field that still shows its default is marked, and every field stays editable. No defaults: nothing changes.
   const features = useFeatures();
+  const liveAvailable = useLiveAvailable();          // LIVE-1: the one live switch decides whether Live may be picked
   // M68 PR-6 (TS1-061): "Ask me first" is his own choice - no organisation flag is needed to offer it.
   const approvalAllowed = true;
   const defaults = useTradingDefaults(paperOnly && !!user && features.on("ui_v2"));
@@ -887,6 +889,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                 key={m}
                 onClick={() => setMode(m)}
                 aria-pressed={mode === m}
+                disabled={m === "LIVE" && !liveAvailable}
                 className={`rounded-md border px-3 py-1 text-xs font-bold tracking-wide ${
                   mode === m
                     ? m === "LIVE" ? "border-down text-down bg-down/15" : "border-brand/50 text-brand bg-brand/10"
@@ -896,6 +899,7 @@ export default function DeploymentsPage({ paperOnly = false, onCreated }: PagePr
                 {m}
               </button>
             ))}
+            {!liveAvailable && <span className="text-xs text-fg-muted" data-live-off>{LIVE_OFF_TEXT}</span>}
           </div>}
           <button
             onClick={handleCreate}

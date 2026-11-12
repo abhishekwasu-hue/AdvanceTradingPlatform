@@ -332,9 +332,8 @@ export default function TeamPage() {
           {liveHidden ? (
             <div className="mt-3 text-xs font-semibold text-fg-muted" data-plan-paper>Paper trading: practice money at real prices.</div>
           ) : (
-            <div className={`mt-3 text-xs font-semibold ${tenant.limits.live_trading ? "text-up" : "text-warn"}`}>
-              {tenant.limits.live_trading ? "Live trading included." : "Paper trading only on this plan - LIVE deployments need Pro or Business. Contact support to upgrade."}
-            </div>
+            // LIVE-1: liveHidden is false only while the one live switch is on - then every plan may trade live.
+            <div className="mt-3 text-xs font-semibold text-up" data-plan-live>Paper and live trading: each member picks his own mode.</div>
           )}
         </Card>
       )}

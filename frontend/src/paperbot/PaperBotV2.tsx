@@ -725,7 +725,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
           {touched && problem && <p id={ids.other} role="alert" className="mt-space-1 text-t13 text-warn">{problem}</p>}
         </div>
         {exitChoices && exitsNow && (
-          <fieldset className="space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>
+          <fieldset className="min-w-0 space-y-space-3 rounded-control border border-subtle p-space-3" data-template-exits aria-describedby={ids.exitNotes}>
             <legend className="px-space-1 text-t14 font-medium text-fg">Exits for this bot</legend>
             {stopOptions(exitChoices, cls).length > 1 ? (
               <div>

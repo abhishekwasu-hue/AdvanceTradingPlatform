@@ -213,7 +213,7 @@ def _management_choices() -> Dict[str, Any]:
     from app.strategy_templates import management as mg
     return {
         "classes": sorted(exit_settings.MANAGEMENT_CLASSES),
-        "trails": [{"value": "SWING", "label": "By the swings"}, {"value": "ATR", "label": "By average true ranges from the best price"},
+        "trails": [{"value": "SWING", "label": "By the swings"}, {"value": "ATR", "label": "By ATR from the best price"},
                    {"value": "MA", "label": "At a moving average"}],
         "averages": list(mg.AVERAGES),
         "bounds": {"trail_degree": list(mg.DEGREE_BOUNDS),

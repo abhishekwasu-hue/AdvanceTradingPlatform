@@ -27,6 +27,10 @@ Definitions (fixed here and stated in each analysis's `method` line):
   of (put IV at the k-th strike below ATM - call IV at the k-th strike above ATM), in volatility points; within
   +/-0.5 points it reads "about the same".
 
+M96 N1 adds `chain_analytics` (the `analytics` key of the same answer): build-up at every strike and the futures OI
+build-up, OI walls and their shift, OI / change-in-OI / volume / per-strike PCR, the ATM IV percentile / rank and the IV
+change per strike, DEX / GEX with the flip level, and volume / OI with the user's own highlight threshold.
+
 Nothing here reads a database, a clock or the network: the route passes the snapshots and the valuation time in.
 """
 from __future__ import annotations
@@ -83,9 +87,12 @@ UNREADABLE = "This analysis could not be worked out from this chain."
 
 @dataclass(frozen=True)
 class Snapshot:
-    """One earlier reading of the chain in this session: when it was read and the chain as stored."""
+    """One earlier reading of the chain in this session: when it was read and the chain as stored. M96 N1: the
+    near-month future's price and OI read in the same collector slot (None when not read or not stored)."""
     at: datetime
     chain: OptionChain
+    future_price: Optional[float] = None
+    future_oi: Optional[float] = None
 
 
 # ---------------------------------------------------------------- formatting (sentences only; tables carry raw numbers)
@@ -766,6 +773,336 @@ def _pct_or_dash(value: Optional[float]) -> str:
     return f"{value:.2f}%" if value is not None else "not available"
 
 
+# ---------------------------------------------------------------- M96 N1: chain analytics (one block in the same answer)
+#
+# Six sections over the same chain and the same earlier snapshots as the tabs above, computed once here and served as
+# the `analytics` key of GET /api/option-chain/analyses. Facts and standard tags only; every number comes from the
+# user's own broker chain, the session's earlier stored snapshots (cut at the answer's valuation instant, so never a
+# later one) and the earlier sessions' closing ATM IV. Window: every strike of the chain read (a strike without a stored
+# earlier reading is "not available" in the session comparisons, never 0).
+
+AN_BUILDUP_METHOD = ("Per strike and side, the option's last price change and OI change since the session's first stored snapshot: "
+                     "price up and OI up = long build-up, price down and OI up = short build-up, price up and OI down = short covering, "
+                     "price down and OI down = long unwinding; a change of exactly zero = no clear change; a strike without a stored "
+                     "first reading = not available. Futures: the near-month future's price and OI at each stored reading against "
+                     "the first stored reading of the session, read with the same four tags.")
+AN_WALLS_METHOD = ("Highest OI: the strike with the most call OI and the strike with the most put OI over every strike of the chain "
+                   "(a tie goes to the lower strike). Highest OI addition: the strike whose OI rose most since the session's first "
+                   "stored snapshot (only strikes stored then; none when no strike added OI). The shift is the same two readings at "
+                   "every stored snapshot, over the strikes stored in every snapshot, so a strike is never compared with a gap.")
+AN_PCR_METHOD = ("Over every strike of the chain: OI PCR = total put OI / total call OI; change-in-OI PCR = total put OI change / "
+                 "total call OI change; volume PCR = total put volume / total call volume; per strike PCR = put OI / call OI at that "
+                 "strike. The OI change is the broker's own change field (against the previous session) when the broker sends it, "
+                 "otherwise the change since the session's first stored snapshot. A ratio with a zero total below the line is not "
+                 "shown.")
+AN_IV_METHOD = ("ATM IV = the mean of the call and put IV at the strike nearest the spot. Percentile = the share of the earlier "
+                "sessions whose closing ATM IV was below today's. Rank = (today's ATM IV - the lowest) / (the highest - the lowest) "
+                "x 100, the lowest and highest taken over the earlier sessions and today. Each earlier session counts once, by its "
+                "last stored reading (its nearest expiry then). IV change per strike = IV now - IV at the session's first stored "
+                "snapshot, in IV points.")
+AN_EXPOSURE_METHOD = ("Per strike: delta and gamma from Black-Scholes with the option's IV (the broker's quote when it reprices the "
+                      "last price, otherwise solved from it), the time left to expiry and the interest rate setting. Contract "
+                      "multiplier = the lot size from the instrument list. DEX = OI x lot size x delta x spot (calls add, put delta is "
+                      "negative). GEX = OI x lot size x gamma x spot x spot x 1%, counted plus for calls and minus for puts. Both in "
+                      "rupees crore (GEX per 1% move of the spot). Sign convention: the quoted OI is read as held by option buyers "
+                      "(customer long calls and long puts); the gamma sign (calls plus, puts minus) is the common market convention "
+                      "that lets the net change sign. Flip level: the strike where the running total of GEX, added from the lowest "
+                      "strike up, changes sign.")
+AN_VOL_OI_METHOD = ("Volume / OI = the option's traded volume divided by its open interest, per strike and side (not shown when the "
+                    "OI is 0). A strike is highlighted when the ratio is above your own threshold; with no threshold set nothing "
+                    "is highlighted.")
+
+AN_NO_SPOT = "The chain has no underlying price, so this cannot be worked out."
+AN_NEED_HISTORY = "This compares with the session's first stored snapshot, and none is stored for this expiry yet."
+AN_HISTORY_OFF = "This compares with earlier snapshots of the session, which are not used while your own-broker data setting is on."
+AN_NO_LOT = "The lot size for this expiry is not in the instrument list yet, so the exposure in rupees cannot be worked out."
+AN_NO_TIME = "The expiry has passed or is not known, so delta and gamma cannot be worked out."
+AN_NO_FUTURE = "No stored reading of the near-month future's price and OI yet; it needs two stored readings."
+RUPEES_CRORE = 1e7
+
+
+def _section(state: str, method: str, message: str | None = None, **values: Any) -> dict[str, Any]:
+    return {"state": state, "method": method, "message": message, **values}
+
+
+def _past(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> list[Snapshot]:
+    """The earlier snapshots of this chain's expiry read at or before `now` (no look-ahead), oldest first."""
+    cut = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    return [s for s in session_history(chain, history) if (s.at if s.at.tzinfo else s.at.replace(tzinfo=timezone.utc)) <= cut]
+
+
+def an_buildup(chain: OptionChain, past: Sequence[Snapshot], history: Sequence[Snapshot], now: datetime, *,
+               history_off: bool = False) -> dict[str, Any]:
+    """Item 1: the build-up tag at every strike of the chain, calls and puts, plus the futures OI build-up over the session."""
+    futures = an_futures(history, now, history_off=history_off)
+    if not past:
+        return _section("no_data", AN_BUILDUP_METHOD, AN_HISTORY_OFF if history_off else AN_NEED_HISTORY, rows=[], counts={},
+                        reference_time=None, futures=futures)
+    ref = past[0]
+    before = {r.strike: r for r in ref.chain.rows}
+    rows: list[dict[str, Any]] = []
+    counts: dict[str, dict[str, int]] = {"call": {}, "put": {}}
+    for r in sorted_rows(chain):
+        b = before.get(r.strike)
+        item: dict[str, Any] = {"strike": r.strike}
+        for side in ("call", "put"):
+            d_price = _diff(getattr(r, f"{side}_ltp"), getattr(b, f"{side}_ltp")) if b else None
+            d_oi = _diff(getattr(r, f"{side}_oi"), getattr(b, f"{side}_oi")) if b else None
+            tag = classify_build_up(d_price, d_oi)
+            counts[side][tag] = counts[side].get(tag, 0) + 1
+            item.update({f"{side}_price_change": _r(d_price), f"{side}_oi_change": _r(d_oi, 0), f"{side}_class": tag,
+                         f"{side}_label": BUILD_UP_LABELS[tag]})
+        rows.append(item)
+    return _section("ok", AN_BUILDUP_METHOD, rows=rows, counts=counts, reference_time=_iso(ref.at), futures=futures)
+
+
+def an_futures(history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> dict[str, Any]:
+    """The near-month future's price and OI at each stored reading of the session (read at or before `now`), each tagged
+    against the session's first stored reading with both values."""
+    if history_off:
+        return _section("no_data", AN_BUILDUP_METHOD, AN_HISTORY_OFF, points=[], latest=None)
+    cut = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    seen = sorted((s for s in history if s.future_price is not None and s.future_oi is not None
+                   and (s.at if s.at.tzinfo else s.at.replace(tzinfo=timezone.utc)) <= cut), key=lambda s: s.at)
+    if len(seen) < 2:
+        return _section("no_data", AN_BUILDUP_METHOD, AN_NO_FUTURE, points=[], latest=None)
+    first = seen[0]
+    points: list[dict[str, Any]] = []
+    for s in seen:
+        d_price, d_oi = _diff(s.future_price, first.future_price), _diff(s.future_oi, first.future_oi)
+        tag = classify_build_up(d_price, d_oi)
+        points.append({"time": _iso(s.at), "price": _r(s.future_price), "oi": _r(s.future_oi, 0), "price_change": _r(d_price),
+                       "oi_change": _r(d_oi, 0), "class": tag, "label": BUILD_UP_LABELS[tag]})
+    return _section("ok", AN_BUILDUP_METHOD, points=points, latest=points[-1], since=_iso(first.at))
+
+
+def _top_addition(rows: Sequence[OptionChainRow], before: dict[float, OptionChainRow], side: str) -> tuple[float | None, float | None]:
+    """(strike, OI added) of the strike whose `side` OI rose most since `before`; a tie goes to the lower strike."""
+    best: tuple[float | None, float | None] = (None, None)
+    for r in sorted(rows, key=lambda x: x.strike):
+        b = before.get(r.strike)
+        now_oi, then_oi = getattr(r, f"{side}_oi"), getattr(b, f"{side}_oi") if b else None
+        if now_oi is None or then_oi is None:
+            continue
+        added = float(now_oi) - float(then_oi)
+        if added > 0 and (best[1] is None or added > best[1]):
+            best = (r.strike, added)
+    return best
+
+
+def an_walls(chain: OptionChain, past: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> dict[str, Any]:
+    """Item 2: the highest OI and highest OI addition per side now, and the four wall strikes at every stored snapshot."""
+    rows = sorted_rows(chain)
+    call, put = _argmax_strike(rows, "call"), _argmax_strike(rows, "put")
+    current: dict[str, Any] = {"call_oi_strike": call.strike if call else None, "call_oi": _oi(call.call_oi) if call else None,
+                               "put_oi_strike": put.strike if put else None, "put_oi": _oi(put.put_oi) if put else None,
+                               "call_add_strike": None, "call_add": None, "put_add_strike": None, "put_add": None}
+    if call is None and put is None:
+        return _section("no_data", AN_WALLS_METHOD, "The chain has no open interest yet, so no strike stands out.", now=current, series=[])
+    if not past:
+        return _section("ok", AN_WALLS_METHOD, AN_HISTORY_OFF if history_off else AN_NEED_HISTORY, now=current, series=[])
+    before = {r.strike: r for r in past[0].chain.rows}
+    for side in ("call", "put"):
+        current[f"{side}_add_strike"], current[f"{side}_add"] = _top_addition(rows, before, side)
+    common = {r.strike for r in rows}
+    for s in past:
+        common &= {r.strike for r in s.chain.rows}
+    series: list[dict[str, Any]] = []
+    for at, c in [(s.at, s.chain) for s in past] + [(now, chain)]:
+        window = [r for r in c.rows if r.strike in common]
+        hc, hp = _argmax_strike(window, "call"), _argmax_strike(window, "put")
+        ac, _ = _top_addition(window, before, "call")
+        ap, _ = _top_addition(window, before, "put")
+        series.append({"time": _iso(at), "spot": _r(c.underlying_ltp), "call_oi_strike": hc.strike if hc else None,
+                       "put_oi_strike": hp.strike if hp else None, "call_add_strike": ac, "put_add_strike": ap})
+    return _section("ok", AN_WALLS_METHOD, now=current, series=series, strikes_in_every_snapshot=len(common))
+
+
+def _ratio(top: float | None, bottom: float | None, digits: int = 2) -> float | None:
+    return None if top is None or not bottom else round(top / bottom, digits)
+
+
+def an_pcr(chain: OptionChain, past: Sequence[Snapshot]) -> dict[str, Any]:
+    """Item 3: OI, change-in-OI and volume PCR over the whole chain, and the PCR at every strike."""
+    rows = sorted_rows(chain)
+    put_oi, call_oi, _ = pcr_of(rows)
+    broker = any(r.call_change_oi is not None or r.put_change_oi is not None for r in rows)
+    basis: str | None = None
+    put_chg: float | None = None
+    call_chg: float | None = None
+    if broker:
+        basis = "broker"
+        put_chg = sum(float(r.put_change_oi or 0.0) for r in rows)
+        call_chg = sum(float(r.call_change_oi or 0.0) for r in rows)
+    elif past:
+        basis = "session"
+        before = {r.strike: r for r in past[0].chain.rows}
+        pairs = [(r, before[r.strike]) for r in rows if r.strike in before]
+        put_chg = sum(_diff(r.put_oi, b.put_oi) or 0.0 for r, b in pairs)
+        call_chg = sum(_diff(r.call_oi, b.call_oi) or 0.0 for r, b in pairs)
+    has_volume = any(r.call_volume is not None or r.put_volume is not None for r in rows)
+    put_vol = sum(float(r.put_volume or 0.0) for r in rows) if has_volume else None
+    call_vol = sum(float(r.call_volume or 0.0) for r in rows) if has_volume else None
+    per_strike = [{"strike": r.strike, "call_oi": r.call_oi, "put_oi": r.put_oi,
+                   "pcr": _ratio(float(r.put_oi) if r.put_oi is not None else None, r.call_oi)} for r in rows]
+    return _section("ok", AN_PCR_METHOD, oi={"put": put_oi, "call": call_oi, "pcr": _ratio(put_oi, call_oi)},
+                    change_oi={"put": put_chg, "call": call_chg, "pcr": _ratio(put_chg, call_chg), "basis": basis},
+                    volume={"put": put_vol, "call": call_vol, "pcr": _ratio(put_vol, call_vol)},
+                    strikes=len(rows), per_strike=per_strike)
+
+
+def atm_iv_of(chain: OptionChain, at: datetime) -> float | None:
+    """The mean of the call and put IV (percent) at the ATM strike, or None - as the charts page reads it (charts.atm_iv)."""
+    from app.option_chain.charts import atm_iv
+    return atm_iv(chain, at)
+
+
+def iv_rank(today_iv: float | None, earlier: Sequence[tuple[date, float]], min_sessions: int) -> dict[str, Any]:
+    """ATM IV percentile and rank of `today_iv` against the earlier sessions' closing ATM IV (oldest first)."""
+    values = [float(v) for _, v in earlier if v is not None and math.isfinite(v)]
+    out: dict[str, Any] = {"atm_iv": _r(today_iv), "sessions": len(values), "min_sessions": min_sessions, "percentile": None,
+                           "rank": None, "low": None, "high": None, "first_day": earlier[0][0].isoformat() if earlier else None,
+                           "last_day": earlier[-1][0].isoformat() if earlier else None, "enough": False}
+    if today_iv is None or len(values) < min_sessions:
+        return out
+    low, high = min([*values, today_iv]), max([*values, today_iv])
+    out.update({"enough": True, "low": _r(low), "high": _r(high),
+                "percentile": _r(sum(1 for v in values if v < today_iv) / len(values) * 100, 1),
+                "rank": _r((today_iv - low) / (high - low) * 100, 1) if high > low else None})
+    return out
+
+
+def an_iv(chain: OptionChain, past: Sequence[Snapshot], now: datetime, iv_history: Sequence[tuple[date, float]],
+          min_sessions: int, *, history_off: bool = False) -> dict[str, Any]:
+    """Item 4: the ATM IV percentile / rank from stored history and the IV change per strike since the first snapshot."""
+    spot = chain.underlying_ltp
+    today = atm_iv_of(chain, now) if spot is not None else None
+    rank = iv_rank(today, iv_history, min_sessions)
+    years = _years(chain.expiry, now)
+    ref = past[0] if past else None
+    ref_years = _years(ref.chain.expiry, ref.at) if ref else None
+    before = {r.strike: r for r in ref.chain.rows} if ref else {}
+    rows: list[dict[str, Any]] = []
+    for r in sorted_rows(chain):
+        item: dict[str, Any] = {"strike": r.strike}
+        b = before.get(r.strike)
+        for side, ot in (("call", OptionType.CALL), ("put", OptionType.PUT)):
+            iv_now = _iv_pct(getattr(r, f"{side}_iv"), getattr(r, f"{side}_ltp"), spot, r.strike, years, ot)
+            iv_then = (_iv_pct(getattr(b, f"{side}_iv"), getattr(b, f"{side}_ltp"), ref.chain.underlying_ltp, r.strike, ref_years, ot)
+                       if b is not None and ref is not None else None)
+            item.update({f"{side}_iv": _r(iv_now), f"{side}_iv_change": _r(_diff(iv_now, iv_then))})
+        rows.append(item)
+    message = None if ref else (AN_HISTORY_OFF if history_off else AN_NEED_HISTORY)
+    return _section("ok" if today is not None or any(x["call_iv"] is not None or x["put_iv"] is not None for x in rows) else "no_data",
+                    AN_IV_METHOD, message, rank=rank, reference_time=_iso(ref.at) if ref else None, per_strike=rows)
+
+
+def an_exposure(chain: OptionChain, now: datetime, lot_size: float | None) -> dict[str, Any]:
+    """Item 5: DEX / GEX per strike, the net of each and the GEX flip level(s)."""
+    spot = chain.underlying_ltp
+    units = {"dex": "rupees crore", "gex": "rupees crore per 1% move of the spot"}
+    if spot is None:
+        return _section("no_data", AN_EXPOSURE_METHOD, AN_NO_SPOT, units=units, rows=[])
+    years = _years(chain.expiry, now)
+    if years is None or years <= 0:
+        return _section("no_data", AN_EXPOSURE_METHOD, AN_NO_TIME, units=units, rows=[])
+    if not lot_size or lot_size <= 0:
+        return _section("no_data", AN_EXPOSURE_METHOD, AN_NO_LOT, units=units, rows=[])
+    from app.option_chain.greeks import BSInputs, black_scholes
+    rows: list[dict[str, Any]] = []
+    for r in sorted_rows(chain):
+        item: dict[str, Any] = {"strike": r.strike}
+        net_dex = net_gex = 0.0
+        used = False
+        for side, ot, gamma_sign in (("call", OptionType.CALL, 1.0), ("put", OptionType.PUT, -1.0)):
+            oi = getattr(r, f"{side}_oi")
+            iv = _iv_pct(getattr(r, f"{side}_iv"), getattr(r, f"{side}_ltp"), spot, r.strike, years, ot)
+            dex = gex = delta = gamma = None
+            if oi is not None and iv is not None:
+                g = black_scholes(BSInputs(float(spot), float(r.strike), float(years), RISK_FREE_RATE, iv / 100.0, ot))
+                delta, gamma = g.delta, g.gamma
+                dex = float(oi) * lot_size * delta * spot / RUPEES_CRORE
+                gex = gamma_sign * float(oi) * lot_size * gamma * spot * spot * 0.01 / RUPEES_CRORE
+                net_dex += dex
+                net_gex += gex
+                used = True
+            item.update({f"{side}_delta": _r(delta, 4), f"{side}_gamma": _r(gamma, 6), f"{side}_dex": _r(dex, 2), f"{side}_gex": _r(gex, 2)})
+        item.update({"net_dex": _r(net_dex, 2) if used else None, "net_gex": _r(net_gex, 2) if used else None})
+        rows.append(item)
+    if not any(x["net_gex"] is not None for x in rows):
+        return _section("no_data", AN_EXPOSURE_METHOD, "No strike has both OI and an IV, so the exposure cannot be worked out.",
+                        units=units, rows=[])
+    running = 0.0
+    flips: list[float] = []
+    previous: float | None = None
+    for x in rows:
+        if x["net_gex"] is None:
+            x["cumulative_gex"] = None
+            continue
+        running += x["net_gex"]
+        x["cumulative_gex"] = round(running, 2)
+        if previous is not None and previous != 0 and running != 0 and (previous > 0) != (running > 0):
+            flips.append(x["strike"])
+        if running != 0:
+            previous = running
+    flip = min(flips, key=lambda k: (abs(k - spot), k)) if flips else None
+    net_dex_total = sum(x["net_dex"] for x in rows if x["net_dex"] is not None)
+    net_gex_total = sum(x["net_gex"] for x in rows if x["net_gex"] is not None)
+    return _section("ok", AN_EXPOSURE_METHOD, units=units, lot_size=lot_size, spot=spot, rows=rows, net_dex=round(net_dex_total, 2),
+                    net_gex=round(net_gex_total, 2), flip=flip, flips=flips)
+
+
+def an_volume_oi(chain: OptionChain, threshold: float | None) -> dict[str, Any]:
+    """Item 6: volume / OI per strike and side, highlighted above the user's own threshold (none set = nothing highlighted)."""
+    rows: list[dict[str, Any]] = []
+    flagged = 0
+    for r in sorted_rows(chain):
+        item: dict[str, Any] = {"strike": r.strike}
+        for side in ("call", "put"):
+            oi, vol = getattr(r, f"{side}_oi"), getattr(r, f"{side}_volume")
+            ratio = round(float(vol) / float(oi), 2) if vol is not None and oi else None
+            unusual = threshold is not None and ratio is not None and ratio > threshold
+            flagged += 1 if unusual else 0
+            item.update({f"{side}_volume": vol, f"{side}_oi": oi, f"{side}_ratio": ratio, f"{side}_unusual": unusual})
+        rows.append(item)
+    has = any(x["call_ratio"] is not None or x["put_ratio"] is not None for x in rows)
+    return _section("ok" if has else "no_data", AN_VOL_OI_METHOD, None if has else "The broker sent no traded volume for this chain.",
+                    threshold=threshold, flagged=flagged, rows=rows)
+
+
+AN_KEYS = ("buildup", "walls", "pcr", "iv", "exposure", "volume_oi")
+
+
+def chain_analytics(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, iv_history: Sequence[tuple[date, float]] = (),
+                    min_sessions: int = 20, lot_size: float | None = None, unusual_threshold: float | None = None,
+                    history_off: bool = False) -> dict[str, Any]:
+    """M96 N1: the six analytics sections for one chain. `history` may hold other expiries, empty slots or a slot read
+    after `now`: only this expiry's snapshots read at or before `now` are compared. One section that fails on an odd
+    chain becomes that section's `no_data` (logged by type only), never a failed answer."""
+    chain = clean_spot(chain)
+    history = [Snapshot(s.at, clean_spot(s.chain), s.future_price, s.future_oi) for s in history]
+    past = _past(chain, history, now)
+    builders: dict[str, Callable[[], dict[str, Any]]] = {
+        "buildup": lambda: an_buildup(chain, past, history, now, history_off=history_off),
+        "walls": lambda: an_walls(chain, past, now, history_off=history_off),
+        "pcr": lambda: an_pcr(chain, past),
+        "iv": lambda: an_iv(chain, past, now, iv_history, min_sessions, history_off=history_off),
+        "exposure": lambda: an_exposure(chain, now, lot_size),
+        "volume_oi": lambda: an_volume_oi(chain, unusual_threshold),
+    }
+    methods = {"buildup": AN_BUILDUP_METHOD, "walls": AN_WALLS_METHOD, "pcr": AN_PCR_METHOD, "iv": AN_IV_METHOD,
+               "exposure": AN_EXPOSURE_METHOD, "volume_oi": AN_VOL_OI_METHOD}
+    out: dict[str, Any] = {"note": "Information only, not advice.", "snapshots": len(past),
+                           "since": _iso(past[0].at) if past else None}
+    for key in AN_KEYS:
+        try:
+            out[key] = builders[key]()
+        except Exception as exc:  # noqa: BLE001 - one section's failure must not take the others down
+            logger.warning("Option chain analytics %s failed: %s", key, type(exc).__name__)
+            out[key] = _section("no_data", methods[key], UNREADABLE)
+    return out
+
+
 # ---------------------------------------------------------------- all six
 
 ANALYSES: Tuple[Tuple[str, Callable[..., Dict[str, Any]]], ...] = (
@@ -811,4 +1148,5 @@ def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, 
 
 __all__ = ["Snapshot", "compute_all", "support_resistance", "build_up", "pcr", "max_pain", "expected_move", "iv_skew",
            "classify_build_up", "near_atm", "atm_index", "pcr_of", "expiry_values", "straddle_of", "session_history", "clean_spot",
-           "BUILD_UP_LABELS", "NEAR_ATM_STRIKES", "KEYS", "HISTORY_OFF", "BU_HISTORY_OFF", "fmt_number", "fmt_strike"]
+           "BUILD_UP_LABELS", "NEAR_ATM_STRIKES", "KEYS", "HISTORY_OFF", "BU_HISTORY_OFF", "fmt_number", "fmt_strike",
+           "chain_analytics", "iv_rank", "AN_KEYS"]

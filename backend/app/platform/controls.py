@@ -385,7 +385,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # shake-out, falling pressure, absorption, effort vs result), the "Volume spread" library screens, the chart layer
     # with "Why?" and the J templates. OFF: hidden and refused, alert rules pause. Signals only - places no orders.
     "vsa_pack": "Volume spread pack: bar readings from spread, volume and close (no demand, no supply, test, climaxes, up-thrust and more) in screens, on the chart and in templates (signals only, places no orders)",
-    "m99_primitives": "Bar classes: relative range, spread class, close position, bar direction and volume class in screens (signals only, places no orders)",
+    "m99_primitives": "Shared building blocks for screens: bar classes, structure, Fibonacci levels and price clusters (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
     # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint

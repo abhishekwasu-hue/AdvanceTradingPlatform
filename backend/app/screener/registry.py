@@ -270,6 +270,16 @@ _REGIME_KWARGS: tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None
                                                     Arg("range_swings", NUM, None, False, literal_only=True, bounds=(2, 20)))
 _SDOC = (" - the structure tracker fed one closed bar at a time (a swing counts from its confirm bar, pivot_n bars after its"
          " own; swings at least swing_k median ranges apart; named settings, left out: the reference values by timeframe)")
+# M99 B1-b (owner order M99, flag `m99_primitives`, off by default): the shared Fibonacci / price-cluster primitives as
+# per-bar series from CONFIRMED swings (app/price_action/fib_causal.py). A ratio and a band are always the caller's
+# setting (a literal or a $parameter read once); the functions hold none of their own.
+FIB_KINDS: tuple[str, ...] = ("retrace", "extend", "golden")
+CLUSTER_BAND_MODES: tuple[str, ...] = ("pct", "atr")
+_FIB_KIND = Arg("kind", STR, choices=FIB_KINDS)
+_FIB_RATIO = Arg("ratio", NUM, None, True, literal_only=True, bounds=(0.0, 10.0))
+_FIB_DOC = (" - from the pivots CONFIRMED by the bar (P1 the latest): retrace = P1 - ratio x (P1 - P2); extend = P1 + ratio x"
+            " (P2 - P3), the swing before laid from P1; golden = P2 + (P1 - P2) / ratio, the end of the move from P2 when P1"
+            " sits at that share of it; missing until enough pivots are confirmed (evidence, not a target)")
 WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
@@ -951,6 +961,20 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the level gate's invalidation on its entry candles (missing elsewhere): beyond the area's far edge (and the lowest"
              " low / highest high since the visit) by sl_buffer_mr median ranges - the same entries as AreaGate with the same"
              " settings"),
+    # M99 B1-b (flag m99_primitives): Fibonacci levels of the confirmed swings and the nearest price cluster
+    Spec("FibLevel", "factor", NUM, "price", (_FIB_KIND, _FIB_RATIO, _DEGREE), cost=3.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG, doc="the Fibonacci level of `kind` at `ratio` (a $setting)" + _FIB_DOC),
+    Spec("FibDistancePct", "factor", NUM, "pct", (_FIB_KIND, _FIB_RATIO, _DEGREE), cost=3.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG,
+         doc="(close - FibLevel(kind, ratio, degree)) / that level x 100: positive above the level" + _FIB_DOC),
+    Spec("ClusterDistancePct", "factor", NUM, "pct", (Arg("band", NUM, None, True, literal_only=True, bounds=(0.0, 10.0)),
+                                                      Arg("mode", STR, "pct", False, choices=CLUSTER_BAND_MODES), _DEGREE),
+         cost=4.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=M99_FLAG,
+         doc="(close - the centre of the nearest price cluster) / that centre x 100. The levels: the retracements of the last"
+             " confirmed swing and of the swing before it, the extensions of the swing before from the latest pivot, the golden"
+             " projections of the last swing (reference ratios) and the two latest swing prices; in price order a level joins"
+             " a cluster when within `band` of its last member (mode pct: band % of that price; atr: band x ATR as known at the"
+             " bar); two or more levels make a cluster. Missing where there is none (evidence, not a target)"),
     # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
     Spec("RelRange", "factor", NUM, "ratio", (_BC_N,), extra_bars=1, flag=M99_FLAG,
          doc="(high - low) / the mean (high - low) of the n bars before this one; missing until those bars exist" + _BC_DOC),

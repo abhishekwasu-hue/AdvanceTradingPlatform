@@ -41,6 +41,8 @@
   `notices` (TT12-1) holds when a one-time notice was seen (app/me/notices.py), so it never shows twice on any device.
   `option_chain` (B4, UI-H bug lane) holds his own Option chain settings: the PCR zone edges that word "What the chain
   shows" (defaults = the values used before). Display words only.
+  `chain_analytics` (M96 N1) holds his own volume / OI highlight threshold for the option chain analytics (Not set until
+  he saves one). Display only.
   `shell` (M57) holds the app shell's own display choices: whether the sidebar is the full menu or the icon rail.
   `trade_settings` (M68 PR-0) holds the user's own Settings > Trade settings, every field "Not set" until he saves it; the
   registry, its rules and its own routes are app/me/trade_settings.py.
@@ -494,6 +496,13 @@ class OptionChainPrefs(_Prefs):
     expiry_day_next: bool | None = None
 
 
+class ChainAnalyticsPrefs(_Prefs):
+    """`chain_analytics` (M96 N1): his own option chain analytics settings - the volume / OI ratio above which a strike is
+    highlighted as unusual activity. None = Not set: nothing is highlighted until he sets his own number (M68: no
+    pre-set values). Display only: no order path, worker or risk check imports it."""
+    unusual_vol_oi: float | None = Field(default=None, gt=0, le=1000, allow_inf_nan=False)
+
+
 class StrategyExitPrefs(_Prefs):
     """`strategy_exits` (SX1, owner 24 Oct): the user's own starting values for "Exits for this strategy" on the basket
     ticket / spread builder. Every field is empty by default: nothing is pre-filled until he saves his own. Read by the
@@ -708,7 +717,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
-                                       "option_chain": OptionChainPrefs, "terminal": TerminalPrefs,
+                                       "option_chain": OptionChainPrefs, "chain_analytics": ChainAnalyticsPrefs, "terminal": TerminalPrefs,
                                        "strategy_exits": StrategyExitPrefs, "my_limits": MyLimitsPrefs, "shell": ShellPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
@@ -848,7 +857,7 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "DailyReportPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "WorkspaceWatchPrefs", "WatchedArea", "MAX_WATCHED_AREAS", "OwnEvent", "OwnEventsPrefs", "MAX_OWN_EVENTS", "AiUsagePrefs", "WhatIfPrefs", "WhatIfScenario", "MAX_WHAT_IF_SCENARIOS", "OptionChainPrefs", "ChainAnalyticsPrefs", "PcrZonesPrefs", "NoticesPrefs", "TOUR_IDS", "TerminalPrefs", "TerminalLayout", "TerminalPanel", "MAX_TERMINAL_LAYOUTS", "TERMINAL_PANEL_IDS", "FnoPrefs", "SmartExecutionPrefs", "LiquidityLimits", "MAX_MIN_OI", "DailyRhythmPrefs", "DailyReportPrefs", "TradingDefaultsPrefs", "StrategyExitPrefs", "TradeSettingsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
 
 
 async def own_limits(session: AsyncSession, user: User) -> Dict[str, Any]:

@@ -595,6 +595,26 @@ def test_m94_session_functions():
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
 
+def test_m99_fib_and_cluster_functions():
+    # deeper checks (exact ratios, clusters by band width, confirm-bar use, truncation, the flag) are in tests/test_m99_fib_levels.py
+    from app.price_action import fib_causal
+    walk = _sym(list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 600))))
+    bars = walk.frames["5m"]
+    close = bars["close"].to_numpy(float)
+    for kind, ratio in (("retrace", 0.618), ("extend", 1.0), ("golden", 0.5)):
+        level = fib_causal.fib_series(bars, kind, ratio)
+        v = _ev(f'FibLevel("{kind}", {ratio})', walk)
+        assert v.dtype == float and v.notna().any(), kind
+        np.testing.assert_allclose(v.to_numpy(float), level, equal_nan=True)
+        d = _ev(f'FibDistancePct("{kind}", {ratio}, 0)', walk)
+        np.testing.assert_allclose(d.to_numpy(float), (close - level) / np.abs(level) * 100, equal_nan=True)
+    for text, band, mode in (("ClusterDistancePct(0.5)", 0.5, "pct"), ('ClusterDistancePct(1, "atr")', 1.0, "atr")):
+        centre = fib_causal.cluster_series(bars, band, mode)["centre"]
+        v = _ev(text, walk)
+        assert v.dtype == float and v.notna().any(), text
+        np.testing.assert_allclose(v.to_numpy(float), (close - centre) / np.abs(centre) * 100, equal_nan=True)
+
+
 def test_m99_bar_class_functions():
     """M99 B1-a: the per-bar classifier (the full fixtures: tests/test_m99_b1a_bar_class.py) - a wide, high-volume up bar
     closing in its top third after four equal bars."""

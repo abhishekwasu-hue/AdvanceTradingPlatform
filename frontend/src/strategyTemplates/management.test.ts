@@ -38,4 +38,11 @@ describe("M99 P2 trade-management options", () => {
     expect(managementOffered(CHOICES, "OPTION_SINGLE")).toBe(false);
     expect(managementOffered(null, "UNDERLYING")).toBe(false);
   });
+
+  it("refuses the trail on a single option with the premium stop only, keeps the bar exits", () => {
+    const trail = { ...EMPTY_MANAGEMENT, trail: "SWING" as const, degree: "0" };
+    expect(managementProblem(trail, CHOICES, true)).toMatch(/only your premium stop/);
+    expect(managementProblem(trail, CHOICES, false)).toBeNull();
+    expect(managementProblem({ ...EMPTY_MANAGEMENT, maxBars: true, maxBarsN: "6" }, CHOICES, true)).toBeNull();
+  });
 });

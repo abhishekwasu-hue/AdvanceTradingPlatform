@@ -17,6 +17,13 @@ time exits and the scale-out (a partial exit at an R multiple, M99 P7) - `app/tr
 user's own Square-off time, the template's stop and target rule. A partial exit is NOT built here a second time: a template
 bot books a part through that one scale-out (M99 P2 Decisions).
 
+A bot that reads the underlying and trades its future or a single option of it (M99 P2 follow-up): the trail level and
+the bar counts are read on the bars it READS (the underlying's structure); the result is acted on the traded instrument
+through the existing paths - a future's stop is the underlying stop transplanted by the entry's offset
+(app/execution/contract_execution.py), an option exits when the underlying crosses its underlying stop
+(app/trading/exit_logic.py check_contract_exit) - no premium stop is made up. A multi-leg structure is refused (its exits
+are its own credit levels).
+
 Rules every option keeps (ADR-0004, CLAUDE.md section 3): a stop only ever tightens, never widens; nothing here blocks,
 delays or removes an exit - it only adds a tighter stop or an earlier exit; no lots, stop, target or R:R is chosen here.
 Everything is read on CLOSED bars after the entry (no look-ahead) and acted on at the next price - the next bar's open in
@@ -157,25 +164,31 @@ def _finite(v: Any) -> bool:
         return False
 
 
-def step(m: Management, *, direction: int, entry: float, initial_stop: float, current_stop: float, highs: Sequence[float],
-         lows: Sequence[float], closes: Sequence[float], level: float | None = None) -> Step:
+def step(m: Management, *, direction: int, entry: float | None, initial_stop: float | None, current_stop: float | None,
+         highs: Sequence[float], lows: Sequence[float], closes: Sequence[float], level: float | None = None) -> Step:
     """The options on the latest closed bar of an open trade. `highs` / `lows` / `closes`: the closed bars AFTER the
     entry, oldest first (the last one is the bar just closed); `level`: the trail's series on that bar (the swing, the
     average, or the ATR for the ATR trail). `direction` +1 for an upward idea, -1 for a downward one. Pure function: the
-    backtest engine and the worker call it with the same bars (backtest = live)."""
+    backtest engine, the options backtest engine and the worker call it with the same bars (backtest = live).
+
+    Every price here is on the bars the bot READS: for a future or an option bot that is the underlying, so `current_stop`
+    is the trade's stop as an underlying level and the new stop comes back as one - the caller maps it onto the traded
+    instrument the one existing way (a future: the entry's transplant; a single option: its underlying stop). No stop on
+    the underlying (`current_stop` None: a single option with the premium stop only) = no trail; the bar exits still run.
+    `entry` / `initial_stop` are not read by the options (kept for the callers' records)."""
     n = len(closes)
     if not m.active or n == 0 or direction == 0:
         return Step()
     up = direction > 0
     last = float(closes[-1])
     candidates: list[tuple[float, str]] = []
-    if m.trail is not None and _finite(level):
+    if m.trail is not None and _finite(level) and _finite(current_stop):
         lv = float(level)                                         # type: ignore[arg-type]
         if m.trail == "ATR":
             best = max(highs) if up else min(lows)
             lv = float(best) - direction * float(m.trail_k or 0.0) * lv
         candidates.append((lv, "trail"))
-    stop, reason = float(current_stop), None
+    stop, reason = (float(current_stop) if _finite(current_stop) else math.nan), None    # type: ignore[arg-type]
     for cand, why in candidates:
         # a stop only tightens, and only to a level still on the losing side of the close (never into the price)
         if (up and stop < cand < last) or (not up and last < cand < stop):

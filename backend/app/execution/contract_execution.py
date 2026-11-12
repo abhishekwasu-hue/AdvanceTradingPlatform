@@ -145,6 +145,48 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
     return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 
 
+def underlying_stop_view(trade: Any) -> float | None:
+    """M99 P2: an open trade's current stop as a level on the underlying its signal was read on (None: it has none), for
+    the trade-management options, which read the bars the bot READS. The inverse is `underlying_stop_fields`.
+
+    * UNDERLYING: its own stop.
+    * OPTION (single): its underlying stop - the level `check_contract_exit` exits the option on when the underlying
+      crosses it (None for a single option with the premium stop only).
+    * FUTURE: its stop less the entry's transplant offset. `build_order_plan` put the stop at the underlying stop plus
+      (future price - underlying entry); that offset is the stop stored at the entry (`initial_stop_loss`) less the
+      underlying stop stored with it, which nothing changes on a future - so a stop the position's own exit rules
+      tightened on the future is seen here as well.
+    """
+    kind = str(getattr(trade, "instrument_kind", None) or InstrumentKind.UNDERLYING.value).upper()
+    if kind == InstrumentKind.OPTION.value:
+        return None if trade.underlying_stop_loss is None else float(trade.underlying_stop_loss)
+    if kind == InstrumentKind.FUTURE.value:
+        offset = _future_offset(trade)
+        return None if offset is None or trade.stop_loss is None else float(trade.stop_loss) - offset
+    return None if trade.stop_loss is None else float(trade.stop_loss)
+
+
+def underlying_stop_fields(trade: Any, level: float) -> dict:
+    """M99 P2: the trade's columns that carry a new stop read on the underlying (`level`), mapped the one way each kind
+    already uses: UNDERLYING `stop_loss`; OPTION `underlying_stop_loss` (the option exits when the underlying crosses it -
+    no premium stop is made up); FUTURE `stop_loss` = the level plus the entry's transplant offset (`build_order_plan`).
+    Empty when the trade cannot carry it (a future with no offset recorded). The caller only ever tightens."""
+    kind = str(getattr(trade, "instrument_kind", None) or InstrumentKind.UNDERLYING.value).upper()
+    if kind == InstrumentKind.OPTION.value:
+        return {"underlying_stop_loss": round(float(level), 2)}
+    if kind == InstrumentKind.FUTURE.value:
+        offset = _future_offset(trade)
+        return {} if offset is None else {"stop_loss": round(float(level) + offset, 2)}
+    return {"stop_loss": round(float(level), 2)}
+
+
+def _future_offset(trade: Any) -> float | None:
+    """The future's transplant offset at the entry: its stop then less the underlying stop (both stored at the entry)."""
+    if trade.initial_stop_loss is None or trade.underlying_stop_loss is None:
+        return None
+    return float(trade.initial_stop_loss) - float(trade.underlying_stop_loss)
+
+
 async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract, share: float = MARGIN_SAFETY, *,
                           product: str) -> tuple[int, str]:
     """LIVE only: how many lots of this written option the account can carry - the broker's

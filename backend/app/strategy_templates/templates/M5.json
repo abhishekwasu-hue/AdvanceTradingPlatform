@@ -1,0 +1,132 @@
+{
+  "schema": "atp.template/1",
+  "id": "M5",
+  "version": 1,
+  "name": "Cup and handle rim break",
+  "family": "M",
+  "idea": "A swing high, a cup back to it after the set number of bars, a shallow handle, then a signal on the first close above the rim. The mirror: an inverted cup under its rim. Wrong beyond the handle.",
+  "difficulty": "Intermediate",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "30m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Swing size (the swing degree read)",
+      "help": "Which swings are read: 0 is the smallest, 3 the largest. Larger swings need more history. Reference: 0.",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range the tolerances are measured in",
+      "help": "Bars for the average true range the tolerances are measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "cup_bars",
+      "label": "Cup: bars from the left rim to the right rim, at least",
+      "help": "Bars from the first rim to the second, at least. Reference: 15.",
+      "type": "int",
+      "default": 15,
+      "min": 3,
+      "max": 1000,
+      "step": 1
+    },
+    {
+      "key": "rim_tol",
+      "label": "Cup: the right rim within this share of the cup's depth of the left rim",
+      "help": "The second rim within this share of the cup's depth of the first. Reference: 0.1.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 0.5,
+      "step": 0.01
+    },
+    {
+      "key": "handle_max",
+      "label": "Cup: the handle at most this share of the cup's depth",
+      "help": "The handle at most this share of the cup's depth. Reference: 0.5.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.05,
+      "max": 1.0,
+      "step": 0.01
+    },
+    {
+      "key": "expiry",
+      "label": "Bars a pattern stays watched",
+      "help": "Bars a pattern stays watched (after its pullback, its second low or its second rim). Reference: 30.",
+      "type": "int",
+      "default": 30,
+      "min": 1,
+      "max": 1000,
+      "step": 1
+    },
+    {
+      "key": "vol_confirm",
+      "label": "Cup: only with volume on the close above the rim",
+      "help": "Only with volume on the close beyond the rim (an index uses its near-month future's volume).",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "vol_k",
+      "label": "Cup: that volume at least this many times the average",
+      "help": "That volume at least this many times the average. Reference: 1.",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 20.0,
+      "step": 0.1
+    },
+    {
+      "key": "avg_n",
+      "label": "Bars for the average range and volume",
+      "help": "Bars for the average range (and the average volume). Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 500,
+      "step": 1
+    }
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PricePattern(\"cup_handle\", \"up\", degree=$degree, atr_n=$atr_n, cup_bars=$cup_bars, rim_tol=$rim_tol, handle_max=$handle_max, expiry=$expiry, vol_confirm=$vol_confirm, vol_k=$vol_k, avg_n=$avg_n)",
+    "short": "PricePattern(\"cup_handle\", \"down\", degree=$degree, atr_n=$atr_n, cup_bars=$cup_bars, rim_tol=$rim_tol, handle_max=$handle_max, expiry=$expiry, vol_confirm=$vol_confirm, vol_k=$vol_k, avg_n=$avg_n)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PricePatternLevel(\"cup_void\", degree=$degree, atr_n=$atr_n, cup_bars=$cup_bars, rim_tol=$rim_tol, handle_max=$handle_max, expiry=$expiry, vol_confirm=$vol_confirm, vol_k=$vol_k, avg_n=$avg_n)",
+    "short": "PricePatternLevel(\"cup_void\", degree=$degree, atr_n=$atr_n, cup_bars=$cup_bars, rim_tol=$rim_tol, handle_max=$handle_max, expiry=$expiry, vol_confirm=$vol_confirm, vol_k=$vol_k, avg_n=$avg_n)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "cup_rim_broken_up"
+      }
+    ],
+    "short": [
+      {
+        "token": "cup_rim_broken_down"
+      }
+    ]
+  }
+}

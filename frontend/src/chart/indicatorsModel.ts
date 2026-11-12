@@ -43,6 +43,10 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   // M99 P4: the Wyckoff trading ranges - a box per range, the phases A-E and each event with a Why?.
   { id: "wyckoff", group: "layers", label: "Wyckoff", note: "Trading ranges read in phases A-E, with springs, upthrusts, breaks and back-ups, each with a Why?.",
     flag: "wyckoff_pack", keywords: "wyckoff range phase spring upthrust utad sign of strength weakness back-up accumulation distribution" },
+  // M99 P6: the price patterns (swing extremes, missing link, pullback after an acceleration, trigger candles, candles, head and
+  // shoulders, cup and handle) with a Why? for each mark.
+  { id: "price_patterns", group: "layers", label: "Price patterns", note: "Patterns of the swings and bars, with a Why? for each mark.",
+    flag: "pa_pack", keywords: "price patterns fault double trap climax missing link pullback trigger inside outside hammer two-bar head shoulders cup handle" },
   // M96 N1: the expected move the nearest expiry's option prices imply (ATM straddle and ATM IV), off until turned on.
   { id: "options_expected_move", group: "layers", label: "Expected move (from the option prices)",
     note: "The range the nearest expiry's ATM straddle and ATM IV imply around the spot.", flag: "ui_v2", keywords: "expected move straddle iv option range" },

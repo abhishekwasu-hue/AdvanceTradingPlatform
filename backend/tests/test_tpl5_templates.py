@@ -41,6 +41,7 @@ LATER += ("H6", "H7", "H8", "H9", "H10")   # M94 family H (Intraday) came later 
 LATER += ("H1", "H2", "H3", "H4", "H5")     # M94 PR-5: the rest of family H
 LATER += ("J1",)                            # M99 P3: family J (Volume spread) came later too
 LATER += ("K1", "K2", "K3")                 # M99 P4: family K (Wyckoff) came later too
+LATER += ("M1", "M2", "M3", "M4", "M5")     # M99 P6: family M (Price patterns) came later too
 T = {tid: library.get(tid) for tid in NEW}
 RISK = RiskConfig(capital=10_000_000, risk_per_trade_pct=0.5)
 K = 400.0

@@ -436,6 +436,35 @@ def _wyckoff_min_bars() -> int:
     return WyckoffSettings().warmup()
 
 
+# M99 P6 (flag `pa_pack`, off by default): the price-action pattern pack (app/price_action/pa_pack.py) - one function for
+# its readings, one for its levels; every setting a named argument read once (a literal or a $parameter) within its
+# bounds, the reference value when left out ("reference - edit before use"; tests/test_m99_p6_pa.py checks them against
+# pa_pack.SETTINGS_TABLE). Closed bars only; the swings are the screener's own (SwingHigh / SwingLow) at the degree set.
+PA_FLAG = "pa_pack"
+
+
+def _pa_kwargs() -> tuple[Arg, ...]:
+    from app.price_action.pa_pack import SETTINGS_TABLE
+    out: list[Arg] = []
+    for name, kind, ref, rule, _ in SETTINGS_TABLE:
+        if kind == "flag":
+            out.append(Arg(name, BOOL, ref, False))
+        elif kind == "choice":
+            out.append(Arg(name, STR, ref, False, choices=tuple(rule)))
+        else:
+            out.append(Arg(name, NUM, ref, False, literal_only=True, bounds=(float(rule[0]), float(rule[1]))))
+    return tuple(out)
+
+
+def _pa_values(name: str) -> tuple[str, ...]:
+    from app.price_action import pa_pack
+    return tuple(getattr(pa_pack, name))
+
+
+_PA_DOC = (" Every reading is on the bar it becomes known (closed bars; the swings count from the bar that confirmed them);"
+           " settings are reference values - edit before use")
+
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -1060,6 +1089,24 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="a level of the current Wyckoff range on this bar - range_top / range_bottom (from the automatic reaction on),"
              " shake_extreme (Phase C: the shake's furthest price), break_base (Phase D / E: the furthest price back since the"
              " break began); missing where there is none (closed bars; settings are reference values - edit before use)"),
+    # M99 P6 (flag pa_pack): the price-action pattern pack (app/price_action/pa_pack.py) - the readings and their levels
+    Spec("PricePattern", "filter", BOOL, None, (Arg("name", STR, choices=_pa_values("NAMES")),
+                                                Arg("side", STR, "any", False, choices=_pa_values("SIDE_CHOICES"))),
+         kwargs=_pa_kwargs(), cost=3.0, min_bars=SWING_DEGREE_MIN_BARS[0], kwarg_degree_bars=(("degree", SWING_DEGREE_MIN_BARS),),
+         flag=PA_FLAG,
+         doc="the named price pattern on this bar - fault / double / trap / climax (a swing extreme against the one before it),"
+             " missing_link (the close through the line after a trend's end), baston (the return to the area after an"
+             " acceleration and its pullback), trigger_candle (inside / outside / long-tail bar at a validated swing level),"
+             " inside_bar, outside_bar, hammer (its mirror: the shooting star), two_bar_reversal, head_shoulders (the inverse"
+             " as its mirror), cup_handle - side any / up / down (the way the pattern points; a description, not advice)." + _PA_DOC),
+    Spec("PricePatternLevel", "factor", NUM, "price", (Arg("what", STR, choices=_pa_values("LEVELS")),),
+         kwargs=_pa_kwargs(), cost=3.0, min_bars=SWING_DEGREE_MIN_BARS[0], kwarg_degree_bars=(("degree", SWING_DEGREE_MIN_BARS),),
+         flag=PA_FLAG,
+         doc="a level of the price patterns on this bar: missing_link_line / baston_zone_low / baston_zone_high / trigger_level"
+             " / neckline / cup_rim (while a pattern is watched or on its signal bar), missing_link_void / baston_void /"
+             " trigger_void / hs_void / cup_void (on the signal bar: beyond it the pattern's shape is broken) and"
+             " hs_projection (the head's height from the break - a projection, never a target); missing where there is none."
+             + _PA_DOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -1080,6 +1127,8 @@ WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items()
 M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 VSA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == VSA_FLAG)
 WYCKOFF_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WYCKOFF_FLAG)
+PA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == PA_FLAG)
+PA_SETTINGS: tuple[str, ...] = tuple(a.name for a in FUNCTIONS["PricePattern"].kwargs)        # M99 P6: the named settings
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
@@ -1113,4 +1162,5 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
            "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS",
-           "WYCKOFF_FLAG", "WYCKOFF_FUNCTIONS", "WYCKOFF_KWARGS"]
+           "WYCKOFF_FLAG", "WYCKOFF_FUNCTIONS", "WYCKOFF_KWARGS",
+           "PA_FLAG", "PA_FUNCTIONS", "PA_SETTINGS"]

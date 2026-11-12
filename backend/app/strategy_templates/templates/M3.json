@@ -1,0 +1,152 @@
+{
+  "schema": "atp.template/1",
+  "id": "M3",
+  "version": 1,
+  "name": "Trigger candle at a level",
+  "family": "M",
+  "idea": "At a recent swing level, after an arrival bar that reached it (a double), ended just short (a fault) or went just beyond and closed back (a trap), a signal on an inside bar, an outside bar closing away or a long-tail bar. Wrong beyond the arrival and trigger bars.",
+  "difficulty": "Intermediate",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "15m",
+    "30m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Swing size (the swing degree read)",
+      "help": "Which swings are read: 0 is the smallest, 3 the largest. Larger swings need more history. Reference: 0.",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range the tolerances are measured in",
+      "help": "Bars for the average true range the tolerances are measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "eq_tol",
+      "label": "Equal-extreme tolerance, in average true ranges",
+      "help": "Two swing extremes within this many average true ranges are equal (a double). Reference: 0.1.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "levels_n",
+      "label": "Trigger: recent swing levels read",
+      "help": "Recent swing levels a trigger candle is looked for at. Reference: 6.",
+      "type": "int",
+      "default": 6,
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    {
+      "key": "at_tol",
+      "label": "Trigger: nearness to the level, in average true ranges",
+      "help": "How near the level the arrival must come, in average true ranges. Reference: 0.5.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "arrive_k",
+      "label": "Trigger: arrival bar range at least this many average true ranges (0: any)",
+      "help": "The arrival bar: at least this many average true ranges (0: any). Reference: 1.",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.1
+    },
+    {
+      "key": "trigger",
+      "label": "Trigger candle form",
+      "help": "any, inside (an inside bar after the arrival bar), outside (an outside bar closing away) or tail (a long tail).",
+      "type": "enum",
+      "default": "any",
+      "choices": [
+        "any",
+        "inside",
+        "outside",
+        "tail"
+      ],
+      "choice_labels": [
+        "Any of the three",
+        "Inside bar",
+        "Outside bar",
+        "Long tail"
+      ]
+    },
+    {
+      "key": "tail_part",
+      "label": "Long-tail trigger: the tail at least this share of the range",
+      "help": "A long-tail bar: the tail at least this share of the bar's range. Reference: 0.6.",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.3,
+      "max": 0.95,
+      "step": 0.05
+    },
+    {
+      "key": "body_part",
+      "label": "Long-tail trigger: the body at most this share of the range",
+      "help": "A long-tail bar: the body at most this share of the bar's range. Reference: 0.3.",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.01,
+      "max": 0.7,
+      "step": 0.05
+    }
+  ],
+  "constraints": [
+    {
+      "left": "eq_tol",
+      "op": "<=",
+      "right": "at_tol",
+      "message": "The equal-extreme tolerance must be at most the nearness to the level."
+    }
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PricePattern(\"trigger_candle\", \"up\", degree=$degree, atr_n=$atr_n, eq_tol=$eq_tol, levels_n=$levels_n, at_tol=$at_tol, arrive_k=$arrive_k, trigger=$trigger, tail_part=$tail_part, body_part=$body_part)",
+    "short": "PricePattern(\"trigger_candle\", \"down\", degree=$degree, atr_n=$atr_n, eq_tol=$eq_tol, levels_n=$levels_n, at_tol=$at_tol, arrive_k=$arrive_k, trigger=$trigger, tail_part=$tail_part, body_part=$body_part)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PricePatternLevel(\"trigger_void\", degree=$degree, atr_n=$atr_n, eq_tol=$eq_tol, levels_n=$levels_n, at_tol=$at_tol, arrive_k=$arrive_k, trigger=$trigger, tail_part=$tail_part, body_part=$body_part)",
+    "short": "PricePatternLevel(\"trigger_void\", degree=$degree, atr_n=$atr_n, eq_tol=$eq_tol, levels_n=$levels_n, at_tol=$at_tol, arrive_k=$arrive_k, trigger=$trigger, tail_part=$tail_part, body_part=$body_part)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "trigger_candle_at_support"
+      }
+    ],
+    "short": [
+      {
+        "token": "trigger_candle_at_resistance"
+      }
+    ]
+  }
+}

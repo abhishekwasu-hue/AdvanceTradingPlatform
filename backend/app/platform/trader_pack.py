@@ -97,7 +97,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "screener_waves": "Unfinished: the wave-count work is still open",
     "intraday_pack": "Unfinished: the intraday scanners, templates and risk tools are still being built (M94)",
     "pa_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P6)",
-    "m99_primitives": "Unfinished: the M99 shared primitives; the packs that use them are still being built (M99)",
+    "m99_primitives": "Unfinished: the shared building blocks for screens (bar classes, structure, Fibonacci levels and price clusters); the packs that use them are still being built (M99)",
     "chart_analyze": "Unfinished: beta, needs an AI key with image support",
     "chart_analyze_strikes": "Unfinished (needs Analyze a chart)",
     "chart_analyze_share": "Unfinished (needs Analyze a chart)",

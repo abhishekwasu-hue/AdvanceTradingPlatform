@@ -40,6 +40,10 @@ J (ids `J<n>`; the letter I stays free for the Supply & Demand family on its own
 
 Family K "Wyckoff" (M99 P4), the same way: ids `K<n>` (I and J are taken), listed only while `wyckoff_pack` is on. Its
 expressions read the ONE Wyckoff range evaluation (ScreenQL `Wyckoff(...)` / `WyckoffLevel(...)`).
+
+Family M "Price patterns" (M99 P6), the same way: ids `M<n>` (the letters I, J, K and L are taken by the other M99 packs
+on their own branches), listed only while `pa_pack` is on. Its expressions read the ONE price pattern evaluation (ScreenQL
+`PricePattern(...)` / `PricePatternLevel(...)`).
 """
 from __future__ import annotations
 
@@ -268,10 +272,10 @@ def leaves(part: object) -> List[object]:
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-HJK][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-HJKM][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "M"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -378,6 +382,8 @@ class Template(_Strict):
             raise ValueError("a Volume spread (family J) template has a J id, and only it")
         if (self.family == "K") != self.id.startswith("K"):
             raise ValueError("a Wyckoff (family K) template has a K id, and only it")
+        if (self.family == "M") != self.id.startswith("M"):
+            raise ValueError("a Price patterns (family M) template has an M id, and only it")
         return self
 
     @classmethod

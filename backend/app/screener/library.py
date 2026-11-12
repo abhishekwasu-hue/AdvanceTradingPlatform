@@ -120,6 +120,12 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         if found_wy is None:
             return None, "no such Wyckoff scanner"
         text, base_tf, params = found_wy.text, found_wy.base_tf, found_wy.defaults()   # M99 P4: every value a reference value
+    elif screen.source == "pa":
+        from app.screener import pa_scanners as pas
+        found = pas.scanner(screen.id)
+        if found is None:
+            return None, "no such price pattern scanner"
+        text, base_tf, params = found.text, found.base_tf, found.defaults()       # M99 P6: every value a reference value
     else:
         return None, f"the {screen.source!r} source has no ScreenQL text"
     return Resolved(screen.id, screen.name, screen.method, screen.setup, str(screen.tags.get("direction", "long")), screen.source,

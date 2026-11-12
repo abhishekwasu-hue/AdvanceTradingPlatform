@@ -208,6 +208,23 @@ async def _wyckoff_check(session: AsyncSession, user: User, ast: Any, fire_on: s
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _pa_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """M99 P6 (the bar class pattern): a rule using a price pattern function needs `pa_pack` on, and fires on bar close
+    only - never intrabar (a pattern is read once its bar has closed)."""
+    from app.screener import nodes, pa_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = pa_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await pa_gate.blocked_calls(session, user.tenant_id, tree):
+        why = pa_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = pa_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _amw_check(session: AsyncSession, user: User, ast: Any, fire_on: str, params: Optional[Dict[str, Any]] = None) -> None:
     """AMW-3: a rule (instrument condition or saved screen) using an AMW-3 function, a v2 candle or a confirmation status
     needs `screenql_amw_functions` on; a confirmation status, RsiDivergence and SwingLabel fire on bar close only."""
@@ -268,6 +285,7 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _m99_check(session, user, ast, fire_on)
     await _vsa_check(session, user, ast, fire_on)
     await _wyckoff_check(session, user, ast, fire_on)
+    await _pa_check(session, user, ast, fire_on)
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
     _primitives_check(ast)
@@ -326,6 +344,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     await _m99_check(session, user, ast, body.fire_on)
     await _vsa_check(session, user, ast, body.fire_on)
     await _wyckoff_check(session, user, ast, body.fire_on)
+    await _pa_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
     _primitives_check(ast)
     await _amw_check(session, user, ast, body.fire_on)

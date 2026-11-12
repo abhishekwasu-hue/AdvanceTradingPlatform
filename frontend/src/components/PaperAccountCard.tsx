@@ -1,19 +1,21 @@
 import { errorSentence } from "../api/errors";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PaperAccount, PaperLadder } from "../types";
-import { Card, StatTile, signClass } from "./ui";
-import { criterionProgress, criterionText, signedMoney } from "./paperLadder";
+import { Card, signClass } from "./ui";
+import { TILE, TILE_LABEL, TILE_ROW, TILE_VALUE, criterionProgress, criterionText, liveStepText, signedMoney } from "./paperLadder";
 import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
-import { formatDateTimeIST, formatINR, formatNumber } from "../ui/format";
+import { formatDateTimeIST, formatINR, formatNumber, formatSignedINR } from "../ui/format";
 import { Details, KeyValueTable, Signed } from "../ui/numbersFirst";
-import { useUiV2 } from "../ui/useFeatures";
+import { useFeatures, useUiV2 } from "../ui/useFeatures";
+import { liveAvailableFrom } from "../settings/useLiveAvailable";
 import { CapitalAsk } from "../settings/CapitalAsk";
 import { NOT_SET } from "../settings/tradeSettings";
 
 /**
  * Z3-b (beta spec, Phase 0): the signed-in user's own PAPER account - balance, equity, P&L after charges, the
- * PAPER-scope pause - and the progression ladder card (PAPER stage; LIVE is locked in Phase 0). Every number comes from
+ * PAPER-scope pause - and the progression ladder card (information only; its LIVE step follows the one `live_trading`
+ * switch, LIVE-1). Every number comes from
  * the server, computed from this user's own PAPER trades. Hidden when the `paper_account` flag is off (the API answers 404).
  * N2-1 (flag `ladder_evidence`): the discipline criterion's weekly scores and the "Your figures" block, when sent.
  */
@@ -25,16 +27,50 @@ const BELOW_ZERO = "below zero - practice only";
 export function PaperBalanceTile({ balance, v2 }: { balance: number; v2: boolean }) {
   const below = v2 && balance < 0;
   return (
-    <StatTile label="Balance" tone={below ? "down" : "default"} valueText={formatNumber(balance, 2)} value={below
-      ? <span className="flex flex-col"><span>{formatNumber(balance, 2)}</span>
-          <span className="text-t12 font-semibold text-down" data-testid="paper-below-zero">{BELOW_ZERO}</span></span>
-      : formatNumber(balance, 2)} />
+    <NumberTile label="Balance" tone={below ? "down" : "default"} value={formatINR(balance, { paise: true })}
+      note={below ? <span className="text-t12 font-semibold text-down" data-testid="paper-below-zero">{BELOW_ZERO}</span> : undefined} />
   );
+}
+
+/** Owner, 12 Nov (D.2 / D.3): one PAPER account figure - a sentence-case label, then the number on ONE line (never broken
+ * inside, never cut off; the row wraps instead, see TILE_ROW). Colour only by meaning: up / down tokens. */
+export function NumberTile({ label, value, tone = "default", note }: { label: string; value: ReactNode; tone?: "default" | "up" | "down"; note?: ReactNode }) {
+  const toneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg";
+  return (
+    <div className={TILE} data-testid="paper-tile">
+      <div className={TILE_LABEL}>{label}</div>
+      <div className={`${TILE_VALUE} mt-0.5 ${toneClass}`} data-testid="paper-tile-value">{value}</div>
+      {note && <div className="w-0 min-w-full">{note}</div>}
+    </div>
+  );
+}
+
+/** The ladder's steps. LIVE-1 (owner, 11 Nov - BINDING): the LIVE step never reads a grant, an approval or the criteria -
+ * only the ONE `live_trading` switch, from the features answer (left out until that answer is in). */
+export function LadderStages({ stages, liveOn, answered }: { stages: PaperLadder["stages"]; liveOn: boolean; answered: boolean }) {
+  return <>
+    {stages.map((s, i) => {
+      const live = s.key.startsWith("LIVE");
+      if (live && !answered) return null;
+      return (
+        <span key={s.key} className="flex items-center gap-2">
+          {i > 0 && <span className="text-fg-muted" aria-hidden>→</span>}
+          <span className={`rounded px-2 py-0.5 ${s.status === "current" ? "bg-info/15 text-info" : live && liveOn ? "bg-up/15 text-up" : "bg-surface-2 text-fg-muted"}`}
+                data-testid={live ? "ladder-live" : undefined}>
+            {live ? liveStepText(liveOn) : <>{s.label}{s.status === "locked" ? ` · ${s.note ?? "locked"}` : s.status === "current" ? " · current" : ""}</>}
+          </span>
+        </span>
+      );
+    })}
+  </>;
 }
 
 export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   // UX-11 (v2 pages): numbers first - the breakdown as a key-value table and every note under one Details.
   const v2 = useUiV2();
+  // LIVE-1: the ladder's LIVE step says what the ONE `live_trading` switch does now (shown once the flags answered).
+  const features = useFeatures();
+  const liveOn = liveAvailableFrom(features);
   const [account, setAccount] = useState<PaperAccount | null>(null);
   const [ladder, setLadder] = useState<PaperLadder | null>(null);
   const [hidden, setHidden] = useState(false);
@@ -64,11 +100,11 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
       <div data-testid="paper-account" className="space-y-3">
         {/* M68 PR-7 (D4): no starting capital chosen yet - ATP pre-fills none; he sets his own here (or at his first order). */}
         {account.capital_needed && canTrade && v2 && <CapitalAsk autoFocus={false} id="paper-account-capital" onSaved={() => load()} />}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {account.balance === null ? <StatTile label="Balance" value={NOT_SET} /> : <PaperBalanceTile balance={account.balance} v2={v2} />}
-          <StatTile label="Equity (with open marks)" value={account.equity === null ? NOT_SET : formatNumber(account.equity, 2)} />
-          <StatTile label="Net P&L (after charges)" value={v2 ? <Signed value={r.net} kind="count" decimals={2} /> : signedMoney(r.net)} tone={v2 ? "default" : r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
-          <StatTile label="Closed / open" value={`${account.closed_trades} / ${account.open_positions}`} />
+        <div className={TILE_ROW} data-testid="paper-tiles">
+          {account.balance === null ? <NumberTile label="Balance" value={NOT_SET} /> : <PaperBalanceTile balance={account.balance} v2={v2} />}
+          <NumberTile label="Equity (open marks)" value={account.equity === null ? NOT_SET : formatINR(account.equity, { paise: true })} />
+          <NumberTile label="Net P&L (after charges)" value={v2 ? <Signed value={r.net} paise /> : formatSignedINR(r.net, { paise: true })} tone={v2 ? "default" : r.net > 0 ? "up" : r.net < 0 ? "down" : "default"} />
+          <NumberTile label="Closed / open" value={`${account.closed_trades} / ${account.open_positions}`} />
         </div>
 {!v2 && <>
         <p className="text-xs text-fg-muted">
@@ -106,14 +142,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
           <div className="space-y-2 rounded-lg border border-border p-3" data-testid="paper-ladder">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="font-semibold text-fg">Progression ladder</span>
-              {ladder.stages.map((s, i) => (
-                <span key={s.key} className="flex items-center gap-2">
-                  {i > 0 && <span className="text-fg-muted" aria-hidden>→</span>}
-                  <span className={`rounded px-2 py-0.5 ${s.status === "current" ? "bg-info/15 text-info" : "bg-surface-2 text-fg-muted"}`}>
-                    {s.label}{s.status === "locked" ? ` · ${s.note ?? "locked"}` : s.status === "current" ? " · current" : ""}
-                  </span>
-                </span>
-              ))}
+              <LadderStages stages={ladder.stages} liveOn={liveOn} answered={features.answered} />
               <span className="text-fg-muted">{ladder.met} of {ladder.measured} measured criteria met</span>
             </div>
             <ul className="space-y-1.5">

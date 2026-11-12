@@ -391,6 +391,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # rules pause. Signals only - places no orders.
     "wyckoff_pack": "Wyckoff pack: trading ranges read in phases A-E - climax, automatic reaction, secondary test, spring / upthrust after distribution, signs of strength / weakness and the back-up - in screens, on the chart and in templates (signals only, places no orders)",
     "vsa_pack": "Volume spread pack: bar readings from spread, volume and close (no demand, no supply, test, climaxes, up-thrust and more) in screens, on the chart and in templates (signals only, places no orders)",
+    # M99 P6: the price-action pattern pack (app/price_action/pa_pack.py) - the ScreenQL functions PricePattern(...) /
+    # PricePatternLevel(...) (the four extreme types, missing link, pullback after an acceleration, trigger candle at a
+    # level, inside / outside bar, hammer, two-bar reversal, head and shoulders, cup and handle), the "Price patterns"
+    # library screens, the chart layer with "Why?", the optional indicator evidence rows (off) and the M templates. OFF:
+    # hidden and refused, alert rules pause. Signals only - places no orders.
+    "pa_pack": "Price patterns pack: swing extremes (fault, double, trap, climax), missing link, pullback after an acceleration, trigger candles, candles, head and shoulders, cup and handle in screens, on the chart and in templates (signals only, places no orders)",
     "m99_primitives": "Shared building blocks for screens: bar classes, structure, Fibonacci levels and price clusters (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and

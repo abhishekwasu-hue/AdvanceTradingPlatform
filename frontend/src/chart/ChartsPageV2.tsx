@@ -43,6 +43,7 @@ import { useFullscreen } from "./useFullscreen";
 import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
 import { ReadChartPanel, useReadChart } from "./ReadChartV2";
+import { DEFAULT_PA_OPTIONS, PA_LAYER_ID, PaBar, usePaLayer, type PaOptions } from "./paLayer";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
@@ -177,6 +178,10 @@ export default function ChartsPageV2(_props: PageProps) {
   const [tplShown, setTplShown] = useState(false);
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
+  // M99 P6: the price pattern readings (flag pa_pack) - read again when a new bar closes; each mark with its "Why?" below
+  const [paOptions, setPaOptions] = useState<PaOptions>(DEFAULT_PA_OPTIONS);
+  const paOn = view.layers.includes(PA_LAYER_ID) && features.on("pa_pack") && tab === "chart" && !hubView;
+  const paLayer = usePaLayer({ symbol, exchange, timeframe, candles: data.candles, on: paOn, options: paOptions });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
   // M99 P3: the volume spread readings (flag vsa_pack) - read again when a new bar closes; each mark with its "Why?" below
   const [vsaOptions, setVsaOptions] = useState<VsaOptions>(DEFAULT_VSA_OPTIONS);
@@ -186,9 +191,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const wyckoffOn = view.layers.includes(WYCKOFF_LAYER_ID) && features.on("wyckoff_pack") && tab === "chart" && !hubView;
   const wyckoffLayer = useWyckoffLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: wyckoffOn });
   const chartMarkers = useMemo(() => {
-    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers];
+    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
-  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers]);
+  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers]);
   const emNote = useOptionsExpectedMove(engine, symbol, view.layers.includes(OPTIONS_EM_LAYER_ID) && tab === "chart" && !hubView, chip ? chip.open : null);   // M96 N1
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -363,6 +368,7 @@ export default function ChartsPageV2(_props: PageProps) {
             )}
             {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
             {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
+            {paOn && !fs.on && <PaBar state={paLayer} options={paOptions} onChange={setPaOptions} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || emNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

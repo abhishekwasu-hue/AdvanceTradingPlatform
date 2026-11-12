@@ -2928,7 +2928,8 @@ export interface PaperLadder {
   /** M68 PR-8 (TS1-083): the targets are suggested milestones; they lock nothing. */
   targets_note?: string;
   stage: string;
-  stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
+  /** LIVE-1: the LIVE step is "switch" - it follows the one `live_trading` switch (worded by the client), never a grant. */
+  stages: { key: string; label: string; status: "current" | "locked" | "done" | "switch"; note?: string }[];
   criteria: LadderCriterion[]; met: number; measured: number;
   summary: Record<string, number | null>; as_of: string;
   /** N2-1: present only while `ladder_evidence` is on. */

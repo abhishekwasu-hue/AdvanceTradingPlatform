@@ -265,7 +265,9 @@ def test_ladder_shows_paper_stage_criteria_from_data_and_no_advice():
     for day in range(3):
         _trade(t, pnl=100.0, charges=10.0, exit_days_ago=day, entry_days_ago=day)
     body = client.get("/api/paper/ladder", headers=t["headers"]).json()
-    assert body["stage"] == "PAPER" and [s["status"] for s in body["stages"]] == ["current", "locked"]
+    assert body["stage"] == "PAPER" and [s["status"] for s in body["stages"]] == ["current", "switch"]
+    # LIVE-1 (owner, 11 Nov): the one live switch - no approval-only stage, no "not yet enabled" grant.
+    assert body["stages"][1] == {"key": "LIVE", "label": "LIVE", "status": "switch"}
     crit = {c["key"]: c for c in body["criteria"]}
     assert crit["sessions"]["value"] == 3 and crit["sessions"]["target"] == app_config.PAPER_LADDER_MIN_SESSIONS and crit["sessions"]["met"] is False
     assert crit["closed_trades"]["value"] == 3 and crit["closed_trades"]["met"] is False

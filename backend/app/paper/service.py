@@ -37,7 +37,7 @@ from app.market_data.calendar import IST
 FLAG = "paper_account"
 EVIDENCE_FLAG = "ladder_evidence"          # N2-1: the discipline criterion and the user's own figures on the ladder card
 STAGE_PAPER = "PAPER"
-STAGE_LIVE = "LIVE_APPROVAL"
+STAGE_LIVE = "LIVE"             # LIVE-1 (owner, 11 Nov): the `live_trading` switch alone decides LIVE; the client words it
 
 
 def _utc(dt: datetime) -> datetime:
@@ -251,7 +251,7 @@ LADDER_TARGETS_NOTE = "Milestones for your own review - they lock or unlock noth
 
 
 async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = None, *, evidence: bool = False) -> Dict:
-    """The progression ladder card (P1 §1.4), PAPER stage only in Phase 0: each criterion with its value from the user's
+    """The progression ladder card (P1 §1.4): each criterion with its value from the user's
     own PAPER trades and its threshold from settings. States facts; it never recommends trading or a stage change.
     N2-1 (`evidence`, flag `ladder_evidence`): the discipline criterion is measured from the Z6 journal and the card
     carries the user's own figures. Without it the answer is exactly the Z3-b one."""
@@ -279,7 +279,9 @@ async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = No
                                                min_trades=app_config.PAPER_EVIDENCE_MIN_TRADES, ruin_pct=app_config.PAPER_EVIDENCE_RUIN_PCT)
     return {**extra, "stage": STAGE_PAPER, "stages": [
                 {"key": STAGE_PAPER, "label": "PAPER", "status": "current"},
-                {"key": STAGE_LIVE, "label": "LIVE (approval-only)", "status": "locked", "note": "not yet enabled"}],
+                # LIVE-1: no grant or approval stage - the step follows the one `live_trading` switch (the client reads it
+                # from the features answer); the criteria are information and gate nothing.
+                {"key": STAGE_LIVE, "label": "LIVE", "status": "switch"}],
             "criteria": criteria, "met": sum(1 for c in measured if c["met"]), "measured": len(measured),
             # M68 PR-8 (TS1-083): the targets are suggested milestones (information); they lock and unlock nothing.
             "targets_note": LADDER_TARGETS_NOTE,

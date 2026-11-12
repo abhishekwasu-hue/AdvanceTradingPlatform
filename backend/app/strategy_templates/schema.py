@@ -33,6 +33,13 @@ existing template: the family letter H (ids `H<n>`), listed only while the flag 
 FAMILY_FLAGS), and `reference_values`: the template's defaults are reference values from a study, shown with the label
 "Reference values - edit before use" (a label only: nothing is enforced; every value stays the user's own setting). A
 template that leaves it out (every A-G template) reads exactly as before.
+
+Family J "Volume spread" (M99 P3), still `atp.template/1` and without changing any existing template: the family letter
+J (ids `J<n>`; the letter I stays free for the Supply & Demand family on its own branch), listed only while the flag
+`vsa_pack` is on (routes.py FAMILY_FLAGS). Its expressions read the ONE volume spread evaluation (ScreenQL `VSA(...)`).
+
+Family K "Wyckoff" (M99 P4), the same way: ids `K<n>` (I and J are taken), listed only while `wyckoff_pack` is on. Its
+expressions read the ONE Wyckoff range evaluation (ScreenQL `Wyckoff(...)` / `WyckoffLevel(...)`).
 """
 from __future__ import annotations
 
@@ -261,10 +268,10 @@ def leaves(part: object) -> List[object]:
 
 class Template(_Strict):
     schema_: Literal["atp.template/1"] = Field(alias="schema")
-    id: str = Field(pattern=r"^[A-H][0-9]{1,2}$")
+    id: str = Field(pattern=r"^[A-HJK][0-9]{1,2}$")
     version: StrictInt = Field(ge=1)
     name: str = Field(min_length=1, max_length=80)
-    family: Literal["A", "B", "C", "D", "E", "F", "G", "H"]
+    family: Literal["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"]
     idea: str = Field(min_length=1, max_length=300)
     difficulty: Literal["Beginner", "Intermediate", "Advanced"]
     style: Literal["Intraday", "Swing", "Both", "Intraday (session-based)"]
@@ -367,6 +374,10 @@ class Template(_Strict):
             raise ValueError("evidence names must be unique")
         if (self.family == "H") != self.id.startswith("H"):
             raise ValueError("an Intraday (family H) template has an H id, and only it")
+        if (self.family == "J") != self.id.startswith("J"):
+            raise ValueError("a Volume spread (family J) template has a J id, and only it")
+        if (self.family == "K") != self.id.startswith("K"):
+            raise ValueError("a Wyckoff (family K) template has a K id, and only it")
         return self
 
     @classmethod

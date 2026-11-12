@@ -380,6 +380,17 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bar direction and volume class as ScreenQL functions (RelRange, SpreadClass, ClosePosition, BarDirection,
     # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and
     # alert rules using them pause. Signals only - places no orders.
+    # M99 P3: the volume spread pack (app/price_action/vsa.py) - the ScreenQL function VSA(...) with thirteen bar readings
+    # (no demand / supply, test, failed test, up-thrust, reverse up-thrust, stopping volume, selling / buying climax,
+    # shake-out, falling pressure, absorption, effort vs result), the "Volume spread" library screens, the chart layer
+    # with "Why?" and the J templates. OFF: hidden and refused, alert rules pause. Signals only - places no orders.
+    # M99 P4: the Wyckoff pack (app/price_action/wyckoff.py) - the ScreenQL functions Wyckoff(...) / WyckoffLevel(...): a
+    # trading-range reader (climax, automatic reaction, secondary test, Phase A-E, spring / upthrust after distribution
+    # and their tests, signs of strength / weakness and the back-up, the significant bar, the larger structure's lean),
+    # the "Wyckoff" library screens, the chart layer with "Why?" and the K templates. OFF: hidden and refused, alert
+    # rules pause. Signals only - places no orders.
+    "wyckoff_pack": "Wyckoff pack: trading ranges read in phases A-E - climax, automatic reaction, secondary test, spring / upthrust after distribution, signs of strength / weakness and the back-up - in screens, on the chart and in templates (signals only, places no orders)",
+    "vsa_pack": "Volume spread pack: bar readings from spread, volume and close (no demand, no supply, test, climaxes, up-thrust and more) in screens, on the chart and in templates (signals only, places no orders)",
     "m99_primitives": "Shared building blocks for screens: bar classes, structure, Fibonacci levels and price clusters (signals only, places no orders)",
     # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
     # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and

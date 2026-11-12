@@ -20,9 +20,10 @@ as the stop and no target; a structure keeps its credit levels. The premium stop
 safety nets that stay as set (R4: the first one hit exits; ADR-0004: nothing here ever blocks or delays an exit). The
 trailing / break-even / time exits (ExitRules) are unchanged.
 
-M99 P2: `management` - the trade-management options of an intraday template bot (family H, a bot that trades the symbol
-it reads): a trail by swing / ATR / average, no-new-extreme and bars-in-trade exits (a partial exit is the ExitRules
-scale-out, M99 P7) (app/strategy_templates/management.py). NULL = none (every existing row). They only tighten a stop or add an exit.
+M99 P2: `management` - the trade-management options of an intraday template bot (family H; the symbol it reads, its
+future or a single option of it - MANAGEMENT_CLASSES): a trail by swing / ATR / average, no-new-extreme and bars-in-trade
+exits (a partial exit is the ExitRules scale-out, M99 P7) (app/strategy_templates/management.py). NULL = none (every
+existing row). They only tighten a stop or add an exit.
 
 The precedence per instrument (R4; docs/design/STRATEGY_TEMPLATES_IMPL.md, "Exits as settings"):
 
@@ -100,9 +101,12 @@ LEVEL_SHORT_WORDS: dict[str, str] = {"VWAP": "the session VWAP", "SESSION_EXTREM
                                      "PREV_CLOSE": "the previous close", "OR_FAR_SIDE": "the far side of the opening range"}
 LEVEL_FAMILIES = frozenset({"H"})         # the intraday templates (their functions are session functions)
 MANAGEMENT_FAMILIES = frozenset({"H"})    # M99 P2: the management options are offered on the intraday templates
-# M99 P2: the instruments the options run on - the bot trades the symbol its template reads, so the trail levels and the
-# R of the trade are on the same prices (a future's levels are transplanted, an option's are on the underlying: not yet).
-MANAGEMENT_CLASSES = frozenset({UNDERLYING})
+# M99 P2: the instruments the options run on. They are always read on the bars the bot READS (the underlying's structure);
+# the exit is the traded instrument's own: the symbol itself; a future, whose stop is the underlying stop transplanted by
+# the entry's offset (app/execution/contract_execution.py, the one mapping); a single option, which exits when the
+# underlying crosses its stop (app/trading/exit_logic.py check_contract_exit) - never a premium stop made up here. A
+# multi-leg structure keeps its own loss limit and target (credit levels): refused, see `problems`.
+MANAGEMENT_CLASSES = frozenset({UNDERLYING, FUTURE, OPTION_SINGLE})
 
 
 def base_waves() -> Tuple[str, ...]:
@@ -252,11 +256,16 @@ class TemplateExits:
             if not caps.management:
                 out.append("The trade-management options are for the intraday templates only")
             elif cls_ not in MANAGEMENT_CLASSES:
-                out.append("The trade-management options work on a bot that trades the symbol itself for now")
+                out.append("A spread keeps its own stop and target on the credit; the trade-management options are for "
+                           "the symbol itself, a future or a single option")
             elif not m.active:
                 out.append("Turn on at least one trade-management option, or leave them all off")
             else:
                 out.extend(m.problems())
+                if cls_ == OPTION_SINGLE and m.trail is not None and self.stop_source == "PREMIUM_PCT":
+                    # the trail moves the option's stop on the underlying; with the premium stop only there is none to move
+                    out.append("The trailing stop moves your stop on the underlying; with only your premium stop there is "
+                               "none to move - pick the template's own level as the stop, or turn the trail off")
         return out
 
     def describe(self) -> str:

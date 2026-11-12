@@ -53,6 +53,11 @@ _NO_SIGNAL_TEXT = {engine.REASON_WARMUP: "Not enough history for this template y
                    engine.REASON_NO_LEVEL: "No invalidation level on this bar"}
 
 
+def _num(v: Any) -> float | None:
+    """A price as a float, None kept (M99 P2: a single option with the premium stop only has no underlying stop)."""
+    return None if v is None else float(v)
+
+
 class TemplateStrategy(BaseStrategy):
     category = StrategyCategory.INDICATOR_BASED
 
@@ -108,11 +113,12 @@ class TemplateStrategy(BaseStrategy):
         """M99 P2: the user turned on a trade-management option (the engines and the worker then call `management_step`)."""
         return self.management.active
 
-    def management_step(self, data: dict[str, pd.DataFrame], direction: Any, *, entry: float, initial_stop: float,
-                        current_stop: float, after: int) -> management.Step:
+    def management_step(self, data: dict[str, pd.DataFrame], direction: Any, *, entry: float | None, initial_stop: float | None,
+                        current_stop: float | None, after: int) -> management.Step:
         """M99 P2: the management options on the last closed bar of `data` for an open trade of `direction` whose last
-        `after` bars closed after its entry - the one call of the backtest engine and the worker (backtest = live). No
-        bar after the entry yet: nothing (the entry bar never manages itself)."""
+        `after` bars closed after its entry - the one call of the backtest engines and the worker (backtest = live). No
+        bar after the entry yet: nothing (the entry bar never manages itself). `data` are the bars the bot READS; for a
+        future / option bot `direction` and the stops are the underlying's (management.step)."""
         df = data.get(self.label)
         if not self.manages or df is None or len(df) == 0 or after <= 0:
             return management.Step()
@@ -121,8 +127,8 @@ class TemplateStrategy(BaseStrategy):
         k = min(int(after), t + 1)
         level = series.extras.get("trail:long" if is_long else "trail:short")
         sub = df.iloc[len(df) - k:]
-        return management.step(self.management, direction=1 if is_long else -1, entry=float(entry), initial_stop=float(initial_stop),
-                               current_stop=float(current_stop), highs=sub["high"].astype(float).tolist(),
+        return management.step(self.management, direction=1 if is_long else -1, entry=_num(entry), initial_stop=_num(initial_stop),
+                               current_stop=_num(current_stop), highs=sub["high"].astype(float).tolist(),
                                lows=sub["low"].astype(float).tolist(), closes=sub["close"].astype(float).tolist(),
                                level=float(level[t]) if level is not None else None)
 

@@ -9,7 +9,7 @@ Management (app/strategy_templates/management.py, stored as TemplateExits.manage
 * backtest = worker: the engine's exits and stops equal a replay of the same `management_step` with the worker's
   timing (the bars that closed after the entry), and the worker applies a step to its own PAPER trades only;
 * no look-ahead: a backtest cut at any bar gives the same closed trades before the cut;
-* the checks and the plain refusals (family H, a bot that trades the symbol itself, the numbers' bounds), the migration.
+* the checks and the plain refusals (family H, a structure, the numbers' bounds), the migration.
 
 Key-level grade (app/screener/level_grade.py, `LevelGrade`): one synthetic fixture per component, causality by cutting the
 bars, the registry entry behind the pack's flags.
@@ -123,14 +123,16 @@ def test_the_checks_name_each_problem_in_plain_words():
 
 
 # ======================================================================================== the exit settings and the routes
-def test_the_options_fit_only_an_intraday_template_on_the_symbol_itself():
+def test_the_options_fit_only_an_intraday_template_and_not_a_structure():
     h = TemplateStrategy(library.get("H2"), C.resolve_settings(library.get("H2"), "5m"))
     d = _strategy("D1")
     choice = _exits(stall_bars=2)
     assert choice.problems(X.UNDERLYING, h.capabilities()) == []
     assert choice.problems(X.UNDERLYING, d.capabilities()) == ["The trade-management options are for the intraday templates only"]
-    for cls_ in (X.FUTURE, X.OPTION_SINGLE, X.OPTION_STRUCTURE):
-        assert "symbol itself" in " ".join(choice.problems(cls_, h.capabilities())), cls_
+    # M99 P2 follow-up (tests/test_m99_p2_fno_management.py): a future and a single option fit too; a structure is refused
+    for cls_ in (X.FUTURE, X.OPTION_SINGLE):
+        assert choice.problems(cls_, h.capabilities()) == [], cls_
+    assert "A spread keeps its own stop" in " ".join(choice.problems(X.OPTION_STRUCTURE, h.capabilities()))
     assert _exits(trail="SWING", trail_degree=9).problems(X.UNDERLYING, h.capabilities()) == [
         "Pick the swing size the stop trails (0 to 3)"]
     with pytest.raises(ValueError):
@@ -153,7 +155,7 @@ def test_the_template_offers_the_options_to_the_form_only_on_family_h():
     from app.strategy_templates.routes import _exit_choices
     h = TemplateStrategy(library.get("H6"), C.resolve_settings(library.get("H6"), "5m"))
     got = _exit_choices(h)["management"]
-    assert got["classes"] == ["UNDERLYING"] and [t["value"] for t in got["trails"]] == ["SWING", "ATR", "MA"]
+    assert got["classes"] == ["FUTURE", "OPTION_SINGLE", "UNDERLYING"] and [t["value"] for t in got["trails"]] == ["SWING", "ATR", "MA"]
     assert got["reference_label"] == "Reference - edit before use" and got["reference"]["trail_k"] == 3.0
     assert not any("partial" in k for k in got["reference"]) and not any("partial" in k for k in got["bounds"])
     assert _exit_choices(_strategy("D1"))["management"] is None

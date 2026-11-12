@@ -604,7 +604,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   // M99 P2: the trade-management options, where the template offers them for this instrument (all off sends nothing)
   const mgmtChoices = exitChoices && managementOffered(exitChoices.management, cls) ? exitChoices.management ?? null : null;
   const mgmtBody = mgmtChoices ? managementBody(mgmtPick) : null;
-  const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) ?? (mgmtChoices ? managementProblem(mgmtPick, mgmtChoices) : null) : null;
+  const premiumStopOnly = cls === "OPTION_SINGLE" && exitsNow?.stop === "PREMIUM_PCT";      // no underlying stop to trail
+  const mgmtIssue = mgmtChoices ? managementProblem(mgmtPick, mgmtChoices, premiumStopOnly) : null;
+  const exitIssue = exitChoices && exitsNow ? exitProblem(exitsNow, exitChoices) ?? mgmtIssue : null;
   const exitsPicked = exitChoices && exitsNow ? templateExitsBody(exitsNow, exitChoices, cls) : null;
   const exitsBody = mgmtBody ? { ...(exitsPicked ?? {}), management: mgmtBody } : exitsPicked;
   const request = exitsBody ? { ...adopted, template_exits: exitsBody } : adopted;
@@ -776,7 +778,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
               {exitNotes(exitsNow, cls).map((n) => <li key={n}>{n}</li>)}
             </ul>
             {mgmtChoices && (
-              <ManagementFields choices={mgmtChoices} pick={mgmtPick} touched={touched} problem={managementProblem(mgmtPick, mgmtChoices)}
+              <ManagementFields choices={mgmtChoices} pick={mgmtPick} touched={touched} problem={mgmtIssue}
                 onChange={(patch) => { setMgmtPick((p) => ({ ...p, ...patch })); setResult(null); }} />
             )}
             {touched && exitIssue && <p role="alert" className="text-t13 text-warn">{exitIssue}</p>}

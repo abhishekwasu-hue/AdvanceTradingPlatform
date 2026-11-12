@@ -194,10 +194,11 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
     breakout function while `screener_breakouts` is off, a market-zone function while `market_zones` is off, or an AMW-3
     function / v2 candle / confirmation status while `screenql_amw_functions` is off, or a wave count function while
     `screener_waves` is off, or an M99 function while `m99_primitives` is off (the bar classes and structure, M99 B1-a / B1-c;
-    the Fibonacci levels and clusters, B1-b), is refused with the flag's reason.
+    the Fibonacci levels and clusters, B1-b), or VSA while `vsa_pack` is off (M99 P3), or a Wyckoff function while
+    `wyckoff_pack` is off (M99 P4), is refused with the flag's reason.
     The others still draw."""
     from app.screener import amw_functions as amw_gate
-    from app.screener import m99_gate
+    from app.screener import m99_gate, vsa_gate, wyckoff_gate
     from app.screener import primitives as primitives_gate
     from app.screener import waves as waves_gate
     from app.screener import zones as zone_gate
@@ -205,7 +206,7 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
     out: List[Dict[str, Any]] = []
     for st in studies:
         if st["ok"] and st["ast"] is not None:
-            for g in (breakout_gate, zone_gate, waves_gate, m99_gate, primitives_gate):   # M99: bar classes / structure; Fibonacci
+            for g in (breakout_gate, zone_gate, waves_gate, m99_gate, primitives_gate, vsa_gate, wyckoff_gate):   # M99: bar classes / structure; Fibonacci; P3; P4
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
                     st = _refuse(st, breakout_gate.refusal(blocked, st["ast"]) if g is breakout_gate else g.refusal(blocked))

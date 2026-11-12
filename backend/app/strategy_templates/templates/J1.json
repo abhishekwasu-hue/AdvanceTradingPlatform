@@ -1,0 +1,228 @@
+{
+  "schema": "atp.template/1",
+  "id": "J1",
+  "version": 1,
+  "name": "Test after a climax",
+  "family": "J",
+  "idea": "After stopping volume or a climax at the end of a fall, a signal on the first test: a down bar into the climax area on lower volume closing high. The mirror: after a climax at the end of a rise or an up-thrust, an up bar with no demand. Wrong beyond the extreme since the climax.",
+  "difficulty": "Advanced",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "15m",
+    "5m",
+    "30m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "k_seq",
+      "label": "Bars from the climax to the test",
+      "help": "The test or no-demand bar must come within this many bars of the climax, stopping volume or up-thrust. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "n",
+      "label": "Bars for the average",
+      "help": "Each bar's spread and volume are measured against the average of this many bars before it. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "narrow",
+      "label": "Narrow spread below",
+      "help": "A spread below this multiple of the average range is narrow. Reference: 0.7.",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.05,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "wide",
+      "label": "Wide spread above",
+      "help": "A spread above this multiple of the average range is wide. Reference: 1.3.",
+      "type": "float",
+      "default": 1.3,
+      "min": 0.1,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "ultra",
+      "label": "Ultra-wide spread above",
+      "help": "A spread above this multiple of the average range is ultra-wide. Reference: 2.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 20.0,
+      "step": 0.05
+    },
+    {
+      "key": "vol_high",
+      "label": "High volume above",
+      "help": "Volume above this multiple of the average is high. Reference: 1.3.",
+      "type": "float",
+      "default": 1.3,
+      "min": 0.1,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "vol_ultra",
+      "label": "Ultra-high volume above",
+      "help": "Volume above this multiple of the average is ultra-high. Reference: 2.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.1,
+      "max": 20.0,
+      "step": 0.05
+    },
+    {
+      "key": "part",
+      "label": "Close position part",
+      "help": "The close is in the low third below this share of the bar's range and in the high third above one minus it. Reference: a third.",
+      "type": "float",
+      "default": 0.333,
+      "min": 0.05,
+      "max": 0.5,
+      "step": 0.01
+    },
+    {
+      "key": "prev",
+      "label": "Bars for lower volume",
+      "help": "Lower volume means lower than each of this many bars before. Reference: 2.",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "new_bars",
+      "label": "Bars for new highs or lows",
+      "help": "Highs or lows beyond this many bars before are new ground. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "trend_bars",
+      "label": "Bars for the structure before",
+      "help": "These bars against as many before them: a higher high and higher low is rising, a lower high and lower low is falling. Reference: 10.",
+      "type": "int",
+      "default": 10,
+      "min": 2,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "bg_bars",
+      "label": "Bars for the background",
+      "help": "A climax within this many bars before counts for the background. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "area_bars",
+      "label": "Bars searched for the climax area",
+      "help": "The test reaches the range of a high-volume bar within this many bars before. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "area_tol",
+      "label": "Nearness to that area",
+      "help": "How near that bar's range the low must come, in average ranges. Reference: 0.25.",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "background",
+      "label": "Only with the structure before",
+      "help": "Count each reading only with the structure before it that the reading needs (a fall before a climax at the end of a fall, and so on).",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "confirm",
+      "label": "Next-bar confirmation",
+      "help": "Each reading counts on the next bar, only when that bar closes higher (strength) or lower (weakness).",
+      "type": "bool",
+      "default": false
+    }
+  ],
+  "constraints": [
+    {
+      "left": "narrow",
+      "op": "<",
+      "right": "wide",
+      "message": "The narrow limit must be below the wide one."
+    },
+    {
+      "left": "wide",
+      "op": "<",
+      "right": "ultra",
+      "message": "The wide limit must be below the ultra-wide one."
+    },
+    {
+      "left": "vol_high",
+      "op": "<",
+      "right": "vol_ultra",
+      "message": "The high-volume limit must be below the ultra-high one."
+    },
+    {
+      "left": "prev",
+      "op": "<=",
+      "right": "n",
+      "message": "The bars for lower volume must be at most the bars for the average."
+    }
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "VSA(\"stopping_volume\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm) OR VSA(\"selling_climax\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm)",
+    "short": "VSA(\"buying_climax\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm) OR VSA(\"up_thrust\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm)",
+    "expiry_bars": "$k_seq"
+  },
+  "trigger": {
+    "long": "VSA(\"test\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm)",
+    "short": "VSA(\"no_demand\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, bg_bars=$bg_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, confirm=$confirm)"
+  },
+  "invalidation": {
+    "extreme": "since_setup"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "climax_fall_then_test"
+      }
+    ],
+    "short": [
+      {
+        "token": "climax_rise_then_no_demand"
+      }
+    ]
+  }
+}

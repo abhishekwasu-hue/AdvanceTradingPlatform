@@ -395,6 +395,47 @@ _VSA_ORDER: tuple[tuple[str, str, bool], ...] = (("narrow", "wide", False), ("wi
                                                   ("vol_high", "vol_ultra", False))
 
 
+# M99 P4 (flag `wyckoff_pack`, off by default): the Wyckoff range reader (app/price_action/wyckoff.py) - one function for
+# the events and phases, one for the range's own levels; every setting a named argument read once (a literal or a
+# $parameter) within its bounds, the reference value when left out ("reference - edit before use"; tests/
+# test_m99_p4_wyckoff.py checks them against wyckoff.SETTINGS_TABLE). Closed bars only; no volume data -> no value
+# (only the bias, read from the structure, needs no volume).
+WYCKOFF_FLAG = "wyckoff_pack"
+WYCKOFF_KWARGS: dict[str, str] = {**{k: v for k, v in VSA_KWARGS.items() if v in ("avg_n", "narrow", "wide", "ultra_wide", "vol_low",
+                                                                                 "vol_high", "vol_ultra", "close_part", "prev_bars",
+                                                                                 "new_bars", "trend_bars", "bg_bars", "area_bars",
+                                                                                 "area_tol", "background")},
+                                  "pivot": "pivot_n", "swing_k": "swing_k", "a_bars": "a_bars", "st_below": "st_below",
+                                  "b_vs_a": "b_vs_a", "k_back": "k_back", "deep": "deep", "test_bars": "test_bars",
+                                  "test_zone": "test_zone", "mid_share": "mid_share", "bu_bars": "bu_bars", "bu_zone": "bu_zone",
+                                  "sig_vol": "sig_vol"}
+# History a Wyckoff(...) call needs before its first answer: the volume spread warm-up (the climax reads it), and a named
+# window plus VSA_EXTRA_BARS when one is given - never less than WyckoffSettings.warmup() (tested). The reader is causal
+# and needs no further warm-up: a range is read from the bars there are (more history shows more ranges).
+WYCKOFF_WINDOW_MULT = 1
+
+
+def _wyckoff_arg(arg: str, setting: str) -> Arg:
+    """A Wyckoff setting as a named argument: its reference value and bounds are wyckoff.SETTINGS_TABLE's."""
+    from app.price_action.wyckoff import SETTINGS_TABLE
+    _, kind, ref, bounds = next(row for row in SETTINGS_TABLE if row[0] == setting)
+    if kind == "bars":
+        return Arg(arg, "window", ref, False, bounds=bounds)
+    if kind == "flag":
+        return Arg(arg, BOOL, ref, False)
+    return Arg(arg, NUM, ref, False, literal_only=True, bounds=bounds)
+
+
+def _wyckoff_values(name: str) -> tuple[str, ...]:
+    from app.price_action import wyckoff
+    return tuple(getattr(wyckoff, name))
+
+
+def _wyckoff_min_bars() -> int:
+    from app.price_action.wyckoff import WyckoffSettings
+    return WyckoffSettings().warmup()
+
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -1003,6 +1044,22 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " from the bar's spread, volume and close against the n bars before, with the structure before it (background"
              " on / off) and an optional next-bar confirmation; side any / strength / weakness. Missing where the bars have no"
              " volume data (closed bars; settings are reference values - edit before use)"),
+    # M99 P4 (flag wyckoff_pack): the Wyckoff range reader (app/price_action/wyckoff.py)
+    Spec("Wyckoff", "filter", BOOL, None, (Arg("name", STR, choices=_wyckoff_values("NAMES_ALL")),
+                                           Arg("side", STR, "any", False, choices=_wyckoff_values("SIDE_CHOICES"))),
+         kwargs=tuple(_wyckoff_arg(a, s) for a, s in WYCKOFF_KWARGS.items()), cost=4.0, min_bars=_wyckoff_min_bars(),
+         window_mult=WYCKOFF_WINDOW_MULT, extra_bars=VSA_EXTRA_BARS, flag=WYCKOFF_FLAG, ordered_args=_VSA_ORDER,
+         doc="the named Wyckoff range reading on this bar - events climax, ar, st, edge_test, shake (spring / upthrust after"
+             " distribution), shake_test, last_point, break (sign of strength / weakness), back_up, heavy_back_up, failed_break,"
+             " significant_bar (each on the bar it is confirmed); states phase_a .. phase_e, in_range; bias / bias_none (the"
+             " structure's lean, read without volume) - side any / strength / weakness. Missing where the bars have no volume"
+             " data (closed bars; settings are reference values - edit before use)"),
+    Spec("WyckoffLevel", "factor", NUM, "price", (Arg("what", STR, choices=_wyckoff_values("LEVELS")),),
+         kwargs=tuple(_wyckoff_arg(a, s) for a, s in WYCKOFF_KWARGS.items()), cost=4.0, min_bars=_wyckoff_min_bars(),
+         window_mult=WYCKOFF_WINDOW_MULT, extra_bars=VSA_EXTRA_BARS, flag=WYCKOFF_FLAG, ordered_args=_VSA_ORDER,
+         doc="a level of the current Wyckoff range on this bar - range_top / range_bottom (from the automatic reaction on),"
+             " shake_extreme (Phase C: the shake's furthest price), break_base (Phase D / E: the furthest price back since the"
+             " break began); missing where there is none (closed bars; settings are reference values - edit before use)"),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -1022,6 +1079,7 @@ AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() 
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 VSA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == VSA_FLAG)
+WYCKOFF_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WYCKOFF_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
@@ -1054,4 +1112,5 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
-           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS"]
+           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS",
+           "WYCKOFF_FLAG", "WYCKOFF_FUNCTIONS", "WYCKOFF_KWARGS"]

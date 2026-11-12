@@ -155,6 +155,19 @@ TOKENS: Dict[str, str] = {
                               " lower volume closing in its high third on the {timeframe} chart"),
     "climax_rise_then_no_demand": ("after a climax at the end of a rise or an up-thrust, an up bar on a narrow spread and lower"
                                    " volume showed no demand on the {timeframe} chart"),
+    # M99 P4 family K "Wyckoff" (K1-K3): structure words only - no price, no number, no instruction
+    "range_spring_then_test": ("in a trading range, after a shake under the range bottom that closed back inside, a quiet test"
+                               " held over the shake's low on the {timeframe} chart"),
+    "range_upthrust_then_test": ("in a trading range, after a shake over the range top that closed back inside, a quiet test"
+                                 " held under the shake's high on the {timeframe} chart"),
+    "range_last_point_of_support": ("in a trading range, after a shake under the bottom and a move to the middle, a lighter swing"
+                                    " back held over the shake's low on the {timeframe} chart"),
+    "range_last_point_of_supply": ("in a trading range, after a shake over the top and a move to the middle, a lighter swing back"
+                                   " held under the shake's high on the {timeframe} chart"),
+    "range_back_up_after_break_up": ("after closes in a row over a trading range's top, a quiet back-up to the top closed over it"
+                                     " on the {timeframe} chart"),
+    "range_back_up_after_break_down": ("after closes in a row under a trading range's bottom, a quiet back-up to the bottom closed"
+                                       " under it on the {timeframe} chart"),
     # M94 family H "Intraday" (H1-H5): structure words only - no price, no number, no instruction
     "fallen_angel_broken_upward": ("after an open above the previous close, a fall from the session high and a tight base, the close"
                                    " broke above the base on the {timeframe} chart"),

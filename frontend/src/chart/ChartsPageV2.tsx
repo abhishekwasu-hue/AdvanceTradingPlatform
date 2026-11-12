@@ -49,6 +49,7 @@ import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
 import { OPTIONS_EM_LAYER_ID, useOptionsExpectedMove } from "../optionChain/expectedMoveLayer";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
 import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
+import { WYCKOFF_LAYER_ID, WyckoffBar, useWyckoffLayer } from "./wyckoffLayer";
 import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
@@ -181,10 +182,13 @@ export default function ChartsPageV2(_props: PageProps) {
   const [vsaOptions, setVsaOptions] = useState<VsaOptions>(DEFAULT_VSA_OPTIONS);
   const vsaOn = view.layers.includes(VSA_LAYER_ID) && features.on("vsa_pack") && tab === "chart" && !hubView;
   const vsaLayer = useVsaLayer({ symbol, exchange, timeframe, candles: data.candles, on: vsaOn, options: vsaOptions });
+  // M99 P4: the Wyckoff ranges, phases and events (flag wyckoff_pack) - boxes and phase letters on the chart, marks with "Why?"
+  const wyckoffOn = view.layers.includes(WYCKOFF_LAYER_ID) && features.on("wyckoff_pack") && tab === "chart" && !hubView;
+  const wyckoffLayer = useWyckoffLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: wyckoffOn });
   const chartMarkers = useMemo(() => {
-    const extra = [...tpl.markers, ...vsaLayer.markers];
+    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
-  }, [screen.markers, tpl.markers, vsaLayer.markers]);
+  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers]);
   const emNote = useOptionsExpectedMove(engine, symbol, view.layers.includes(OPTIONS_EM_LAYER_ID) && tab === "chart" && !hubView, chip ? chip.open : null);   // M96 N1
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -358,6 +362,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
             {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
+            {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || emNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">

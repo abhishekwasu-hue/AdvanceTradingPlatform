@@ -159,6 +159,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     # (stopping volume closing low, shake-out) and the next-bar confirmation are all read from closed bars only
     "VSA": ['VSA("no_demand")', 'VSA("shake_out", confirm=TRUE)', 'VSA("stopping_volume", background=FALSE)',
             'VSA("effort_vs_result", "strength", n=10, trend_bars=5)', 'VSA("test")@1h'],
+    # M99 P4 (flag wyckoff_pack): the Wyckoff range reader (app/price_action/wyckoff.py) - every event is known on its
+    # confirming bar, phases and levels as known at each close
+    "Wyckoff": ['Wyckoff("in_range")', 'Wyckoff("shake", "strength", b_vs_a=0.5)', 'Wyckoff("phase_c")', 'Wyckoff("bias", "strength")',
+                'Wyckoff("significant_bar")@1h'],
+    # the first case is read against the close: a range level is flat inside a range, so "level > level[1]" (the S6 sweep's
+    # default condition for a factor) would almost never hold
+    "WyckoffLevel": ['WyckoffLevel("range_top") - close', 'WyckoffLevel("range_bottom", k_back=2)', 'WyckoffLevel("range_top", pivot=2)'],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],

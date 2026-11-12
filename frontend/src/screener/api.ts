@@ -110,6 +110,8 @@ export const screenerApi = {
   intraday: () => request<IntradayLibrary>("/screener/intraday"),
   /** M99 P3: the "Volume spread" scanners' settings (flag `vsa_pack`; 503 while off - no settings shown). Same shape. */
   vsa: () => request<IntradayLibrary>("/screener/vsa"),
+  /** M99 P4: the "Wyckoff" scanners' settings (flag `wyckoff_pack`; 503 while off - no settings shown). Same shape. */
+  wyckoff: () => request<IntradayLibrary>("/screener/wyckoff"),
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
   stages: (body: { library_id?: string; source?: string; base_tf?: string; params?: Record<string, number | string | boolean> }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),

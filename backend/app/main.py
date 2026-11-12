@@ -59,6 +59,7 @@ from app.charts.workspace_events import router as workspace_events_router
 from app.charts.workspace_recall import router as workspace_recall_router
 from app.charts.workspace_summary import router as workspace_summary_router
 from app.charts.workspace_watch import router as workspace_watch_router
+from app.charts.wyckoff_layer import router as chart_wyckoff_layer_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.compliance.routes import router as compliance_router
 from app.context_panel.routes import router as context_panel_router
@@ -477,6 +478,7 @@ app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
 app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
+app.include_router(chart_wyckoff_layer_router)  # M99 P4: Wyckoff range, phases and events with Why? on the chart (flag wyckoff_pack, off)
 app.include_router(chart_vsa_layer_router)  # M99 P3: volume spread readings with Why? on the chart (flag vsa_pack, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)

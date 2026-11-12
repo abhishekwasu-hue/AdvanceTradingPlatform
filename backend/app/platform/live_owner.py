@@ -1,12 +1,13 @@
 """M55 S1 (owner order): LIVE can be switched on only by the owner.
 
-Two changes open the way to LIVE: turning the `live_trading` flag on (globally or for any organisation) and turning
-the `phase0_paper_only` lock off (any state that is not "on for everyone"). Each is allowed only when:
+LIVE-1 (owner order, binding): `live_trading` is the ONE live switch (app/platform/live_switch.py). Turning it on
+(globally) is the only change that opens the way to LIVE; the former PAPER-only lock `phase0_paper_only` follows it and is
+not set on its own (controls.set_flag refuses it). Turning `live_trading` on is allowed only when:
 1. the caller is the owner identity, the account `LIVE_OWNER_USER_ID` names (app/core/config.py, default 1);
 2. this session passed a two-factor check recently (the same check the admin routes use, `MFA_STEP_UP_MINUTES`);
 3. the request carries the typed confirmation `CONFIRM_TEXT`.
 Any other SUPER_ADMIN gets a 403 with a plain reason. Every attempt, allowed or refused, writes one audit row (committed
-before a refusal is raised). The restrictive direction (`live_trading` off, the lock on) is never held up here.
+before a refusal is raised). The restrictive direction (`live_trading` off) is never held up here.
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,11 +48,10 @@ def is_owner(user: User | None) -> bool:
 
 
 def opens_live(name: str, *, on: bool, tenants: list[int] | None) -> bool:
-    """True when this flag change opens a way to LIVE: `live_trading` on for anyone, or the lock not on for everyone."""
+    """True when this flag change opens a way to LIVE: `live_trading` on (or an organisation list, kept owner-only as
+    before). LIVE-1: `phase0_paper_only` opens nothing any more - it follows `live_trading` and set_flag refuses it."""
     if name == LIVE_TRADING:
         return bool(on or tenants)
-    if name == PAPER_ONLY:
-        return not on
     return False
 
 
@@ -93,11 +93,9 @@ async def _ensure_owner(session: AsyncSession, user: User, what: str, *, session
 
 
 # --- M55 S1b (owner decision with #744): the per-organisation LIVE grant ------------------------------------------------
-# After S1 no plan grants LIVE. The grant IS the `live_trading` flag's organisation allow-list (existing storage, no
-# migration): only the owner (the same three checks as above) adds or removes an organisation, every grant / revoke is
-# audited, and the flag's `on` stays the global switch (switching it on or off keeps the list). The plan check
-# (app/plans/limits.py `live_allowed_for`) passes for an organisation only when ALL hold: the global switch is on, the
-# PAPER-only lock is off for it and it is on the list. Nothing is granted by default (no stored entry: an empty list).
+# LIVE-1 (owner order: ONE live switch): the grant no longer decides anything - `live_trading` ON is LIVE for every user,
+# OFF is PAPER only. The organisation list of the flag is kept as stored (the owner-only, audited set_org_grant below
+# still writes it, nothing is deleted), but `org_live_open` reads only the switch (app/platform/live_switch.py).
 GRANTED_EVENT = "live_org_granted"
 REVOKED_EVENT = "live_org_revoked"
 NOT_OWNER_GRANT = "Only the owner can grant or revoke LIVE for an organisation."
@@ -112,16 +110,12 @@ async def granted_orgs(session: AsyncSession) -> list[int]:
 
 
 async def org_live_open(session: AsyncSession, tenant_id: int | None) -> bool:
-    """True only when the global `live_trading` switch is on, the PAPER-only lock is off for this organisation and the
-    owner granted it LIVE. Read fresh each time (it also refreshes the lock state the broker chokepoint reads)."""
+    """LIVE-1: True when the one live switch (`live_trading`) is ON - `live_switch.live_allowed`, read fresh (it also
+    refreshes the lock state the broker chokepoint reads). The name stays for its callers (the F&O ticket, the plan check)."""
     if tenant_id is None:
         return False
-    from app.platform import phase0_lock
-    from app.platform.controls import feature_flags
-    entry = (await feature_flags(session)).get(LIVE_TRADING) or {}
-    if not entry.get("on") or int(tenant_id) not in (entry.get("tenants") or []):
-        return False
-    return not await phase0_lock.is_on(session, int(tenant_id))
+    from app.platform import live_switch
+    return await live_switch.live_allowed(session, int(tenant_id))
 
 
 async def set_org_grant(session: AsyncSession, user: User, tenant_id: int, *, granted: bool, session_id: int | None,

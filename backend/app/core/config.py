@@ -847,6 +847,11 @@ OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 # M61 PCR-1 (data quality, not chart reading): a stored OI snapshot is "partial" when its count of strikes with OI is below
 # this share of the median count of the session's earlier snapshots (0.9 = more than 10 % of the strikes missing).
 OI_PARTIAL_SNAPSHOT_RATIO = min(1.0, max(0.0, _env_float("OI_PARTIAL_SNAPSHOT_RATIO", 0.9)))
+# M96 N1 (chain analytics): the ATM IV percentile / rank reads the closing ATM IV of up to OC_IV_HISTORY_SESSIONS earlier
+# stored sessions (one value per session: its last stored slot) and shows a number only from OC_IV_RANK_MIN_SESSIONS
+# sessions up; below that it says "not enough history". Display only: nothing trades on them.
+OC_IV_HISTORY_SESSIONS = _bounded_int("OC_IV_HISTORY_SESSIONS", 252, 5, 400)
+OC_IV_RANK_MIN_SESSIONS = _bounded_int("OC_IV_RANK_MIN_SESSIONS", 20, 2, 400)
 
 # TM 9.4 chain history (docs/design/CHAIN_HISTORY.md): option-chain snapshots recorded through the OWNER's own broker
 # session (HB2's owner: HISTORY_OWNER_TENANT_ID confirmed by HISTORY_OWNER_TENANT_NAME, the session of

@@ -54,9 +54,10 @@ def check_frames(window: pd.DataFrame, base_tf: str, frames: Dict[str, pd.DataFr
     return out
 
 
-def scan_with_frames(recipe: Recipe, window: pd.DataFrame, frames: Dict[str, pd.DataFrame]) -> Dict[pd.Timestamp, parity.Answer]:
+def scan_with_frames(recipe: Recipe, window: pd.DataFrame, frames: Dict[str, pd.DataFrame],
+                     symbol: str = "S") -> Dict[pd.Timestamp, parity.Answer]:
     """The scan path when the context frames are handed in (as a screen that loads them would)."""
-    series = engine.compute(recipe, {recipe.settings.timeframe: window, **frames})
+    series = engine.compute(recipe, {recipe.settings.timeframe: window, **frames}, symbol)
     out: Dict[pd.Timestamp, parity.Answer] = {}
     for t, ts in enumerate(series.index):
         d = int(series.direction[t])
@@ -92,8 +93,8 @@ def run(strategy: TemplateStrategy, window: pd.DataFrame, symbol: str = "S", ris
     report = Report()
     frames = context_frames(recipe, window)
     report.problems += check_frames(window, recipe.settings.timeframe, frames)
-    with_frames = scan_with_frames(recipe, window, frames)
-    scan = parity.scan_answers(recipe, window)
+    with_frames = scan_with_frames(recipe, window, frames, symbol)
+    scan = parity.scan_answers(recipe, window, symbol)
     report.signals = [ts for ts, a in scan.items() if a.direction]
     report.problems += parity.compare(scan, with_frames, "scan with the context frames")
     answers, trades = parity.backtest_answers(strategy, window, symbol, risk)

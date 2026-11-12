@@ -3,6 +3,7 @@ with an absolute app address - never a guessed one), and a live stream tells ope
 decided or a notification arrived, for their own organisation only."""
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import List
@@ -107,9 +108,22 @@ def test_proposal_buttons_keep_approve_reject_and_add_the_link(monkeypatch):
 # --- live stream -------------------------------------------------------------------------------------------------
 
 def _collect(tenant_id: int, during, seconds: float = 2.5) -> List[str]:
-    """Runs the stream body for `seconds` while `during()` changes the database half-way; returns the event names."""
+    """Runs the stream body for `seconds` while `during(sessions)` changes the database half-way; returns the event names.
+
+    The test database is SQLite `:memory:` on a StaticPool (tests/test_auth_api.py): every session shares its ONE
+    connection, so two sessions open at once share one transaction. A stream poll ending (its session closes, the pool
+    rolls the connection back) while `during` sits between its INSERT and its COMMIT used to undo that INSERT - the
+    commit then had nothing to commit and `notify()`'s refresh raised "Could not refresh instance" (CI, PR #996). A real
+    pool gives each session its own connection; here the stream's sessions and `during`'s take turns instead."""
     async def go():
         names: List[str] = []
+        turn = asyncio.Lock()                               # made in this test's own event loop
+
+        @asynccontextmanager
+        async def sessions():
+            async with turn:
+                async with _session_factory() as session:
+                    yield session
 
         async def never():
             return False
@@ -124,8 +138,13 @@ def _collect(tenant_id: int, during, seconds: float = 2.5) -> List[str]:
 
         async def act():
             await asyncio.sleep(0.6)
-            await during()
-        await asyncio.gather(consume(), act())
+            await during(sessions)
+
+        live.session_factory = sessions
+        try:
+            await asyncio.gather(consume(), act())
+        finally:
+            live.session_factory = _session_factory
         return names
     return asyncio.run(go())
 
@@ -135,8 +154,8 @@ def test_a_decision_reaches_open_apps_of_that_organisation_only():
     _, b = _auth("pw4-live-b@example.com")
     now = datetime.now(timezone.utc)
 
-    async def propose_for_a():
-        async with _session_factory() as session:
+    async def propose_for_a(sessions):
+        async with sessions() as session:
             session.add(AiActionRecord(tenant_id=a["tenant_id"], action="REVIEW_STRATEGY", rule="WIN_RATE_DRIFT", reason="x",
                                        status="PROPOSED", expires_at=now + timedelta(hours=1)))
             await session.commit()
@@ -151,11 +170,35 @@ def test_a_decision_reaches_open_apps_of_that_organisation_only():
 def test_a_new_notification_is_announced():
     _, me = _auth("pw4-live-notes@example.com")
 
-    async def add_note():
-        async with _session_factory() as session:
+    async def add_note(sessions):
+        async with sessions() as session:
             await notify(session, me["tenant_id"], NotificationType.SYSTEM_FAILURE, title="t", message="m", severity=NotificationSeverity.INFO)
 
     assert "notifications" in _collect(me["tenant_id"], add_note)
+
+
+def test_a_notification_slow_to_commit_is_announced_and_kept(monkeypatch):
+    """The CI failure of PR #996, made certain: notify()'s INSERT-to-COMMIT window spans stream polls. The row is kept
+    (no "Could not refresh instance") and the stream still announces it."""
+    from app.notifications import service
+
+    real = service.enqueue_for_notification
+
+    async def slow(session, record):
+        queued = await real(session, record)
+        await asyncio.sleep(0.5)                          # > one stream poll (0.2 s) between the INSERT and the COMMIT
+        return queued
+    monkeypatch.setattr(service, "enqueue_for_notification", slow)
+    _, me = _auth("pw4-live-slow-note@example.com")
+    kept: List[int] = []
+
+    async def add_note(sessions):
+        async with sessions() as session:
+            row = await notify(session, me["tenant_id"], NotificationType.SYSTEM_FAILURE, title="t", message="m",
+                               severity=NotificationSeverity.INFO)
+            kept.append(row.id)
+
+    assert "notifications" in _collect(me["tenant_id"], add_note) and kept
 
 
 def test_the_stream_needs_a_login():

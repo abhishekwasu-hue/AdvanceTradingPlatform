@@ -149,6 +149,12 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
+    "RelRange": ["RelRange(20)", "RelRange(5)@1h"],
+    "SpreadClass": ["SpreadClass(20)", "SpreadClass(10, narrow=0.9, wide=1.1, ultra=1.5)", "SpreadClass(5)@1h"],
+    "ClosePosition": ["ClosePosition()", "ClosePosition(part=0.25)", "ClosePosition()@1h"],
+    "BarDirection": ["BarDirection()", "BarDirection()@1h"],
+    "VolumeClass": ["VolumeClass(20)", "VolumeClass(10, low=0.9, high=1.1, ultra=1.5)", "VolumeClass(5)@1h"],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],
@@ -240,6 +246,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "PreOpenHigh": ["PreOpenHigh()", "PreOpenHigh()@15m"],
     "PreOpenLow": ["PreOpenLow()"],
     "PreOpenVolume": ["PreOpenVolume()", "PreOpenVolume()@1h"],
+    # M99 P2: the key-level grade (the previous session's levels and the session's own; a band of half an ATR)
+    "LevelGrade": ['LevelGrade("PDH", "grade", 0.5, 50)', 'LevelGrade("SESSION_LOW", "touches", 0.5)@1h'],
     # U6 BK3: VCP (Daily in screens; daily cases below) and the indicator breakouts; volume and distance conditions off
     "VCPBreakout": ['VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],                       # up side: M93-Q2 note above
     "VCPReady": ['VCPReady("up", 2, 1, 5, FALSE)', 'VCPReady("down", 2, 1, 10, FALSE, FALSE)'],
@@ -296,6 +304,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReturnOnCapital": ["ReturnOnCapital()"],
     "GrahamNumber": ["GrahamNumber()", "close > GrahamNumber()"],
     "NCAVPerShare": ["NCAVPerShare()"],
+    # M99 B1-b (flag m99_primitives): Fibonacci levels of the CONFIRMED swings and the nearest price cluster
+    "FibLevel": ['FibLevel("retrace", 0.618)', 'FibLevel("extend", 1.618, 1)', 'FibLevel("golden", 0.382)', 'FibLevel("retrace", 0.5)@1h'],
+    "FibDistancePct": ['FibDistancePct("retrace", 0.5)', 'FibDistancePct("extend", 1, 0)@15m'],
+    "ClusterDistancePct": ['ClusterDistancePct(0.3)', 'ClusterDistancePct(0.5, "atr")', 'ClusterDistancePct(0.5, "pct", 1)@15m'],
 }
 # M94: the expressions that read the pre-open bars run on bars that have them (`with_preopen`)
 SCREENQL_PREOPEN = frozenset(text for name in ("PreOpenHigh", "PreOpenLow", "PreOpenVolume") for text in SCREENQL_SERIES[name])
@@ -630,6 +642,21 @@ def _register_swings() -> None:
         register(f"swing.fractal_window_{window}", fractal, kind=EVENTS, group="swing", known_at=lambda r: r[0], samples=30, length=300)
 
 
+def _cluster_centres(band: float, mode: str, f: pd.DataFrame) -> np.ndarray:
+    from app.price_action.fib_causal import cluster_series
+    return cluster_series(f, band, mode)["centre"]
+
+
+def _register_primitives() -> None:
+    """M99 B1-b: the per-bar Fibonacci levels and the nearest cluster from confirmed swings (app/price_action/fib_causal.py)."""
+    from app.price_action.fib_causal import fib_series
+    for kind, ratio, degree in (("retrace", 0.618, 0), ("extend", 1.0, 0), ("golden", 0.618, 1)):
+        register(f"structure.fib_{kind}_{ratio:g}_degree_{degree}", partial(fib_series, kind=kind, ratio=ratio, degree=degree),
+                 group="structure", samples=8)
+    for band, mode in ((0.3, "pct"), (0.5, "atr")):
+        register(f"structure.cluster_centre_{mode}_{band:g}", partial(_cluster_centres, band, mode), group="structure", samples=6)
+
+
 def _register_structure() -> None:
     from app.price_action.market_structure import analyze_market_structure
     from app.support_resistance.engine import SupportResistanceEngine
@@ -685,7 +712,7 @@ def _register_screenql() -> None:
                 register(f"screenql.{text}", _screenql(text, "15m"), group="screenql", **AREA_GATE_CASE)
                 continue
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
-                                            "RsiDivergence", "SwingLabel", "Wave", "StructureEventSeries", "RegimeTag"))
+                                            "RsiDivergence", "SwingLabel", "Wave", "StructureEventSeries", "RegimeTag", "Fib", "Cluster"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")
@@ -706,6 +733,7 @@ def register_all() -> None:
     _register_patterns()
     _register_swings()
     _register_structure()
+    _register_primitives()
     _register_zones()
     _register_screenql()
 

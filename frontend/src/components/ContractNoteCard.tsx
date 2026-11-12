@@ -63,7 +63,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <input ref={fileRef} type="file" accept=".csv,text/csv" className="text-xs text-fg-muted" disabled={busy} onChange={() => setPreview(null)} />
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="min-w-0 max-w-full text-xs text-fg-muted" disabled={busy} onChange={() => setPreview(null)} />
         <input className="rounded bg-surface-2 border border-border px-2 py-1 text-sm w-32" placeholder="Broker (optional)" value={broker} onChange={(e) => setBroker(e.target.value)} />
         <button disabled={busy} onClick={() => run(false)} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 disabled:opacity-50">Preview</button>
         <button disabled={busy || !preview} onClick={() => run(true)} className="inline-flex items-center gap-1 rounded bg-brand/20 border border-brand/40 hover:bg-brand/30 text-fg px-3 py-1 disabled:opacity-50">

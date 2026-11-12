@@ -557,8 +557,9 @@ def test_seed_refuses_unless_paper_only_phase0_and_creates_nothing(db, monkeypat
         _run(set_flags({"live_trading": {"on": False, "tenants": [7]}}))
         with pytest.raises(loadtest_org.Refused, match="live_trading is on for 1 organisation"):
             _run(loadtest_org.seed(stamp, 2, api._session_factory))
-        _run(set_flags({"phase0_paper_only": {"on": False, "tenants": []}}))
-        with pytest.raises(loadtest_org.Refused, match="phase0_paper_only is not on"):
+        # LIVE-1: the PAPER-only lock follows live_trading (a stored lock entry is ignored) - live_trading ON is the case.
+        _run(set_flags({"live_trading": {"on": True, "tenants": []}}))
+        with pytest.raises(loadtest_org.Refused, match="live_trading is on for everyone"):
             _run(loadtest_org.seed(stamp, 2, api._session_factory))
         _run(set_flags({}))
         monkeypatch.setenv("ATP_DEPLOYMENT_PHASE", "")

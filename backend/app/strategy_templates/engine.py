@@ -35,7 +35,7 @@ import pandas as pd
 
 from app.screener import nodes as n
 from app.screener.registry import BOOL, FIELDS, FUNCTIONS
-from app.screener.runtime import SymbolData, _Eval
+from app.screener.runtime import SymbolData, _Eval, no_index_volume
 from app.strategy_templates.compile import SIDES, Part, Recipe, Side
 
 # Series that are legitimately missing between their events: they do not hold the warm-up back. Family G (review finding
@@ -141,10 +141,14 @@ def _closed_count(ev: _Eval, tf: str, base_tf: str) -> np.ndarray:
 def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S", extras: Optional[Dict[str, Part]] = None) -> SignalSeries:
     """The whole signal series of a recipe on closed bars (`frames`: ScreenQL timeframe -> bars indexed by bar start; a
     context timeframe that is missing is resampled from the signal timeframe by the runtime). `extras`: more compiled price
-    expressions read on the same bars (section 5's WAVE_PROJECTION target) - they never change the signals."""
+    expressions read on the same bars (section 5's WAVE_PROJECTION target) - they never change the signals.
+    M99 B1-d (M93-Q3, as the screener's `run_screen` / `symbol_match`): an index `symbol`'s 0 volume is no volume data
+    (NaN, `runtime.no_index_volume`, on a copy - the caller's frames are not changed); every other symbol as before."""
     s = recipe.settings
     tf = s.timeframe
-    ev = _Eval(SymbolData(symbol, dict(frames)), tf, {}, {}, memo={})
+    symbol_bars = SymbolData(symbol, dict(frames))
+    no_index_volume([symbol_bars])
+    ev = _Eval(symbol_bars, tf, {}, {}, memo={})
     index = ev.frame(tf).index
     size = len(index)
 

@@ -30,7 +30,7 @@ from tests.test_phase_l_ai import _owner
 
 IDS = ["intraday.gappers", "intraday.new_day_high", "intraday.new_day_low", "intraday.top_reversal", "intraday.bottom_reversal",
        "intraday.vwap_break", "intraday.turbo_breakup", "intraday.turbo_breakdown", "intraday.circuit_watch", "intraday.rsi_extreme",
-       "intraday.volume_surge", "intraday.key_levels"]
+       "intraday.volume_surge", "intraday.key_levels", "intraday.graded_levels"]     # M99 P2: S13
 GALLERY = ("screener_v2", "screener_gallery")
 PACK = ("intraday_pack", "screener_breakouts")
 
@@ -157,6 +157,8 @@ CASES = {
     "intraday.volume_surge": (itd.S11, lambda: _surge_day(4), lambda: _surge_day(1), dict(v=3)),
     "intraday.key_levels": (itd.S12, lambda: _day5(quiet_day(10)),
                             lambda: _day5(quiet_day(10) + [(102.9, 103.1, 102.9, 103.0, 1000.0)]), dict(tol_pct=0.15)),
+    "intraday.graded_levels": (itd.S13, lambda: _day5(quiet_day(10)),
+                               lambda: _day5(quiet_day(10) + [(102.9, 103.1, 102.9, 103.0, 1000.0)]), dict(near=0.5, min_grade=4)),
 }
 
 
@@ -241,6 +243,13 @@ def test_a_zero_volume_setting_means_no_volume_condition():
 def test_the_price_range_and_the_tolerance_are_his_own_values():
     assert not _match(itd.S10, _rsi_day(True), pmin=500, pmax=900, min_vol=0).matched
     assert not _match(itd.S12, _day5(quiet_day(10)), tol_pct=0.0001).matched
+
+
+def test_graded_levels_needs_the_grade_as_well_as_the_nearness():
+    """M99 P2: the same close near the level - matched at 4 points, not at 5 (the grade is read, not only the distance)."""
+    assert _match(itd.S13, _day5(quiet_day(10)), near=0.5, min_grade=4).matched
+    assert not _match(itd.S13, _day5(quiet_day(10)), near=0.5, min_grade=5).matched
+    assert len(parse(itd.S13.text).items) == len(itd.S13_LEVELS) and itd.S13.unset() == ["near", "min_grade"]
 
 
 def test_key_levels_names_each_level_in_its_own_branch():

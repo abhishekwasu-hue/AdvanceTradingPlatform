@@ -460,7 +460,7 @@ def run_option_backtest(
                     margin_calls += 1
                 if reason is None and template_exit and pos.signal_direction and i + 1 < len(primary_df):
                     window_now = cursor.at(decision_time(ts, primary_tf))
-                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction))   # type: ignore[attr-defined]
+                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction, symbol))   # type: ignore[attr-defined]
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}

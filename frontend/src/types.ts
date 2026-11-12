@@ -2210,6 +2210,8 @@ export interface FeatureFlag {
   unavailable_reason?: string;
   /** M55 S1: the two LIVE switches - only the owner may switch them towards LIVE, with a typed confirmation. */
   owner_only?: boolean;
+  /** LIVE-1: set on a derived flag (`phase0_paper_only` follows `live_trading`) - not a switch, the list hides it. */
+  follows?: string;
   can_switch_live?: boolean;
   confirm_text?: string;
   /** M55 S1: true when turning the flag ON opens LIVE (live_trading); false when turning it OFF does (the PAPER-only lock). */

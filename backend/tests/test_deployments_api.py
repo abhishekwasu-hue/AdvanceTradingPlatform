@@ -120,13 +120,22 @@ def test_base_timeframe_must_build_every_strategy_timeframe():
 def test_live_deployment_requires_named_broker_with_valid_token():
     headers = _auth("dep-live@example.com")
     _store_broker(headers)  # token UNKNOWN
-    assert _create(headers, mode="LIVE").status_code == 400  # broker_name missing
+    # LIVE-1: no broker named + ONE stored broker -> that broker is used, so its login is what blocks.
+    unnamed = _create(headers, mode="LIVE")
+    assert unnamed.status_code == 409 and unnamed.json()["detail"]["code"] == "broker_login_needed"
     blocked = _create(headers, mode="LIVE", broker_name="upstox")
     assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "broker_login_needed" and "log in" in blocked.json()["detail"]["message"].lower()
 
     _store_broker(headers, token_status="VALID")
     ok = _create(headers, mode="LIVE", broker_name="upstox")
     assert ok.status_code == 201 and ok.json()["mode"] == "LIVE"
+
+
+def test_live_deployment_unnamed_broker_with_several_stored_is_400():
+    headers = _auth("dep-live-two@example.com")
+    _store_broker(headers)
+    _store_broker(headers, name="zerodha")
+    assert _create(headers, mode="LIVE").status_code == 400  # several stored brokers: he must name one
 
 
 def test_live_deployment_with_unstored_broker_is_409():

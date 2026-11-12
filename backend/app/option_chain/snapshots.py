@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core import config
 from app.db.models import OIBannerSettingRecord, OIDayBaselineRecord, OISnapshotRecord, StrikeOISnapshotRecord, Tenant
-from app.option_chain import oi_regime
+from app.option_chain import oi_regime, oi_words
 from app.option_chain.oi_regime import BannerState, OIRegimeSettings, SnapshotPoint
 
 logger = logging.getLogger(__name__)
@@ -378,6 +378,8 @@ def entry_json(entry: TimelineEntry) -> Dict:
         "total_call_oi": t.total_call_oi, "total_put_oi": t.total_put_oi, "pcr": st.pcr, "pcr_band": st.pcr_band.value if st.pcr_band else None,
         "pcr_label": st.pcr_label, "underlying_price": st.underlying_price, "atm_strike": st.atm_strike, "strike_step": t.strike_step,
         "max_pain": st.max_pain, "expiry": st.expiry.isoformat() if st.expiry else None, "dte": st.dte, "first_of_day": st.first_of_day,
+        # M96 L1: the Trade banner's message in neutral fact words (the chain view's banner reads this one).
+        "fact_message": oi_words.trade_fact_message(st, st.underlying),
     }
 
 

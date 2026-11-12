@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { OI_ALERT_TYPES, type OiAlertLogResponse, type OiAlertSettings, type OiSettingsResponse } from "../oi/types";
 import { alertStateWords, slotTime } from "../oi/format";
+import OiThresholdAlertsV2 from "../optionChain/OiThresholdAlertsV2";
 
 const LABEL: Record<string, string> = {
   DIRECTION_CHANGE: "OI read change", STABLE_FLIP: "Confirmed OI lead flip", STRENGTH_CHANGE: "OI lead growing ↔ not growing",
   PCR_BAND: "PCR band change", MAX_PAIN_MOVE: "Max pain move", OI_WALL: "OI wall formed / broken", DTE: "Expiry tomorrow / today",
-  COLLECTOR_STALE: "Readings are late",
+  COLLECTOR_STALE: "Readings are late", STRIKE_OI_CHANGE: "OI change at a strike", PCR_CROSS: "PCR crossed my level",
 };
 
 /** OI Banner (O4b): which banner changes notify, how often, quiet hours and the daily digest (owner saves; the server
@@ -58,6 +59,7 @@ export default function OiAlertsCard({ underlying }: { underlying: string }) {
         <Field label="Quiet until (IST HH:MM)" value={alerts.quiet_end ?? ""} onSave={(v) => save({ quiet_end: v || null })} />
         <Field label="Daily digest at (IST HH:MM)" value={alerts.digest_time ?? ""} onSave={(v) => save({ digest_time: v || null })} />
       </div>
+      <OiThresholdAlertsV2 alerts={alerts} onSave={save} />
       <div className="flex flex-wrap items-center gap-2">
         <button className="rounded border border-border px-2 py-1 hover:border-brand" onClick={() => act("snooze")}>Snooze 1h</button>
         <button className="rounded border border-border px-2 py-1 hover:border-brand" onClick={() => act("mute-today")}>Mute today</button>

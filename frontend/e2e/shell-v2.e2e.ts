@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mockDashboard } from "./dashboardMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
+import { installDiagnostics } from "./diagnostics";
 
 /**
  * UI2-1 (UI v2 proposal §2, §4, §9, §12): the v2 shell with the `ui_v2` flag on (mockApi answers /system/features).
@@ -18,6 +19,8 @@ import { expectPhoneLayout } from "./phoneLayout";
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 const V2: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
+// M60 CI diagnostics: on a failure only, the last /api calls, console errors and <html> attributes go to the job log.
+installDiagnostics();
 
 /** `time` and `before` (more routes, registered after mockApi so they answer first) are for the 1440 shot only. */
 async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, storage: Record<string, string> = {},

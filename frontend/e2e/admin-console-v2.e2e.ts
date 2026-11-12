@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openAdmin, type Theme } from "./adminMocks";
+import { installDiagnostics } from "./diagnostics";
 
 /**
  * MO3 addition (a): the admin console in sections (ui_v2 on) at /admin - System, Controls, Users & business, Testing
@@ -30,6 +31,8 @@ const SECTIONS = [
 ] as const;
 
 const consoleRoot = (page: Page) => page.locator("[data-admin-console]");
+// M60 CI diagnostics: on a failure only, the last /api calls, console errors and <html> attributes go to the job log.
+installDiagnostics();
 
 async function noSidewaysScroll(page: Page) {
   const r = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: window.innerWidth }));

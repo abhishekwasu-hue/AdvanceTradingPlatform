@@ -183,7 +183,7 @@ def run_backtest(
 
             if outcome is None and template_exit and i + 1 < len(primary_df):
                 # R5 / S10: read on this bar's close for the open trade's own side; acted on at the next bar's open
-                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction))   # type: ignore[attr-defined]
+                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction, symbol))   # type: ignore[attr-defined]
 
             if outcome is not None:
                 reason, exit_price = outcome

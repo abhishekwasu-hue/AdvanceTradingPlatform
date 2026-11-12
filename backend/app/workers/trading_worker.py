@@ -2750,7 +2750,7 @@ class TradingWorker:
             if entered is None or entered >= bar_close:
                 continue
             side = trade.underlying_direction or trade.direction
-            if not strategy.exit_signal(frames, side):
+            if not strategy.exit_signal(frames, side, dep.symbol):
                 continue
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)

@@ -19,7 +19,7 @@ alembic>=1.13,<2.0
 redis>=5.0,<6.0
 pyotp>=2.9,<3.0
 python-multipart>=0.0.9,<1.0
-prometheus_client>=0.20,<1.0
+prometheus_client>=0.26.0,<1.0
 websockets>=13.0,<18.0
 defusedxml==0.7.1
 # Analyze a chart: safe decode and re-encode of uploaded chart images (PNG / JPEG only, metadata stripped).

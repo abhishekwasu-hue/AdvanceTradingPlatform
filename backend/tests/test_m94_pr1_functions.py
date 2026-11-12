@@ -44,7 +44,8 @@ def _same(got, want):
 
 # ---------------------------------------------------------------------------------------------------------- registry
 def test_the_new_functions_are_registered_behind_the_two_flags():
-    assert set(INTRADAY_FUNCTIONS) == {"SessionHigh", "SessionLow", "SessionVolume", "SessionCount", "PreOpenHigh", "PreOpenLow", "PreOpenVolume"}
+    assert set(INTRADAY_FUNCTIONS) == {"SessionHigh", "SessionLow", "SessionVolume", "SessionCount", "PreOpenHigh", "PreOpenLow", "PreOpenVolume",
+                                       "LevelGrade"}      # M99 P2: the key-level grade
     for name in INTRADAY_FUNCTIONS:
         spec = FUNCTIONS[name]
         assert spec.flag == "screener_breakouts" and spec.also_flags == (INTRADAY_FLAG,), name
@@ -53,6 +54,7 @@ def test_the_new_functions_are_registered_behind_the_two_flags():
     assert {FUNCTIONS[n].unit for n in ("SessionHigh", "SessionLow", "PreOpenHigh", "PreOpenLow")} == {"price"}
     assert {FUNCTIONS[n].unit for n in ("SessionVolume", "PreOpenVolume")} == {"volume"}
     assert FUNCTIONS["SessionCount"].unit == "count" and [a.name for a in FUNCTIONS["SessionCount"].args] == ["cond"]
+    assert FUNCTIONS["LevelGrade"].unit == "count"
 
 
 def test_the_flag_is_registered_off_with_its_description():

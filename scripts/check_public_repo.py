@@ -114,7 +114,7 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 ALLOWED_TEST_DATA: Dict[str, str] = {
     # M55 Q1: the moved and scanner routes (paths, dependencies, schema hashes) - generated from the code, no data;
     # re-pin after regenerating it (tests/route_table_snapshot.py)
-    "backend/tests/fixtures/route_table.json": "b95cbe7fd715cab3a28ac8920c0f88653a21b49c64a83e164bd7b26336f47eda",
+    "backend/tests/fixtures/route_table.json": "6131c5cc7f6d06648cdf09c5c6ee56f2360298f87997c864fd7d4bff765b999a",
     # F&O 8b slice 3: UI screenshots of the auto journal card on made-up trades (e2e/fno8b-slice3-v2.e2e.ts); re-pin
     # after regenerating them
     "frontend/e2e/__screenshots__/fno8b3-journal-v2-1440-dark.png": "445f6eaf5030c874e09efb555e77238bea985e6f0a840b55913d29383c6dd3fc",

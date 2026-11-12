@@ -246,6 +246,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "PreOpenHigh": ["PreOpenHigh()", "PreOpenHigh()@15m"],
     "PreOpenLow": ["PreOpenLow()"],
     "PreOpenVolume": ["PreOpenVolume()", "PreOpenVolume()@1h"],
+    # M99 P2: the key-level grade (the previous session's levels and the session's own; a band of half an ATR)
+    "LevelGrade": ['LevelGrade("PDH", "grade", 0.5, 50)', 'LevelGrade("SESSION_LOW", "touches", 0.5)@1h'],
     # U6 BK3: VCP (Daily in screens; daily cases below) and the indicator breakouts; volume and distance conditions off
     "VCPBreakout": ['VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],                       # up side: M93-Q2 note above
     "VCPReady": ['VCPReady("up", 2, 1, 5, FALSE)', 'VCPReady("down", 2, 1, 10, FALSE, FALSE)'],

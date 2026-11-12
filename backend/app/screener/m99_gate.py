@@ -18,12 +18,14 @@ from app.screener.registry import M99_FLAG as FLAG
 
 
 def flagged_calls(ast: Any, params: dict[str, Any] | None = None) -> list[str]:
-    """The bar classifier functions a screen uses (each name once, in order)."""
+    """The bar classifier (and structure) functions a screen uses (each name once, in order). The Fibonacci / cluster
+    functions under the same flag are app/screener/primitives.py's (M99 B1-b: not in alert rules yet)."""
+    from app.screener.primitives import FIB_FUNCTIONS
     from app.screener.registry import FUNCTIONS
     out: list[str] = []
     for node in nodes.walk(ast) if ast is not None else ():
         spec = FUNCTIONS.get(node.name) if isinstance(node, nodes.Call) else None
-        if spec is not None and spec.flag == FLAG and spec.name not in out:
+        if spec is not None and spec.flag == FLAG and spec.name not in FIB_FUNCTIONS and spec.name not in out:
             out.append(spec.name)
     return out
 

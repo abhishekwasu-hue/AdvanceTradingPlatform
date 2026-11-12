@@ -392,6 +392,13 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # them after the rule was made pauses with the reason (stays active) instead of failing on every symbol
             rule.last_problem = fundamentals_gate.alert_refusal(fund_calls)
             return "unsupported", 0
+        from app.screener import primitives as primitives_gate
+        primitive_calls = primitives_gate.flagged_calls(ast)
+        if primitive_calls:
+            # M99 B1-b: nor does it read the shared primitives yet (flag m99_primitives, unfinished) - a saved screen edited to
+            # use one after the rule was made pauses with the reason (stays active)
+            rule.last_problem = primitives_gate.alert_refusal(primitive_calls)
+            return "unsupported", 0
         from app.screener import ownership as ownership_gate
         owned = ownership_gate.flagged_calls(ast)
         if owned:

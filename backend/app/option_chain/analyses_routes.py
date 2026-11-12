@@ -10,6 +10,9 @@ analyses (app/option_chain/analyses.py) for the caller's own broker data, behind
   (B1) they are the user's OWN earlier reads instead: every chain read here through his own session is stored as his
   session snapshot (app/option_chain/own_snapshots.py, tenant- and user-private) and read back by him only; until one
   exists the path tabs say the path through the session starts now.
+* **M96 N1 chain analytics** (the `analytics` key, app/option_chain/analyses.py `chain_analytics`): from the same chain and
+  history, plus the earlier sessions' closing ATM IV (`recent_session_closes`, organisation store only), the options'
+  lot size from the instrument list and the user's own volume / OI threshold (prefs `chain_analytics`).
 * **Plain states, never sample data:** `no_broker` (no usable broker session), `unavailable` (the broker did not
   return a chain), `no_data` (an empty chain), `ok`. Only `ok` carries analyses.
 
@@ -65,13 +68,64 @@ async def _history(session: AsyncSession, tenant_id: int, underlying: str, now: 
     """Today's stored collector slots of this organisation for the underlying, read before `now` (the expiry is matched
     in analyses.py)."""
     slots = await snapshots.day_chains(session, underlying, now.astimezone(IST).date(), tenant_id=tenant_id)
-    return [analyses.Snapshot(s.captured_at, s.chain) for s in slots if s.captured_at < now]
+    return [analyses.Snapshot(s.captured_at, s.chain, s.future_price, s.future_oi) for s in slots if s.captured_at < now]
 
 
 async def _own_history(session: AsyncSession, user: User, underlying: str, now: datetime) -> List[analyses.Snapshot]:
     """B1: the user's own stored reads of today (own-broker tier), read before `now` (every expiry; matched in analyses.py)."""
     stored = await own_snapshots.day(session, user, underlying, now.astimezone(IST).date())
     return [analyses.Snapshot(s.captured_at, s.chain()) for s in stored if s.captured_at < now]
+
+
+async def iv_history(session: AsyncSession, tenant_id: int, underlying: str, now: datetime) -> list[tuple[date, float]]:
+    """M96 N1: the closing ATM IV of up to OC_IV_HISTORY_SESSIONS earlier stored sessions of this organisation (each
+    session's last stored slot; only days before today, so never a later reading), oldest first; sessions without an ATM
+    IV are left out."""
+    from app.core import config
+    closes = await snapshots.recent_session_closes(session, underlying, now.astimezone(IST).date(), config.OC_IV_HISTORY_SESSIONS,
+                                                   tenant_id=tenant_id)
+    out: list[tuple[date, float]] = []
+    for c in closes:
+        iv = analyses.atm_iv_of(analyses.clean_spot(c.last.chain), c.last.captured_at)
+        if iv is not None:
+            out.append((c.day, iv))
+    return out
+
+
+async def option_lot_size(session: AsyncSession, underlying: str, expiry: str) -> float | None:
+    """M96 N1: the contract multiplier for DEX / GEX - the lot size of this underlying's options of this expiry in the
+    instrument list (Upstox's row first), or None when the list has none (never assumed to be 1)."""
+    from sqlalchemy import select
+
+    from app.db.models import InstrumentRecord
+    from app.instruments import master
+    try:
+        day = date.fromisoformat((expiry or "")[:10])
+    except ValueError:
+        return None
+    lot = await session.scalar(select(InstrumentRecord.lot_size).where(
+        InstrumentRecord.underlying == underlying, InstrumentRecord.instrument_type.in_(master.OPTION_TYPES),
+        InstrumentRecord.expiry == day, InstrumentRecord.lot_size.is_not(None), InstrumentRecord.lot_size > 0,
+    ).order_by(InstrumentRecord.broker != master.UPSTOX_BROKER, InstrumentRecord.broker).limit(1))
+    return float(lot) if lot else None
+
+
+async def unusual_threshold(session: AsyncSession, user: User) -> float | None:
+    """M96 N1: his own volume / OI highlight threshold (prefs `chain_analytics`), None while he has not set one."""
+    from app.me import prefs
+    own, _ = await prefs.read_one("chain_analytics", user, session)
+    value = own.get("unusual_vol_oi")
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+async def _analytics(session: AsyncSession, user: User, underlying: str, chain: OptionChain, history: list[analyses.Snapshot],
+                     cutoff: datetime, byob: bool) -> dict[str, Any]:
+    """M96 N1: the `analytics` key. Own-broker tier: no organisation history of earlier sessions (as the charts page)."""
+    from app.core import config
+    earlier = [] if byob else await iv_history(session, user.tenant_id, underlying, cutoff)
+    return analyses.chain_analytics(chain, history, cutoff, iv_history=earlier, min_sessions=config.OC_IV_RANK_MIN_SESSIONS,
+                                    lot_size=await option_lot_size(session, underlying, chain.expiry),
+                                    unusual_threshold=await unusual_threshold(session, user))
 
 
 def request_time() -> datetime:
@@ -149,6 +203,7 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
                            "analyses": results}
     if got is not None and got.stale:                        # M71 W2-E: an earlier chain while the broker is busy, with its age
         out["snapshot"] = got.snapshot(now)
+    out["analytics"] = await _analytics(session, user, underlying, chain, history, cutoff, byob)   # M96 N1
     # MO4 slice 2: "What the chain shows" (app/option_chain/dish.py) from the same six analyses - with `markets_view` on only.
     from app.platform.controls import flag_enabled
     if await flag_enabled(session, DISH_FLAG, user.tenant_id):

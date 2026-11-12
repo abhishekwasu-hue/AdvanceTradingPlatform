@@ -174,6 +174,40 @@ async def _m99_check(session: AsyncSession, user: User, ast: Any, fire_on: str) 
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _vsa_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """M99 P3 (the bar class pattern): a rule using the volume spread function needs `vsa_pack` on, and fires on bar close
+    only - never intrabar (a bar is read once it has closed)."""
+    from app.screener import nodes, vsa_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = vsa_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await vsa_gate.blocked_calls(session, user.tenant_id, tree):
+        why = vsa_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = vsa_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
+async def _wyckoff_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """M99 P4 (the bar class pattern): a rule using a Wyckoff function needs `wyckoff_pack` on, and fires on bar close
+    only - never intrabar (a bar is read once it has closed)."""
+    from app.screener import nodes, wyckoff_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = wyckoff_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await wyckoff_gate.blocked_calls(session, user.tenant_id, tree):
+        why = wyckoff_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = wyckoff_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _pa_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
     """M99 P6 (the bar class pattern): a rule using a price pattern function needs `pa_pack` on, and fires on bar close
     only - never intrabar (a pattern is read once its bar has closed)."""
@@ -249,6 +283,8 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _zone_check(session, user, ast, fire_on)
     await _wave_check(session, user, ast, fire_on, params)
     await _m99_check(session, user, ast, fire_on)
+    await _vsa_check(session, user, ast, fire_on)
+    await _wyckoff_check(session, user, ast, fire_on)
     await _pa_check(session, user, ast, fire_on)
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
@@ -306,6 +342,8 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     await _zone_check(session, user, ast, body.fire_on)
     await _wave_check(session, user, ast, body.fire_on)
     await _m99_check(session, user, ast, body.fire_on)
+    await _vsa_check(session, user, ast, body.fire_on)
+    await _wyckoff_check(session, user, ast, body.fire_on)
     await _pa_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
     _primitives_check(ast)

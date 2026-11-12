@@ -37,6 +37,12 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M99 P3: the volume spread readings (no demand, no supply, test, climaxes, up-thrust ...) with a Why? for each mark.
+  { id: "vsa", group: "layers", label: "Volume spread", note: "Readings of each bar's spread, volume and close, with a Why? for each mark.",
+    flag: "vsa_pack", keywords: "volume spread vsa no demand no supply test climax up-thrust shake-out absorption effort" },
+  // M99 P4: the Wyckoff trading ranges - a box per range, the phases A-E and each event with a Why?.
+  { id: "wyckoff", group: "layers", label: "Wyckoff", note: "Trading ranges read in phases A-E, with springs, upthrusts, breaks and back-ups, each with a Why?.",
+    flag: "wyckoff_pack", keywords: "wyckoff range phase spring upthrust utad sign of strength weakness back-up accumulation distribution" },
   // M99 P6: the price patterns (swing extremes, missing link, pullback after an acceleration, trigger candles, candles, head and
   // shoulders, cup and handle) with a Why? for each mark.
   { id: "price_patterns", group: "layers", label: "Price patterns", note: "Patterns of the swings and bars, with a Why? for each mark.",

@@ -630,6 +630,32 @@ def test_m99_bar_class_functions():
     assert _ev("VolumeClass(4)", d).iloc[-1] == "HIGH" and _ev("VolumeClass(4, high=1.6, ultra=2)", d).iloc[-1] == "AVERAGE"
 
 
+def test_m99_p3_volume_spread_function():
+    """M99 P3: VSA(...) (the full fixtures: tests/test_m99_p3_vsa.py) - an up bar on a narrow spread and lower volume after a
+    fall reads as no demand; the same bars without volume data have no value."""
+    rows = [(100.0 - 0.5 * k + (0.3 if k % 2 else -0.3)) for k in range(70)]
+    f = _bars(rows, freq="1D")
+    last = f.iloc[-1]["close"]
+    f.loc[f.index[-1], ["open", "high", "low", "close", "volume"]] = [last, last + 0.6, last - 0.2, last + 0.5, 50.0]
+    d = SymbolData("S", {"1d": f})
+    got = _ev('VSA("no_demand")', d, base_tf="1d")
+    assert got.iloc[-1] == 1.0 and np.isnan(got.iloc[0])
+    assert np.isnan(_ev('VSA("no_demand")', SymbolData("S", {"1d": f.assign(volume=0.0)}), base_tf="1d").iloc[-1])
+
+
+def test_m99_p4_wyckoff_functions():
+    """M99 P4: Wyckoff(...) / WyckoffLevel(...) (the full fixtures: tests/test_m99_p4_wyckoff.py) - a range shape reads its
+    shake and the range's top; the same bars without volume data read no range."""
+    from tests.wyckoff_shapes import accumulation
+    f, at = accumulation()
+    d = SymbolData("S", {"15m": f})
+    got = _ev('Wyckoff("shake", "strength")', d, base_tf="15m")
+    assert got.iloc[at["shake"]] == 1.0 and np.isnan(got.iloc[0])
+    top = _ev('WyckoffLevel("range_top")', d, base_tf="15m")
+    assert np.isnan(top.iloc[at["climax"]]) and top.iloc[-1] > f["low"].iloc[at["climax"]]
+    assert np.isnan(_ev('Wyckoff("shake")', SymbolData("S", {"15m": f.assign(volume=0.0)}), base_tf="15m").iloc[at["shake"]])
+
+
 def test_m99_p6_price_pattern_functions():
     """M99 P6 PricePattern / PricePatternLevel (the full fixtures: tests/test_m99_p6_pa.py) - each reads the bars into a
     series of the frame's length; a level is missing where no pattern is watched."""

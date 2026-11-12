@@ -183,7 +183,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           <div className="text-xs">{status("TELEGRAM")}</div>
           <input className={input} type="password" autoComplete="off" placeholder="Bot token from @BotFather (blank = keep stored)" value={tg.bot_token} onChange={(e) => setTg({ ...tg, bot_token: e.target.value })} />
           <input className={input} placeholder="Chat id (your user id or a group id)" value={tg.chat_id} onChange={(e) => setTg({ ...tg, chat_id: e.target.value })} />
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-1 text-fg-muted">floor
               <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={tg.min_severity} onChange={(e) => setTg({ ...tg, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
@@ -191,7 +191,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             </label>
             <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={tg.enabled} onChange={(e) => setTg({ ...tg, enabled: e.target.checked })} /> enabled</label>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button disabled={busy || !tg.chat_id} onClick={() => run("Telegram channel saved.", () => api.upsertAlertChannel("telegram", { enabled: tg.enabled, min_severity: tg.min_severity, config: { bot_token: tg.bot_token, chat_id: tg.chat_id } }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
             <button disabled={busy || !stored("TELEGRAM")} onClick={() => test("TELEGRAM")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
             {stored("TELEGRAM") && <button disabled={busy} onClick={() => run("Telegram channel removed.", () => api.deleteAlertChannel("telegram"))} className="text-xs text-down hover:underline">Remove</button>}
@@ -250,7 +250,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           Important alerts (your broker login ran out, a trading bot was paused, your daily loss limit was reached) reach you
           even when the app is closed, on every way you turn on here.
         </p>
-        <div className="grid lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
             <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
             <p className="text-xs text-fg-muted" data-telegram-elsewhere>
@@ -298,7 +298,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
         </p>
       </Details>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {!delivery && (
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
@@ -325,7 +325,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
           </div>
           <input className={input} placeholder="From address" value={em.from_address} onChange={(e) => setEm({ ...em, from_address: e.target.value })} />
           <input className={input} placeholder="To addresses, comma separated" value={em.to_addresses} onChange={(e) => setEm({ ...em, to_addresses: e.target.value })} />
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={em.use_tls} onChange={(e) => setEm({ ...em, use_tls: e.target.checked })} /> STARTTLS</label>
             <label className="flex items-center gap-1 text-fg-muted">floor
               <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={em.min_severity} onChange={(e) => setEm({ ...em, min_severity: e.target.value as NotificationSeverity })}>
@@ -334,7 +334,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             </label>
             <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={em.enabled} onChange={(e) => setEm({ ...em, enabled: e.target.checked })} /> enabled</label>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               disabled={busy || !em.smtp_host || !em.from_address || !em.to_addresses}
               onClick={() => run("Email channel saved.", () => api.upsertAlertChannel("email", {
@@ -368,7 +368,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             <input className={input} type="password" autoComplete="off" placeholder="Shared secret, 16+ chars (blank = keep)" value={wh.secret} onChange={(e) => setWh({ ...wh, secret: e.target.value })} />
           </div>
           <input className={input} placeholder="Event types to send, comma separated (blank = all): ORDER_FILLED, DAILY_LOSS_LIMIT, ..." value={wh.event_types} onChange={(e) => setWh({ ...wh, event_types: e.target.value })} />
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-1 text-fg-muted">floor
               <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={wh.min_severity} onChange={(e) => setWh({ ...wh, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
@@ -376,7 +376,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             </label>
             <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={wh.enabled} onChange={(e) => setWh({ ...wh, enabled: e.target.checked })} /> enabled</label>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button disabled={busy || !wh.url} onClick={() => run("Webhook channel saved.", () => api.upsertAlertChannel("webhook", {
               enabled: wh.enabled, min_severity: wh.min_severity,
               config: { url: wh.url, secret: wh.secret || null, event_types: wh.event_types.split(",").map((a) => a.trim()).filter(Boolean) },
@@ -413,7 +413,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
               <p className="col-span-3 text-xs text-fg-muted">India: messages need your DLT registration; use {"{dlt_template_id} {dlt_entity_id} {sender_id}"} in the body template.</p>
             </div>
           )}
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-1 text-fg-muted">floor
               <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={sms.min_severity} onChange={(e) => setSms({ ...sms, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
@@ -421,7 +421,7 @@ export default function AlertChannelsCard({ ownBotOnly = false, part = "all" }: 
             </label>
             <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={sms.enabled} onChange={(e) => setSms({ ...sms, enabled: e.target.checked })} /> enabled</label>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button disabled={busy || !sms.url || !sms.to_numbers} onClick={() => run("SMS channel saved.", () => api.upsertAlertChannel("sms", {
               enabled: sms.enabled, min_severity: sms.min_severity,
               config: { url: sms.url, headers: parseHeaders(sms.headers), body_template: sms.body_template, content_type: sms.content_type,

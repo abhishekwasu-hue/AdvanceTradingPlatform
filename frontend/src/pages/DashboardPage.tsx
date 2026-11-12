@@ -248,7 +248,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
       {user && <OiBannersCard />}
 
       {/* Charts row */}
-      <div className="grid lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card title="P&L by strategy" className="lg:col-span-2">
           {user && byStrategy.length > 0 ? (
             <Bars signed rows={byStrategy.map((g, i) => ({ key: g.key, value: g.net_pnl, tone: PALETTE[i % PALETTE.length], hint: `${g.trades} tr · ${pct(g.win_rate, 0)}` }))} valueLabel={(v) => money(v)} />
@@ -275,7 +275,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
       </div>
 
       {user && (
-        <div className="grid lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Exposure */}
           <Card title="Exposure by symbol">
             {!read.exposure ? (

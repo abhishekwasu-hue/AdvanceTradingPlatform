@@ -42,8 +42,15 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
     const pageScrollers = [] as string[];
     for (let a: Element | null = document.querySelector("main"); a && a !== document.documentElement; a = a.parentElement) {
       if (/(auto|scroll)/.test(getComputedStyle(a).overflowX) && a.scrollWidth > a.clientWidth + 1) {
-        const wide = [...a.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > a!.getBoundingClientRect().right + 1)
-          .slice(0, 5).map((e) => e.tagName + ":" + (e.textContent ?? "").trim().slice(0, 30));
+        // the outermost boxes that run past it (their parent still fits): where the overflow starts
+        const edge = a.getBoundingClientRect().right + 1;
+        const clipped = (e: Element) => {
+          for (let p = e.parentElement; p && p !== a; p = p.parentElement) if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(p).overflowX)) return true;
+          return false;
+        };
+        const wide = [...a.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge && !clipped(e)
+          && !(e.parentElement && e.parentElement !== a && e.parentElement.getBoundingClientRect().right > edge))
+          .slice(0, 5).map((e) => `${e.tagName}.${String(e.getAttribute("class") ?? "").slice(0, 60)}:${(e.textContent ?? "").trim().slice(0, 30)}`);
         pageScrollers.push(`${a.tagName}${a.id ? "#" + a.id : ""} scrolls ${a.scrollWidth - a.clientWidth} px sideways (${wide.join(", ")})`);
       }
     }

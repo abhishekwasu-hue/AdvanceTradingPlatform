@@ -4,6 +4,8 @@ import { cx } from "../components/primitives/cx";
 import { toneClass } from "../dashboard/CardV2";
 import { statusSummary, type CombinedExit } from "../fno/combinedExit";
 import type { TerminalStatus } from "./api";
+import { liveAvailableFrom } from "../settings/useLiveAvailable";
+import { useFeatures } from "../ui/useFeatures";
 import { feedChip, marginNote, modeChip, money, openCaption, signTone, type Tone } from "./statusModel";
 
 /**
@@ -26,7 +28,7 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
   /** TERM-2 step 2 / CT-1 C9: false where the shell's feed dot and the chart's live chip already say it (one freshness mark). */
   showFeed?: boolean;
 }) {
-  const mode = modeChip(status);
+  const mode = modeChip(status, liveAvailableFrom(useFeatures()));
   const cx6 = statusSummary(combined, masked);
   const combinedChip = cx6 && (
     <span data-status="combined-exit" data-stale={cx6.stale ? "" : undefined} title={cx6.title}

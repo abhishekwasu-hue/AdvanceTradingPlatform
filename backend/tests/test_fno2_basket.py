@@ -136,7 +136,8 @@ def test_basket_routes_are_off_without_ui_v2_and_the_paper_account():
 
 def test_the_basket_has_no_mode_and_one_underlying():
     from app.paper.fno_routes import BasketBody, ExecuteBody
-    assert "mode" not in BasketBody.model_fields and "mode" not in ExecuteBody.model_fields
+    # LIVE-2 (owner LIVE-1, binding; supersedes "no mode"): only preview / execute carry the mode, PAPER by default.
+    assert "mode" not in BasketBody.model_fields and ExecuteBody.model_fields["mode"].default == "PAPER"
     t = _org_tenant("one")
     e = _expiry()
     two = {"legs": [_leg(e, 30000.0, "CE", "BUY", 10.0), {**_leg(e, 30000.0, "CE", "BUY", 10.0), "underlying": "BANKNIFTY"}], "spot": SPOT}
@@ -285,9 +286,33 @@ def test_a_sold_leg_is_never_placed_after_its_hedge_failed(condor, monkeypatch):
     monkeypatch.setattr(fno_ticket, "place", no_hedge)
     out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex, "product": "MIS"})
     assert out["status"] == "REFUSED" and out["placed"] == 0
-    assert calls == ["BUY", "BUY"]                                              # the shorts were never sent
-    assert [r["status"] for r in out["legs"]] == ["FAILED", "FAILED", "NOT_PLACED", "NOT_PLACED"]
+    # LIVE-2 (one code path for PAPER and LIVE): the first leg that does not fill stops every later leg.
+    assert calls == ["BUY"]                                                     # nothing after the failed hedge was sent
+    assert [r["status"] for r in out["legs"]] == ["FAILED", "NOT_PLACED", "NOT_PLACED", "NOT_PLACED"]
+    assert out["legs"][1]["reasons"] == ["Not placed: an earlier leg did not fill, so nothing more was sent."]
     assert "uncovered" in out["legs"][2]["reasons"][0]
+
+
+def test_paper_stops_at_the_first_leg_that_does_not_fill_as_live_does(condor, monkeypatch):
+    """LIVE-2: PAPER behaves exactly as LIVE - a sold leg that does not fill stops the next sold leg too."""
+    expiry, base, legs = condor
+    t = _org_tenant("stop")
+    calls = []
+    real = fno_ticket.place
+
+    async def first_short_fails(session, user, ask, **kw):
+        calls.append((ask.side, ask.right))
+        if ask.side == "SELL" and ask.right == "PE":
+            return {"status": "REFUSED", "reasons": ["Max open positions reached (3)"], "label": "x", "order_id": None, "trade_id": None,
+                    "filled": None}
+        return await real(session, user, ask, **kw)
+    monkeypatch.setattr(fno_ticket, "place", first_short_fails)
+    out = _post(t, "execute", {"legs": _condor_legs(expiry, legs), "basket_ref": uuid.uuid4().hex, "product": "MIS"})
+    assert out["status"] == "PARTIAL" and out["placed"] == 2 and out["mode"] == "PAPER"
+    assert [r["status"] for r in out["legs"]] == ["PLACED", "PLACED", "REFUSED", "NOT_PLACED"]
+    assert calls == [("BUY", "PE"), ("BUY", "CE"), ("SELL", "PE")]              # the second sold leg was never sent
+    assert out["legs"][3]["reasons"] == ["Not placed: an earlier leg did not fill, so nothing more was sent."]
+    assert len(_orders(t["tenant_id"])) == 2
 
 
 def test_a_sold_leg_without_a_stop_refuses_the_whole_basket(condor):

@@ -150,12 +150,19 @@ async def _kill_switch(session: AsyncSession, user: User) -> Dict[str, Any]:
     return {"engaged": False, "scope": None, "message": "New orders are allowed."}
 
 
+# LIVE-2: the words of the mode line by the one switch (never "LIVE unavailable" while it is ON).
+PAPER_ONLY_MESSAGE = "Paper only - live trading is switched off by the admin."
+LIVE_ON_MESSAGE = "Live trading is on: each order and bot uses the mode you pick on it (Paper unless you pick Live)."
+
+
 async def _mode(session: AsyncSession, user: User) -> Dict[str, Any]:
-    """The Terminal places PAPER orders (the one ticket and basket are PAPER-only today). Shown, never changed."""
+    """The Terminal's mode line. LIVE-2: it follows the one live switch - OFF: paper only, said so; ON: each order (the
+    ticket, the basket, Reverse) and bot uses the mode the user picks on it, PAPER by default. Shown, never changed."""
     # LIVE-1: `live_allowed` = the one live switch (live_trading ON) - live_owner.org_live_open reads only that now.
     from app.platform import live_owner
-    return {"mode": "PAPER", "live_allowed": await live_owner.org_live_open(session, user.tenant_id),
-            "message": "Practice mode: no real order is sent and no money moves."}
+    allowed = await live_owner.org_live_open(session, user.tenant_id)
+    return {"mode": "PAPER", "live_allowed": allowed,
+            "message": (LIVE_ON_MESSAGE if allowed else PAPER_ONLY_MESSAGE)}
 
 
 async def funds_of(session: AsyncSession, user: User, trades: Sequence[TradeRecord] | None = None) -> dict[str, Any]:

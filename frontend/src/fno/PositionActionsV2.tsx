@@ -6,6 +6,9 @@ import { friendlyError } from "../api/client";
 import type { TradeRecord } from "../types";
 import { Details } from "../ui/Details";
 import { Signed } from "../ui/Signed";
+import { useFeatures } from "../ui/useFeatures";
+import type { OrderMode } from "./api";
+import { ConfirmModeLine, OrderModeChoice, liveIsOff, useLiveStatus } from "./OrderModeV2";
 import {
   FIELD_LABEL, clampLots, exitPartCopy, exitPartPieces, modifyChanges, modifyFields, modifyStart, newRef, openLots, positionActionsApi, reverseCopy,
   reverseNeedsStop, reverseStopLabel, runAction, waitingLine, waitingQuantity, type ModifyAsk, type PositionActionsApi, type WaitingOrder,
@@ -44,12 +47,18 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   const stopId = useId();
   const position = ask?.position;
   const asked = ask?.kind === "part" && ask.lots ? clampLots(ask.lots, openLots(ask.position)) : null;
-  useEffect(() => { setLots(asked); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); }, [position?.id, ask?.kind, asked]);
+  // LIVE-2 (owner LIVE-1, ui_v2): the NEW side of Reverse is PAPER unless he picks LIVE; the exit always runs.
+  const modeOn = useFeatures().on("ui_v2") && ask?.kind === "reverse";
+  const [mode, setMode] = useState<OrderMode>("PAPER");
+  const live = useLiveStatus(modeOn && mode === "LIVE", api.liveStatus);
+  useEffect(() => { setLots(asked); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); setMode("PAPER"); }, [position?.id, ask?.kind, asked]);
   if (!ask || !position) return null;
+  const newMode: OrderMode = modeOn ? mode : "PAPER";
+  const liveOff = liveIsOff(newMode, live);
   const held = openLots(position);
   const needsStop = ask.kind === "reverse" && reverseNeedsStop(position);
   const copy = ask.kind === "part" ? (lots === null ? { ...exitPartCopy(position.symbol, held, held), body: `How many of the ${held} lots of ${position.symbol} close now?` }
-    : exitPartCopy(position.symbol, lots, held)) : reverseCopy(position.symbol, held, position.direction === "LONG");
+    : exitPartCopy(position.symbol, lots, held)) : reverseCopy(position.symbol, held, position.direction === "LONG", newMode);
   const stopLabel = reverseStopLabel(position);
   const close = () => { setWarning(null); setProblem(null); onClose(); };
 
@@ -65,7 +74,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
     setBusy(true);
     const step = await runAction(ask.kind === "part"
       ? { kind: "part", tradeId: position.id, symbol: position.symbol, lots: lots as number, ref }
-      : { kind: "reverse", tradeId: position.id, symbol: position.symbol, ref, stopLoss }, warning !== null, api);
+      : { kind: "reverse", tradeId: position.id, symbol: position.symbol, ref, stopLoss, mode: newMode }, warning !== null, api);
     setBusy(false);
     if (step.kind === "warn") { setWarning(step.warning); return; }
     setWarning(null);
@@ -79,12 +88,18 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
       footer={(
         <>
           <button type="button" onClick={close} className={QUIET}>Keep it open</button>
-          <button type="button" onClick={go} disabled={busy || (ask.kind === "part" && lots === null)} data-confirm data-testid="position-action-confirm" className={STRONG}>
+          <button type="button" onClick={go} disabled={busy || (ask.kind === "part" && lots === null) || liveOff} data-confirm data-testid="position-action-confirm" className={STRONG}>
             {warning ? `${copy.confirm} anyway` : copy.confirm}
           </button>
         </>
       )}>
       <div className="space-y-space-3">
+        {modeOn && (
+          <>
+            <ConfirmModeLine mode={newMode} what="new position" testId="reverse" />
+            <OrderModeChoice mode={mode} onMode={(m) => { setMode(m); setWarning(null); setRef(newRef()); }} live={live} testId="reverse-mode" />
+          </>
+        )}
         {ask.kind === "part" && (
           <div className="flex items-center gap-space-2" data-lots-stepper>
             <span className="text-t14 text-fg">Lots to exit</span>

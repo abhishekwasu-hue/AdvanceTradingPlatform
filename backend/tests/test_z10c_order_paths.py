@@ -67,8 +67,8 @@ GATED: Dict[str, str] = {
     "app.trading.position_monitor.close_position": "broker",
     "app.ai.monitor.execute": "broker",
     "app.execution.marketable_limit.reprice_until_filled": "adapter",
-    # M96-Q1: the ticket sends LIVE only to the broker its order route hands in; the basket, Reverse, trigger plans and
-    # an approved proposal call it without one (the AI never places, ADR-0006).
+    # M96-Q1: the ticket sends LIVE only to the broker its order route hands in (LIVE-2: the basket's and Reverse's
+    # routes too); trigger plans and an approved proposal call it without one (the AI never places, ADR-0006).
     "app.paper.fno_ticket.place": "broker",
 }
 # Where a broker adapter comes from: everything that builds one goes through these.
@@ -80,6 +80,14 @@ ROUTES_REACHING_BROKER_ENTRY: dict[tuple[str, str], str] = {
         "M96-Q1 (owner, changed): the F&O order ticket's LIVE choice - the user's own Market order to his own broker "
         "session (fno_ticket.live_broker, behind RateLimitedBroker), refused while phase0_paper_only is on or "
         "live_trading is off / not granted; PAPER never gets a broker",
+    ("POST", "/api/paper/fno/basket/execute"):
+        "LIVE-2 (owner order LIVE-1, binding): the basket's LIVE choice - every leg one ticket order (fno_ticket.place) to his "
+        "own broker session (fno_ticket.live_route: the one live switch first, then live_broker behind RateLimitedBroker), "
+        "hedge legs first, the first leg that does not fill stops the rest; PAPER never gets a broker",
+    ("POST", "/api/paper/fno/positions/{trade_id}/reverse"):
+        "LIVE-2: Reverse - the exit of the caller's own position (a LIVE one at the broker account that holds it, never "
+        "blocked) and the new side as one ticket order, LIVE only when he picked it and the one live switch is on "
+        "(fno_ticket.live_route); PAPER never gets a broker",
 }
 
 # API routes that can reach an EXIT / PROTECTIVE call site, and why that is allowed (never an entry - rule 2).
@@ -117,6 +125,11 @@ ROUTES_REACHING_BROKER_ORDERS: Dict[Tuple[str, str], str] = {
         "the Telegram approve button of a proposal - same monitor.execute path as the web approve (exit only)",
     ("POST", "/api/paper/fno/order"):
         "M96-Q1: the ticket's LIVE order (see ROUTES_REACHING_BROKER_ENTRY) and its broker-side stop when he set one",
+    ("POST", "/api/paper/fno/basket/execute"):
+        "LIVE-2: the basket's LIVE legs (see ROUTES_REACHING_BROKER_ENTRY) and each leg's broker-side stop when he set one",
+    ("POST", "/api/paper/fno/positions/{trade_id}/reverse"):
+        "LIVE-2: Reverse's exit of a LIVE position at its own broker session (exit, ADR-0004) and the new LIVE side (see "
+        "ROUTES_REACHING_BROKER_ENTRY)",
 }
 
 # Process entry points (graph node) that reach a broker order call site.

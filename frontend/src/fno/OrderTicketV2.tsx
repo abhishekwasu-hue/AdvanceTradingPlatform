@@ -79,7 +79,7 @@ export interface MultiTicket {
 const FIELD = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg font-tabular focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
 const SEG = "flex min-h-11 flex-1 items-center justify-center rounded-control px-space-2 text-t14 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
-function Segmented<T extends string>({ label, value, options, onChange, testId, id, asking = false }: {
+export function Segmented<T extends string>({ label, value, options, onChange, testId, id, asking = false }: {
   label: string; value: T | null; options: { value: T; label: string; hint?: string; term?: GlossaryKey }[]; onChange: (v: T) => void; testId: string;
   /** M68 TS-3: the group's id (the ticket focuses it when it asks for this field). */
   id?: string;

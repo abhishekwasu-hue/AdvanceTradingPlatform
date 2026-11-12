@@ -12,8 +12,11 @@
   same lots through the ONE order ticket (`fno_ticket.place`: every entry check, the PAPER chokepoint, the kill switch).
   When the entry is refused the position stays closed and the answer says why in plain words. Only the holder reverses
   (the new position opens on his own account). Any stop the new side needs is the user's own (`stop_loss`); nothing is
-  pre-filled. A LIVE position is not reversed (the new side would be a LIVE entry, and the ticket places PAPER only):
-  refused in plain words before anything closes.
+  pre-filled. LIVE-2 (owner order LIVE-1, binding): the NEW side is PAPER unless he picks LIVE (`mode`); a LIVE new side
+  goes through the same ticket to his own broker session (`fno_ticket.live_route`, built by the route: the one live
+  switch first, then the chokepoint) and, while the switch is off, is refused with the switch's sentence AFTER the exit
+  ran (the exit is never blocked). A LIVE position is reversed too: its exit goes out at the session of the broker account
+  that holds it (as Exit part), refused before anything closes only where that broker cannot do it.
 * Modify - the price / trigger / lots of the caller's own waiting entry, or the level of his own armed stop / target
   (TT-10: one modify path; PAPER at once). Only a waiting row changes (claimed atomically); one already sent is left.
 
@@ -217,10 +220,11 @@ def reverse_text(symbol: str, entry: Dict[str, Any]) -> str:
 
 
 async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_ref: str, stop_loss: Optional[float] = None,
-                  preview: bool = False, confirm: bool = False) -> Dict[str, Any]:
+                  preview: bool = False, confirm: bool = False, mode: str = "PAPER", live: Any = None) -> Dict[str, Any]:
     """Exit the whole position, then open the opposite side with the same lots - one action. `preview` checks the new
     side (the ticket's confirm figures) and changes nothing. The exit half is never blocked; the entry half runs every
-    entry check and, when refused, leaves the position closed and says why."""
+    entry check and, when refused, leaves the position closed and says why. LIVE-2: `mode` is the new side's (PAPER by
+    default); `live` the route's `fno_ticket.live_route` for a LIVE new side (his own broker session, or why not)."""
     from app.ai.worker_bridge import price_lookup_for_user
     from app.audit.log import write_audit_log
     from app.execution.approval import ORIGIN_MANUAL
@@ -230,6 +234,7 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
     tag = ref_tag(client_ref)
     marker = f"ref {tag}"
     ask = await opposite_ask(session, trade, client_ref=client_ref, stop_loss=stop_loss)
+    ask.mode = (mode or fno_ticket.MODE).upper()
     key = f"fno:{user.id}:{ask.client_ref}"
     earlier = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == user.tenant_id, OrderRecord.idempotency_key == key))
     if earlier is not None:
@@ -238,7 +243,7 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
                 "closed": _closed_row(trade, lots_of(trade)[0]), "entry": entry, "text": reverse_text(trade.symbol, entry)}
     resumed = trade.exit_time is not None and (trade.exit_reason or "").endswith(marker)
     if not resumed:
-        _open_checks(trade)
+        _open_checks(trade, live_ok=True)          # LIVE-2: a LIVE position reverses too (its exit at its own broker)
     lookup = await price_lookup_for_user(session, user)
     if preview:
         view = await fno_ticket.assess(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL, margin_reader=fno_ticket.read_broker_margin)
@@ -259,18 +264,28 @@ async def reverse(session: AsyncSession, user: User, trade_id: int, *, client_re
     if warning and not confirm:
         return {"status": "CONFIRM", "warning": warning, "closed": None, "entry": None}
     if not resumed:
+        # A LIVE position exits at the session of the broker account that holds it (None for PAPER), as every LIVE exit;
+        # refused (409, nothing closed) only when that broker cannot take it.
+        exit_broker = await _live_exit_broker(session, trade, whole=True)
         price, source = await _price(session, user, trade)
         await write_audit_log(session, trade.tenant_id, user.id, "reverse",
                               f"trade #{trade.id}: exit {lots_of(trade)[0]} lot(s) at {source}, then the opposite side")
         await session.commit()
-        outcome = await close_position(session, trade, price, f"Reverse ({source}) {marker}", broker=None, user_id=user.id)
+        outcome = await close_position(session, trade, price, f"Reverse ({source}) {marker}", broker=exit_broker, user_id=user.id)
         if not outcome.closed:
             await session.refresh(trade)
             if not (trade.exit_reason or "").endswith(marker):          # closed by something else: no new position
                 raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
-    placed = await fno_ticket.place(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL, margin_reader=fno_ticket.read_broker_margin)
+    if ask.mode == fno_ticket.LIVE and (live is None or live.refusals):
+        # LIVE-2: the exit ran (never blocked); the new LIVE side is refused - the switch is off, or no own broker session.
+        placed: dict[str, Any] = {"status": "REFUSED", "order_id": None, "trade_id": None, "filled": None,
+                                  "reasons": list(live.refusals) if live is not None and live.refusals else [fno_ticket.LIVE_NO_BROKER]}
+    else:
+        route = {"broker": live.broker, "account_id": live.account_id} if ask.mode == fno_ticket.LIVE and live is not None else {}
+        placed = await fno_ticket.place(session, user, ask, price_lookup=lookup, origin=ORIGIN_MANUAL,
+                                        margin_reader=fno_ticket.read_broker_margin, **route)
     entry = _entry_row(None, placed)
-    return {"status": "REVERSED" if entry["status"] == "PLACED" else "EXITED", "repeat": resumed, "warning": warning,
+    return {"status": "REVERSED" if entry["status"] == "PLACED" else "EXITED", "repeat": resumed, "warning": warning, "mode": ask.mode,
             "closed": _closed_row(trade, ask.lots), "entry": entry, "text": reverse_text(trade.symbol, entry)}
 
 

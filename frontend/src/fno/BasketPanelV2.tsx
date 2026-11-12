@@ -17,8 +17,10 @@ import { useFeatures } from "../ui/useFeatures";
 import { formatNumber, formatPrice } from "../ui/format";
 import { Signed } from "../ui/Signed";
 import {
-  basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type Product,
+  basketApi, type BasketApi, type BasketNumbers, type BasketPreview, type BasketResult, type BasketSettings, type OrderMode, type Product,
 } from "./api";
+import { ConfirmModeLine, OrderModeChoice, liveIsOff, useLiveStatus } from "./OrderModeV2";
+import { LiveBadge } from "../ui/PaperBadge";
 import { basket as defaultBasket, useBasket, type BasketLeg, type BasketStore, type NewLeg } from "./basket";
 import {
   MAX_SAVED, STATUS_WORD, STRATEGIES, STRATEGY_TEXT, basketAsk, basketProblems, builderHandoff, legLabel, legLotsOf, legsOf, loadBaskets, lotsProblems, nameProblem,
@@ -140,6 +142,13 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const [saveName, setSaveName] = useState("");
   const ref = useRef(newClientRef());
   const seq = useRef(0);
+  // LIVE-2 (owner LIVE-1): PAPER or LIVE for the whole basket, his own choice (PAPER unless he picks LIVE), behind ui_v2;
+  // whether LIVE can go now is read when he picks it (the server reads the one switch again at Execute).
+  const modeOn = features.on("ui_v2");
+  const [mode, setMode] = useState<OrderMode>("PAPER");
+  const sendMode = modeOn ? mode : "PAPER";
+  const liveState = useLiveStatus(open && modeOn && mode === "LIVE", api.liveStatus);
+  const modeAsk = sendMode === "LIVE" ? { mode: sendMode } : {};
   // SX1: "Exits for this strategy" - empty, or from his own saved defaults until he types (then his own values).
   const exitDefaults = useExitDefaults(open && features.on("ui_v2"), fetcher);
   const [exitTyped, setExitTyped] = useState<StrategyExitForm | null>(null);
@@ -276,7 +285,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     setBusy(true);
     metrics.current?.reviewStarted();
     try {
-      const preview = await api.preview(basketAsk(sending, sending.every((l) => l.underlying === chain.symbol) ? spot : null, product));
+      const preview = await api.preview({ ...basketAsk(sending, sending.every((l) => l.underlying === chain.symbol) ? spot : null, product), ...modeAsk });
       metrics.current?.reviewed();
       setStep({ kind: "confirm", preview, legs: sending, remaining });
     } catch (e) {
@@ -299,7 +308,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     try {
       // SX3: the strategy exit goes with the first run only (the remaining legs keep their own stops).
       const exits = step.remaining ? null : exitsAsk(exitForm);
-      const result = await api.execute(withAccepted({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...(exits ? { exits } : {}) },
+      const result = await api.execute(withAccepted({ ...basketAsk(step.legs, spot, product), basket_ref: ref.current, ...modeAsk, ...(exits ? { exits } : {}) },
         warnOn ? lines : []));
       setStep({ kind: "done", result, legs: step.legs });
       if (result.placed > 0) onPlaced?.(result);
@@ -406,6 +415,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} settingsFailed={settingsFailed} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              mode={modeOn ? { node: <OrderModeChoice mode={mode} onMode={setMode} live={liveState} testId="basket-mode" />, blocked: liveIsOff(mode, liveState) } : undefined}
               whatif={whatifOn ? { view: payoffView, onView: setPayoffView } : undefined}
               exits={(
                 <StrategyExitsV2 form={exitForm} legCount={legs.length} saveNote={exitNote} onSaveDefaults={() => { void saveExits(); }}
@@ -417,7 +427,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
               ) : null} />
           )}
           {step.kind === "confirm" && (
-            <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }}
+            <ConfirmView preview={step.preview} busy={busy} budget={budget} checks={checks} onBack={() => setStep({ kind: "edit" })} onPlace={() => { void execute(); }} showMode={modeOn}
               card={warnOn && step.preview ? {
                 lines, pending: 0, asking: card0.asking, expanded: card0.expanded, setExpanded: card0.setExpanded, statuses: [],
                 others: confirmRiskLines(step.preview, budget, checks).map((l) => (l ? { ...l, tone: "info" as const } : null)).filter((l) => !l || !lines.some((x) => x.text === l.text)),
@@ -454,7 +464,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           <div className="flex items-center justify-between gap-space-3 px-space-4 pt-space-3">
             <div className="flex min-w-0 items-center gap-space-2">
               <RD.Title className="text-t18 font-semibold text-fg">{title}</RD.Title>
-              <PracticeFrame />
+              {sendMode === "LIVE" ? <LiveBadge /> : <PracticeFrame />}
             </div>
             <RD.Close aria-label="Close" className="-mr-space-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">
               <X size={18} aria-hidden />
@@ -520,7 +530,7 @@ export function whatIfLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): 
   return w && w.ok ? [...w.open_legs, ...chartLegs(legs, numbers)] : chartLegs(legs, numbers);
 }
 
-export function BasketBody({ legs, numbers, problems, settings, settingsFailed = false, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif }: {
+export function BasketBody({ legs, numbers, problems, settings, settingsFailed = false, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif, mode }: {
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   /** M68 PR-2: his settings could not be read (null settings and false: still loading). */
   settingsFailed?: boolean;
@@ -536,6 +546,8 @@ export function BasketBody({ legs, numbers, problems, settings, settingsFailed =
   exits?: ReactNode;
   /** TERM-2 R2 (flag term_whatif): which payoff is drawn; absent: the basket's own payoff only, as before. */
   whatif?: { view: PayoffView; onView: (v: PayoffView) => void };
+  /** LIVE-2 (ui_v2): the PAPER / LIVE choice above Execute; `blocked` while LIVE is picked and cannot go now. */
+  mode?: { node: ReactNode; blocked: boolean };
 }) {
   const step = strikeStep(rows);
   const ext = numbers?.extremes ?? null;
@@ -724,6 +736,7 @@ export function BasketBody({ legs, numbers, problems, settings, settingsFailed =
         </div>
       </div>
 
+      {mode && <div className="border-t border-subtle px-space-4 pt-space-2" data-basket="mode-row">{mode.node}</div>}
       {product === null && <p className="border-t border-subtle px-space-4 pt-space-2 text-t13 text-fg-muted" data-basket="product-unset">{PRODUCT_UNSET_TEXT}</p>}
       <div className="flex items-center gap-space-2 border-t border-subtle px-space-4 py-space-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div role="radiogroup" aria-label="Product" className="flex shrink-0 gap-space-1 rounded-control bg-surface-2 p-space-1" data-basket="product">
@@ -734,7 +747,7 @@ export function BasketBody({ legs, numbers, problems, settings, settingsFailed =
             </button>
           ))}
         </div>
-        <button type="button" onClick={on.onReview} disabled={!legs.length || product === null} data-basket="execute"
+        <button type="button" onClick={on.onReview} disabled={!legs.length || product === null || !!mode?.blocked} data-basket="execute"
           className="min-h-11 flex-1 rounded-control bg-brand px-space-4 text-t15 font-semibold text-on-brand disabled:opacity-50">
           Execute basket
         </button>
@@ -800,8 +813,10 @@ export function confirmRiskLines(p: BasketPreview, budget?: RiskBudget | null, c
 }
 
 /** The confirm step: every leg as it would be placed (hedge legs first), the total margin and max loss (no state). */
-export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine, card }: {
+export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks, exitWords: exitLine, card, showMode = false }: {
   preview: BasketPreview | null; busy: boolean; onBack: () => void; onPlace: () => void;
+  /** LIVE-2 (ui_v2): the mode in large text first, as on the ticket's confirm step. */
+  showMode?: boolean;
   /** M76 MP-2: with the check card, its lines replace "Before you place" (one card, amendment 5). */
   card?: TicketCard;
   /** SX5: the exits for this strategy in plain words (absent: the line is left out). */
@@ -819,6 +834,7 @@ export function ConfirmView({ preview: p, busy, onBack, onPlace, budget, checks,
         {!p && <p className="text-t14 text-fg-muted">Checking every leg at the live price…</p>}
         {p && (
           <>
+            {showMode && <ConfirmModeLine mode={p.mode} what="orders" testId="basket" />}
             <p className="text-t13 text-fg-muted">The order they are placed in: hedge legs first, then the sold legs, each at the live price.</p>
             <ol className="space-y-space-2" data-basket="confirm-legs">
               {p.legs.map((r) => {

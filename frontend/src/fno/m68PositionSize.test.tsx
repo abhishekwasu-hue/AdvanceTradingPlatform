@@ -101,7 +101,9 @@ describe("M68 PR-2: basket legs and ready strategies", () => {
 describe("M68 PR-2 (TS1-021): Exit part starts empty", () => {
   it("the sheet's lots start Not set and Confirm waits for his lots; the exit itself is never blocked", () => {
     expect(sheetSource).toContain("useState<number | null>(null)");
-    expect(sheetSource).toContain('disabled={busy || (ask.kind === "part" && lots === null)}');
+    // LIVE-2: `liveOff` holds only Reverse's NEW LIVE side (the mode choice exists for Reverse only) - never an exit.
+    expect(sheetSource).toContain('disabled={busy || (ask.kind === "part" && lots === null) || liveOff}');
+    expect(sheetSource).toContain('const modeOn = useFeatures().on("ui_v2") && ask?.kind === "reverse";');
     expect(sheetSource).not.toMatch(/useState\(1\)/);
   });
 });

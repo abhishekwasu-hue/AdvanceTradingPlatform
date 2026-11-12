@@ -26,12 +26,13 @@ fires them and closes the legs as one group, sold legs first - never blocked):
 SX (owner, 24 Oct): `POST /api/paper/fno/basket/execute` may carry `exits` ("Exits for this strategy"); once legs fill,
 they become one combined exit (origin SX) on the filled legs (app/execution/strategy_exits.py). No exits: none is set.
 
-FNO-2, the basket (app/paper/fno_basket.py), same flags, same PAPER-only path - each leg is one ticket order:
+FNO-2, the basket (app/paper/fno_basket.py), same flags, the ticket's path - each leg is one ticket order (LIVE-2: PAPER
+by default, LIVE when he picks it and the one live switch is on; `mode` on preview / execute and on Reverse):
 - `POST /api/paper/fno/basket/evaluate`     the basket's payoff, max profit / loss, breakevens, PoP, Greeks, margin with
                                             the hedge (an estimate, labelled); computes only.
 - `GET  /api/paper/fno/basket/settings`     the caller's own spread width / lots / sold-leg stop for the ready strategies.
 - `POST /api/paper/fno/basket/preview`      the confirm step: every leg checked, hedge legs first, total margin and max loss.
-- `POST /api/paper/fno/basket/execute`      every leg as a PAPER order, hedge legs first; per-leg results, never retried.
+- `POST /api/paper/fno/basket/execute`      every leg as one order of his mode, hedge legs first; per-leg results, never retried.
 - `POST /api/paper/fno/basket/broker-link`  the legs pre-filled for the user's own broker app (ATP places nothing there).
 TERM-2 step 4 (app/paper/fno_term.py, read only): `basket/evaluate` may carry `with_open` (R2 what-if, `term_whatif`)
 and `margin_pair` (R4, `term_margin_pair`); `POST /api/paper/fno/roll/preview` (R1, `term_roll`) is the roll's preview -
@@ -498,8 +499,15 @@ class StrategyExitsBody(BaseModel):
     trailing: Optional[GroupTrailBody] = None
 
 
+class PreviewBody(BasketBody):
+    """LIVE-2: the confirm step for the mode he picked (PAPER unless he picks LIVE)."""
+    mode: Literal["PAPER", "LIVE"] = "PAPER"
+    basket_ref: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,48}$")
+
+
 class ExecuteBody(BasketBody):
     basket_ref: str = Field(pattern=r"^[A-Za-z0-9-]{8,48}$", description="the panel's own id: a second tap never places twice")
+    mode: Literal["PAPER", "LIVE"] = "PAPER"     # LIVE-2: his own choice for the whole basket; never LIVE by default
     exits: Optional[StrategyExitsBody] = None
     accepted_warnings: list[str] | None = Field(default=None, max_length=40)   # M76 MP-5: as OrderBody; journaled per filled leg
 
@@ -570,19 +578,20 @@ async def basket_settings(underlying: str = Query(pattern=SYMBOL), user: User = 
 
 
 @router.post("/basket/preview", dependencies=[Depends(preview_rate_limit)])
-async def basket_preview(body: BasketBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def basket_preview(body: PreviewBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
     view = await fno_basket.preview(session, user, body.asks(), product=await _basket_product(session, user, body.product), spot=body.spot,
-                                    price_lookup=lookup, origin=MANUAL)
+                                    price_lookup=lookup, origin=MANUAL, mode=body.mode, basket_ref=body.basket_ref)
     await session.commit()
     return view
 
 
 @router.post("/basket/execute", dependencies=[Depends(basket_rate_limit)])
 async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """Places every leg as a PAPER order (hedge legs first), or says why not. Answers 200 either way, per leg."""
+    """Places every leg as a PAPER order - or LIVE when he picked it and the one live switch is on (LIVE-2) - hedge legs
+    first, or says why not. Answers 200 either way, per leg."""
     await _enabled(session, user)
     from app.ai.worker_bridge import price_lookup_for_user
     lookup = await price_lookup_for_user(session, user)
@@ -593,8 +602,11 @@ async def basket_execute(body: ExecuteBody, user: User = Depends(require_trader)
         exits = StrategyExitAsk(measure=body.exits.measure, sl_value=body.exits.sl_value,
                                 target_value=body.exits.target_value, trail_kind=kind, trail=spec)
     pressed = datetime.now(UTC).isoformat()            # M76 MP-5: the moment Place was pressed
+    # LIVE-2: LIVE only when he picked it - the one switch first (nothing is built while it is off), then his own broker
+    # session behind the order chokepoint, as on the ticket. PAPER never gets a broker.
+    live = await fno_ticket.live_route(session, user, body.mode)
     result = await fno_basket.execute(session, user, body.asks(), product=await _basket_product(session, user, body.product),
-                                      basket_ref=body.basket_ref, price_lookup=lookup, origin=MANUAL, exits=exits)
+                                      basket_ref=body.basket_ref, price_lookup=lookup, origin=MANUAL, exits=exits, mode=body.mode, live=live)
     accepted = pretrade_warnings.clean_accepted(body.accepted_warnings)
     if accepted:
         # M76 MP-5: after the run, the lines he pressed Place with go on each filled leg's journal entry (never raises).
@@ -665,6 +677,7 @@ class ReverseBody(BaseModel):
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # the new side's own stop
     preview: bool = False
     confirm: bool = False
+    mode: Literal["PAPER", "LIVE"] = "PAPER"     # LIVE-2: the NEW side's mode, his own choice; the exit always runs
 
 
 class ModifyBody(BaseModel):
@@ -692,11 +705,14 @@ async def reverse(trade_id: int, body: ReverseBody, user: User = Depends(require
                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """TT-9 "Reverse": the whole position closes (never blocked), then the opposite side opens with the same lots through
     the ticket (TT-2: his own confirmed order, origin manual; every entry check runs). `preview`: the new side's confirm
-    figures, nothing changes. A double tap with the same `client_ref` never exits or opens twice."""
+    figures, nothing changes. A double tap with the same `client_ref` never exits or opens twice. LIVE-2: `mode` LIVE sends
+    the new side to his own broker session when the one live switch is on; while it is off the exit still runs and the
+    new LIVE side is refused with the switch's sentence."""
     await _enabled(session, user)
     from app.paper import fno_position_actions
+    live = None if body.preview else await fno_ticket.live_route(session, user, body.mode)
     return await fno_position_actions.reverse(session, user, trade_id, client_ref=body.client_ref, stop_loss=body.stop_loss,
-                                              preview=body.preview, confirm=body.confirm)
+                                              preview=body.preview, confirm=body.confirm, mode=body.mode, live=live)
 
 
 @router.post("/resting/{order_id}/modify", dependencies=[Depends(resting_rate_limit)])

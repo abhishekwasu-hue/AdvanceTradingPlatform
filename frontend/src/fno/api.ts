@@ -236,7 +236,7 @@ export interface BasketSettings { source: string | null; width_steps: number | n
 
 export interface BasketPreviewLeg extends OrderPreview { seq: number; leg: number; role: "hedge" | "short" }
 export interface BasketPreview {
-  mode: "PAPER";
+  mode: OrderMode;
   practice: string;
   legs: BasketPreviewLeg[];
   refusals: string[];
@@ -298,7 +298,7 @@ export interface BasketResultLeg {
   trade_id: number | null;
 }
 export interface BasketResult {
-  mode: "PAPER";
+  mode: OrderMode;
   status: "PLACED" | "PARTIAL" | "REFUSED";
   reasons: string[];
   legs: BasketResultLeg[];
@@ -336,8 +336,10 @@ const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) })
 export const basketApi = {
   evaluate: (ask: EvaluateAsk) => request<BasketEvaluation>("/paper/fno/basket/evaluate", post(ask)),
   settings: (underlying: string) => request<BasketSettings>(`/paper/fno/basket/settings?${q({ underlying })}`),
-  preview: (ask: BasketAsk) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
-  execute: (ask: BasketAsk & { basket_ref: string; exits?: StrategyExitsAsk | null; accepted_warnings?: string[] }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
+  // LIVE-2: `mode` is his own choice for the whole basket (not sent = PAPER); the server reads the one switch again.
+  preview: (ask: BasketAsk & { mode?: OrderMode }) => request<BasketPreview>("/paper/fno/basket/preview", post(ask)),
+  execute: (ask: BasketAsk & { basket_ref: string; mode?: OrderMode; exits?: StrategyExitsAsk | null; accepted_warnings?: string[] }) => request<BasketResult>("/paper/fno/basket/execute", post(ask)),
+  liveStatus: () => request<LiveStatus>("/paper/fno/live-status"),
   brokerLink: (ask: BasketAsk) => request<BasketBrokerLink>("/paper/fno/basket/broker-link", post(ask)),
   closeFilled: (trade_ids: number[]) => request<CloseFilledResult>("/paper/fno/basket/close-filled", post({ trade_ids })),
   settlement: () => request<SettlementView>("/paper/fno/settlement"),

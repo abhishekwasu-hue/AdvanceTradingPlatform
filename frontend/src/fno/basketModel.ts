@@ -216,7 +216,7 @@ export const STATUS_WORD: Record<LegStatus, string> = { PLACED: "Filled", REFUSE
 
 export function resultHeadline(r: BasketResult): string {
   const n = r.legs.length;
-  if (r.status === "PLACED") return `All ${n} legs placed in practice mode, hedge legs first.`;
+  if (r.status === "PLACED") return `All ${n} legs ${r.mode === "LIVE" ? "sent to your broker (LIVE)" : "placed in practice mode"}, hedge legs first.`;
   if (r.status === "PARTIAL") return `${r.placed} of ${n} legs filled; ${n - r.placed} did not. Each leg says what happened.`;
   return r.placed === 0 && r.reasons.length ? "Nothing was placed." : "No leg filled. Each leg says why.";
 }

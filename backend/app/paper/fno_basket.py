@@ -18,6 +18,13 @@ ticket, it needs a stop-loss on either side.
   leg is never placed after its hedges failed (it would be uncovered): it is reported "not placed" instead. A leg that
   fails is reported plainly with what the user can do; nothing is retried by itself and nothing that filled is undone
   (the user exits it with "Exit now" - exits are never blocked, ADR-0004). The AI never calls this (ADR-0006).
+
+LIVE-2 (owner order LIVE-1, binding: one switch): the user picks PAPER or LIVE for the whole basket (PAPER by default). A
+LIVE basket runs the SAME preview and execute: the one live switch decides first (`live_switch.live_refusal`, read by the
+route through `fno_ticket.live_route`; nothing is built or sent while it is off), every leg goes through `fno_ticket.place`
+with mode LIVE to his own broker session behind the order chokepoint (`RateLimitedBroker`, `phase0_lock.assert_paper`),
+with the leg's idempotency key (`fno:<user>:<basket_ref>-<seq>`), and the first leg that does not fill stops every later
+entry leg (reported "not placed"). What filled stays; nothing is placed or exited by itself; exits stay unblocked.
 """
 from __future__ import annotations
 
@@ -184,12 +191,12 @@ async def settings(session: AsyncSession, user: User, underlying: str) -> dict[s
 
 # --- the confirm step and Execute basket ----------------------------------------------------------------------------
 
-def _ask(leg: LegAsk, product: str | None, client_ref: str | None = None) -> fno_ticket.OrderAsk:
+def _ask(leg: LegAsk, product: str | None, client_ref: str | None = None, mode: str = fno_ticket.MODE) -> fno_ticket.OrderAsk:
     # M68 PR-1: the basket's product is his (None: each leg asks "Choose MIS or NRML"). "Execute basket" sends every leg
     # at market - the basket's own action, as its confirm step says; a limit per leg is the single ticket's.
     return fno_ticket.OrderAsk(underlying=master.underlying_of(leg.underlying), expiry=leg.expiry, strike=leg.strike, right=leg.right,
                                side=leg.side, lots=leg.lots, order_type="MARKET", product=product, stop_loss=leg.stop_loss,
-                               chain_ltp=leg.price, client_ref=client_ref)
+                               chain_ltp=leg.price, client_ref=client_ref, mode=mode)
 
 
 async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
@@ -222,16 +229,28 @@ async def _room(session: AsyncSession, user: User, count: int) -> Optional[str]:
 
 async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, spot: float | None,
                   price_lookup: Optional[fno_ticket.PriceLookup], live_only: bool = False, now: Optional[datetime] = None,
-                  with_smart: bool = True, origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+                  with_smart: bool = True, origin: str = fno_ticket.ORIGIN_AUTOMATIC, mode: str = fno_ticket.MODE,
+                  basket_ref: str | None = None) -> Dict[str, Any]:
     """The confirm step: each leg as the ticket sees it (placement order), the basket's own checks, and the totals at
-    the prices it would fill at. Reads only. `origin` comes from the route (TT-2: "manual" only on the basket routes)."""
+    the prices it would fill at. Reads only. `origin` comes from the route (TT-2: "manual" only on the basket routes).
+    LIVE-2: `mode` LIVE checks every leg as a LIVE ticket order (the switch, his own broker session); the one switch's
+    plain sentence is the basket's first refusal while it is off."""
     now = now or datetime.now(timezone.utc)
+    mode = (mode or fno_ticket.MODE).upper()
+    live = mode == fno_ticket.LIVE
     rows: List[Dict[str, Any]] = []
     for seq, (i, leg) in enumerate(hedge_first(legs), start=1):
-        view = await fno_ticket.assess(session, user, _ask(leg, product), price_lookup=price_lookup, live_only=live_only, now=now,
+        # A LIVE leg needs its order reference (the ticket's rule); the confirm step's stands in until Execute sends its own.
+        ref = f"{basket_ref or 'confirm'}-{seq}" if live else None
+        view = await fno_ticket.assess(session, user, _ask(leg, product, ref, mode), price_lookup=price_lookup, live_only=live_only, now=now,
                                        origin=origin, margin_reader=fno_ticket.read_broker_margin)
         rows.append({"seq": seq, "leg": i, "role": "hedge" if leg.side == "BUY" else "short", **view})
     refusals: List[str] = []
+    if live:
+        from app.platform import live_switch
+        off = await live_switch.live_refusal(session, user.tenant_id)
+        if off:
+            refusals.append(off)
     room = await _room(session, user, len(legs))
     if room:
         refusals.append(room)
@@ -249,9 +268,9 @@ async def preview(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, 
             totals_errors = list(numbers.get("errors") or [])
     can = not refusals and all(r["can_place"] for r in rows)
     smart = await smart_view(session, user, legs, rows, product) if with_smart and await fno_ticket.smart_on(session, user.tenant_id) else None
-    return {"mode": fno_ticket.MODE, "practice": fno_ticket.PRACTICE, "legs": rows, "refusals": refusals, "totals": totals,
-            "totals_errors": totals_errors, "can_execute": can, "product": product, "smart": smart,
-            "confirm_label": f"Place {len(rows)} PAPER orders, hedge legs first" if can else None, "as_of": now.isoformat()}
+    return {"mode": mode, "practice": fno_ticket.LIVE_TEXT if live else fno_ticket.PRACTICE, "legs": rows, "refusals": refusals,
+            "totals": totals, "totals_errors": totals_errors, "can_execute": can, "product": product, "smart": smart,
+            "confirm_label": f"Place {len(rows)} {mode} orders, hedge legs first" if can else None, "as_of": now.isoformat()}
 
 
 # --- Part 7 smart execution (flag smart_execution): the sequencing preview, the margin, the incomplete state -----------
@@ -327,7 +346,8 @@ def _smart_rows(outcome: Any, legs: Sequence[LegAsk], results: Dict[int, Dict[st
 
 async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                         price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
-                        origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+                        origin: str = fno_ticket.ORIGIN_AUTOMATIC, mode: str = fno_ticket.MODE,
+                        live: fno_ticket.LiveRoute | None = None) -> Dict[str, Any]:
     """Execute basket through the smart-execution engine: hedges first, and the first leg that does not fill stops the
     run (TM-11: no SELL before every hedge is filled) with the INCOMPLETE state and its two choices."""
     from app.execution import smart_execution
@@ -336,8 +356,8 @@ async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk
     holder = {"user": user}
 
     async def place(index: int, seq: int):
-        result = await fno_ticket.place(session, holder["user"], _ask(legs[index], product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
-                                        origin=origin, margin_reader=fno_ticket.read_broker_margin)
+        result = await fno_ticket.place(session, holder["user"], _ask(legs[index], product, f"{basket_ref}-{seq}", mode), price_lookup=price_lookup,
+                                        now=now, origin=origin, margin_reader=fno_ticket.read_broker_margin, **_route(live))
         holder["user"] = await session.get(User, user_id) or holder["user"]    # a rollback in the pipeline expires it
         results[index] = result
         return result.get("status") == "PLACED", list(result.get("reasons") or []), result
@@ -345,7 +365,7 @@ async def execute_smart(session: AsyncSession, user: User, legs: Sequence[LegAsk
     rows = _smart_rows(outcome, legs, results)
     placed = sum(1 for r in rows if r["status"] == "PLACED")
     status = {smart_execution.COMPLETE: "PLACED", smart_execution.INCOMPLETE: "PARTIAL"}.get(outcome.state, "REFUSED")
-    return {"mode": fno_ticket.MODE, "status": status, "state": outcome.state, "actions": outcome.actions, "message": outcome.message,
+    return {"mode": mode, "status": status, "state": outcome.state, "actions": outcome.actions, "message": outcome.message,
             "reasons": [], "legs": rows, "placed": placed, "next_steps": [outcome.message] if outcome.state != smart_execution.COMPLETE else [],
             "filled_trade_ids": [r["trade_id"] for r in rows if r["status"] == "PLACED" and r["trade_id"]]}
 
@@ -390,14 +410,20 @@ async def close_filled(session: AsyncSession, user: User, trade_ids: Sequence[in
     return {"mode": fno_ticket.MODE, "state": outcome.state, "actions": outcome.actions, "message": outcome.message, "legs": rows}
 
 
-def _next_steps(status: str, rows: Sequence[Dict[str, Any]]) -> List[str]:
+def _route(live: fno_ticket.LiveRoute | None) -> dict[str, Any]:
+    """The broker a LIVE leg goes to (his own session behind the order chokepoint), or none: a PAPER leg never carries one."""
+    return {"broker": live.broker, "account_id": live.account_id} if live is not None and not live.refusals else {}
+
+
+def _next_steps(status: str, rows: Sequence[Dict[str, Any]], mode: str = fno_ticket.MODE) -> List[str]:
     if status == "PLACED":
         return []
     placed = [r for r in rows if r["status"] == "PLACED"]
     steps = []
     if placed:
-        steps.append(f"{len(placed)} leg{'s' if len(placed) != 1 else ''} filled and {'are' if len(placed) != 1 else 'is'} open in "
-                     "practice mode. Keep them, or close them with Exit now on Positions or the chain.")
+        where = "at your broker (LIVE)" if mode == fno_ticket.LIVE else "in practice mode"
+        steps.append(f"{len(placed)} leg{'s' if len(placed) != 1 else ''} filled and {'are' if len(placed) != 1 else 'is'} open {where}. "
+                     "Keep them, or close them with Exit now on Positions or the chain.")
         steps.append("To place the legs that did not fill, fix what each one says and tap \"Place the remaining legs\". "
                      "Nothing is retried by itself.")
     else:
@@ -413,12 +439,15 @@ async def _group(session: AsyncSession, user: User, basket_ref: str, rows: Seque
 
 async def execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                   price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
-                  origin: str = fno_ticket.ORIGIN_AUTOMATIC, exits: Optional[Any] = None) -> Dict[str, Any]:
-    """Places every leg as PAPER, hedge legs first, or nothing when the check at the live price refuses anything.
-    SX: `exits` (app/execution/strategy_exits.StrategyExitAsk, the user's own "Exits for this strategy") becomes one
-    combined exit over the legs that filled; without it none is set. The answer's `exits` says which."""
+                  origin: str = fno_ticket.ORIGIN_AUTOMATIC, exits: Optional[Any] = None, mode: str = fno_ticket.MODE,
+                  live: fno_ticket.LiveRoute | None = None) -> Dict[str, Any]:
+    """Places every leg (PAPER, or LIVE when he picked it), hedge legs first, or nothing when the check at the live price
+    refuses anything. SX: `exits` (app/execution/strategy_exits.StrategyExitAsk, the user's own "Exits for this strategy")
+    becomes one combined exit over the legs that filled; without it none is set. The answer's `exits` says which.
+    LIVE-2: `live` is the route's `fno_ticket.live_route` (his own broker session, or why not); a LIVE basket without an
+    open route places nothing."""
     result = await _execute(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
-                            origin=origin)
+                            origin=origin, mode=mode, live=live)
     if exits is not None and result.get("status") != "REFUSED":
         from app.execution import strategy_exits
         filled = [r["trade_id"] for r in result.get("legs", []) if r.get("status") == "PLACED" and r.get("trade_id")]
@@ -435,50 +464,64 @@ def user_id_of(user: User) -> int:
 
 async def _execute(session: AsyncSession, user: User, legs: Sequence[LegAsk], *, product: str | None, basket_ref: str,
                    price_lookup: Optional[fno_ticket.PriceLookup], now: Optional[datetime] = None,
-                   origin: str = fno_ticket.ORIGIN_AUTOMATIC) -> Dict[str, Any]:
+                   origin: str = fno_ticket.ORIGIN_AUTOMATIC, mode: str = fno_ticket.MODE,
+                   live: fno_ticket.LiveRoute | None = None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
+    mode = (mode or fno_ticket.MODE).upper()
+    is_live = mode == fno_ticket.LIVE
+    if is_live and (live is None or live.refusals):
+        # LIVE-2: the switch is off (its plain sentence) or he has no usable broker session of his own: nothing is sent.
+        reasons = list(live.refusals) if live is not None and live.refusals else [fno_ticket.LIVE_NO_BROKER]
+        refused = [{"seq": seq, "leg": i, "label": label(leg), "side": leg.side, "lots": leg.lots, "status": "NOT_PLACED", "reasons": reasons,
+                    "filled": None, "order_id": None, "trade_id": None} for seq, (i, leg) in enumerate(hedge_first(legs), start=1)]
+        return {"mode": mode, "status": "REFUSED", "reasons": reasons, "legs": refused, "placed": 0,
+                "next_steps": ["Nothing was placed. Place it as PAPER, or try LIVE again once it is open."]}
     smart = await fno_ticket.smart_on(session, user.tenant_id)
     check = await preview(session, user, legs, product=product, spot=None, price_lookup=price_lookup, live_only=True, now=now,
-                          with_smart=False, origin=origin)
+                          with_smart=False, origin=origin, mode=mode, basket_ref=basket_ref)
     await session.commit()
     if not check["can_execute"]:
         reasons = list(check["refusals"]) + [f"{r['label']}: {(r['errors'] + r['refusals'] + ['it cannot be placed now'])[0]}"
                                              for r in check["legs"] if not r["can_place"]]
         refused = [{"seq": r["seq"], "leg": r["leg"], "label": r["label"], "side": r["side"], "lots": r["lots"], "status": "NOT_PLACED",
                  "reasons": r["errors"] + r["refusals"], "filled": None, "order_id": None, "trade_id": None} for r in check["legs"]]
-        return {"mode": fno_ticket.MODE, "status": "REFUSED", "reasons": reasons, "legs": refused, "placed": 0, "next_steps": [
+        return {"mode": mode, "status": "REFUSED", "reasons": reasons, "legs": refused, "placed": 0, "next_steps": [
             "Nothing was placed. Fix what it says and try again."]}
     if smart:
         result = await execute_smart(session, user, legs, product=product, basket_ref=basket_ref, price_lookup=price_lookup, now=now,
-                                     origin=origin)
+                                     origin=origin, mode=mode, live=live)
         await _group(session, user, basket_ref, result["legs"])
         return result
     rows: List[Dict[str, Any]] = []
     user_id = user.id
     hedge_failed = False
+    stopped = False                  # LIVE-2: a LIVE leg that did not fill stops every later entry leg
     for seq, (i, leg) in enumerate(hedge_first(legs), start=1):
         name = label(leg)
-        if leg.side == "SELL" and hedge_failed:
+        if (leg.side == "SELL" and hedge_failed) or stopped:
+            why = ("Not placed because a hedge leg did not fill: on its own this sold leg would be uncovered."
+                   if leg.side == "SELL" and hedge_failed else "Not placed: an earlier leg did not fill, so nothing more was sent.")
             rows.append({"seq": seq, "leg": i, "label": name, "side": leg.side, "lots": leg.lots, "status": "NOT_PLACED", "filled": None,
-                         "order_id": None, "trade_id": None,
-                         "reasons": ["Not placed because a hedge leg did not fill: on its own this sold leg would be uncovered."]})
+                         "order_id": None, "trade_id": None, "reasons": [why]})
             continue
-        result = await fno_ticket.place(session, user, _ask(leg, product, f"{basket_ref}-{seq}"), price_lookup=price_lookup, now=now,
-                                        origin=origin, margin_reader=fno_ticket.read_broker_margin)
+        result = await fno_ticket.place(session, user, _ask(leg, product, f"{basket_ref}-{seq}", mode), price_lookup=price_lookup, now=now,
+                                        origin=origin, margin_reader=fno_ticket.read_broker_margin, **_route(live))
         user = await session.get(User, user_id) or user        # a rollback inside the pipeline (a repeated tap) expires it
         status = result.get("status", "FAILED")
         if status != "PLACED" and leg.side == "BUY":
             hedge_failed = True
+        if status != "PLACED" and is_live:
+            stopped = True
         rows.append({"seq": seq, "leg": i, "label": result.get("label") or name, "side": leg.side, "lots": leg.lots,
                      "status": status if status == "PLACED" else ("FAILED" if status == "FAILED" else "REFUSED"),
                      "reasons": list(result.get("reasons") or []), "filled": result.get("filled"), "order_id": result.get("order_id"),
-                     "trade_id": result.get("trade_id"), "mode": result.get("mode", fno_ticket.MODE)})
+                     "trade_id": result.get("trade_id"), "mode": result.get("mode", mode)})
     placed = sum(1 for r in rows if r["status"] == "PLACED")
     status = "PLACED" if placed == len(rows) else ("PARTIAL" if placed else "REFUSED")
     if status != "PLACED":
-        logger.info("FNO basket %s for user %s: %s of %s legs placed", basket_ref, user.id, placed, len(rows))
+        logger.info("FNO basket %s (%s) for user %s: %s of %s legs placed", basket_ref, mode, user.id, placed, len(rows))
     await _group(session, user, basket_ref, rows)
-    return {"mode": fno_ticket.MODE, "status": status, "reasons": [], "legs": rows, "placed": placed, "next_steps": _next_steps(status, rows)}
+    return {"mode": mode, "status": status, "reasons": [], "legs": rows, "placed": placed, "next_steps": _next_steps(status, rows, mode)}
 
 
 # --- "Trade in your broker app" ---------------------------------------------------------------------------------------

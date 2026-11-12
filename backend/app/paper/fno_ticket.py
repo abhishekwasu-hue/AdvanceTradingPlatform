@@ -75,7 +75,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 PriceLookup = Callable[..., Awaitable[float]]
 
-MODE = "PAPER"                 # the default mode (the basket, trigger plans and waiting orders send PAPER only)
+MODE = "PAPER"                 # the default mode (trigger plans and waiting orders send PAPER only; LIVE-2: the basket and
+                               # Reverse send LIVE only when the user picks it, through `live_route`)
 LIVE = "LIVE"
 MODES = (MODE, LIVE)
 STRATEGY_ID = "manual_fno"
@@ -673,8 +674,9 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     order with its proposal id) - the same checks, PAPER.
 
     M96-Q1: a LIVE order goes only to the `broker` handed in (his own session behind the order chokepoint, built by the
-    ticket's order route with `live_broker`); this function never obtains a broker itself, so every other caller (the
-    basket, Reverse, trigger plans, an approved proposal - the AI never places, ADR-0006) cannot send a LIVE order."""
+    ticket's order route with `live_broker`; LIVE-2: the basket's and Reverse's routes with `live_route`, the same session
+    and chokepoint); this function never obtains a broker itself, so every other caller (trigger plans, an approved
+    proposal - the AI never places, ADR-0006) cannot send a LIVE order."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.platform import phase0_lock
     now = now or datetime.now(timezone.utc)
@@ -826,6 +828,19 @@ async def live_broker(session: AsyncSession, user: User) -> LiveRoute:
     adapter = token_lifecycle.build_adapter(record)
     wrapped = RateLimitedBroker(adapter, RateBudget(limits_for(adapter.name)), tenant_id=user.tenant_id)
     return LiveRoute(refusals=[], broker=wrapped, account_id=account.id, broker_name=record.broker_name)
+
+
+async def live_route(session: AsyncSession, user: User, mode: str | None) -> LiveRoute | None:
+    """LIVE-2: the one way the basket and Reverse get a LIVE route - None for PAPER (a PAPER order never carries a broker).
+    LIVE: the one live switch decides first (`live_switch.live_refusal`, its own plain sentence; nothing is built while it
+    is off), then his own broker session behind the order chokepoint, exactly as the ticket's (`live_broker`)."""
+    if (mode or MODE).upper() != LIVE:
+        return None
+    from app.platform import live_switch
+    refusal = await live_switch.live_refusal(session, user.tenant_id)
+    if refusal:
+        return LiveRoute(refusals=[refusal])
+    return await live_broker(session, user)
 
 
 # M68 TS-3: a ticket field -> its Trade settings key (the ticket's "Save as my default" writes it).

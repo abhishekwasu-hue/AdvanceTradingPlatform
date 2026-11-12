@@ -136,7 +136,8 @@ def test_basket_routes_are_off_without_ui_v2_and_the_paper_account():
 
 def test_the_basket_has_no_mode_and_one_underlying():
     from app.paper.fno_routes import BasketBody, ExecuteBody
-    assert "mode" not in BasketBody.model_fields and "mode" not in ExecuteBody.model_fields
+    # LIVE-2 (owner LIVE-1, binding; supersedes "no mode"): only preview / execute carry the mode, PAPER by default.
+    assert "mode" not in BasketBody.model_fields and ExecuteBody.model_fields["mode"].default == "PAPER"
     t = _org_tenant("one")
     e = _expiry()
     two = {"legs": [_leg(e, 30000.0, "CE", "BUY", 10.0), {**_leg(e, 30000.0, "CE", "BUY", 10.0), "underlying": "BANKNIFTY"}], "spot": SPOT}

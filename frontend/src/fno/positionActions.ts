@@ -10,13 +10,14 @@
 import { friendlyError, request } from "../api/client";
 import type { TradeRecord } from "../types";
 import { formatNumber, formatPrice, formatSignedINR } from "../ui/format";
+import type { LiveStatus, OrderMode } from "./api";
 import { isFnoPosition } from "./contracts";
 
 export interface ClosedPart { trade_id: number; symbol: string; lots: number; closed: boolean; exit_price: number | null; pnl: number | null }
 export interface ExitPartResult { status: "CLOSED" | "CONFIRM"; repeat?: boolean; warning?: string | null; closed: ClosedPart | null; remaining_lots: number }
 export interface ReverseEntry { status: string; order_id: number | null; trade_id: number | null; reasons: string[] }
 export interface ReverseResult {
-  status: "REVERSED" | "EXITED" | "CONFIRM" | "PREVIEW"; repeat?: boolean; warning?: string | null; closed?: ClosedPart | null;
+  status: "REVERSED" | "EXITED" | "CONFIRM" | "PREVIEW"; repeat?: boolean; warning?: string | null; closed?: ClosedPart | null; mode?: OrderMode;
   entry?: ReverseEntry | null; text?: string;
 }
 export interface WaitingOrder {
@@ -32,13 +33,16 @@ const post = (path: string, body?: unknown) => ({ method: "POST", body: body ===
 export const positionActionsApi = {
   exitPart: (tradeId: number, lots: number, clientRef: string, confirm: boolean) =>
     request<ExitPartResult>(`/paper/fno/positions/${tradeId}/exit-part`, post("", { lots, client_ref: clientRef, confirm })),
-  reverse: (tradeId: number, body: { client_ref: string; stop_loss?: number; preview?: boolean; confirm?: boolean }) =>
+  // LIVE-2: `mode` is the NEW side's (not sent = PAPER); the exit always runs.
+  reverse: (tradeId: number, body: { client_ref: string; stop_loss?: number; preview?: boolean; confirm?: boolean; mode?: OrderMode }) =>
     request<ReverseResult>(`/paper/fno/positions/${tradeId}/reverse`, post("", body)),
+  liveStatus: () => request<LiveStatus>("/paper/fno/live-status"),
   waiting: () => request<WaitingOrder[]>("/paper/fno/resting"),
   modify: (id: number, ask: ModifyAsk) => request<WaitingOrder>(`/paper/fno/resting/${id}/modify`, post("", ask)),
   cancel: (id: number) => request<WaitingOrder>(`/paper/fno/resting/${id}/cancel`, post("")),
 };
-export type PositionActionsApi = typeof positionActionsApi;
+// LIVE-2: `liveStatus` is optional for a caller that has no LIVE choice (unknown is never "off": the server decides).
+export type PositionActionsApi = Omit<typeof positionActionsApi, "liveStatus"> & Partial<Pick<typeof positionActionsApi, "liveStatus">>;
 
 /** A fresh reference for one action (the server's idempotency key). */
 export function newRef(): string {
@@ -64,9 +68,10 @@ export function canExitPart(p: TradeRecord): boolean {
   return p.mode === "PAPER" && !p.leg_group_id && openLots(p) > 1;
 }
 
-/** Reverse is offered on an F&O PAPER position that is not a leg of a strategy structure. Pure. */
+/** Reverse is offered on an F&O position (LIVE-2: PAPER or LIVE - a LIVE one exits at its own broker) that is not a leg
+ *  of a strategy structure. Pure. */
 export function canReverse(p: TradeRecord): boolean {
-  return p.mode === "PAPER" && !p.leg_group_id && isFnoPosition(p) && openLots(p) >= 1;
+  return (p.mode === "PAPER" || p.mode === "LIVE") && !p.leg_group_id && isFnoPosition(p) && openLots(p) >= 1;
 }
 
 /** Does the reversed side need the user's own stop-loss (a sold option, or any future)? Pure. */
@@ -109,16 +114,18 @@ export function exitPartCopy(symbol: string, lots: number, held: number): SheetC
   };
 }
 
-export function reverseCopy(symbol: string, held: number, long: boolean): SheetCopy {
+export function reverseCopy(symbol: string, held: number, long: boolean, mode: OrderMode = "PAPER"): SheetCopy {
+  const live = mode === "LIVE";
   return {
     title: "Reverse this position?",
-    body: `All ${lotWord(held)} of ${symbol} close, then a ${long ? "short" : "long"} of ${lotWord(held)} opens.`,
+    body: `All ${lotWord(held)} of ${symbol} close, then a ${long ? "short" : "long"} of ${lotWord(held)} opens${live ? " as a LIVE order at your broker" : ""}.`,
     details: [
       "The position closes at the current price, exactly as Exit now does.",
       "The new position goes through the usual order checks; if it is not allowed, your position stays closed and you see why.",
+      ...(live ? ["LIVE: the new position is a real order with real money at your own broker."] : []),
       NO_PRICE_LINE,
     ],
-    confirm: "Reverse",
+    confirm: live ? "Reverse · LIVE" : "Reverse",
   };
 }
 
@@ -150,7 +157,8 @@ export type ActionStep = { kind: "warn"; warning: string }
 /** One tap on the confirm of "Exit part" / "Reverse": a server warning (a hedge before its sold leg) keeps the sheet open
  *  and the next tap confirms; a failure is a plain line, never a crash. */
 export async function runAction(
-  ask: { kind: "part"; tradeId: number; symbol: string; lots: number; ref: string } | { kind: "reverse"; tradeId: number; symbol: string; ref: string; stopLoss?: number },
+  ask: { kind: "part"; tradeId: number; symbol: string; lots: number; ref: string }
+    | { kind: "reverse"; tradeId: number; symbol: string; ref: string; stopLoss?: number; mode?: OrderMode },
   warned: boolean, api: PositionActionsApi = positionActionsApi,
 ): Promise<ActionStep> {
   try {
@@ -159,7 +167,7 @@ export async function runAction(
       if (r.status === "CONFIRM") return { kind: "warn", warning: r.warning || "This leg protects a sold leg that is still open." };
       return { kind: "done", text: exitPartText(r), ok: true, pieces: exitPartPieces(r) };
     }
-    const r = await api.reverse(ask.tradeId, { client_ref: ask.ref, stop_loss: ask.stopLoss, confirm: warned });
+    const r = await api.reverse(ask.tradeId, { client_ref: ask.ref, stop_loss: ask.stopLoss, confirm: warned, ...(ask.mode === "LIVE" ? { mode: ask.mode } : {}) });
     if (r.status === "CONFIRM") return { kind: "warn", warning: r.warning || "This leg protects a sold leg that is still open." };
     return { kind: "done", text: reverseText(ask.symbol, r), ok: r.status === "REVERSED" };
   } catch (e) {

@@ -115,7 +115,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_breakouts_bk4": FlagInfo("Breakout screens, set 3", "screens", "screens", ("screener_breakouts",), "", "ready"),
     "intraday_pack": FlagInfo("Intraday pack: session high / low / volume so far, the pre-open levels and flag settings in screens", "screens",
                               "builder functions", ("screener_breakouts",), "", "unfinished"),
-    "m99_primitives": FlagInfo("Bar classes: the size of each bar's range and volume against the bars before, and where it closed",
+    "m99_primitives": FlagInfo("Shared building blocks for screens: bar classes, structure, Fibonacci levels and price clusters",
                                "screens", "builder functions", ("screener_v2",), "", "unfinished"),
     "screener_breakouts_fitness": FlagInfo("What followed past breakouts", "screens", "a history box", ("screener_breakouts",), "shared daily data", "ready"),
     "evidence_context": FlagInfo("OI walls, trend strip and replay on evidence charts", "screens", "more on match charts", ("evidence_charts",), "", "ready"),

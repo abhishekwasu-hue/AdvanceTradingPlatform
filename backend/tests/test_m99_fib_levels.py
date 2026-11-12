@@ -225,8 +225,11 @@ def test_the_flag_is_off_by_default_and_unfinished():
     from app.platform import controls
     from app.platform.flag_catalog import FLAG_INFO
     from app.platform.flag_state import FLAG_STATUS
-    # the flag's texts are main's (B1-a, #1015): one entry per flag table
+    from app.platform.trader_pack import EXCLUDED_REASONS
     assert "places no orders" in controls.FEATURE_FLAGS[M99_FLAG] and FLAG_INFO[M99_FLAG].status == "unfinished"
+    # one entry per flag table, and each text names everything the flag covers
+    for text in (controls.FEATURE_FLAGS[M99_FLAG], FLAG_INFO[M99_FLAG].plain, EXCLUDED_REASONS[M99_FLAG]):
+        assert all(part in text for part in ("bar classes", "structure", "Fibonacci levels", "price clusters")), text
     assert M99_FLAG in controls.DEFAULT_OFF_FLAGS and FLAG_STATUS[M99_FLAG].state == "not_built"
 
 

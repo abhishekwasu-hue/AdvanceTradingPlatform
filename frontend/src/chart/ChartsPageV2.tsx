@@ -46,6 +46,7 @@ import { ReadChartPanel, useReadChart } from "./ReadChartV2";
 import { readTimeframe } from "./readChart";
 import { WatchlistPanel } from "./WatchlistPanel";
 import { ScreenLegend, useScreenOverlay } from "./ScreenOverlay";
+import { OPTIONS_EM_LAYER_ID, useOptionsExpectedMove } from "../optionChain/expectedMoveLayer";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
 import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
 import { WYCKOFF_LAYER_ID, WyckoffBar, useWyckoffLayer } from "./wyckoffLayer";
@@ -188,6 +189,7 @@ export default function ChartsPageV2(_props: PageProps) {
     const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
   }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers]);
+  const emNote = useOptionsExpectedMove(engine, symbol, view.layers.includes(OPTIONS_EM_LAYER_ID) && tab === "chart" && !hubView, chip ? chip.open : null);   // M96 N1
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
   const readTf = readTimeframe(timeframe);
@@ -362,12 +364,13 @@ export default function ChartsPageV2(_props: PageProps) {
             {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
             {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
-            {(data.error || tradesNote || data.loadingOlder || drawingText) && (
+            {(data.error || tradesNote || emNote || data.loadingOlder || drawingText) && (
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
                 {data.error && <span className="text-fg">{data.error}</span>}
                 {data.error && <button type="button" onClick={data.retry} className={cx("min-h-11 font-semibold text-brand hover:underline md:min-h-9", focus)}>Try again</button>}
                 {data.loadingOlder && <span>Loading older history…</span>}
                 {tradesNote && <span>{tradesNote}</span>}
+                {emNote && <span data-em-note>{emNote}</span>}
                 {drawingText && <span>{drawingText}</span>}
               </div>
             )}

@@ -721,9 +721,10 @@ def test_the_model_columns_match_the_migration_and_are_nullable():
         assert table.c[name].nullable and table.c[name].type.length == length and table.c[name].server_default is None
     for name in ("target_r", "target_ratio"):
         assert table.c[name].nullable and table.c[name].server_default is None
-    # M94 PR-6 added `target_level` (its own migration f2b4d6e8a0c1, tests/test_m94_pr6_pages.py)
+    # M94 PR-6 added `target_level` (its own migration f2b4d6e8a0c1, tests/test_m94_pr6_pages.py); M99 P2 `management`
+    # (b4d6f8a0c2e3, tests/test_m99_p2_intraday.py)
     assert set(X.TemplateExits.__dataclass_fields__) == {"stop_source", "target_rule", "target_r", "target_base_wave", "target_ratio",
-                                                         "target_level"}
+                                                         "target_level", "management"}
 
 
 def test_the_migration_runs_up_and_down_on_sqlite(tmp_path):

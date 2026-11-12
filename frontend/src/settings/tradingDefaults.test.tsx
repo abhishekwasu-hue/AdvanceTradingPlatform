@@ -91,7 +91,7 @@ describe("identity: empty defaults change nothing (byte-identical bodies)", () =
   it("the full form and the ticket", () => {
     expect(formPrefill(null, true)).toEqual({});
     expect(formPrefill(EMPTY_DEFAULTS, true)).toEqual({});
-    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "", target: "" });   // owner F1 / M68 PR-1 / PR-2: no product, order type or lots pre-selected
+    expect(newDraft("BUY", undefined)).toEqual({ side: "BUY", lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "", target: "", mode: "PAPER" });   // owner F1 / M68 PR-1 / PR-2: no product, order type or lots pre-selected
     expect(JSON.stringify(newDraft("SELL", Object.keys(ticketPrefill(EMPTY_DEFAULTS)).length ? ticketPrefill(EMPTY_DEFAULTS) : undefined)))
       .toBe(JSON.stringify(newDraft("SELL")));
     expect(ticketPrefill(EMPTY_DEFAULTS)).toEqual({});
@@ -151,7 +151,7 @@ describe("pre-fill per form", () => {
   it("the chain ticket: lots, product and order type; never the side", () => {
     const t = ticketPrefill(d({ ticket: { lots: 3, product: "NRML", order_type: "LIMIT" } }));
     expect(t).toEqual({ lots: 3, product: "NRML", orderType: "LIMIT" });
-    expect(newDraft("SELL", t)).toEqual({ side: "SELL", lots: 3, orderType: "LIMIT", product: "NRML", price: "", trigger: "", stopLoss: "", target: "" });
+    expect(newDraft("SELL", t)).toEqual({ side: "SELL", lots: 3, orderType: "LIMIT", product: "NRML", price: "", trigger: "", stopLoss: "", target: "", mode: "PAPER" });
     expect(draftFromDefaults(newDraft("BUY", t), t)).toEqual({ lots: true, orderType: true, product: true });
     expect(draftFromDefaults({ ...newDraft("BUY", t), lots: 1 }, t)).toEqual({ lots: false, orderType: true, product: true });
     expect(draftFromDefaults(newDraft("BUY"), undefined)).toEqual({ lots: false, orderType: false, product: false });

@@ -150,6 +150,11 @@ TOKENS: Dict[str, str] = {
                                       " {timeframe} chart"),
     "previous_day_high_rejected": ("the market was turned away from the previous day's high and the close went below the"
                                    " bar before on the {timeframe} chart"),
+    # M99 P3 family J "Volume spread" (J1): structure words only - no price, no number, no instruction
+    "climax_fall_then_test": ("after stopping volume or a climax at the end of a fall, a test came, a down bar into that area on"
+                              " lower volume closing in its high third on the {timeframe} chart"),
+    "climax_rise_then_no_demand": ("after a climax at the end of a rise or an up-thrust, an up bar on a narrow spread and lower"
+                                   " volume showed no demand on the {timeframe} chart"),
     # M94 family H "Intraday" (H1-H5): structure words only - no price, no number, no instruction
     "fallen_angel_broken_upward": ("after an open above the previous close, a fall from the session high and a tight base, the close"
                                    " broke above the base on the {timeframe} chart"),

@@ -37,6 +37,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M99 P3: the volume spread readings (no demand, no supply, test, climaxes, up-thrust ...) with a Why? for each mark.
+  { id: "vsa", group: "layers", label: "Volume spread", note: "Readings of each bar's spread, volume and close, with a Why? for each mark.",
+    flag: "vsa_pack", keywords: "volume spread vsa no demand no supply test climax up-thrust shake-out absorption effort" },
   // M96 N1: the expected move the nearest expiry's option prices imply (ATM straddle and ATM IV), off until turned on.
   { id: "options_expected_move", group: "layers", label: "Expected move (from the option prices)",
     note: "The range the nearest expiry's ATM straddle and ATM IV imply around the spot.", flag: "ui_v2", keywords: "expected move straddle iv option range" },

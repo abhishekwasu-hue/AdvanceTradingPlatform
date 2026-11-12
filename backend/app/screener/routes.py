@@ -37,7 +37,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import bands as band_gate
 from app.screener import chains as chain_gate
-from app.screener import compile_screen, m99_gate, nodes, reasons
+from app.screener import compile_screen, m99_gate, nodes, reasons, vsa_gate
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import intraday as itd  # registers the `intraday` template source (M94 PR-2)
 from app.screener import legends as lg
@@ -47,6 +47,7 @@ from app.screener import ranking as ranking_gate  # registers the `legends` temp
 from app.screener import reference as reference_gate
 from app.screener import taxonomy as tx
 from app.screener import venues as venue_gate
+from app.screener import vsa_scanners as vss  # registers the `vsa` template source (M99 P3)
 from app.screener import waves as waves_gate
 from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
@@ -346,6 +347,17 @@ async def intraday_scanners(user: User = Depends(get_current_user), session: Asy
     return itd.payload()
 
 
+@router.get("/vsa")
+async def vsa_scanners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M99 P3: the "Volume spread" scanners - each one's text, base timeframe, editable parameters (reference values) and
+    the footer. Behind `screener_gallery` and `vsa_pack` (404 / 503 while off, as the gallery hides them). Nothing runs."""
+    await _flag(session, user)
+    await require_flag(session, GALLERY_FLAG, user.tenant_id)
+    for f in (vss.FLAG, *vss.ALSO):
+        await require_flag(session, f, user.tenant_id)
+    return vss.payload()
+
+
 @router.post("/validate")
 async def validate_screen(body: ValidateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
@@ -361,14 +373,15 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
     the U7 LG3 fundamentals functions (`screener_fundamentals`), N3 S8a's ownership functions (`screener_ownership`), the
     wave count functions (`screener_waves`), M99's bar classifier and structure functions and its Fibonacci / cluster functions
-    (`m99_primitives`), the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves
+    (`m99_primitives`), the volume spread function (`vsa_pack`), the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves
     a `$parameter` pattern name), N3 S8c's venue matrix (`screener_venues`,
     with an exchange) and N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or this
     organisation's own). With the AMW-3 flag off, Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`).
     Every gate runs; RankScore's check is last so its early return skips none."""
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
-    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, m99_gate, primitives_gate):
+    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate, waves_gate, m99_gate, primitives_gate,
+                 vsa_gate):   # M99 P3
         # the wave gate resolves a `$parameter` RetestEntry choice (R7: of wave_line / wave_end) from the screen's parameters
         blocked = await (waves_gate.blocked_calls(session, user.tenant_id, ast, params or {}) if gate is waves_gate
                          else gate.blocked_calls(session, user.tenant_id, ast))

@@ -155,6 +155,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ClosePosition": ["ClosePosition()", "ClosePosition(part=0.25)", "ClosePosition()@1h"],
     "BarDirection": ["BarDirection()", "BarDirection()@1h"],
     "VolumeClass": ["VolumeClass(20)", "VolumeClass(10, low=0.9, high=1.1, ultra=1.5)", "VolumeClass(5)@1h"],
+    # M99 P3 (flag vsa_pack): the volume spread detectors (app/price_action/vsa.py) - the background, the two-bar readings
+    # (stopping volume closing low, shake-out) and the next-bar confirmation are all read from closed bars only
+    "VSA": ['VSA("no_demand")', 'VSA("shake_out", confirm=TRUE)', 'VSA("stopping_volume", background=FALSE)',
+            'VSA("effort_vs_result", "strength", n=10, trend_bars=5)', 'VSA("test")@1h'],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],

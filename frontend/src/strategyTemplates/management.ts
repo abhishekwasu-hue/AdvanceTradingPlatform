@@ -65,9 +65,14 @@ export function managementOffered(choices: ManagementChoices | null | undefined,
   return !!choices && choices.classes.includes(cls);
 }
 
-/** A plain message when a switched-on option is missing a number (or it is out of range), else null. */
-export function managementProblem(pick: ManagementPick, choices: ManagementChoices): string | null {
+/** A plain message when a switched-on option is missing a number (or it is out of range), else null. `premiumStopOnly`: a
+ * single option whose stop is the premium stop only - it has no stop on the underlying for the trail to move (the
+ * server's same check, app/strategy_templates/exits.py). */
+export function managementProblem(pick: ManagementPick, choices: ManagementChoices, premiumStopOnly = false): string | null {
   const b = choices.bounds;
+  if (pick.trail && premiumStopOnly) {
+    return "The trailing stop moves your stop on the underlying; with only your premium stop there is none to move - pick the template's own level as the stop, or turn the trail off.";
+  }
   if (pick.trail === "SWING" && !within(int(pick.degree), b.trail_degree)) return `Pick the swing size the stop trails (${range(b.trail_degree)}).`;
   if ((pick.trail === "ATR" || pick.trail === "MA") && !within(int(pick.trailN), b.trail_n)) return `Type the bars of the trail's average (${range(b.trail_n)}).`;
   if (pick.trail === "ATR" && !within(num(pick.trailK), b.trail_k)) return `Type how many average true ranges the stop trails by (${range(b.trail_k)}).`;

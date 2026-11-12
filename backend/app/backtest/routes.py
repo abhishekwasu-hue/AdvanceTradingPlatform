@@ -9,6 +9,7 @@
 """
 import copy
 import json
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -51,6 +52,9 @@ class ExitRulesBody(BaseModel):
     # Technical bound, not a trading cap (~19 years): keeps the time arithmetic safe; any holding period a user sets fits.
     time_exit_minutes: int | None = Field(default=None, ge=1, le=10_000_000)
     time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    # M99 P7 (flag risk_options): the trader's own scale-out - his share of the lots at his level in R (both or none).
+    scale_out_at_r: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    scale_out_pct: float | None = Field(default=None, gt=0, lt=100, allow_inf_nan=False)
 
     def to_rules(self) -> ExitRules:
         return ExitRules(**self.model_dump())
@@ -290,6 +294,11 @@ class BacktestRunner:
         if body.options is None:
             runner = cls(body, risk, cutoffs=cutoffs, charges=charges)
             await _models_allowed(session, runner.models, tenant_id)
+            if runner.rules is not None and runner.rules.scale_out_ready and tenant_id is not None:
+                # M99 P7: the scale-out is read only while the `risk_options` flag is ON (as the worker reads it)
+                from app.risk_engine import risk_options
+                if not await risk_options.flag_on(session, tenant_id):
+                    runner.rules = replace(runner.rules, scale_out_at_r=None, scale_out_pct=None)
             return runner
         await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
         opts = body.options

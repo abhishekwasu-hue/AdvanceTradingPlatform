@@ -56,6 +56,7 @@ from app.screener import nodes as n
 from app.screener import reasons
 from app.screener.registry import (
     BAR_CLASS_KWARGS,
+    FIB_EW_SETTINGS,
     FUNCTIONS,
     FUNDAMENTALS_FLAG,
     PA_SETTINGS,
@@ -69,10 +70,11 @@ from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
 
-_RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "1D", "1w": "W-MON", "1M": "MS"}
-_DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "15m": timedelta(minutes=15),
-                             "30m": timedelta(minutes=30), "1h": timedelta(hours=1), "1d": timedelta(days=1), "1w": timedelta(days=7),
-                             "1M": DateOffset(months=1)}
+_RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "10m": "10min", "15m": "15min", "30m": "30min", "1h": "60min", "2h": "120min",
+             "1d": "1D", "1w": "W-MON", "1M": "MS"}
+_DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "10m": timedelta(minutes=10),
+                             "15m": timedelta(minutes=15), "30m": timedelta(minutes=30), "1h": timedelta(hours=1), "2h": timedelta(hours=2),
+                             "1d": timedelta(days=1), "1w": timedelta(days=7), "1M": DateOffset(months=1)}
 
 
 EXCHANGE_TZ = "Asia/Kolkata"
@@ -630,6 +632,9 @@ class _Eval:
             "FibLevel": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "level"),
             "FibDistancePct": lambda: _fib(f, _text(0, ""), num(1, float("nan")), int(num(2, 0)), "distance"),
             "ClusterDistancePct": lambda: _cluster_distance(f, num(0, float("nan")), _text(1, "pct"), int(num(2, 0))),
+            # M99 P5 (flag fib_ew_pack): the Fibonacci + Elliott pack (app/price_action/fib_ew.py), settings as named arguments
+            "FibEw": lambda: _fib_ew(f, _text(0, "cluster_touch"), _text(1, "any"), {k: kw(k) for k in FIB_EW_SETTINGS}),
+            "FibEwLevel": lambda: _fib_ew(f, _text(0, "invalidation"), None, {k: kw(k) for k in FIB_EW_SETTINGS}),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
@@ -741,6 +746,20 @@ class _Eval:
             # M55 T5: the ported level gate as a series (app/price_action/level_gate/series.py), strategy template A1
             "AreaGate": lambda: _area_gate(f, tf, "entry", str(self.ev(args[0], tf)), gate_settings()),
             "AreaGateRef": lambda: _area_gate(f, tf, _text(0, "invalidation"), str(self.ev(args[1], tf)), gate_settings()),
+            # M97 PR-1 (flag sd_pack): the generic Supply & Demand zones (app/price_action/sd_zones.py), settings as named arguments
+            "SDZoneDistancePct": lambda: _sd(f, "distance", _text(0, "demand"), _text(1, "any"), gate_settings()),
+            "SDZoneEnter": lambda: _sd(f, "enter", _text(0, "demand"), "", gate_settings()),
+            "SDZoneFormed": lambda: _sd(f, "formed", _text(0, "any"), "", gate_settings()),
+            "SDZoneViolated": lambda: _sd(f, "violated", _text(0, "demand"), "", gate_settings()),
+            "SDZoneEdge": lambda: _sd(f, "edge", _text(0, "demand"), _text(1, "proximal"), gate_settings()),
+            # M99 P1 (flag sd_pack): entry types, the odds score, compression, the higher-timeframe tag (app/price_action/sd_odds.py)
+            "SDZoneEntry": lambda: _sd_odds(self, f, tf, "entry", _text(0, "demand"), _text(1, "touch"), "", gate_settings()),
+            "SDZoneEntryRef": lambda: _sd_odds(self, f, tf, "entry_ref", _text(0, "demand"), _text(2, "touch"), _text(1, "distal"),
+                                               gate_settings()),
+            "SDZoneEntryScore": lambda: _sd_odds(self, f, tf, "entry_ref", _text(0, "demand"), _text(1, "touch"), "score", gate_settings()),
+            "SDZoneScore": lambda: _sd_odds(self, f, tf, "score", _text(0, "demand"), _text(1, "any"), "", gate_settings()),
+            "SDZoneCompression": lambda: _sd_odds(self, f, tf, "compression", _text(0, "demand"), "", "", gate_settings()),
+            "SDZoneHtfWith": lambda: _sd_odds(self, f, tf, "htf_with", _text(0, "demand"), _text(1, "any"), "", gate_settings()),
             # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
             "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
                 "retest_of": _text(2, _bkd("retest_of")), "retest_max_bars": num(3, _bkd("retest_max_bars")),
@@ -1107,6 +1126,24 @@ def _cluster_distance(f: pd.DataFrame, band: float, mode: str, degree: int) -> p
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     return pd.Series(fib_causal.distance_pct(f["close"].astype(float).to_numpy(), c["centre"]), index=f.index)
+
+
+def _fib_ew(f: pd.DataFrame, name: str, side: str | None, given: dict[str, Any]) -> pd.Series:
+    """M99 P5: one Fibonacci / wave reading as a series - 1.0 where it holds, 0.0 where not - or, with `side` None, one of
+    its levels (NaN where there is none). One evaluation per frame and settings (fib_ew.cached)."""
+    from app.price_action import fib_ew
+    try:
+        s = fib_ew.settings_from({k: v for k, v in given.items() if v is not None})
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    r = fib_ew.cached(f, s)
+    if side is None:
+        if name not in fib_ew.LEVELS:
+            raise ScreenRuntimeError(f"FibEwLevel: unknown level {name!r}")
+        return pd.Series(r.level(name), index=f.index, dtype=float)
+    if name not in fib_ew.NAMES or side not in fib_ew.SIDE_CHOICES:
+        raise ScreenRuntimeError(f"FibEw: unknown reading {name!r} or side {side!r}")
+    return pd.Series(r.value(name, side), index=f.index, dtype=float)
 
 
 PRIOR_SWING_BACK: Dict[str, int] = {"one": 1, "two": 2, "three": 3}
@@ -1482,6 +1519,48 @@ def _area_gate(f: pd.DataFrame, tf: str, what: str, side: str, settings: dict[st
     if what == "entry":
         return pd.Series(s.long if up else s.short, index=f.index, dtype=bool)
     return pd.Series(s.long_stop if up else s.short_stop, index=f.index, dtype=float)
+
+
+def _sd(f: pd.DataFrame, what: str, arg: str, extra: str, settings: dict[str, Any]) -> pd.Series:
+    """M97 PR-1: one Supply & Demand read per bar - computed once per frame and settings for every SD function of a
+    screen (sd_zones.cached_sd_series). Distance / edge: NaN where no zone applies; the events: FALSE elsewhere."""
+    from app.price_action import sd_zones as sd
+    try:
+        series = sd.cached_sd_series(f, sd.settings_from(settings))
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what in ("distance", "edge"):
+        dist, prox, distal = series.nearest(arg, extra if what == "distance" else sd.FRESH)
+        values = dist if what == "distance" else prox if extra == "proximal" else distal
+        return pd.Series(values, index=f.index, dtype=float)
+    flags = series.formed(arg) if what == "formed" else series.entered(arg) if what == "enter" else series.violated(arg)
+    return pd.Series(flags, index=f.index, dtype=bool)
+
+
+def _sd_odds(ev: Any, f: pd.DataFrame, tf: str, what: str, side: str, arg: str, line: str, settings: dict[str, Any]) -> pd.Series:
+    """M99 P1: the shared Supply & Demand evaluation (sd_odds.view) - the same zones as the M97 functions, plus the
+    higher timeframe's zones from its own CLOSED bars (`htf`, aligned by close time as every @tf read is)."""
+    from app.price_action import sd_odds
+    try:
+        s, o, htf = sd_odds.split_settings(settings)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    ctx = None
+    if htf != sd_odds.NO_HTF:
+        if n.TF_MINUTES[htf] <= n.TF_MINUTES[tf]:
+            raise ScreenRuntimeError(f"htf {htf} must be a higher timeframe than {tf}")
+        ns = lambda x: pd.DatetimeIndex(x).asi8                                      # noqa: E731
+        ctx = sd_odds.htf_for(htf, ns(ev.closes(tf)), ev.frame, lambda t: ns(ev.closes(t)), s)
+    v = sd_odds.view(f, s, o, ctx)
+    if what == "entry":
+        return pd.Series(v.entries(side, arg)[0], index=f.index, dtype=bool)
+    if what == "entry_ref":
+        return pd.Series(v.entry_ref(side, arg, line), index=f.index, dtype=float)
+    if what == "score":
+        return pd.Series(v.nearest_score(side, arg), index=f.index, dtype=float)
+    if what == "compression":
+        return pd.Series(v.compression_hits(side), index=f.index, dtype=bool)
+    return pd.Series(v.htf_with(side, arg), index=f.index, dtype=bool)
 
 
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:

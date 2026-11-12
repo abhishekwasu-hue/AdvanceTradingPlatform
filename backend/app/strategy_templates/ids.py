@@ -40,7 +40,7 @@ PREFIX = "template:"
 MAX_LENGTH = 80                 # the shortest strategy_id column (execution_intents.strategy_id)
 FLOAT_DECIMALS = 6
 _SEPARATORS = (":", ",")
-COMPACT_FAMILIES = frozenset({"G", "H"})   # choices written as their position (families G and H: many settings, see above)
+COMPACT_FAMILIES = frozenset({"G", "H", "I"})   # choices written as their position (families G, H and I: many settings, see above)
 
 
 def is_template_id(strategy_id: str) -> bool:

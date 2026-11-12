@@ -48,11 +48,13 @@ from app.chart_reader.routes import admin_router as chart_reader_admin_router
 from app.chart_reader.routes import router as chart_reader_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
+from app.charts.fib_ew_layer import router as chart_fib_ew_layer_router
 from app.charts.futures_basis import router as chart_futures_basis_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.pa_layer import router as chart_pa_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
 from app.charts.read_chart import router as chart_read_router
+from app.charts.sd_zones_layer import router as chart_sd_zones_layer_router
 from app.charts.studies import router as chart_studies_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.vsa_layer import router as chart_vsa_layer_router
@@ -481,8 +483,10 @@ app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace lay
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_wyckoff_layer_router)  # M99 P4: Wyckoff range, phases and events with Why? on the chart (flag wyckoff_pack, off)
 app.include_router(chart_vsa_layer_router)  # M99 P3: volume spread readings with Why? on the chart (flag vsa_pack, off by default)
+app.include_router(chart_fib_ew_layer_router)  # M99 P5: Fibonacci tool, clusters, the wave count with its rules and Why? on the chart (flag fib_ew_pack, off)
 app.include_router(chart_pa_layer_router)  # M99 P6: price patterns with Why? on the chart (flag pa_pack, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
+app.include_router(chart_sd_zones_layer_router)  # M97 PR-4: Supply & Demand zones chart layer as of a time (flag sd_pack, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)
 app.include_router(trigger_plan_router)             # M75 W-8: his trigger plans (ui_v2 + trigger_plans); only the worker fires them
 app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)

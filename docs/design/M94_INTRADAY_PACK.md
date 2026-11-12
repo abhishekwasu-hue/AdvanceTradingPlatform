@@ -513,4 +513,10 @@ series; risk tools: the lock refuses new entries and never an exit. Report to th
   extreme, exit after N bars in the trade. Every option OFF, every number the user's, stops only tighten, no exit is ever
   blocked; one `management_step` for the backtest engine and the worker (read on a bar close, acted on at the next price).
   A partial exit is the ExitRules scale-out (M99 P7), not built twice. OPEN_QUESTIONS M99-P2-Q1 / Q2.
+- **Futures / options bots (follow-up PR)**: the options are read on the bars the bot READS (the underlying); the result
+  acts on the traded instrument through the existing paths - a future's stop = the new underlying stop plus the entry's
+  transplant offset (`contract_execution.underlying_stop_view` / `underlying_stop_fields`), a single option's underlying
+  stop moves and the option exits when the underlying crosses it (`check_contract_exit`; no premium stop made up); the
+  options backtest engine calls the same `management_step`. Refused in plain words: a multi-leg structure (its exits are
+  its credit levels), and the trail on a single option with the premium stop only (no underlying stop to move).
 

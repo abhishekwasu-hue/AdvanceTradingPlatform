@@ -35,8 +35,8 @@ MAX_PER_SYMBOL = 500
 SYMBOL_RE = r"^[A-Za-z0-9 &._:-]{1,40}$"
 EXCHANGE_RE = r"^(NSE|BSE|NFO|BFO|MCX|CDS|CRYPTO|NYSE|NASDAQ|NSE_INDEX|BSE_INDEX)$"
 # The shared timeframe ids (1m 3m 5m 15m 30m 1H D W M); `week` and `month` arrive on the candle route in UI2-4a2.
-TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month")
-Timeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
+TIMEFRAMES = ("1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month")   # M97-Q4: 10min, 120min
+Timeframe = Literal["1min", "3min", "5min", "10min", "15min", "30min", "60min", "120min", "day", "week", "month"]
 
 # kind -> per-anchor required coordinates ("tp" both, "p" price only, "t" time only)
 ANCHORS: Dict[str, List[str]] = {

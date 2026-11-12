@@ -84,7 +84,7 @@ describe("layout/1 model (CH5)", () => {
     const l = four();
     expect(moveActive(l, -1).active).toBe(3);
     expect(moveActive(l, 5).active).toBe(1);
-    expect(stepTimeframe("5min", 1)).toBe("15min");
+    expect(stepTimeframe("5min", 1)).toBe("10min");                     // M97-Q4: 10 min is a chart timeframe
     expect(stepTimeframe("day", 1)).toBe("week");                                   // UI2-4d: week and month follow day
     expect(stepTimeframe("month", 1)).toBe("month");
     expect(stepTimeframe("day", 1, CH5_TIMEFRAMES)).toBe("day");                    // the CH5 page still stops at day

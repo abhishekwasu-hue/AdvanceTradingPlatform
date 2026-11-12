@@ -128,6 +128,16 @@ TOKENS: Dict[str, str] = {
                           " {timeframe} chart"),
     "gap_down_kept_going": ("the session opened below the prior low, held below it through the opening window and kept going on the"
                             " {timeframe} chart"),
+    # M99 P5 family L "Fibonacci + Elliott" (L1-L2): structure words only - no price, no number, no instruction
+    "zigzag_c_complete_fall": ("after a falling zigzag's wave C went beyond the end of wave A, the close went back over its last"
+                               " smaller swing on the {timeframe} chart"),
+    "zigzag_c_complete_rise": ("after a rising zigzag's wave C went beyond the end of wave A, the close went back under its last"
+                               " smaller swing on the {timeframe} chart"),
+    "wave_three_up_may_start": ("in wave two of a rising impulse, the close went over the last smaller swing of wave two on"
+                                " the {timeframe} chart"),
+    "wave_three_down_may_start": ("in wave two of a falling impulse, the close went under the last smaller swing of wave two on"
+                                  " the {timeframe} chart"),
+    "count_is_an_interpretation": "the wave count is an interpretation of the bars",
     # M99 P6 family M "Price patterns" (M1-M5): structure words only - no price, no number, no instruction
     "missing_link_line_broken_up": ("after a rising trend ended in a fault, double, trap or climax and fell away, the close went"
                                     " over the line from that extreme on the {timeframe} chart"),
@@ -188,6 +198,9 @@ TOKENS: Dict[str, str] = {
                                      " on the {timeframe} chart"),
     "range_back_up_after_break_down": ("after closes in a row under a trading range's bottom, a quiet back-up to the bottom closed"
                                        " under it on the {timeframe} chart"),
+    # M97 family I "Supply & Demand" (I1 / I2): structure words only - no price, no number, no instruction
+    "demand_zone_reached": "a demand zone on the {timeframe} chart was reached, the way the settings name",
+    "supply_zone_reached": "a supply zone on the {timeframe} chart was reached, the way the settings name",
     # M94 family H "Intraday" (H1-H5): structure words only - no price, no number, no instruction
     "fallen_angel_broken_upward": ("after an open above the previous close, a fall from the session high and a tight base, the close"
                                    " broke above the base on the {timeframe} chart"),

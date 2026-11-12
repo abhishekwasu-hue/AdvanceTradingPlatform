@@ -120,6 +120,23 @@ def _primitives_check(ast: Any) -> None:
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _fib_ew_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """M99 P5 (the zone pattern): a rule using a Fibonacci + Elliott function needs `fib_ew_pack` on, and fires on bar
+    close only - never intrabar (a bar is read once it has closed)."""
+    from app.screener import fib_ew_gate, nodes
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = fib_ew_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await fib_ew_gate.blocked_calls(session, user.tenant_id, tree):
+        why = fib_ew_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = fib_ew_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
     """Z7a-3 (the U6 BK1 pattern): a rule (instrument condition or saved screen) using a market-zone function needs
     `market_zones` on, and fires on bar close only - never intrabar."""
@@ -153,6 +170,23 @@ async def _wave_check(session: AsyncSession, user: User, ast: Any, fire_on: str,
         why = waves_gate.refusal(names)
     elif fire_on == "intrabar":
         why = waves_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
+async def _sd_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """M97 PR-1 (the wave pattern): a rule using a Supply & Demand zone function needs `sd_pack` on, and fires on bar
+    close only - never intrabar (a zone forms, is visited or is violated at a bar's close)."""
+    from app.screener import nodes, sd_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = sd_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await sd_gate.blocked_calls(session, user.tenant_id, tree):
+        why = sd_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = sd_gate.intrabar_refusal(names)
     if why:
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
@@ -282,9 +316,11 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _breakout_check(session, user, ast, fire_on, exchange)
     await _zone_check(session, user, ast, fire_on)
     await _wave_check(session, user, ast, fire_on, params)
+    await _sd_check(session, user, ast, fire_on)
     await _m99_check(session, user, ast, fire_on)
     await _vsa_check(session, user, ast, fire_on)
     await _wyckoff_check(session, user, ast, fire_on)
+    await _fib_ew_check(session, user, ast, fire_on)
     await _pa_check(session, user, ast, fire_on)
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
@@ -341,9 +377,11 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
     await _wave_check(session, user, ast, body.fire_on)
+    await _sd_check(session, user, ast, body.fire_on)
     await _m99_check(session, user, ast, body.fire_on)
     await _vsa_check(session, user, ast, body.fire_on)
     await _wyckoff_check(session, user, ast, body.fire_on)
+    await _fib_ew_check(session, user, ast, body.fire_on)
     await _pa_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
     _primitives_check(ast)

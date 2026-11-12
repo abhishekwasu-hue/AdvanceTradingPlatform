@@ -618,6 +618,15 @@ class TradingWorker:
                     logger.exception("Profit give-back peak sweep failed")
                     report.errors.append(f"give-back peak: {exc}")
                     await session.rollback()
+                # M99 P7 (flag risk_options): the daily loss lock's mark - when an organisation that keeps the lock all
+                # day reached its daily loss limit today (after the exits; never places, blocks or changes an order).
+                try:
+                    from app.risk_engine import risk_options
+                    await risk_options.sweep(session, now)
+                except Exception as exc:  # noqa: BLE001 - bookkeeping; never breaks trading
+                    logger.exception("Daily loss lock sweep failed")
+                    report.errors.append(f"daily loss lock: {exc}")
+                    await session.rollback()
                 # Z5 (Trade check_vix_spike_halt): the India VIX reading for each organisation with the gate on, from 09:20 IST.
                 if nse.is_open:
                     try:
@@ -2808,11 +2817,17 @@ class TradingWorker:
     async def _template_manage(self, session: AsyncSession, dep: StrategyDeploymentRecord, strategy: Any, frames, market_data: MarketDataService,
                                user_id: int) -> int:
         """M99 P2: the template's trade-management options (the user's switches) for the deployment's OWN open PAPER trades
-        on the last closed bar - the backtest engine's same call (`management_step`), with the bars that closed after each
-        trade's entry. A tighter stop is stored on the trade (the position monitor acts on it); a management exit closes it
-        at the current price (a partial is the scale-out of the bot's ExitRules, M99 P7 - not built here again). Returns how many trades closed in full. Exits only: nothing here blocks
-        or delays any other exit (ADR-0004); a failed close is left to the next cycle and the position monitor."""
+        on the last closed bar - the backtest engines' same call (`management_step`), with the bars that closed after each
+        trade's entry. Read on the bars the bot READS (`frames`: for a future / option bot the underlying), with the
+        trade's side and stop on that underlying; a tighter stop is mapped onto the traded instrument the one existing way
+        (`underlying_stop_fields`: the symbol's own stop; a future's stop by the entry's transplant offset; a single
+        option's underlying stop, which the position monitor exits the option on when crossed) and stored on the trade
+        (the position monitor acts on it); a management exit closes the trade itself (the contract) at its current price
+        (a partial is the scale-out of the bot's ExitRules, M99 P7 - not built here again). A structure (legs) keeps its
+        own exits. Returns how many trades closed in full. Exits only: nothing here blocks or delays any other exit
+        (ADR-0004); a failed close is left to the next cycle and the position monitor."""
         from app.backtest.windows import bar_length
+        from app.execution.contract_execution import underlying_stop_fields, underlying_stop_view
         base = frames.get(strategy.label)
         if base is None or not len(base):
             return 0
@@ -2829,19 +2844,21 @@ class TradingWorker:
             after = sum(1 for c in closes_at if c > entered)
             if after <= 0:
                 continue                                   # no bar has closed after the entry yet
-            step = strategy.management_step(
-                frames, trade.direction, entry=float(trade.entry_price), current_stop=float(trade.stop_loss),
-                initial_stop=float(trade.initial_stop_loss if trade.initial_stop_loss is not None else trade.stop_loss),
-                after=after)
             try:
-                if step.stop is not None:
+                # the side and the stop on the bars the bot reads (the underlying's for a future / option)
+                side = trade.underlying_direction or trade.direction
+                current = underlying_stop_view(trade)
+                step = strategy.management_step(frames, side, entry=None, initial_stop=current, current_stop=current, after=after)
+                if step.stop is not None and current is not None:
                     # the backtest's order: the stop read on this bar close first, then an exit
-                    is_long = (trade.direction or "").upper() == "LONG"
-                    current = float(trade.stop_loss)
-                    if (is_long and step.stop > current) or (not is_long and step.stop < current):    # only ever tighter
-                        logger.info("Trade %s stop %s -> %s (%s)", trade.id, current, step.stop, step.stop_reason)
-                        trade.stop_loss = step.stop
-                        await session.commit()
+                    is_long = (side or "").upper() == "LONG"
+                    if (is_long and step.stop > current) or (not is_long and step.stop < current):     # only ever tighter
+                        fields = underlying_stop_fields(trade, step.stop)
+                        for name, value in fields.items():
+                            logger.info("Trade %s %s %s -> %s (%s)", trade.id, name, getattr(trade, name), value, step.stop_reason)
+                            setattr(trade, name, value)
+                        if fields:
+                            await session.commit()
                 if step.exit_reason:
                     price = await market_data.get_ltp(trade.symbol, (await trade_venues(session, [trade]))[trade.id])
                     async with guarded(session, keep=(trade,)):

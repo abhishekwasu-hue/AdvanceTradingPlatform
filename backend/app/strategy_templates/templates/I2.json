@@ -1,0 +1,333 @@
+{
+  "schema": "atp.template/1",
+  "id": "I2",
+  "version": 2,
+  "name": "Supply zone short",
+  "family": "I",
+  "idea": "Price comes back to a supply zone that an explosive move down left behind (a base, a swing's extreme candle, or a broken zone with swap levels on). The signal is the touch, a confirmation candle or the retest, as you choose. The idea is wrong on a close beyond the far line by your buffer.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": [
+    "1d",
+    "1h",
+    "30m",
+    "15m",
+    "5m",
+    "3m",
+    "1m"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "avg_n",
+      "label": "Average range (candles)",
+      "help": "The candles of the average range each candle is measured against. Reference value - edit before use.",
+      "type": "int",
+      "default": 20,
+      "min": 5,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "leg_mult",
+      "label": "Leg candle size",
+      "help": "A leg candle's range is at least this many times the average range. Reference value - edit before use.",
+      "type": "float",
+      "default": 1.0,
+      "min": 1.0,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "base_mult",
+      "label": "Base candle size",
+      "help": "A base candle's range is at most this many times the average range. Reference value - edit before use.",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.1,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "out_mult",
+      "label": "Leg-out size",
+      "help": "The leg-out candle's range is at least this many times the average range (or ATR). Reference value - edit before use.",
+      "type": "float",
+      "default": 1.5,
+      "min": 1.0,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "leg_body_pct",
+      "label": "Leg candle body (%)",
+      "help": "A leg candle's body is at least this percent of its range. Reference value - edit before use.",
+      "type": "float",
+      "default": 50.0,
+      "min": 50.0,
+      "max": 100.0,
+      "step": 1
+    },
+    {
+      "key": "base_body_pct",
+      "label": "Base candle body (%)",
+      "help": "A base candle's body is at most this percent of its range. Reference value - edit before use.",
+      "type": "float",
+      "default": 50.0,
+      "min": 5.0,
+      "max": 90.0,
+      "step": 1
+    },
+    {
+      "key": "base_max",
+      "label": "Base candles at most",
+      "help": "At most this many base candles in a row. Reference value - edit before use.",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "out_ref",
+      "label": "Leg-out measured against",
+      "help": "What the leg-out candle's range is compared with.",
+      "type": "enum",
+      "default": "average",
+      "choices": [
+        "average",
+        "atr"
+      ],
+      "choice_labels": [
+        "Average range",
+        "ATR"
+      ]
+    },
+    {
+      "key": "edge",
+      "label": "Zone near line",
+      "help": "The near line of a zone: the base's wick, or its candle bodies. Reference value - edit before use.",
+      "type": "enum",
+      "default": "wick",
+      "choices": [
+        "wick",
+        "body"
+      ],
+      "choice_labels": [
+        "Wick",
+        "Body"
+      ]
+    },
+    {
+      "key": "skip_flat_bars",
+      "label": "Skip flat candles",
+      "help": "On: a flat candle (high equals low) is never counted as a base candle. Reference value - edit before use.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "kind",
+      "label": "Zones read",
+      "help": "Which zones: a base between two moves, the swing's extreme candle, or both. Reference value - edit before use.",
+      "type": "enum",
+      "default": "base",
+      "choices": [
+        "base",
+        "swing",
+        "both"
+      ],
+      "choice_labels": [
+        "Base zones",
+        "Swing extreme zones",
+        "Both"
+      ]
+    },
+    {
+      "key": "swing_left",
+      "label": "Swing: candles before",
+      "help": "A swing extreme is beyond the highs (supply) or lows (demand) of this many candles before it. Reference value - edit before use.",
+      "type": "int",
+      "default": 10,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "confirm_within",
+      "label": "Swing: confirmed within (candles)",
+      "help": "A swing zone counts only once a later candle closes without touching it, within this many candles. Reference value - edit before use.",
+      "type": "int",
+      "default": 10,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "engulf",
+      "label": "Two-candle engulfing zone",
+      "help": "On: when the extreme candle engulfs the candle before it, the zone is the two candles. Reference value - edit before use.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "swap",
+      "label": "Swap levels",
+      "help": "On: a zone broken by a strong candle stays as a zone of the other side. Reference value - edit before use.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "swap_mult",
+      "label": "Swap: breaking candle size",
+      "help": "The breaking candle's range is at least this many times the average range (0: any break). Reference value - edit before use.",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "entry",
+      "label": "How the zone is reached",
+      "help": "First touch of a fresh zone; a confirmation candle closing back outside its near line; or the first return to a broken zone (break and retest, needs swap levels on). Reference value - edit before use.",
+      "type": "enum",
+      "default": "touch",
+      "choices": [
+        "touch",
+        "confirm",
+        "break_retest"
+      ],
+      "choice_labels": [
+        "First touch",
+        "Confirmation candle",
+        "Break and retest"
+      ]
+    },
+    {
+      "key": "confirm_bars",
+      "label": "Confirmation within (candles)",
+      "help": "The confirmation candle counts within this many candles from the first touch. Reference value - edit before use.",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    {
+      "key": "confirm_body_pct",
+      "label": "Confirmation candle body (%)",
+      "help": "The confirmation candle's body is at least this percent of its range. Reference value - edit before use.",
+      "type": "float",
+      "default": 50.0,
+      "min": 0.0,
+      "max": 100.0,
+      "step": 1
+    },
+    {
+      "key": "confirm",
+      "label": "Extra check (optional)",
+      "help": "Optional: what must also hold on that candle. None by default.",
+      "type": "enum",
+      "default": "none",
+      "choices": [
+        "none",
+        "close_back",
+        "candle"
+      ],
+      "choice_labels": [
+        "None",
+        "Close back outside the zone",
+        "Reversal candle"
+      ]
+    },
+    {
+      "key": "atr_n",
+      "label": "ATR period",
+      "help": "The bars of the average true range the buffer is measured in.",
+      "type": "int",
+      "default": 14,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "buf",
+      "label": "Buffer beyond the far line (ATR)",
+      "help": "How many average true ranges beyond the zone's far line the idea is wrong (0 means not set: the far line itself).",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 10.0,
+      "step": 0.1
+    },
+    {
+      "key": "min_rr",
+      "label": "Minimum reward:risk (off)",
+      "help": "Optional and off by default (0). When you set it, a signal whose reward to the opposing zone's near line is less than this many times its risk is skipped; with no opposing zone nothing is measured. Reference 2 (2:1) - reference, edit before use.",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 20.0,
+      "step": 0.1
+    }
+  ],
+  "constraints": [
+    {
+      "left": "base_mult",
+      "op": "<",
+      "right": "leg_mult",
+      "message": "The base candle size must be below the leg candle size"
+    },
+    {
+      "left": "base_mult",
+      "op": "<",
+      "right": "out_mult",
+      "message": "The base candle size must be below the leg-out size"
+    }
+  ],
+  "sides_default": "short",
+  "setup": {
+    "kind": "event",
+    "long": "SDZoneEntry(\"demand\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct)",
+    "short": "SDZoneEntry(\"supply\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct)",
+    "same_bar": true
+  },
+  "trigger": {
+    "long": "SDZoneEntry(\"demand\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) AND ($min_rr <= 0 OR NOT (SDZoneEdge(\"supply\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult) - close < $min_rr * (close - (SDZoneEntryRef(\"demand\", \"distal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) - $buf * ATR($atr_n)[1]))))",
+    "short": "SDZoneEntry(\"supply\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) AND ($min_rr <= 0 OR NOT (close - SDZoneEdge(\"demand\", \"proximal\", avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult) < $min_rr * ((SDZoneEntryRef(\"supply\", \"distal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) + $buf * ATR($atr_n)[1]) - close)))"
+  },
+  "confirmations": [
+    {
+      "by": "confirm",
+      "variants": {
+        "none": null,
+        "close_back": {
+          "long": "close > SDZoneEntryRef(\"demand\", \"proximal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct)",
+          "short": "close < SDZoneEntryRef(\"supply\", \"proximal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct)"
+        },
+        "candle": {
+          "long": "Pattern(\"hammer\") OR Pattern(\"bullish_engulfing\")",
+          "short": "Pattern(\"shooting_star\") OR Pattern(\"bearish_engulfing\")"
+        }
+      }
+    }
+  ],
+  "invalidation": {
+    "long": "SDZoneEntryRef(\"demand\", \"distal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) - $buf * ATR($atr_n)[1]",
+    "short": "SDZoneEntryRef(\"supply\", \"distal\", $entry, avg_n=$avg_n, leg_mult=$leg_mult, base_mult=$base_mult, out_mult=$out_mult, leg_body_pct=$leg_body_pct, base_body_pct=$base_body_pct, base_max=$base_max, out_ref=$out_ref, edge=$edge, skip_flat_bars=$skip_flat_bars, kind=$kind, swing_left=$swing_left, confirm_within=$confirm_within, engulf=$engulf, swap=$swap, swap_mult=$swap_mult, confirm_bars=$confirm_bars, confirm_body_pct=$confirm_body_pct) + $buf * ATR($atr_n)[1]"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "demand_zone_reached"
+      }
+    ],
+    "short": [
+      {
+        "token": "supply_zone_reached"
+      }
+    ]
+  }
+}

@@ -134,9 +134,10 @@ async def _part_done(session: AsyncSession, user: User, trade: TradeRecord, tag:
 
 
 async def exit_part(session: AsyncSession, user: User, trade_id: int, *, lots: int, client_ref: str,
-                    confirm: bool = False) -> Dict[str, Any]:
+                    confirm: bool = False, reason: str = "Exit part") -> Dict[str, Any]:
     """Closes `lots` of this position now; the rest stays open. 1 <= lots <= the open lots, else a plain refusal (422)
-    that closes nothing. An exit: never stopped by a kill switch, a limit, approval-only or a flag."""
+    that closes nothing. An exit: never stopped by a kill switch, a limit, approval-only or a flag. `reason` (M99 P7): the
+    exit reason's words - the worker's scale-out (app/trading/position_monitor.py) closes its part through this same path."""
     from app.audit.log import write_audit_log
     from app.trading.position_monitor import close_position
     from app.trading.trade_split import SplitError, split_off
@@ -171,9 +172,10 @@ async def exit_part(session: AsyncSession, user: User, trade_id: int, *, lots: i
         except SplitError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     await write_audit_log(session, trade.tenant_id, user.id, "exit_part",
-                          f"trade #{trade.id}: {lots} of {held} lot(s) at {source}{' after the hedge warning' if warning else ''}")
+                          f"trade #{trade.id}: {lots} of {held} lot(s) at {source}{' after the hedge warning' if warning else ''}"
+                          f"{'' if reason == 'Exit part' else ' (' + reason + ')'}")
     await session.commit()
-    outcome = await close_position(session, target, price, f"Exit part ({source})", broker=broker, user_id=user.id)
+    outcome = await close_position(session, target, price, f"{reason} ({source})", broker=broker, user_id=user.id)
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return {"status": "CLOSED", "repeat": False, "warning": warning, "closed": _closed_row(target, lots),

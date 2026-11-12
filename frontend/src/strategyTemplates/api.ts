@@ -23,8 +23,9 @@ export interface StrategyTemplate {
 export const REFERENCE_LABEL = "Reference values - edit before use";
 
 /** M94 (flag intraday_pack): whether a template shows the reference-values label. */
-export const showsReferenceLabel = (t: Pick<StrategyTemplate, "reference_values">, intradayPackOn: boolean): boolean =>
-  intradayPackOn && t.reference_values === true;
+/** M97 PR-3: a family I (Supply & Demand) template shows it while `sd_pack` is on instead. */
+export const showsReferenceLabel = (t: Pick<StrategyTemplate, "reference_values"> & { family?: string }, intradayPackOn: boolean,
+  sdPackOn = false): boolean => t.reference_values === true && (t.family === "I" ? sdPackOn : intradayPackOn);
 export interface TemplateAdoption {
   template_id: string; name: string; strategy_id: string;
   /** What the trading bot form takes over: the strategy, the candle timeframe and the holding. Always PAPER. */

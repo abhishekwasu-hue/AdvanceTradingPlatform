@@ -376,6 +376,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # pennant arguments; later the intraday scanners, templates and risk tools. Needs `screener_breakouts` too. OFF: the
     # functions and arguments are hidden and refused, and alert rules using them pause. Signals only - places no orders.
     "intraday_pack": "Intraday pack: session high / low / volume so far, bars counted in the session, the pre-open levels and named flag settings in screens (needs screener_breakouts; signals only, places no orders)",
+    # M97 (docs/design/M97_SUPPLY_DEMAND.md): the Supply & Demand pack - PR-1 a generic zone detector (DBR / RBR / RBD /
+    # DBD, proximal / distal lines, Fresh / Tested / Violated, app/price_action/sd_zones.py) and its ScreenQL functions
+    # (SDZoneDistancePct, SDZoneEnter, SDZoneFormed, SDZoneViolated, SDZoneEdge); later the scanners, templates, chart
+    # layer, presets and Copilot facts. OFF: the functions are hidden and refused, and alert rules using them pause.
+    # Signals only - places no orders.
+    "sd_pack": "Supply & Demand pack: demand and supply zones (DBR / RBR / RBD / DBD) with their proximal / distal lines and Fresh / Tested / Violated states in screens (signals only, places no orders)",
     # M99 B1-a: the per-bar classifier (app/price_action/bar_class.py) - relative range, spread class, close position,
     # bar direction and volume class as ScreenQL functions (RelRange, SpreadClass, ClosePosition, BarDirection,
     # VolumeClass); later the M99 scanners and templates built on them. OFF: the functions are hidden and refused, and
@@ -418,6 +424,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # M99 B1 (owner order M99): the shared primitives the M99 packs build on - bar classifier, Fibonacci, clusters and
     # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
     # functions are hidden and refused.
+    # M99 P7 (app/risk_engine/risk_options.py): the trader's own risk and management options - keep the daily loss lock
+    # all day, a smaller size after losses in a row, a scale-out at his own level, a flag on a position that is not
+    # moving (information only) and the journal's drawdown / streak / breach numbers. Each option is his own switch, OFF
+    # until he turns it on; exits are never checked. OFF: none of them is shown or read.
+    "risk_options": "Risk options: daily loss lock all day, smaller size after losses in a row, scale-out, not-moving flag, journal discipline numbers (each the user's own switch; exits never checked)",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
@@ -522,6 +533,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # reason; wave alerts fire on bar close only. Information only - places no orders.
     "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, the wave levels, ratios and "
                       "anchored wave lines and their retest, from confirmed swings (information only)",
+    # M99 P5: the Fibonacci + Elliott pack (app/price_action/fib_ew.py) - the ScreenQL functions FibEw(...) / FibEwLevel(...):
+    # the zigzag wave C and wave 3 readings, the Fibonacci cluster touch, five waves complete (impulse / diagonal rules),
+    # the count's void, the triangle's thrust projection; the "Fibonacci + Elliott" library screens, the chart layer (the
+    # Fibonacci tool, clusters, the count with its rule checklist and invalidation lines, marks with "Why?") and the L
+    # templates. Every count is an interpretation. OFF: hidden and refused, alert rules pause. Signals only - places no orders.
+    "fib_ew_pack": "Fibonacci + Elliott pack: Fibonacci levels and clusters, the wave count's rule checklist and invalidation lines, zigzag wave C and wave 3 readings in screens, on the chart and in templates (a count is an interpretation; signals only, places no orders)",
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
     # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the

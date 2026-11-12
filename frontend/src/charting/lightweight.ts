@@ -12,8 +12,8 @@
  */
 import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
-import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, StudyLine, StudySpec } from "./engine";
-import { DEFAULT_COLOR, layerShapes, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
+import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerMark, LayerSegment, StudyLine, StudySpec } from "./engine";
+import { DEFAULT_COLOR, bandLeft, barSpan, layerShapes, markLabelRects, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -75,7 +75,7 @@ export class LightweightEngine implements ChartEngine {
   private studies = new Map<string, StudySpec>();
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
-  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[] }>();
+  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[]; marks: LayerMark[] }>();
   private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
@@ -120,6 +120,11 @@ export class LightweightEngine implements ChartEngine {
     const times = this.times();
     if (times.length === 0) return null;
     const scale = this.chart.timeScale();
+    // M98 F1 / F3: half a bar's spacing (from two neighbouring bars' x), for a candle's box and a body's width
+    const half = () => {
+      const a = scale.logicalToCoordinate(0), b = scale.logicalToCoordinate(1);
+      return a == null || b == null ? 3 : Math.max(1, Math.abs(b - a) / 2);
+    };
     return {
       x: (t) => {
         const logical = timeToLogical(times, t);
@@ -127,7 +132,35 @@ export class LightweightEngine implements ChartEngine {
       },
       y: (p) => this.candles.priceToCoordinate(p),
       width, height,
+      span: (t, end) => {
+        const bars = barSpan(times, t, end);
+        if (!bars) return null;
+        const x1 = scale.logicalToCoordinate(bars[0]), x2 = scale.logicalToCoordinate(bars[1]);
+        if (x1 == null || x2 == null) return null;
+        const h = half();
+        return { x1: x1 - h, x2: x2 + h };
+      },
+      bodies: () => this.bodies(width, half()),
     };
+  }
+
+  /** M98 F3: the candle bodies on the pane (pixels) - 80 % of the bar spacing wide, at least 1 px tall. */
+  private bodies(width: number, half: number): Rect[] {
+    const scale = this.chart.timeScale();
+    const data = this.candles.data() as readonly { open?: number; close?: number; value?: number }[];
+    const from = Math.max(0, Math.floor(scale.coordinateToLogical(0) ?? 0));
+    const to = Math.min(data.length - 1, Math.ceil(scale.coordinateToLogical(width) ?? data.length - 1));
+    const out: Rect[] = [];
+    for (let i = from; i <= to; i += 1) {
+      const d = data[i];
+      const o = d?.open ?? d?.value, c = d?.close ?? d?.value;
+      if (o == null || c == null) continue;
+      const x = scale.logicalToCoordinate(i), y1 = this.candles.priceToCoordinate(Math.max(o, c)), y2 = this.candles.priceToCoordinate(Math.min(o, c));
+      if (x == null || y1 == null || y2 == null) continue;
+      const w = Math.max(1, half * 1.6);
+      out.push({ x: x - w / 2, y: Math.min(y1, y2), w, h: Math.max(1, Math.abs(y2 - y1)) });
+    }
+    return out;
   }
 
   // CH2c-2: what the drawing tools need from the chart (pointer -> data, hit-test geometry, pan on/off).
@@ -194,15 +227,26 @@ export class LightweightEngine implements ChartEngine {
     for (const layer of this.layers.values()) {
       const size = layer.bands?.paneSize();
       if (!size || x < 0 || y < 0 || x > size.width || y > size.height) continue;
+      let conv: Converters | null | undefined;
       for (const b of layer.data) {
         if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
+        if (b.start !== undefined) {                                  // M97 PR-4: a time-anchored band starts at its time
+          if (conv === undefined) conv = this.paneConverters();
+          const left = conv ? bandLeft(b, conv) : null;
+          if (left === null || x < left) continue;
+        }
         const low = Math.min(b.low, b.high), high = Math.max(b.low, b.high);
         const y1 = this.candles.priceToCoordinate(high), y2 = this.candles.priceToCoordinate(low);
         if (y1 == null || y2 == null) continue;
         const [top, bottom] = [Math.min(y1, y2), Math.max(y1, y2)];
         const slack = bottom - top < 6 ? 3 : 0;                     // a line or a thin band is still easy to hit
         if (y < top - slack || y > bottom + slack) continue;
-        if (!best || bottom - top < best.span) best = { ref: { low, high, label: b.label ?? "" }, span: bottom - top };
+        if (!best || bottom - top < best.span) {
+          const ref: BandRef = { low, high, label: b.label ?? "" };
+          if (b.id !== undefined) ref.id = b.id;
+          if (b.tip !== undefined) ref.tip = b.tip;
+          best = { ref, span: bottom - top };
+        }
       }
     }
     return best ? best.ref : null;
@@ -215,6 +259,18 @@ export class LightweightEngine implements ChartEngine {
   private themedBand = (b: LayerBand): LayerBand => {
     const color = b.role ? this.zoneColors[b.role] : undefined;
     return color ? { ...b, color } : b;
+  };
+
+  /** M98 F1: a candle mark with a `role` in the theme's buyer / seller colour. */
+  private themedMark = (m: LayerMark): LayerMark => {
+    const color = m.role ? this.zoneColors[m.role] : undefined;
+    return color ? { ...m, color } : m;
+  };
+
+  /** M97 PR-4: a segment with a `role` in the theme's buyer / seller colour, as a band's. */
+  private themedSegment = (s: LayerSegment): LayerSegment => {
+    const color = s.role ? this.zoneColors[s.role] : undefined;
+    return color ? { ...s, color } : s;
   };
 
   /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
@@ -301,19 +357,28 @@ export class LightweightEngine implements ChartEngine {
     for (const line of old?.lines ?? []) this.candles.removePriceLine(line);
     if (old?.bands) this.candles.detachPrimitive(old.bands);
     this.layers.delete(id);
-    if (!data) return;
+    if (!data) {
+      if (old?.marks.length) this.refreshLayers();                                // M98-P1 Q3: the others' labels move back
+      return;
+    }
     const made = (data.lines ?? []).filter((l) => Number.isFinite(l.price)).map((l) => this.candles.createPriceLine({
       price: l.price, color: l.color ?? "#64748b", lineWidth: 1, lineStyle: LINE_STYLE[l.style ?? "dashed"], axisLabelVisible: false, title: l.title ?? "",
     }));
     let bands: LayerPrimitive | null = null;
-    if (data.bands?.length || data.segments?.length || data.labels?.length) {
-      const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])] };
-      bands = new LayerPrimitive((c) => layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand) },
-                                                    { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle }),
-                                 (w, h) => this.converters(w, h));
+    if (data.bands?.length || data.segments?.length || data.labels?.length || data.marks?.length) {
+      const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])], marks: [...(data.marks ?? [])] };
+      bands = new LayerPrimitive((c) => {
+        const cc = { ...c, avoid: [...this.labelAvoid, ...(c.avoid ?? [])], labelStyle: this.labelStyle };
+        // M98-P1 Q3: the candle-box names every other layer paints (a tap's highlight) - this layer's band labels keep
+        // clear of them, by the same placement those layers paint with
+        const names = [...this.layers].flatMap(([key, l]) => (key !== id && l.marks.length ? markLabelRects(l.marks, cc) : []));
+        return layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand), segments: shapes.segments.map(this.themedSegment),
+                             marks: shapes.marks.map(this.themedMark) }, names.length ? { ...cc, labelBlocks: names } : cc);
+      }, (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);
     }
-    this.layers.set(id, { lines: made, bands, data: [...(data.bands ?? [])] });
+    this.layers.set(id, { lines: made, bands, data: [...(data.bands ?? [])], marks: [...(data.marks ?? [])] });
+    if ((old?.marks.length ?? 0) || data.marks?.length) this.refreshLayers();      // M98-P1 Q3: the others' labels move
   }
 
   /** N4 CH6: one line series per study id, kept while its pane and colour stay (only the data is replaced). */

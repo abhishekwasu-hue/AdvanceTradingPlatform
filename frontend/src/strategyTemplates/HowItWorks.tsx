@@ -62,7 +62,7 @@ export function HowItWorksView({ how }: { how: HowItWorks }) {
         <LibraryFold title="Settings" name="how-settings">
           <SettingList rows={rows} label="Settings" />
           {t.rules.length > 0 && <ul className="list-disc space-y-space-1 pl-space-4 text-t14 text-fg-muted">{t.rules.map((r) => <li key={r}>{r}</li>)}</ul>}
-          <p className="text-t13 text-fg-muted">{how.window_note}</p>
+          {how.window_note && <p className="text-t13 text-fg-muted">{how.window_note}</p>}
         </LibraryFold>
       )}
       <p role="note" data-m94-footer className="border-t border-subtle pt-space-2 text-t13 text-fg-muted">{how.footer}</p>

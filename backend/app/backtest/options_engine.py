@@ -68,6 +68,7 @@ from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, can_hold_for_days, plan_structure, structure_metrics
 from app.market_data.calendar import IST
+from app.risk_engine import risk_options
 from app.risk_engine.loss_streak import BacktestLossStreak
 from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
@@ -178,6 +179,8 @@ class _Open:
     premium_level: Optional[float] = None
     # Strategy templates R5: the signal's (underlying) direction, for the template's exit signal
     signal_direction: Optional[str] = None
+    # M99 P2: the bar the position was opened on (its close), for the trade-management options' bars after the entry
+    entry_index: int | None = None
 
 
 class OptionBacktestError(ValueError):
@@ -292,12 +295,19 @@ def run_option_backtest(
     risk_manager = RiskManager(risk_config, one_lot_if_unsized=True)
     state = TradingDayState()
     streak = BacktestLossStreak(risk_config.loss_streak_pause, risk_config.max_consecutive_losses)   # CP6-15
+    track_options = risk_options.any_on(risk_config)          # M99 P7: the trader's own risk options (as engine.py)
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
     exit_at = time_rules.exit_time_of_day() if time_rules else None
     # Strategy templates R5 / section 5: the template's exit signal (the user's TEMPLATE_EXIT choice), read on a bar close
     # of an open position for the signal's own side, closes it at the next bar's open, reason "Template exit".
     template_exit = bool(getattr(strategy, "acts_on_exit_signal", False))
     exit_due = False
+    # M99 P2: the user's trade-management options of a template (none: this whole path is off) - the equity engine's and
+    # the worker's same call (`management_step`), on the bars the bot reads (the underlying) for a single option: a
+    # tighter stop moves its underlying stop (the level step 2 below exits the option on), an exit acts at the next bar's
+    # open as the template exit. Never blocks or delays any other exit. A structure is refused before the run (exits.py).
+    manages = bool(getattr(strategy, "manages", False))
+    mgmt_exit: str | None = None
 
     open_pos: Optional[_Open] = None
     trades: List[Trade] = []
@@ -343,6 +353,7 @@ def run_option_backtest(
         state.open_positions = max(0, state.open_positions - 1)
         state.consecutive_losses = streak.closed(pnl, when)
         state.last_loss_at = streak.last_loss_at
+        risk_options.note_closed(state, pnl, track_options)       # M99 P7: as app/backtest/engine.py
         if reason.startswith("Expiry"):
             settlements += 1
         structures.append({
@@ -390,6 +401,8 @@ def run_option_backtest(
             state.daily_pnl = 0.0
             state.trades_today = 0
             state.consecutive_losses = streak.new_session()   # CP6-15: as app/backtest/engine.py
+            state.day_trough_pnl = 0.0                        # M99 P7: as app/backtest/engine.py
+            state.today_pnls = []
         vol.update(closes[max(0, i - config.realised_vol_window): i + 1])
         high, low, close = float(bar["high"]), float(bar["low"]), float(bar["close"])
 
@@ -409,6 +422,10 @@ def run_option_backtest(
                 if reason is None and exit_due:
                     reason, exit_spot = "Template exit", float(bar["open"])
                 exit_due = False
+                if reason is None and mgmt_exit is not None:
+                    # M99 P2: a management exit read on the previous bar's close - out at this bar's open
+                    reason, exit_spot = mgmt_exit, float(bar["open"])
+                mgmt_exit = None
                 # 2. Underlying levels on the bar's range, filled at the level itself.
                 if reason is None:
                     if pos.single:
@@ -461,6 +478,16 @@ def run_option_backtest(
                 if reason is None and template_exit and pos.signal_direction and i + 1 < len(primary_df):
                     window_now = cursor.at(decision_time(ts, primary_tf))
                     exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction, symbol))   # type: ignore[attr-defined]
+                if (reason is None and manages and pos.single and pos.signal_direction and pos.entry_index is not None
+                        and i > pos.entry_index):
+                    # M99 P2: the options on this bar's close, on the underlying's bars after the entry (entry_index+1..i)
+                    mstep = strategy.management_step(cursor.at(decision_time(ts, primary_tf)), pos.signal_direction,   # type: ignore[attr-defined]
+                                                     entry=None, initial_stop=pos.underlying_stop, current_stop=pos.underlying_stop,
+                                                     after=i - pos.entry_index)
+                    if mstep.stop is not None:
+                        pos.underlying_stop = mstep.stop      # it only tightens (management.step); judged from the next bar
+                    if i + 1 < len(primary_df):
+                        mgmt_exit = mstep.exit_reason
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
@@ -514,6 +541,8 @@ def run_option_backtest(
                 continue
             if open_pos is not None:
                 open_pos.signal_direction = signal.direction.value
+                open_pos.entry_index = i
+                mgmt_exit = None
             state.trades_today += 1
             state.open_positions += 1
 

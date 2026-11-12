@@ -40,8 +40,9 @@ def context_timeframes(signal_tf: str, ladder: Optional[Dict[str, List[str]]] = 
 
 
 def screenql_expressible(*tfs: str) -> bool:
-    """True when every timeframe exists in screenql/1 (2h / 4h do not yet)."""
-    return all(tf in SCREENQL_TF_MINUTES for tf in tfs)
+    """True when every timeframe exists in screenql/1 with this engine's bars. 2h / 4h stay engine only: ScreenQL's 2h
+    (M97-Q4) closes its last bucket of a session at the session close, this engine's 2h two hours after its start."""
+    return all(tf in SCREENQL_TF_MINUTES and tf not in EXTRA_TFS for tf in tfs)
 
 
 def duration(tf: str) -> Any:

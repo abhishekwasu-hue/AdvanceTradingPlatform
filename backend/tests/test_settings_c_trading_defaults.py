@@ -39,7 +39,8 @@ def test_round_trip_and_replace():
     value = saved.json()["value"]
     assert value["option_strategy"] == "BULL_PUT_SPREAD" and value["ticket"] == {"lots": 2, "product": "NRML", "order_type": "LIMIT"}
     # The time exits stay empty unless the user sets them (SR-10).
-    assert value["exit_rules"] == {"trailing_stop_pct": 1.5, "break_even_at_r": 1, "time_exit_minutes": None, "time_exit_at": None}
+    assert value["exit_rules"] == {"trailing_stop_pct": 1.5, "break_even_at_r": 1, "time_exit_minutes": None, "time_exit_at": None,
+                                   "scale_out_at_r": None, "scale_out_pct": None}   # M99 P7: the scale-out (not set)
     cleared = _put(who, {}, namespace=NS, version=1)
     assert cleared.status_code == 200 and cleared.json()["value"] == EMPTY and cleared.json()["version"] == 2
 
@@ -137,7 +138,8 @@ def test_a_stored_value_a_newer_release_wrote_still_reads():
     raw = json.dumps({"max_lots": 2, "stop_source": "swing", "exit_rules": {"trailing_stop_pct": 100}})   # M68 PR-3: 99 is valid now
     # the unknown key is dropped, the bad exit value takes its default (empty), the lots are kept
     assert prefs.stored_value(NS, raw) == {**EMPTY, "max_lots": 2, "exit_rules": {"trailing_stop_pct": None, "break_even_at_r": None,
-                                                                                  "time_exit_minutes": None, "time_exit_at": None}}
+                                                                                  "time_exit_minutes": None, "time_exit_at": None,
+                                                                                  "scale_out_at_r": None, "scale_out_pct": None}}
 
 
 def test_the_server_never_reads_it_to_trade():

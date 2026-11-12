@@ -1,0 +1,141 @@
+{
+  "schema": "atp.template/1",
+  "id": "L1",
+  "version": 1,
+  "name": "Zigzag wave C complete",
+  "family": "L",
+  "idea": "After a zigzag correction whose wave C went beyond the end of wave A, a signal on the first close back beyond the last smaller swing of C (or the end of wave B). The mirror: a rising zigzag. Wrong beyond the extreme of wave C. The count is an interpretation.",
+  "difficulty": "Advanced",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Wave size (swing degree the waves are counted at)",
+      "help": "Which swings count as waves: 1 is the smallest, 3 the largest. Larger waves need more history. Reference: 1.",
+      "type": "int",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range",
+      "help": "Bars for the average true range the break distance is measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "break_k",
+      "label": "Break distance beyond a level, in average true ranges (0: any close beyond)",
+      "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond). Reference: 0.",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "expiry",
+      "label": "Bars a setup stays watched after the count moves on",
+      "help": "After the count moves on, how many bars the setup is still watched for its close beyond the level. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "zz_trigger",
+      "label": "Zigzag trigger: the last smaller swing of C, or the end of B",
+      "help": "The level the close must go back beyond: the last smaller swing inside wave C (used only when it lies beyond the end of wave A, else the end of wave B), or always the end of wave B (later, more patient).",
+      "type": "enum",
+      "default": "wave_iv",
+      "choices": [
+        "wave_iv",
+        "wave_b"
+      ],
+      "choice_labels": [
+        "The last smaller swing inside wave C",
+        "The end of wave B"
+      ]
+    },
+    {
+      "key": "c_zone",
+      "label": "Only when wave C is inside the C-to-A zone",
+      "help": "Optional: only when wave C, as a multiple of wave A, is inside the zone below.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "c_min",
+      "label": "C-to-A zone: from (multiple of wave A)",
+      "help": "The near edge of the C-to-A zone, as a multiple of wave A. Reference: 0.618.",
+      "type": "float",
+      "default": 0.618,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.001
+    },
+    {
+      "key": "c_max",
+      "label": "C-to-A zone: to (multiple of wave A)",
+      "help": "The far edge of the C-to-A zone, as a multiple of wave A. Reference: 1.618.",
+      "type": "float",
+      "default": 1.618,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.001
+    }
+  ],
+  "constraints": [
+    {
+      "left": "c_min",
+      "op": "<",
+      "right": "c_max",
+      "message": "The C-to-A zone must start before it ends."
+    }
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "FibEw(\"zigzag_c_entry\", \"up\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, zz_trigger=$zz_trigger, c_zone=$c_zone, c_min=$c_min, c_max=$c_max)",
+    "short": "FibEw(\"zigzag_c_entry\", \"down\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, zz_trigger=$zz_trigger, c_zone=$c_zone, c_min=$c_min, c_max=$c_max)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "FibEwLevel(\"zigzag_c_void\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, zz_trigger=$zz_trigger, c_zone=$c_zone, c_min=$c_min, c_max=$c_max)",
+    "short": "FibEwLevel(\"zigzag_c_void\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, zz_trigger=$zz_trigger, c_zone=$c_zone, c_min=$c_min, c_max=$c_max)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "zigzag_c_complete_fall"
+      },
+      {
+        "token": "count_is_an_interpretation"
+      }
+    ],
+    "short": [
+      {
+        "token": "zigzag_c_complete_rise"
+      },
+      {
+        "token": "count_is_an_interpretation"
+      }
+    ]
+  }
+}

@@ -3,10 +3,11 @@
 * `GET /api/strategy-templates` - the built-in templates as cards: name, idea, difficulty, style, the timeframes, the
   settings the form shows (label, help, default, bounds, choices in words) and the constraints' messages. `available`
   says whether every function the template reads is switched on for the caller's organisation (flag names are never sent).
-* `GET /api/strategy-templates/{template_id}/how-it-works` - M94 F15 (family H, behind `intraday_pack`): the template's
+* `GET /api/strategy-templates/{template_id}/how-it-works` - M94 F15 (family H, behind `intraday_pack`; M97 PR-3 family I,
+  behind `sd_pack`): the template's
   one-screen "how it works" - short lines from its own data, a schematic drawn from its synthetic test series, its setup
   scanner, its settings and the footer (app/strategy_templates/pages.py).
-* `POST /api/strategy-templates/{template_id}/overlay` - M94 F16 (family H, behind `intraday_pack`): one stock's chart
+* `POST /api/strategy-templates/{template_id}/overlay` - M94 F16 (family H, behind `intraday_pack`; family I, `sd_pack`): one stock's chart
   overlay of the template with the caller's settings - each compiled part (setup / trigger / invalidation) through the
   ONE shared M91 evaluation (`watch_screen.screen_marks`), and the engine's own signals in view.
 * `POST /api/strategy-templates/{template_id}/adopt` - the caller's settings checked (plain messages) and turned into
@@ -36,15 +37,19 @@ from app.strategy_templates.schema import Template
 FLAG = "strategy_templates"
 FAMILY_NAMES: Dict[str, str] = {"A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
                                 "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves",
-                                "H": "Intraday", "J": "Volume spread", "K": "Wyckoff", "M": "Price patterns"}
+                                "H": "Intraday", "I": "Supply & Demand", "J": "Volume spread", "K": "Wyckoff", "L": "Fibonacci + Elliott", "M": "Price patterns"}
 FETCH_DEPENDENT_DEGREE = 2      # swings of this degree and larger depend on how much history is loaded (registry SC-14)
 # A family that is listed only while its own flag is on as well (family G, the wave templates: `screener_waves`). While
 # that flag is off its templates are not shown and cannot be adopted (404), not merely shown as unavailable.
 # M94 (F2): family H "Intraday" is listed only while `intraday_pack` is on.
+# M97 PR-3: family I "Supply & Demand" is listed only while `sd_pack` is on.
 # M99 P3: family J "Volume spread" is listed only while `vsa_pack` is on.
 # M99 P4: family K "Wyckoff" is listed only while `wyckoff_pack` is on.
+# M97 PR-3: family I "Supply & Demand" is listed only while `sd_pack` is on.
+# M99 P5: family L "Fibonacci + Elliott" is listed only while `fib_ew_pack` is on.
 # M99 P6: family M "Price patterns" is listed only while `pa_pack` is on.
-FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack", "J": "vsa_pack", "K": "wyckoff_pack", "M": "pa_pack"}
+FAMILY_FLAGS: Dict[str, str] = {"G": "screener_waves", "H": "intraday_pack", "I": "sd_pack", "J": "vsa_pack", "K": "wyckoff_pack", "L": "fib_ew_pack",
+                                "M": "pa_pack"}
 # M94 (F8): the label of a template whose defaults are reference values from a study (a label only; nothing is enforced)
 REFERENCE_LABEL = "Reference values - edit before use"
 # M94-Q7: an intraday template carries no time-of-day rule; the optional window is the user's own operational setting
@@ -265,8 +270,8 @@ async def how_it_works(template_id: str, user: User = Depends(get_current_user),
     drawing = await asyncio.to_thread(pages.schematic, template)
     return {"template": card, "lines": pages.lines(template, card["reads"], exits), "schematic": drawing,
             "scanner": pages.scanner(template) if available else {"long": None, "short": None},
-            "reference_label": REFERENCE_LABEL if template.reference_values else None, "window_note": WINDOW_NOTE,
-            "footer": pages.FOOTER}
+            "reference_label": REFERENCE_LABEL if template.reference_values else None, # M97 PR-3: the session window note is the intraday family's (H) only; empty for family I
+            "window_note": WINDOW_NOTE if template.family == "H" else "", "footer": pages.FOOTER}
 
 
 @router.post("/{template_id}/overlay")

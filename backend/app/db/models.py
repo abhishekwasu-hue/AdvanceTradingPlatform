@@ -1130,6 +1130,20 @@ class RiskSettingsRecord(Base):
     day_peak_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     day_peak_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     giveback_hit_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # M99 P7 (app/risk_engine/risk_options.py, flag `risk_options`): the trader's own risk options, NULL = not set (each
+    # OFF until he switches it on). The size step-down after losses in a row (how many losses, the size then as % of his
+    # own size, how many wins in a row bring it back, and the reset choice "wins" / "next_day"); the information-only
+    # stagnation flag (bars, the move below which a position counts as not moving, % of its entry, and the bar size in
+    # minutes); and when the daily loss limit was reached on its trading day (written by the worker cycle; with "Keep the
+    # daily loss lock all day" on, new entries stay refused for the rest of that day). Never read by an exit.
+    step_down_losses: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    step_down_size_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    step_down_wins: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    step_down_reset: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    stagnation_bars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stagnation_move_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stagnation_bar_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    daily_loss_locked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

@@ -150,6 +150,24 @@ TOKENS: Dict[str, str] = {
                                       " {timeframe} chart"),
     "previous_day_high_rejected": ("the market was turned away from the previous day's high and the close went below the"
                                    " bar before on the {timeframe} chart"),
+    # M99 P3 family J "Volume spread" (J1): structure words only - no price, no number, no instruction
+    "climax_fall_then_test": ("after stopping volume or a climax at the end of a fall, a test came, a down bar into that area on"
+                              " lower volume closing in its high third on the {timeframe} chart"),
+    "climax_rise_then_no_demand": ("after a climax at the end of a rise or an up-thrust, an up bar on a narrow spread and lower"
+                                   " volume showed no demand on the {timeframe} chart"),
+    # M99 P4 family K "Wyckoff" (K1-K3): structure words only - no price, no number, no instruction
+    "range_spring_then_test": ("in a trading range, after a shake under the range bottom that closed back inside, a quiet test"
+                               " held over the shake's low on the {timeframe} chart"),
+    "range_upthrust_then_test": ("in a trading range, after a shake over the range top that closed back inside, a quiet test"
+                                 " held under the shake's high on the {timeframe} chart"),
+    "range_last_point_of_support": ("in a trading range, after a shake under the bottom and a move to the middle, a lighter swing"
+                                    " back held over the shake's low on the {timeframe} chart"),
+    "range_last_point_of_supply": ("in a trading range, after a shake over the top and a move to the middle, a lighter swing back"
+                                   " held under the shake's high on the {timeframe} chart"),
+    "range_back_up_after_break_up": ("after closes in a row over a trading range's top, a quiet back-up to the top closed over it"
+                                     " on the {timeframe} chart"),
+    "range_back_up_after_break_down": ("after closes in a row under a trading range's bottom, a quiet back-up to the bottom closed"
+                                       " under it on the {timeframe} chart"),
     # M97 family I "Supply & Demand" (I1 / I2): structure words only - no price, no number, no instruction
     "demand_zone_reached": "a demand zone on the {timeframe} chart was reached, the way the settings name",
     "supply_zone_reached": "a supply zone on the {timeframe} chart was reached, the way the settings name",

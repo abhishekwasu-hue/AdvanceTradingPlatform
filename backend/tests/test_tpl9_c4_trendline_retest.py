@@ -128,7 +128,7 @@ STRATX_NEW = ("C6", "B12", "D9")
 def template_pins():
     out = {}
     for t in library.templates() + library.archived():
-        if t.family in ("G", "H", "I") or t.id in STRATX_NEW:             # STRAT-X / M94 family H / M97 family I came later: not in the pin
+        if t.family in ("G", "H", "I", "J", "K") or t.id in STRATX_NEW:   # STRAT-X / M94 H / M97 I / M99 P3 J / P4 K came later: not in the pin
             continue
         tf = t.allowed_timeframes[0]
         s = C.resolve_settings(t, tf)

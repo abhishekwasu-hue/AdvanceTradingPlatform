@@ -93,14 +93,17 @@ def slot(df, day, k, minutes=5):
 # ================================================================================= the schema and the library
 def test_family_h_is_a_schema_change_and_families_a_to_g_are_unchanged():
     for t in library.templates():
+        if t.family in ("J", "K"):                # M99 P3 / P4 (tests/test_m99_p3_vsa.py, test_m99_p4_wyckoff.py)
+            continue
         if t.family == "I":                       # M97 PR-3 (tests/test_m97_pr3_templates.py)
             continue
         if t.family == "H":
             assert t.id in FAMILY_H and t.reference_values and t.style == "Intraday (session-based)"
         else:
             assert t.family in "ABCDEFG" and t.id[0] in "ABCDEFG" and t.reference_values is False, t.id
-    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack", "I": "sd_pack"}   # M97: I
-    assert {k: v for k, v in FAMILY_NAMES.items() if k not in ("H", "I")} == {
+    assert FAMILY_NAMES["H"] == "Intraday" and FAMILY_FLAGS == {"G": "screener_waves", "H": "intraday_pack", "I": "sd_pack", "J": "vsa_pack",
+                                                                  "K": "wyckoff_pack"}   # M97: I; M99 P3: J; P4: K
+    assert {k: v for k, v in FAMILY_NAMES.items() if k not in ("H", "I", "J", "K")} == {
         "A": "Price action", "B": "Breakout", "C": "Breakout and retest", "D": "Trend following",
         "E": "Momentum and mean reversion", "F": "Option seller packs", "G": "Waves"}
     data = T["H6"].model_dump(by_alias=True)

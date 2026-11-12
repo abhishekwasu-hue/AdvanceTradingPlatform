@@ -61,6 +61,8 @@ AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 fun
 WAVES_FLAG = "screener_waves"                  # Wave templates W1: rules using a wave count function pause too
 SD_FLAG = "sd_pack"                            # M97 PR-1: rules using a Supply & Demand zone function pause too
 M99_FLAG = "m99_primitives"                    # M99 B1-a: rules using a bar classifier function pause too
+VSA_FLAG = "vsa_pack"                          # M99 P3: rules using the volume spread function pause too
+WYCKOFF_FLAG = "wyckoff_pack"                  # M99 P4: rules using a Wyckoff function pause too
 # (and a confirmation status, RsiDivergence or SwingLabel never fires intrabar: amw_functions.intrabar_calls)
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 STORE_FLAG = "market_store_reads"              # M71 W2-D: rules read the own store first (app/market_store)
@@ -324,7 +326,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                         vectorized: bool = False, evidence_enabled: bool = False,
                         breakout_extra_flags: Optional[Dict[str, bool]] = None, amw_enabled: bool = False,
                         waves_enabled: bool = False, store_reads: bool = False, sd_enabled: bool = False,
-                        m99_enabled: bool = False) -> Tuple[str, int]:
+                        m99_enabled: bool = False,
+                        vsa_enabled: bool = False, wyckoff_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
     argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in.
@@ -392,6 +395,18 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if m99_calls and (not m99_enabled or intrabar):
             # M99 B1-a: the rule stays active and resumes when the flag is back; bar class rules fire on bar close only
             rule.last_problem = m99_gate.refusal(m99_calls) if not m99_enabled else m99_gate.intrabar_refusal(m99_calls)
+            return "unsupported", 0
+        from app.screener import vsa_gate
+        vsa_calls = vsa_gate.flagged_calls(ast)
+        if vsa_calls and (not vsa_enabled or intrabar):
+            # M99 P3: the rule stays active and resumes when the flag is back; volume spread rules fire on bar close only
+            rule.last_problem = vsa_gate.refusal(vsa_calls) if not vsa_enabled else vsa_gate.intrabar_refusal(vsa_calls)
+            return "unsupported", 0
+        from app.screener import wyckoff_gate
+        wy_calls = wyckoff_gate.flagged_calls(ast)
+        if wy_calls and (not wyckoff_enabled or intrabar):
+            # M99 P4: the rule stays active and resumes when the flag is back; Wyckoff rules fire on bar close only
+            rule.last_problem = wyckoff_gate.refusal(wy_calls) if not wyckoff_enabled else wyckoff_gate.intrabar_refusal(wy_calls)
             return "unsupported", 0
         from app.screener import fundamentals as fundamentals_gate
         fund_calls = fundamentals_gate.flagged_calls(ast)
@@ -518,6 +533,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     waves_on: Dict[int, bool] = {}
     sd_on: dict[int, bool] = {}              # M97 PR-1: sd_pack per organisation
     m99_on: dict[int, bool] = {}             # M99 B1-a: m99_primitives per organisation
+    vsa_on: dict[int, bool] = {}             # M99 P3: vsa_pack per organisation
+    wyckoff_on: dict[int, bool] = {}         # M99 P4: wyckoff_pack per organisation
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
@@ -550,6 +567,10 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             sd_on[rule.tenant_id] = await flag_enabled(session, SD_FLAG, rule.tenant_id)
         if rule.tenant_id not in m99_on:
             m99_on[rule.tenant_id] = await flag_enabled(session, M99_FLAG, rule.tenant_id)
+        if rule.tenant_id not in vsa_on:
+            vsa_on[rule.tenant_id] = await flag_enabled(session, VSA_FLAG, rule.tenant_id)
+        if rule.tenant_id not in wyckoff_on:
+            wyckoff_on[rule.tenant_id] = await flag_enabled(session, WYCKOFF_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         if rule.tenant_id not in vectorized_on:
@@ -564,6 +585,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
                                            breakout_extra_flags=extra_on[rule.tenant_id], amw_enabled=amw_on[rule.tenant_id],
                                            waves_enabled=waves_on[rule.tenant_id], sd_enabled=sd_on[rule.tenant_id],
                                            m99_enabled=m99_on[rule.tenant_id],
+                                           vsa_enabled=vsa_on[rule.tenant_id], wyckoff_enabled=wyckoff_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id], store_reads=store_on[rule.tenant_id])
         out.evaluated += state == "done"

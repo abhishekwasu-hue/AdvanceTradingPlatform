@@ -206,8 +206,23 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
     if (!hasSd) { setSdLib(null); return; }
     screenerApi.supplyDemand().then((l) => setSdLib(isIntradayLibrary(l) ? l : null)).catch(() => setSdLib(null));
   }, [hasSd]);
-  // the gallery's scanner settings by screen id: the intraday and the Supply & Demand scanners (ids never overlap)
-  const intradayMap = useMemo(() => ({ ...scannersById(intraday), ...scannersById(sdLib) }), [intraday, sdLib]);
+  // M99 P3: the "Volume spread" scanners' settings, the same shape as the intraday ones (one settings table on the cards)
+  const [vsaLib, setVsaLib] = useState<IntradayLibrary | null>(null);
+  const hasVsa = !!taxonomy?.screens.some((s) => s.source === "vsa");
+  useEffect(() => {
+    if (!hasVsa) { setVsaLib(null); return; }
+    screenerApi.vsa().then((l) => setVsaLib(isIntradayLibrary(l) ? l : null)).catch(() => setVsaLib(null));
+  }, [hasVsa]);
+  // M99 P4: the "Wyckoff" scanners' settings, the same shape
+  const [wyckoffLib, setWyckoffLib] = useState<IntradayLibrary | null>(null);
+  const hasWyckoff = !!taxonomy?.screens.some((s) => s.source === "wyckoff");
+  useEffect(() => {
+    if (!hasWyckoff) { setWyckoffLib(null); return; }
+    screenerApi.wyckoff().then((l) => setWyckoffLib(isIntradayLibrary(l) ? l : null)).catch(() => setWyckoffLib(null));
+  }, [hasWyckoff]);
+  // the gallery's scanner settings by screen id: the intraday, Supply & Demand, volume spread and Wyckoff scanners (ids never overlap)
+  const intradayMap = useMemo(() => ({ ...scannersById(intraday), ...scannersById(sdLib), ...scannersById(vsaLib),
+    ...scannersById(wyckoffLib) }), [intraday, sdLib, vsaLib, wyckoffLib]);
 
   useEffect(() => {
     if (!universeV2) return undefined;
@@ -262,8 +277,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
-    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE
-      || s.source === SD_SOURCE))), [registry, builderU2]);
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts" || s.source === INTRADAY_SOURCE || s.source === "vsa"
+      || s.source === "wyckoff" || s.source === SD_SOURCE))), [registry, builderU2]);
   // Day-one fix 4: the page opens on something to do - three ready scans from the library, one tap each.
   const readyScans = useMemo(() => (taxonomy?.screens ?? []).filter((s) => s.source === "starter" && canOpen(s)).slice(0, 3), [taxonomy, canOpen]);
   // M49 U6: "Ready scan" leads with the library's other screens this page can open (the templates are the starters, so

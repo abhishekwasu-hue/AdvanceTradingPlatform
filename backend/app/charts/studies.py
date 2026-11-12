@@ -193,12 +193,13 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
     """The screener's function flags, per study (as `screener.routes._gate` does for a screen): a study using a U6
     breakout function while `screener_breakouts` is off, a market-zone function while `market_zones` is off, or an AMW-3
     function / v2 candle / confirmation status while `screenql_amw_functions` is off, a wave count function while
-    `screener_waves` is off, a Supply & Demand zone function while `sd_pack` is off (M97), or an M99 function while
+    `screener_waves` is off, a Supply & Demand zone function while `sd_pack` is off (M97), an M99 function while
     `m99_primitives` is off (the bar classes and structure, M99 B1-a / B1-c; the Fibonacci levels and clusters, B1-b),
-    is refused with the flag's reason.
+    VSA while `vsa_pack` is off (M99 P3), or a Wyckoff function while `wyckoff_pack` is off (M99 P4), is refused with
+    the flag's reason.
     The others still draw."""
     from app.screener import amw_functions as amw_gate
-    from app.screener import m99_gate, sd_gate
+    from app.screener import m99_gate, sd_gate, vsa_gate, wyckoff_gate
     from app.screener import primitives as primitives_gate
     from app.screener import waves as waves_gate
     from app.screener import zones as zone_gate
@@ -206,7 +207,7 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
     out: List[Dict[str, Any]] = []
     for st in studies:
         if st["ok"] and st["ast"] is not None:
-            for g in (breakout_gate, zone_gate, waves_gate, sd_gate, m99_gate, primitives_gate):   # M97: sd_pack; M99: m99_primitives
+            for g in (breakout_gate, zone_gate, waves_gate, sd_gate, m99_gate, primitives_gate, vsa_gate, wyckoff_gate):   # M97: sd_pack; M99: m99_primitives; P3; P4
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
                     st = _refuse(st, breakout_gate.refusal(blocked, st["ast"]) if g is breakout_gate else g.refusal(blocked))

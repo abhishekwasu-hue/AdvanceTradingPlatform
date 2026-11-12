@@ -51,6 +51,8 @@ import { OPTIONS_EM_LAYER_ID, useOptionsExpectedMove } from "../optionChain/expe
 import { SD_LAYER_ID, useSdZones } from "./sdZones";
 import { SdZonesBar } from "./SdZonesBar";
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
+import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
+import { WYCKOFF_LAYER_ID, WyckoffBar, useWyckoffLayer } from "./wyckoffLayer";
 import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
@@ -179,6 +181,17 @@ export default function ChartsPageV2(_props: PageProps) {
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+  // M99 P3: the volume spread readings (flag vsa_pack) - read again when a new bar closes; each mark with its "Why?" below
+  const [vsaOptions, setVsaOptions] = useState<VsaOptions>(DEFAULT_VSA_OPTIONS);
+  const vsaOn = view.layers.includes(VSA_LAYER_ID) && features.on("vsa_pack") && tab === "chart" && !hubView;
+  const vsaLayer = useVsaLayer({ symbol, exchange, timeframe, candles: data.candles, on: vsaOn, options: vsaOptions });
+  // M99 P4: the Wyckoff ranges, phases and events (flag wyckoff_pack) - boxes and phase letters on the chart, marks with "Why?"
+  const wyckoffOn = view.layers.includes(WYCKOFF_LAYER_ID) && features.on("wyckoff_pack") && tab === "chart" && !hubView;
+  const wyckoffLayer = useWyckoffLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: wyckoffOn });
+  const chartMarkers = useMemo(() => {
+    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers];
+    return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
+  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers]);
   // M97 PR-4: Supply & Demand zones (flag sd_pack) - read again when a new bar arrives; a tapped zone's candles highlighted
   const [tipBand, setTipBand] = useState<BandRef | null>(null);
   const sdOn = view.layers.includes(SD_LAYER_ID) && features.on("sd_pack") && tab === "chart" && !hubView;
@@ -347,7 +360,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
-                markers={tpl.markers.length ? [...screen.markers, ...tpl.markers].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers}
+                markers={chartMarkers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} onBandTip={setTipBand} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
@@ -357,6 +370,8 @@ export default function ChartsPageV2(_props: PageProps) {
             {tplAsk && tplShown && !fs.on && (
               <TemplateLegend state={tpl} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}
+            {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
+            {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
             {sdOn && !fs.on && (
               <SdZonesBar chartTf={timeframe} shown={sd.shown} options={prefs.prefs.sd_overlay} onChange={(o) => prefs.update({ sd_overlay: o })} note={sd.note} />
             )}

@@ -37,6 +37,12 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "vwap", group: "popular", label: L.vwap, term: "vwap", keywords: "vwap volume weighted average price" },
   { id: "trades", group: "layers", label: "My trades", note: "Your paper trades, where they were entered and closed.", flag: "chart_trades_layer",
     keywords: "my trades paper entries exits orders" },
+  // M99 P3: the volume spread readings (no demand, no supply, test, climaxes, up-thrust ...) with a Why? for each mark.
+  { id: "vsa", group: "layers", label: "Volume spread", note: "Readings of each bar's spread, volume and close, with a Why? for each mark.",
+    flag: "vsa_pack", keywords: "volume spread vsa no demand no supply test climax up-thrust shake-out absorption effort" },
+  // M99 P4: the Wyckoff trading ranges - a box per range, the phases A-E and each event with a Why?.
+  { id: "wyckoff", group: "layers", label: "Wyckoff", note: "Trading ranges read in phases A-E, with springs, upthrusts, breaks and back-ups, each with a Why?.",
+    flag: "wyckoff_pack", keywords: "wyckoff range phase spring upthrust utad sign of strength weakness back-up accumulation distribution" },
   // M97 PR-4: supply / demand zones on the chosen timeframes (the chart's own and higher ones), off until turned on.
   { id: "sd_zones", group: "layers", label: "Supply & Demand zones", note: "Bases between two strong candles, drawn from where they formed.",
     flag: "sd_pack", keywords: "supply demand zones dbr rbr rbd dbd base proximal distal" },

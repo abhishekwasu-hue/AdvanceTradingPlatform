@@ -1,0 +1,318 @@
+{
+  "schema": "atp.template/1",
+  "id": "K2",
+  "version": 1,
+  "name": "UTAD / LPSY",
+  "family": "K",
+  "idea": "In a trading range, after a shake over the range top that closed back inside (an upthrust after distribution) and a move down to the middle, a signal on the lighter rally that stays under the shake's high (last point of supply). The mirror after a spring. Wrong beyond the shake's extreme.",
+  "difficulty": "Advanced",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "n",
+      "label": "Bars for the average",
+      "help": "Each bar's spread and volume are measured against the average of this many bars before it. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "narrow",
+      "label": "Narrow spread below",
+      "help": "A spread below this multiple of the average range is narrow (a quiet test bar). Reference: 0.7.",
+      "type": "float",
+      "default": 0.7,
+      "min": 0.01,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "wide",
+      "label": "Wide spread above",
+      "help": "A spread above this multiple of the average range is wide. Reference: 1.3.",
+      "type": "float",
+      "default": 1.3,
+      "min": 0.01,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "ultra",
+      "label": "Ultra-wide spread above",
+      "help": "A spread above this multiple of the average range is ultra-wide (the climax). Reference: 2.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.01,
+      "max": 20.0,
+      "step": 0.05
+    },
+    {
+      "key": "vol_high",
+      "label": "High volume above",
+      "help": "Volume above this multiple of the average is high. Reference: 1.3.",
+      "type": "float",
+      "default": 1.3,
+      "min": 0.01,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "vol_ultra",
+      "label": "Ultra-high volume above",
+      "help": "Volume above this multiple of the average is ultra-high (the climax). Reference: 2.",
+      "type": "float",
+      "default": 2.0,
+      "min": 0.01,
+      "max": 20.0,
+      "step": 0.05
+    },
+    {
+      "key": "part",
+      "label": "Close position part",
+      "help": "The close is in the low third below this share of the bar's range and in the high third above one minus it. Reference: 0.333333.",
+      "type": "float",
+      "default": 0.333,
+      "min": 0.01,
+      "max": 0.5,
+      "step": 0.05
+    },
+    {
+      "key": "prev",
+      "label": "Bars for lower volume",
+      "help": "Lower volume means lower than each of this many bars before. Reference: 2.",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "new_bars",
+      "label": "Bars for new highs or lows",
+      "help": "Highs or lows beyond this many bars before are new ground. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 2,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "trend_bars",
+      "label": "Bars for the move before",
+      "help": "The move a climax ends: these bars against as many before them. Reference: 10.",
+      "type": "int",
+      "default": 10,
+      "min": 2,
+      "max": 250,
+      "step": 1
+    },
+    {
+      "key": "area_bars",
+      "label": "Bars searched for a high-volume area",
+      "help": "A test bar reaches the range of a high-volume bar within this many bars before. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "area_tol",
+      "label": "Nearness to that area",
+      "help": "How near that bar's range a test bar's low must come, in average ranges. Reference: 0.25.",
+      "type": "float",
+      "default": 0.25,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "background",
+      "label": "Climax only after its move",
+      "help": "Count a climax only after the fall or rise it ends.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "pivot",
+      "label": "Bars on each side of a swing",
+      "help": "A swing needs this many bars on each side; it is known this many bars after its own bar. Reference: 3.",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    {
+      "key": "swing_k",
+      "label": "Swing size",
+      "help": "A new swing must be this many reference ranges from the last one. Reference: 1.5.",
+      "type": "float",
+      "default": 1.5,
+      "min": 0.0,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "a_bars",
+      "label": "Bars for Phase A steps",
+      "help": "The automatic reaction, then the secondary test, must each come within this many bars. Reference: 40.",
+      "type": "int",
+      "default": 40,
+      "min": 3,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "st_below",
+      "label": "Secondary test beyond the climax",
+      "help": "How far past the climax the secondary test may go, as a share of the range height. Reference: 0.1.",
+      "type": "float",
+      "default": 0.1,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "b_vs_a",
+      "label": "Phase B length against Phase A",
+      "help": "A poke beyond an edge counts as a shake only once Phase B has lasted this many times Phase A. Reference: 1.",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 10.0,
+      "step": 0.05
+    },
+    {
+      "key": "k_back",
+      "label": "Bars to come back",
+      "help": "Back inside within this many bars: a test or a shake; this many closes beyond in a row: a break. Reference: 3.",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "step": 1
+    },
+    {
+      "key": "mid_share",
+      "label": "Move before the last point",
+      "help": "After the shake the move must reach this share of the range before the swing back counts. Reference: 0.5.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05
+    },
+    {
+      "key": "htf_mode",
+      "label": "Larger structure",
+      "help": "Off: no filter. Not against: no signal against the larger timeframe's lean (a range left the other way, or the opposite trend); a lean of neither way passes. With: only with the larger timeframe's lean (no signal while it leans neither way).",
+      "type": "enum",
+      "default": "off",
+      "choices": [
+        "off",
+        "not_against",
+        "with"
+      ],
+      "choice_labels": [
+        "Off",
+        "Not against it",
+        "Only with it"
+      ]
+    },
+    {
+      "key": "context_timeframe",
+      "label": "Larger timeframe",
+      "help": "The higher timeframe whose lean is read (closed bars only).",
+      "type": "timeframe",
+      "default": "1d",
+      "choices": [
+        "1h",
+        "1d",
+        "1w"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "left": "narrow",
+      "op": "<",
+      "right": "wide",
+      "message": "The narrow limit must be below the wide one."
+    },
+    {
+      "left": "wide",
+      "op": "<",
+      "right": "ultra",
+      "message": "The wide limit must be below the ultra-wide one."
+    },
+    {
+      "left": "vol_high",
+      "op": "<",
+      "right": "vol_ultra",
+      "message": "The high-volume limit must be below the ultra-high one."
+    },
+    {
+      "left": "prev",
+      "op": "<=",
+      "right": "n",
+      "message": "The bars for lower volume must be at most the bars for the average."
+    },
+    {
+      "left": "context_timeframe",
+      "op": ">",
+      "right": "signal_timeframe",
+      "message": "The larger timeframe must be higher than the signal timeframe."
+    }
+  ],
+  "sides_default": "short",
+  "context": {
+    "by": "htf_mode",
+    "variants": {
+      "off": null,
+      "not_against": {
+        "long": "NOT Wyckoff(\"bias\", \"weakness\")",
+        "short": "NOT Wyckoff(\"bias\", \"strength\")"
+      },
+      "with": {
+        "long": "Wyckoff(\"bias\", \"strength\")",
+        "short": "Wyckoff(\"bias\", \"weakness\")"
+      }
+    },
+    "timeframe_param": "context_timeframe"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "Wyckoff(\"last_point\", \"strength\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, pivot=$pivot, swing_k=$swing_k, a_bars=$a_bars, st_below=$st_below, b_vs_a=$b_vs_a, k_back=$k_back, mid_share=$mid_share)",
+    "short": "Wyckoff(\"last_point\", \"weakness\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, pivot=$pivot, swing_k=$swing_k, a_bars=$a_bars, st_below=$st_below, b_vs_a=$b_vs_a, k_back=$k_back, mid_share=$mid_share)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "WyckoffLevel(\"shake_extreme\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, pivot=$pivot, swing_k=$swing_k, a_bars=$a_bars, st_below=$st_below, b_vs_a=$b_vs_a, k_back=$k_back, mid_share=$mid_share)",
+    "short": "WyckoffLevel(\"shake_extreme\", n=$n, narrow=$narrow, wide=$wide, ultra=$ultra, vol_high=$vol_high, vol_ultra=$vol_ultra, part=$part, prev=$prev, new_bars=$new_bars, trend_bars=$trend_bars, area_bars=$area_bars, area_tol=$area_tol, background=$background, pivot=$pivot, swing_k=$swing_k, a_bars=$a_bars, st_below=$st_below, b_vs_a=$b_vs_a, k_back=$k_back, mid_share=$mid_share)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "range_last_point_of_support"
+      }
+    ],
+    "short": [
+      {
+        "token": "range_last_point_of_supply"
+      }
+    ]
+  }
+}

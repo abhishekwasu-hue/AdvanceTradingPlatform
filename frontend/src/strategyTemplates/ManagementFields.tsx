@@ -25,7 +25,7 @@ function NumberField({ id, label, value, hint, bad, onChange }: { id: string; la
   return (
     <div>
       <label htmlFor={id} className={LABEL}>{label}</label>
-      <input id={id} className={FIELD} inputMode="decimal" autoComplete="off" value={value} placeholder={hint}
+      <input id={id} className={FIELD} inputMode="decimal" autoComplete="off" value={value}
         aria-invalid={bad} onChange={(e) => onChange(e.target.value)} />
       {hint && <p className="mt-space-1 text-t12 text-fg-muted">{hint}</p>}
     </div>
@@ -41,7 +41,7 @@ export function ManagementFields({ choices, pick, onChange, problem, touched }: 
       <p className="text-t14 font-medium text-fg">Trade management (optional)</p>
       <div>
         <label htmlFor={`${id}-trail`} className={LABEL}>Trail the stop</label>
-        <Combobox id={`${id}-trail`} label="Trail the stop" value={pick.trail} className="w-full"
+        <Combobox id={`${id}-trail`} label="Trail the stop" value={pick.trail} className="w-full min-w-0"
           onChange={(v) => onChange({ trail: v as Trail | "" })}
           options={[{ value: "", label: "No trail" }, ...choices.trails]} />
       </div>

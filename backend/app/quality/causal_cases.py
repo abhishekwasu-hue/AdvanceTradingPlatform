@@ -313,7 +313,7 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "FibEw": ['FibEw("cluster_touch")', 'FibEw("wave3_entry", "up")', 'FibEw("zigzag_c_entry", "any", zz_trigger="wave_b")',
               'FibEw("count_void", "down", void_on="wick")', 'FibEw("impulse_complete")', 'FibEw("diagonal_complete", "any", degree=2)',
               'FibEw("cluster_touch", "up", band=1, band_mode="pct")@1h'],
-    "FibEwLevel": ['FibEwLevel("invalidation")', 'FibEwLevel("thrust")', 'FibEwLevel("cluster_low")', 'FibEwLevel("wave3_trigger")',
+    "FibEwLevel": ['FibEwLevel("invalidation") - close', 'FibEwLevel("invalidation")', 'FibEwLevel("thrust")', 'FibEwLevel("cluster_low")', 'FibEwLevel("wave3_trigger")',
                    'FibEwLevel("cluster_high", band=1, band_mode="pct")'],
 }
 # M94: the expressions that read the pre-open bars run on bars that have them (`with_preopen`)

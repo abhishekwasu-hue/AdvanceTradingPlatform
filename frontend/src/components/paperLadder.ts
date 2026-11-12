@@ -27,3 +27,19 @@ export function signedMoney(n: number): string {
   const s = formatNumber(n, 2);
   return n > 0 && /[1-9]/.test(s) ? `+${s}` : s;
 }
+
+/** LIVE-1 (owner, 11 Nov - BINDING): `live_trading` is the ONE switch. The ladder's LIVE step only says what that switch
+ * does now; the criteria above it are information and never gate LIVE. */
+export const LIVE_STEP_OFF = "Live trading is switched off by the admin";
+export const LIVE_STEP_ON = "Live trading available - choose LIVE on any order";
+export function liveStepText(liveOn: boolean): string {
+  return liveOn ? LIVE_STEP_ON : LIVE_STEP_OFF;
+}
+
+/** PAPER account tiles (owner, 12 Nov, D.3): a tile is at least as wide as its number on one line (`min-w-max`), the
+ * label does not widen it (`w-0 min-w-full`, it wraps instead), and the row wraps to the next line when the numbers do
+ * not fit side by side - so a number never breaks inside or runs past the card. */
+export const TILE_ROW = "flex flex-wrap gap-3";
+export const TILE = "min-w-max flex-1 rounded-xl border border-border bg-surface-1 shadow-card px-4 py-3";
+export const TILE_LABEL = "w-0 min-w-full text-t13 font-semibold text-fg-muted";
+export const TILE_VALUE = "font-tabular whitespace-nowrap text-t20 font-extrabold sm:text-t24";

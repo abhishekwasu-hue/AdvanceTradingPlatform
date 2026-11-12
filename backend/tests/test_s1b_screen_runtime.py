@@ -232,6 +232,9 @@ def test_breakout_series_u6_bk1():
     assert _ev("RelVolume(5)", data).dropna().eq(1.0).all()                    # constant volume
     assert _ev("ATRPercentile(14, 50)", data).dropna().between(0, 100).all()
     assert set(_ev("DowTrend(0)", data).dropna().unique()) <= {"UP", "DOWN", "RANGE"}
+    # M99 B1-c (flag m99_primitives): per-bar structure events and regime (deeper checks: tests/test_m99_b1_structure.py)
+    assert set(_ev("StructureEventSeries()", data).unique()) <= {"BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""}
+    assert set(_ev("RegimeTag()", data).dropna().unique()) <= {"UP", "DOWN", "UP_WEAK", "DOWN_WEAK", "RANGE"}
 
 
 def test_intraday_breakout_series_u6_bk2():
@@ -582,6 +585,12 @@ def test_m94_session_functions():
     assert _ev("SessionVolume()", d).tolist()[2:] == [1000.0, 3000.0, 4500.0]
     assert _ev("SessionCount(close > close[1])", d).tolist()[2:] == [1.0, 2.0, 2.0]
     assert (_ev("PreOpenHigh()", d).tolist()[2:], _ev("PreOpenLow()", d).tolist()[2:]) == ([102.0] * 3, [99.0] * 3)
+    # M99 P2: LevelGrade on the session's own high (tier 3; the full fixtures: tests/test_m99_p2_intraday.py) - one visit so
+    # far on each regular bar, the high made on this bar or one bar ago; missing on the pre-open bars
+    assert _ev('LevelGrade("SESSION_HIGH", "source")', d).tolist()[2:] == [3.0] * 3
+    assert _ev('LevelGrade("SESSION_HIGH", "bars_since")', d).tolist()[2:] == [0.0, 0.0, 1.0]
+    assert np.isnan(_ev('LevelGrade("SESSION_HIGH", "grade")', d).iloc[1])
+    COVERED.add("LevelGrade")
     assert _ev("PreOpenVolume()", d).tolist()[2:] == [1200.0] * 3
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 

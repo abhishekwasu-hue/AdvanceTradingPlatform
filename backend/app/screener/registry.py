@@ -190,6 +190,8 @@ PATTERN_SHAPE_DOC = ("; named arguments (flag / pennant only): pole= the pole's 
                      " flag_min= / flag_max= the consolidation's fewest / most bars, retrace= the most of the pole the consolidation"
                      " gives back (left out: the breakout parameters' defaults)")
 _INTRADAY = (INTRADAY_FLAG,)
+_LEVEL_NAMES = ("PDC", "PDH", "PDL", "PREOPEN_HIGH", "PREOPEN_LOW", "SESSION_HIGH", "SESSION_LOW")   # level_grade.LEVEL_TIERS
+_LEVEL_WHATS = ("grade", "touches", "bars_since", "source", "round", "confluence")
 _SESSION_NOTE = (" - on the exchange calendar's session (pre-open bars left out); missing on a pre-open bar and outside the"
                  " session")
 _PREOPEN_NOTE = (" - the bars of the session's date before its open, known from the session's first bar on; missing (never 0) when"
@@ -258,6 +260,16 @@ _ZDOC = (" - the live zone nearest to the close within tolerance_pct % of it (ro
 # count changes only on a bar that confirmed a new swing of the degree. Close-only in alerts (a forming bar can confirm a
 # swing and take it back, WB13). Degrees 2 and 3 are fetch-dependent like the swings they read.
 WAVES_FLAG = "screener_waves"
+# M99 B1-c (flag `m99_primitives`, off by default): the structure tracker (app/price_action/structure_series.py over
+# structure_tracker.py) as per-bar series - BOS / CHoCH on the bar the close made them known, the trend-or-range regime
+# at each bar's close. Every number a named setting (left out: the tracker's reference values by timeframe).
+M99_FLAG = "m99_primitives"
+_STRUCT_KWARGS: tuple[Arg, ...] = (Arg("pivot_n", NUM, None, False, literal_only=True, bounds=(1, 20)),
+                                   Arg("swing_k", NUM, None, False, literal_only=True, bounds=(0.0, 20.0)))
+_REGIME_KWARGS: tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None, False, literal_only=True, bounds=(0.0, 100.0)),
+                                                    Arg("range_swings", NUM, None, False, literal_only=True, bounds=(2, 20)))
+_SDOC = (" - the structure tracker fed one closed bar at a time (a swing counts from its confirm bar, pivot_n bars after its"
+         " own; swings at least swing_k median ranges apart; named settings, left out: the reference values by timeframe)")
 WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
@@ -647,6 +659,17 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " is not higher, an equal low not lower); missing before"
              " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
              " timeframe's trend from its closed bars"),
+    # M99 B1-c (flag m99_primitives): the tracker's BOS / CHoCH per bar and its regime - templates and backtests can read them
+    Spec("StructureEventSeries", "classifier", CAT, None, (), kwargs=_STRUCT_KWARGS, cost=3.0, min_bars=SWING_MIN_BARS,
+         values=("BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""), flag=M99_FLAG,
+         doc="the structure event on this bar: BOS_BULLISH / BOS_BEARISH (a close beyond the last swing in the trend's"
+             " direction), CHOCH_BEARISH / CHOCH_BULLISH (a close beyond the protected swing of an up / down trend); empty on"
+             " other bars" + _SDOC),
+    Spec("RegimeTag", "classifier", CAT, None, (), kwargs=_REGIME_KWARGS, cost=3.0, min_bars=SWING_MIN_BARS,
+         values=("UP", "DOWN", "UP_WEAK", "DOWN_WEAK", "RANGE"), flag=M99_FLAG,
+         doc="the structure regime at the bar's close: UP / DOWN (a trend, its pullbacks included), UP_WEAK / DOWN_WEAK (the"
+             " protected swing broken, nothing decided yet), RANGE; with range_width also RANGE while the last range_swings"
+             " swings span at most range_width median ranges; missing before the first trend or range is read" + _SDOC),
     # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one
     # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.
     Spec("ORBreakout", "filter", BOOL, None, (_SIDE, _bk("or_minutes", "minutes", NUM), _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
@@ -688,6 +711,18 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the low of the pre-open bars" + _PREOPEN_NOTE),
     Spec("PreOpenVolume", "factor", NUM, "volume", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
          doc="the volume of the pre-open bars" + _PREOPEN_NOTE),
+    # M99 P2 (app/screener/level_grade.py): the information grade of a key level - a count of qualities, never a gate
+    Spec("LevelGrade", "factor", NUM, "count",
+         (Arg("level", STR, choices=_LEVEL_NAMES), Arg("what", STR, "grade", False, choices=_LEVEL_WHATS),
+          Arg("near", NUM, 0.0, False, literal_only=True, bounds=(0.0, 5.0)), Arg("look", "window", 400, False),
+          Arg("touches", NUM, 2, False, literal_only=True, bounds=(1.0, 50.0)), Arg("recent", "window", 200, False),
+          Arg("tier", NUM, 2, False, choices=(1, 2, 3)), Arg("step", NUM, 0.0, False, literal_only=True, bounds=(0.0, 1_000_000.0))),
+         cost=2.0, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG, also_flags=_INTRADAY,
+         doc="the information grade (0-5) of a key level as of each bar - one point each for: at least `touches` separate visits"
+             " of its band (near x ATR either side; 0 = the level itself) in the last `look` bars; the last visit within `recent`"
+             " bars; its kind at or above `tier` (1 previous close, 2 previous high / low, 3 pre-open and session high / low); a"
+             " round number in the band (multiples of `step`; 0 = the symbol's own round steps); another key level in the band."
+             " `what` returns one part instead: touches / bars_since / source / round / confluence. Information only"),
     # U6 BK3: B3 VCP and the indicator breakouts B10 / B11 / B12 / B15 (app/screener/breakouts/vcp.py, indicator_breaks.py) -
     # closed bars, one signal per leg (VCPReady: a state); behind `screener_breakouts` AND `screener_breakouts_bk3`.
     Spec("VCPBreakout", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
@@ -990,7 +1025,7 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
-           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS", "INTRADAY_FLAG", "INTRADAY_FUNCTIONS", "PREOPEN_FUNCTIONS", "PATTERN_SHAPE_DOC",
+           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "M99_FLAG", "M99_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS", "INTRADAY_FLAG", "INTRADAY_FUNCTIONS", "PREOPEN_FUNCTIONS", "PATTERN_SHAPE_DOC",
            "PATTERN_SHAPE_KWARGS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",

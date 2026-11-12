@@ -503,6 +503,63 @@
    ],
    "mirror_of": null,
    "footer": "Information and education only, not investment advice."
+  },
+  {
+   "id": "intraday.graded_levels",
+   "name": "Graded Key Levels",
+   "definition": "The close is near a previous-session or pre-open level whose grade - touches, a recent visit, its kind, a round number, a level close by - has the set points.",
+   "text": "LevelGrade(\"PDC\", \"grade\", $near, $look, $touches, $recent, $tier) >= $min_grade AND Abs(close - PDC()) <= $near * ATR(14) OR LevelGrade(\"PDH\", \"grade\", $near, $look, $touches, $recent, $tier) >= $min_grade AND Abs(close - PDH()) <= $near * ATR(14) OR LevelGrade(\"PDL\", \"grade\", $near, $look, $touches, $recent, $tier) >= $min_grade AND Abs(close - PDL()) <= $near * ATR(14) OR LevelGrade(\"PREOPEN_HIGH\", \"grade\", $near, $look, $touches, $recent, $tier) >= $min_grade AND Abs(close - PreOpenHigh()) <= $near * ATR(14) OR LevelGrade(\"PREOPEN_LOW\", \"grade\", $near, $look, $touches, $recent, $tier) >= $min_grade AND Abs(close - PreOpenLow()) <= $near * ATR(14)",
+   "base_tf": "5m",
+   "params": [
+    {
+     "name": "near",
+     "value": null,
+     "doc": "The level's band either side, in average true ranges of 14 bars (also the touch, round-number and nearby-level distance).",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "min_grade",
+     "value": null,
+     "doc": "Points the level needs, out of 5.",
+     "ref": false,
+     "note": "Not set"
+    },
+    {
+     "name": "look",
+     "value": 400,
+     "doc": "Bars in which the touches are counted.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "touches",
+     "value": 2,
+     "doc": "Separate visits of the band for the touches point.",
+     "ref": true,
+     "note": "Reference value - edit before use"
+    },
+    {
+     "name": "recent",
+     "value": 200,
+     "doc": "The last visit at most this many bars ago for the recent point.",
+     "ref": false,
+     "note": "ATP default"
+    },
+    {
+     "name": "tier",
+     "value": 2,
+     "doc": "Kinds that earn the kind point: 1 the previous close only, 2 also the previous high / low, 3 every level.",
+     "ref": false,
+     "note": "ATP default"
+    }
+   ],
+   "unset": [
+    "near",
+    "min_grade"
+   ],
+   "mirror_of": null,
+   "footer": "Information and education only, not investment advice."
   }
  ],
  "footer": "Information and education only, not investment advice.",

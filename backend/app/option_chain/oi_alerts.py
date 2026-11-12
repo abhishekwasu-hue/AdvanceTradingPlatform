@@ -6,6 +6,9 @@ Rules (spec section 2):
 * alert types: direction change, confirmed (hysteresis) flip, Strong <-> Weakening, PCR band change (entering
   Oversold / Overbought is WARNING), max pain moved by N strikes, OI wall formed / broken at the psychological level in
   the stable direction, DTE milestones, collector stale (ops);
+* M96 N1 threshold alerts (the user's own levels, OFF and empty until he sets them): the OI change of one strike's call
+  or put since the day's first reading reaching his level (STRIKE_OI_CHANGE, once per crossing, cooldown per rule), and
+  the PCR crossing his level up or down (PCR_CROSS) - each compared with the slot before it, never a later one;
 * per-type cooldown, a dedupe key (tenant, underlying, type, new state, slot) unique in `oi_alert_log`, quiet hours
   and snooze / mute-today hold an alert back (logged with the reason, not sent);
 * the venue being closed suppresses evaluation altogether (the worker only evaluates in session).
@@ -58,6 +61,59 @@ class AlertEvent:
     old_state: Optional[str]
     new_state: str
     severity: NotificationSeverity
+    detail: dict | None = None          # M96 N1: the numbers of a threshold alert (rendered by render_threshold)
+
+
+@dataclass(frozen=True)
+class ThresholdView:
+    """M96 N1: what the threshold alerts compare, for one slot: the banner's PCR and, per (side, strike), the OI change
+    since the day's first reading."""
+    pcr: float | None
+    oi_change: dict[tuple, float]
+
+
+def strike_changes(rows, baselines: dict[float, tuple], first_rows=()) -> dict[tuple, float]:
+    """(side, strike) -> OI now minus the day's first reading (the collector's day baseline, else the day's first stored
+    slot). A strike with either number missing is left out - never guessed."""
+    first = {float(r.strike): r for r in first_rows}
+    out: dict[tuple, float] = {}
+    for r in rows:
+        k = float(r.strike)
+        base, f = baselines.get(k), first.get(k)
+        for i, (side, now) in enumerate((("CE", r.call_oi), ("PE", r.put_oi))):
+            ref = base[i] if base is not None and base[i] is not None else (getattr(f, "call_oi" if i == 0 else "put_oi") if f is not None else None)
+            if now is not None and ref is not None:
+                out[(side, k)] = float(now) - float(ref)
+    return out
+
+
+def detect_thresholds(prev: ThresholdView | None, cur: ThresholdView, settings: OIAlertSettings) -> list[AlertEvent]:
+    """The threshold alerts a move from the slot `prev` to the slot `cur` raises (pure). Each fires only on the slot where
+    the number crosses the user's level - not again while it stays beyond it; no previous slot: nothing to compare."""
+    out: list[AlertEvent] = []
+    want = set(settings.types)
+    if prev is None:
+        return out
+    if "STRIKE_OI_CHANGE" in want:
+        for rule in settings.strike_rules:
+            key = (rule.side, float(rule.strike))
+            before, now = prev.oi_change.get(key), cur.oi_change.get(key)
+            if before is not None and now is not None and before < rule.threshold <= now:
+                out.append(AlertEvent("STRIKE_OI_CHANGE", f"{before:g}", f"{rule.side} {rule.strike:g} reached {rule.threshold:g}",
+                                      NotificationSeverity.INFO,
+                                      {"side": rule.side, "strike": rule.strike, "change": now, "threshold": rule.threshold}))
+    level = settings.pcr_level
+    if "PCR_CROSS" in want and level is not None and prev.pcr is not None and cur.pcr is not None:
+        if prev.pcr < level <= cur.pcr:
+            way = "above"
+        elif prev.pcr >= level > cur.pcr:
+            way = "below"
+        else:
+            way = ""
+        if way:
+            out.append(AlertEvent("PCR_CROSS", f"{prev.pcr:.2f}", f"{way} {level:g}", NotificationSeverity.INFO,
+                                  {"way": way, "level": level, "pcr": cur.pcr, "prev": prev.pcr}))
+    return out
 
 
 def view_of(row: OIBannerStateRecord) -> StateView:
@@ -135,6 +191,29 @@ def render(underlying: str, event: AlertEvent, state: BannerState, slot: datetim
     return {"title": title, "message": message, "payload": payload}
 
 
+def _lakh(value: float) -> str:
+    return f"{value / 1e5:,.2f} L" if abs(value) >= 1e5 else f"{value:,.0f}"
+
+
+def render_threshold(underlying: str, event: AlertEvent, slot: datetime, data_as_of: datetime) -> dict:
+    """M96 N1: the title / message / payload of a threshold alert - the numbers and the user's own level, in neutral
+    words (information only, never an order word)."""
+    d = event.detail or {}
+    stamp = slot.astimezone(IST).strftime("%d %b %H:%M IST")
+    if event.alert_type == "STRIKE_OI_CHANGE":
+        side = "Call" if d.get("side") == "CE" else "Put"
+        title = f"{underlying} OI: {side.lower()} OI change at {d.get('strike', 0):g} reached your level"
+        message = (f"{underlying} {d.get('strike', 0):g} {d.get('side')}: OI change since the day's first reading {_lakh(float(d.get('change') or 0))} "
+                   f"(your level {_lakh(float(d.get('threshold') or 0))}). Data as of {stamp}. Information only, not advice.")
+    else:
+        title = f"{underlying} OI: PCR crossed {d.get('way')} your level {d.get('level', 0):g}"
+        message = (f"{underlying} PCR (OI) {float(d.get('prev') or 0):.2f} → {float(d.get('pcr') or 0):.2f}, {d.get('way')} your level "
+                   f"{d.get('level', 0):g}. Data as of {stamp}. Information only, not advice.")
+    payload = {"schema": SCHEMA, "underlying": underlying, "alert_type": event.alert_type, "old_state": event.old_state,
+               "new_state": event.new_state, "detail": d, "data_timestamps": {"slot": slot.isoformat(), "data_as_of": data_as_of.isoformat()}}
+    return {"title": title[:200], "message": message, "payload": payload}
+
+
 def wall_state(rows, baselines: Dict[float, tuple], state: BannerState, strike_step: float, settings: oi_regime.OIRegimeSettings) -> Optional[str]:
     """"CE@level" / "PE@level" when an OI wall stands at the psychological level in the stable direction, else None."""
     direction = state.stable_signal.direction.value
@@ -150,10 +229,13 @@ def wall_state(rows, baselines: Dict[float, tuple], state: BannerState, strike_s
 
 # ---------------------------------------------------------------- service
 
-async def _last_sent(session: AsyncSession, tenant_id: int, underlying: str, alert_type: str) -> Optional[datetime]:
-    value = await session.scalar(select(OIAlertLogRecord.created_at).where(
+async def _last_sent(session: AsyncSession, tenant_id: int, underlying: str, alert_type: str, new_state: str | None = None) -> datetime | None:
+    query = select(OIAlertLogRecord.created_at).where(
         OIAlertLogRecord.tenant_id == tenant_id, OIAlertLogRecord.underlying == underlying, OIAlertLogRecord.alert_type == alert_type,
-        OIAlertLogRecord.status == "SENT").order_by(OIAlertLogRecord.created_at.desc()).limit(1))
+        OIAlertLogRecord.status == "SENT")
+    if new_state is not None:                     # M96 N1: one strike rule's cooldown does not hold back another's
+        query = query.where(OIAlertLogRecord.new_state == new_state)
+    value = await session.scalar(query.order_by(OIAlertLogRecord.created_at.desc()).limit(1))
     return value if value is None or value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
@@ -174,7 +256,8 @@ async def _decide(session: AsyncSession, tenant_id: int, underlying: str, event:
     if await session.scalar(select(OIAlertLogRecord.id).where(OIAlertLogRecord.dedupe_key == key)):
         return "DUPLICATE"
     status = "SENT"
-    last = await _last_sent(session, tenant_id, underlying, event.alert_type)
+    last = await _last_sent(session, tenant_id, underlying, event.alert_type,
+                            event.new_state if event.alert_type == "STRIKE_OI_CHANGE" else None)
     if snoozed_until is not None and (snoozed_until if snoozed_until.tzinfo else snoozed_until.replace(tzinfo=timezone.utc)) > now:
         status = "SNOOZED"
     elif in_quiet_hours(now.astimezone(IST), alerts):
@@ -233,12 +316,14 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
         .order_by(OIBannerStateRecord.slot_start.desc()).limit(1))
     state, step = latest.state, latest.totals.strike_step
     window_rows = slots[-1].chain.rows
-    wall = wall_state(window_rows, await snapshots.baselines(session, underlying, day, tenant_id=tenant_id), state, step, settings)
+    base = await snapshots.baselines(session, underlying, day, tenant_id=tenant_id)
+    wall = wall_state(window_rows, base, state, step, settings)
     prev = view_of(prev_row) if prev_row is not None else None
     cur = StateView(state.direction.value, state.stable_signal.direction.value,
                     state.stable_signal.strength.value if state.stable_signal.strength else None,
                     state.pcr_band.value if state.pcr_band else None, state.max_pain, None, state.dte, wall)
     events = detect(prev, cur, settings.alerts, step)
+    thresholds = _threshold_events(timeline, slots, latest, base, settings.alerts)
     moved = any(e.alert_type == "MAX_PAIN_MOVE" for e in events)
     ref = state.max_pain if (prev is None or moved) else (prev.max_pain_ref if prev.max_pain_ref is not None else prev.max_pain)
     session.add(OIBannerStateRecord(tenant_id=tenant_id, underlying=underlying, slot_start=latest.slot_start, direction=cur.direction,
@@ -252,7 +337,27 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     for event in events:
         decisions.append(await _decide(session, tenant_id, underlying, event, latest.slot_start, now, settings.alerts, snoozed,
                                        render(underlying, event, state, latest.slot_start, latest.captured_at)))
+    for event in thresholds:
+        decisions.append(await _decide(session, tenant_id, underlying, event, latest.slot_start, now, settings.alerts, snoozed,
+                                       render_threshold(underlying, event, latest.slot_start, latest.captured_at)))
     return decisions
+
+
+def _threshold_events(timeline, slots, latest, base: dict[float, tuple], alerts: OIAlertSettings) -> list[AlertEvent]:
+    """M96 N1: the latest slot against the stored slot just before it (both at or before the latest - no look-ahead)."""
+    from app.option_chain.oi_regime import THRESHOLD_ALERT_TYPES
+    if not set(alerts.types) & set(THRESHOLD_ALERT_TYPES) or len(timeline) < 2:
+        return []
+    by_slot = {s.slot_start: s for s in slots}
+    cur_slot = by_slot.get(latest.slot_start)
+    earlier = [s for s in slots if s.slot_start < latest.slot_start]
+    if cur_slot is None or not earlier:
+        return []
+    first_rows = slots[0].chain.rows
+    prev_entry = timeline[-2]
+    prev = ThresholdView(prev_entry.state.pcr, strike_changes(earlier[-1].chain.rows, base, first_rows))
+    cur = ThresholdView(latest.state.pcr, strike_changes(cur_slot.chain.rows, base, first_rows))
+    return detect_thresholds(prev, cur, alerts)
 
 
 async def followers(session: AsyncSession, underlying: str) -> Sequence[int]:
@@ -360,4 +465,4 @@ async def send_digests(session: AsyncSession, now: datetime) -> int:
     return sent
 
 
-__all__ = ["telegram_keyboard", "snooze_from_telegram", "send_test", "send_digests", "TELEGRAM_PREFIX", "detect", "render", "in_quiet_hours", "wall_state", "evaluate_tenant", "followers", "StateView", "AlertEvent", "SCHEMA"]
+__all__ = ["detect_thresholds", "strike_changes", "render_threshold", "ThresholdView", "telegram_keyboard", "snooze_from_telegram", "send_test", "send_digests", "TELEGRAM_PREFIX", "detect", "render", "in_quiet_hours", "wall_state", "evaluate_tenant", "followers", "StateView", "AlertEvent", "SCHEMA"]

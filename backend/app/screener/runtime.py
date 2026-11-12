@@ -298,6 +298,30 @@ class _Eval:
             self._session_bars[key] = b
         return self._session_bars[key]
 
+    def level_grade(self, tf: str, level: str, what: str, near: float, look: int, touches: float, recent: int, tier: float,
+                    step: float) -> pd.Series:
+        """M99 P2: `LevelGrade` - the key levels of this frame (previous session, pre-open, the session so far) and the grade
+        or one part of it (app/screener/level_grade.py) on every bar; the ATR of 14 bars is the band's unit."""
+        from app.price_action import level_strength as ls
+        from app.screener import level_grade as lg
+        f = self.frame(tf)
+        levels = {"PDC": _operand(f, "PDC"), "PDH": _operand(f, "PDH"), "PDL": _operand(f, "PDL"),
+                  "PREOPEN_HIGH": self.session_series(tf, "pre_high"), "PREOPEN_LOW": self.session_series(tf, "pre_low"),
+                  "SESSION_HIGH": self.session_series(tf, "high"), "SESSION_LOW": self.session_series(tf, "low")}
+        arrays = {k: v.reindex(f.index).to_numpy(dtype=float) for k, v in levels.items()}
+        if step > 0:
+            steps: list[float] = [float(step)]
+        else:
+            by = ls._s(None)["zone_round_steps"]
+            steps = [float(x) for x in by.get(str(self.data.symbol).upper(), by["DEFAULT"])]
+        try:
+            values = lg.grade_series(arrays, level, f["high"].to_numpy(float), f["low"].to_numpy(float), _atr(f, 14).to_numpy(float),
+                                     what=what, near=near, look=look, touches=int(touches), recent=recent, tier=int(tier),
+                                     round_steps=steps)
+        except ValueError as exc:
+            raise ScreenRuntimeError(str(exc)) from exc
+        return pd.Series(values, index=f.index, dtype=float)
+
     def session_series(self, tf: str, what: str) -> pd.Series:
         """M94: one of the session's running values (high / low / volume so far) or the pre-open bars' levels (pre_high /
         pre_low / pre_volume) on the exchange clock - the session map of `session_bars`, cached per frame and value."""
@@ -630,6 +654,9 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # M99 B1-c (flag m99_primitives): the structure tracker's per-bar BOS / CHoCH and regime (structure_series.py)
+            "StructureEventSeries": lambda: _structure_series(f, tf, "event", {k: kw(k) for k in ("pivot_n", "swing_k")}),
+            "RegimeTag": lambda: _structure_series(f, tf, "regime", {k: kw(k) for k in ("pivot_n", "swing_k", "range_width", "range_swings")}),
             # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
             "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
                 "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
@@ -652,6 +679,9 @@ class _Eval:
             "PreOpenHigh": lambda: self.session_series(tf, "pre_high"),
             "PreOpenLow": lambda: self.session_series(tf, "pre_low"),
             "PreOpenVolume": lambda: self.session_series(tf, "pre_volume"),
+            # M99 P2: the information grade of a key level (app/screener/level_grade.py)
+            "LevelGrade": lambda: self.level_grade(tf, _text(0, ""), _text(1, "grade"), num(2, 0.0), win(3, 400), num(4, 2.0), win(5, 200),
+                                                   num(6, 2.0), num(7, 0.0)),
             # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
             "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
                 "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
@@ -1366,6 +1396,21 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     from app.screener.breakouts.screens import Bars
     b = Bars(f, _breakout_params({"atr_n": atr_n}))
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
+
+
+def _structure_series(f: pd.DataFrame, tf: str, what: str, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-c: StructureEventSeries ("event": "" on bars without one) / RegimeTag ("regime": missing in warm-up) from
+    app/price_action/structure_series.py - the tracker fed the frame's closed bars one at a time (bars <= t decide t)."""
+    from app.price_action import structure_series as ss
+    try:
+        s = ss.settings(**{k: v for k, v in given.items() if v is not None})
+        out = ss.structure_series(f, tf, s)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    values = getattr(out, what)
+    if what == "regime":
+        values = np.where(values == "", None, values)
+    return pd.Series(values, index=f.index, dtype=object)
 
 
 def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:

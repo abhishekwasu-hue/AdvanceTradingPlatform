@@ -485,7 +485,7 @@ export default function BacktestPage() {
         <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="flex flex-wrap items-center gap-3 mb-2">
             <div className="text-xs font-bold uppercase tracking-wider text-fg-muted">Trade as</div>
-            <select className="rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
+            <select className="min-w-0 max-w-full rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
               <option value="UNDERLYING">Underlying (cash / index level)</option>
               <option value="OPTION">Options (historical option-chain backtest)</option>
             </select>

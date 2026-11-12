@@ -174,7 +174,7 @@ for (const [width, height] of [[390, 844], [1440, 900]] as const) {
         expect(seen.orders[1]).toMatch(/\/paper\/fno\/order$/);                           // then the ONE order route
         const placedBody = seen.bodies[1];
         expect(placedBody).toMatchObject({ side: "SELL", lots: 2, right: "CE", strike: 24700, stop_loss: 125 });
-        expect(Object.keys(placedBody)).not.toContain("mode");                             // PAPER = LIVE: no mode in the body
+        expect(placedBody.mode).toBe("PAPER");                                             // M96-Q1: PAPER unless he picks LIVE
         await page.keyboard.press("Escape");
         // the status, the fill and the position in the same panel; his target armed only on his tap, from the fill
         const placed = panel.locator("[data-plan='placed']");

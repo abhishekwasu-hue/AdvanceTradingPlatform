@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.screener import nodes
 from app.screener.registry import M99_FLAG as FLAG
 
-
 # The functions this gate covers; app/screener/m99_gate.py covers the rest of the flag's functions.
 FIB_FUNCTIONS: frozenset[str] = frozenset({"FibLevel", "FibDistancePct", "ClusterDistancePct"})
 

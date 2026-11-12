@@ -1,6 +1,6 @@
 /** OI Banner (O3): pure presentation helpers (tested in format.test.ts). No number here is invented: every value
  *  comes from the API row, and a missing value is shown as a dash. */
-import { formatCount, formatNumber } from "../ui/format";
+import { formatCount, formatLakhs, formatNumber } from "../ui/format";
 import type { OiBannerResponse, OiBannerRow, OiDirection, OiStrikeSeries } from "./types";
 
 /** M61 follow-up (owner order M61, OI-5; CLAUDE.md section 3): the engine's internal labels in neutral words, mapped
@@ -53,7 +53,26 @@ export function alertStateWords(alertType: string, state: string | null | undefi
   if (alertType === "DIRECTION_CHANGE") return directionWords(state);
   if (alertType === "STABLE_FLIP" || alertType === "STRENGTH_CHANGE") return leadWords(state);
   if (alertType === "PCR_BAND") return pcrBandWords(state);
+  if (alertType === "STRIKE_OI_CHANGE") return strikeOiWords(state);
+  if (alertType === "PCR_CROSS") return pcrCrossWords(state);
   return state;
+}
+
+const lakhs = (v: number) => formatLakhs(v);
+const strikeWords = (k: number) => formatNumber(k, Number.isInteger(k) ? 0 : 2, { trim: true });
+
+/** M96 N1: "CE 24500 reached 500000" -> "Call 24,500 OI change reached 5.00 L"; the old state (the change before) "412000" -> "4.12 L". */
+function strikeOiWords(state: string): string {
+  const m = /^(CE|PE) (\d+(?:\.\d+)?) reached (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)$/i.exec(state);
+  if (m) return `${m[1].toUpperCase() === "CE" ? "Call" : "Put"} ${strikeWords(Number(m[2]))} OI change reached ${lakhs(Number(m[3]))}`;
+  const n = Number(state);
+  return Number.isFinite(n) ? `OI change ${lakhs(n)}` : state;
+}
+
+/** M96 N1: "above 1.2" -> "PCR above 1.2"; the old state "1.05" -> "PCR 1.05". */
+function pcrCrossWords(state: string): string {
+  if (/^(above|below) /.test(state)) return `PCR ${state}`;
+  return Number.isFinite(Number(state)) ? `PCR ${state}` : state;
 }
 
 /** The option-chain analysis' bias (app/option_chain/analysis.py: BULLISH only when PCR > 1.2 AND put OI builds while

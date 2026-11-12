@@ -8,6 +8,7 @@
  * carries any of it: the levels belong to the order and position records.
  */
 import type { DeploymentCreateRequest, TemplateExitsRequest } from "../types";
+import type { ManagementChoices } from "./management";
 
 export type { TemplateExitsRequest };
 export type ExitClass = "UNDERLYING" | "FUTURE" | "OPTION_SINGLE" | "OPTION_STRUCTURE";
@@ -24,6 +25,8 @@ export interface TemplateExitChoices {
   ratio: { min: number; max: number };
   /** M94 F10: the levels a level target may sit at (absent from an older server, empty: the rule is not offered). */
   levels?: { value: string; label: string }[];
+  /** M99 P2: the trade-management options (absent / null: not offered by this template). */
+  management?: ManagementChoices | null;
 }
 
 /** What the form holds (numbers as typed text until they are checked). */

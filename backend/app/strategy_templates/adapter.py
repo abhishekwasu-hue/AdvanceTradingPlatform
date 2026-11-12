@@ -33,7 +33,7 @@ from app.core.models import Signal
 from app.indicators.prefix_cache import whole_frame
 from app.screener.nodes import TF_MINUTES
 from app.strategy_engine.base import BaseStrategy
-from app.strategy_templates import engine, ids, library
+from app.strategy_templates import engine, ids, library, management
 from app.strategy_templates import exits as exit_settings
 from app.strategy_templates.compile import Part, Settings, TemplateError, compile_part, compile_recipe
 from app.strategy_templates.schema import Template
@@ -73,6 +73,7 @@ class TemplateStrategy(BaseStrategy):
         self.computations = 0                                  # how many whole series were computed (R3 test)
         # Section 5: the user's exit choice (the default: exactly the behaviour before - no target, no exit acted on)
         self.exits: exit_settings.TemplateExits = exit_settings.DEFAULT
+        self.management: management.Management = management.NONE          # M99 P2: off unless the user turns an option on
         self._extras: Dict[str, Part] = {}
         super().__init__()
 
@@ -91,8 +92,39 @@ class TemplateStrategy(BaseStrategy):
                                                 template=self.template, settings=self.settings)
         elif choice.target_rule == "TEMPLATE_LEVEL":
             extras.update(exit_settings.level_parts(self.template, self.settings, str(choice.target_level)))
-        self.exits, self._extras, self._cache = choice, extras, None
+        manage = choice.manage()
+        if manage.active:
+            # M99 P2: the trail's level per side, read on the same bars as the signals (it never changes a signal)
+            texts = manage.trail_texts()
+            if texts is not None:
+                for side in self.settings.side_list():
+                    extras[f"trail:{side}"] = compile_part(texts[0 if side == "long" else 1], what="trailing stop", want="num",
+                                                           template=self.template, settings=self.settings)
+        self.exits, self._extras, self._cache, self.management = choice, extras, None, manage
         return self
+
+    @property
+    def manages(self) -> bool:
+        """M99 P2: the user turned on a trade-management option (the engines and the worker then call `management_step`)."""
+        return self.management.active
+
+    def management_step(self, data: dict[str, pd.DataFrame], direction: Any, *, entry: float, initial_stop: float,
+                        current_stop: float, after: int) -> management.Step:
+        """M99 P2: the management options on the last closed bar of `data` for an open trade of `direction` whose last
+        `after` bars closed after its entry - the one call of the backtest engine and the worker (backtest = live). No
+        bar after the entry yet: nothing (the entry bar never manages itself)."""
+        df = data.get(self.label)
+        if not self.manages or df is None or len(df) == 0 or after <= 0:
+            return management.Step()
+        series, t = self.series(df)
+        is_long = direction in (SignalDirection.LONG, "LONG", "long")
+        k = min(int(after), t + 1)
+        level = series.extras.get("trail:long" if is_long else "trail:short")
+        sub = df.iloc[len(df) - k:]
+        return management.step(self.management, direction=1 if is_long else -1, entry=float(entry), initial_stop=float(initial_stop),
+                               current_stop=float(current_stop), highs=sub["high"].astype(float).tolist(),
+                               lows=sub["low"].astype(float).tolist(), closes=sub["close"].astype(float).tolist(),
+                               level=float(level[t]) if level is not None else None)
 
     @property
     def acts_on_exit_signal(self) -> bool:

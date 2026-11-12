@@ -71,7 +71,8 @@ async def entry_blocks(session: AsyncSession, *, user: Optional[User], mode: str
     if current["maintenance_mode"]:
         reasons.append("Platform maintenance: no new entries" + (f" - {current['maintenance_message']}" if current["maintenance_message"] else ""))
     if mode == "LIVE":
-        # Z10-c: the Phase 0 PAPER-only lock (flag phase0_paper_only, ON by default - M55 S1). Entries only - exits never come here.
+        # Z10-c / LIVE-1: the PAPER-only lock, derived from the one live switch (live_trading OFF = locked). Entries only -
+        # exits never come here.
         from app.platform import phase0_lock
         if await phase0_lock.is_on(session, user.tenant_id if user is not None else None):
             reasons.append(phase0_lock.ENTRY_REASON)
@@ -92,11 +93,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     "marketplace": "Strategy marketplace listings and subscriptions",
     "public_api": "Public REST API keys and /api/public/v1",
     "backtest_optimizer": "Parameter optimisation grid runs",
-    "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
+    "live_trading": "The one live switch: ON = PAPER and LIVE on every order path, each user picks his own mode; OFF = PAPER only (exits always work)",
     # Z10-c (Phase 0): the PAPER-only lock (app/platform/phase0_lock.py). OFF by default. The one exception is the explicit
     # Phase 0 deployment mode (ATP_DEPLOYMENT_PHASE=phase0, app/platform/deployment_phase.py, owner decision 2026-10-12):
     # it seeds this flag ON and `live_trading` OFF where no entry is stored - the restrictive direction only.
-    "phase0_paper_only": "Phase 0 PAPER-only lock: every new LIVE entry is refused, at entry checks and at the broker-order chokepoint (exits of LIVE positions always run)",
+    # LIVE-1: no longer a switch of its own - it is derived from live_trading (feature_flags) and set_flag refuses it.
+    "phase0_paper_only": "PAPER-only lock, follows live_trading (on while live_trading is off): every new LIVE entry is refused, at entry checks and at the broker-order chokepoint (exits of LIVE positions always run)",
     "self_signup": "Public registration (off: invite-only)",
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
@@ -402,6 +404,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
+    # M99 B1 (owner order M99): the shared primitives the M99 packs build on - bar classifier, Fibonacci, clusters and
+    # structure (per-bar BOS / CHoCH and the trend-or-range regime in ScreenQL). Signals only, places no orders. OFF: the
+    # functions are hidden and refused.
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
@@ -509,7 +514,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
     # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the
-    # routes answer 404 and a template id resolves to nothing. Signals only; LIVE is refused for a template.
+    # routes answer 404 and a template id resolves to nothing. Signals only; LIVE-1: a template runs PAPER or LIVE (the user's
+    # choice, LIVE only while live_trading is on) like any strategy.
     "strategy_templates": "Strategy templates: ready signal recipes (Supertrend flip, moving-average cross, range and channel breakouts and their retests, range edges, structure flip retest) adopted as paper strategies with the user's own settings",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
@@ -680,6 +686,12 @@ DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
 DEFAULT_OFF_FLAGS: frozenset[str] = frozenset(FEATURE_FLAGS) - DEFAULT_ON_FLAGS
 
 
+# LIVE-1: the former PAPER-only lock, now derived from `live_trading` (see feature_flags).
+PAPER_ONLY_FLAG = "phase0_paper_only"
+PAPER_ONLY_FOLDED = ("'phase0_paper_only' follows live_trading now (one live switch): it cannot be set on its own. "
+                     "Turn live_trading on or off instead. Nothing was changed.")
+
+
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     stored = (await _get(session, KEY_FEATURE_FLAGS)).get("flags") or {}
     if not isinstance(stored, dict):
@@ -692,6 +704,13 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
         default = (name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default
         result[name] = {"on": bool(entry.get("on", default)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
                         "description": description}
+    # LIVE-1 (owner order: ONE live switch): the PAPER-only lock is no longer a second switch - it is derived from
+    # `live_trading` (ON = the lock off for everyone; OFF = the lock on for everyone). A stored `phase0_paper_only` entry
+    # is ignored, so every layer that reads the lock (entry_blocks, the broker chokepoint, the worker, assert_paper and
+    # the trader's view) follows the one switch (app/platform/live_switch.py).
+    from app.platform import live_switch
+    if PAPER_ONLY_FLAG in result:
+        result[PAPER_ONLY_FLAG] = {**result[PAPER_ONLY_FLAG], "on": not live_switch.live_on(result), "tenants": []}
     return result
 
 
@@ -791,13 +810,16 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
     if flag_state.is_not_built(name) and (on or tenants):
         # M80 F4: a flag that is not built yet cannot be turned on (nor allow-listed); turning it off always works.
         raise FlagNotBuilt(flag_state.not_built_reason(name))
-    # M55 S1: `live_trading` on or the PAPER-only lock off - the owner only, two-factor checked, typed confirmation
+    if name == PAPER_ONLY_FLAG:
+        # LIVE-1: the lock is derived from live_trading (one switch); it is not set on its own.
+        raise ValueError(PAPER_ONLY_FOLDED)
+    # M55 S1: `live_trading` on - the owner only, two-factor checked, typed confirmation
     # (app/platform/live_owner.py; audited either way, a refusal raises LiveOwnerRefused or the step-up refusal).
     from app.platform import live_owner
     await live_owner.ensure_may_open_live(session, user, name, on=on, tenants=tenants, session_id=session_id, confirm=confirm)
     if name == "live_trading":
-        # Phase 0 deployment mode: no live_trading while phase0_paper_only is on (audited refusal, ValueError -> 400).
-        await deployment_phase.refuse_live_trading_on(session, user.id, on=on, tenants=tenants)
+        # LIVE-1: live_trading is the one switch - the former "no live_trading while phase0_paper_only is on" refusal of
+        # the Phase 0 deployment mode is folded into it (the lock now follows this flag).
         # M55 S1b: the allow-list of `live_trading` is the owner's per-organisation LIVE grant (live_owner.set_org_grant);
         # the switch only changes `on` and keeps the granted list.
         if tenants:
@@ -826,6 +848,8 @@ async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -
     # every GET /api/system/features, which the UI v2 shell re-reads as the trader moves between pages).
     flags = await feature_flags(session)
     answer = {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
+    from app.platform import live_switch
+    answer[live_switch.FLAG] = live_switch.live_on(flags)   # LIVE-1: the one switch - its global `on` only, no allow-list
     for name in engine_missing_flags():                     # item 7: no engine, no feature for users
         if name in answer:
             answer[name] = False

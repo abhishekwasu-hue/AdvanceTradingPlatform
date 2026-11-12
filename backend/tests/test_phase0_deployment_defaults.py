@@ -187,12 +187,13 @@ def test_reboot_is_idempotent_and_never_overrides_a_later_owner_change(monkeypat
     assert _startup()["seeded"] == [] and _startup("worker")["seeded"] == []                     # re-boots write nothing
     assert len(_audit(deployment_phase.SEED_AUDIT_EVENT)) == before
 
-    async def owner_turns_lock_off():
+    async def owner_turns_live_on():
         async with _session_factory() as session:
-            await controls.set_flag(session, _owner_user(), "phase0_paper_only", on=False)
-    _run(owner_turns_lock_off())
-    assert owner_checks_passed == ["phase0_paper_only"]                                          # M55 S1: owner checks ran
-    assert _startup()["seeded"] == [] and _stored()["phase0_paper_only"]["on"] is False          # not turned back on
+            await controls.set_flag(session, _owner_user(), "live_trading", on=True)
+    _run(owner_turns_live_on())                                   # LIVE-1: the one switch (the lock follows it)
+    assert owner_checks_passed == ["live_trading"]                                               # M55 S1: owner checks ran
+    assert _startup()["seeded"] == [] and _stored()["live_trading"]["on"] is True                # not turned back off
+    assert _flags()["phase0_paper_only"]["on"] is False                                          # the derived lock follows
     assert len(_audit(deployment_phase.SEED_AUDIT_EVENT)) == before
 
 
@@ -265,25 +266,27 @@ def test_startup_never_raises_even_when_the_rollback_fails(monkeypatch):
 
 # --- Admin -> Controls ----------------------------------------------------------------------------------------------
 
-def test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it(monkeypatch, owner_checks_passed):
+def test_live_trading_is_the_one_switch_even_in_the_phase0_mode(monkeypatch, owner_checks_passed):
+    """LIVE-1 (owner order: ONE live switch; replaces test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it
+    and test_admin_route_answers_400_with_the_reason): the former Phase 0 refusal "no live_trading while phase0_paper_only
+    is on" is folded into the switch. The owner (owner checks) turns live_trading on in one step, the derived lock lifts,
+    and turning it off again locks at once."""
     _phase0(monkeypatch)
     _startup()
-    before = len(_audit(deployment_phase.REFUSAL_AUDIT_EVENT))
+    assert _flags()["phase0_paper_only"]["on"] is True
 
-    async def turn_on(**kwargs):
+    async def set_live(on: bool):
         async with _session_factory() as session:
-            await controls.set_flag(session, _owner_user(), "live_trading", **kwargs)
+            await controls.set_flag(session, _owner_user(), "live_trading", on=on)
 
-    for kwargs in ({"on": True}, {"on": False, "tenants": [5]}):
-        with pytest.raises(ValueError, match="live_trading cannot be turned on while phase0_paper_only is on"):
-            _run(turn_on(**kwargs))
-    assert _stored()["live_trading"] == {"on": False, "tenants": []}                              # nothing changed
-    refusals = _audit(deployment_phase.REFUSAL_AUDIT_EVENT)[before:]
-    assert len(refusals) == 2 and all("live_trading" in r and "phase0_paper_only is on" in r for r in refusals)
-    _run(turn_on(on=False))                                                                       # OFF is always allowed
+    _run(set_live(True))
+    assert _stored()["live_trading"]["on"] is True and _flags()["phase0_paper_only"]["on"] is False
+    assert owner_checks_passed == ["live_trading"]
+    _run(set_live(False))
+    assert _stored()["live_trading"]["on"] is False and _flags()["phase0_paper_only"]["on"] is True
 
 
-def test_admin_route_answers_400_with_the_reason(monkeypatch):
+def test_admin_route_switches_live_on_for_the_owner_in_the_phase0_mode(monkeypatch):
     from app.core import config
     from app.platform import live_owner
     from tests.test_admin_api import _admin
@@ -293,22 +296,9 @@ def test_admin_route_answers_400_with_the_reason(monkeypatch):
     _startup()
     res = client.put("/api/admin/controls/flags/live_trading", headers=headers,                   # two-factor, confirmed
                      json={"on": True, "confirm": live_owner.CONFIRM_TEXT})
-    assert res.status_code == 400 and "phase0_paper_only is on" in res.json()["detail"]
-    assert _stored()["live_trading"]["on"] is False
-
-
-def test_live_trading_follows_the_owner_once_the_lock_is_off_or_outside_the_mode(monkeypatch, owner_checks_passed):
-    async def set_flag(name, on):
-        async with _session_factory() as session:
-            await controls.set_flag(session, _owner_user(), name, on=on)
-
-    _store({"phase0_paper_only": {"on": True, "tenants": []}})
-    _run(set_flag("live_trading", True))                                                          # normal mode: unchanged behaviour
-    _phase0(monkeypatch)
-    _run(set_flag("phase0_paper_only", False))                                                    # the owner's explicit decision
-    _run(set_flag("live_trading", True))
+    assert res.status_code == 200, res.text
     assert _stored()["live_trading"]["on"] is True
-    assert owner_checks_passed == ["live_trading", "phase0_paper_only", "live_trading"]          # M55 S1: owner checks ran
+    assert client.put("/api/admin/controls/flags/live_trading", headers=headers, json={"on": False}).status_code == 200
 
 
 # --- the worker: no LIVE entry path, exits still run -----------------------------------------------------------------
@@ -373,9 +363,9 @@ def test_deep_health_says_why_live_entry_paths_are_not_started(monkeypatch):
     body = client.get("/api/system/health/deep").json()
     live = body["checks"]["live_paths"]
     assert live["status"] == "paper_only" and live["deployment_phase"] == "phase0" and live["exits"] == "always allowed"
-    assert "phase0_paper_only is on" in live["detail"]
+    assert live["detail"] == deployment_phase.LIVE_PATHS_NOT_STARTED
     monkeypatch.delenv(deployment_phase.ENV_VAR)
-    _store({"phase0_paper_only": {"on": False, "tenants": []}})
+    _store({"live_trading": {"on": True, "tenants": []}})          # LIVE-1: the one switch, the lock follows it
     assert client.get("/api/system/health/deep").json()["checks"]["live_paths"]["status"] == "flag_controlled"
 
 

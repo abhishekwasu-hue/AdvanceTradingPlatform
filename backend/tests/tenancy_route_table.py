@@ -424,6 +424,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chain-history/coverage"): M_OWN_CHAIN_HISTORY,
     ("GET", "/api/chain-history/day"): M_OWN_CHAIN_HISTORY,
     ("GET", "/api/chain-history/range"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/oi-range"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/oi-replay"): M_OWN_CHAIN_HISTORY,
+    ("GET", "/api/chain-history/expiries"): M_OWN_CHAIN_HISTORY,
     ("GET", "/api/backtest/option-chain/coverage"): "member",      # TM94-3: the organisation's own recorded rows and uploads only
     ("GET", "/api/backtest/option-chain/snapshots"): "member",     # TM94-3: the organisation's own recorded rows and uploads only
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",

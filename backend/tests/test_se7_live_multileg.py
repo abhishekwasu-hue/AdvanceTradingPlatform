@@ -31,6 +31,7 @@ from app.instruments.spreads import resolve_structure
 from app.kill_switch.checks import disengage, engage
 from app.platform import phase0_lock
 from app.trading.position_monitor import close_position, monitor_open_positions
+from tests.live_switch_helpers import set_live
 from tests.test_auth_api import _session_factory, client
 from tests.test_contract_rules import TODAY, _load_master
 from tests.test_multileg import SPOT, _OptionBroker, _premium, _rules
@@ -277,11 +278,11 @@ def test_no_answer_closes_the_filled_legs_by_default_even_with_the_kill_switch_a
             user = await session.get(User, t["user_id"])
             await engage(session, KillSwitchScope.TENANT, t["tenant_id"], user, "test")
     _run(stop_everything())
-    _flag(phase0_lock.FLAG, t["tenant_id"])
+    set_live(False)                        # LIVE-1: the lock follows live_trading
     try:
         assert _exits(t, deadline + timedelta(seconds=1)) == 1
     finally:
-        _flag(phase0_lock.FLAG, t["tenant_id"], on=False)
+        set_live(None)                          # LIVE-1: back to the posture
 
         async def clear():
             async with _session_factory() as session:
@@ -309,11 +310,11 @@ def test_live_close_is_an_exit_sold_legs_first_through_the_broker(monkeypatch):
     broker.reject = "no-such-symbol"
     deadline = datetime.fromisoformat(inc.block_of(result.trades[0])["deadline"])
     entries = len(broker.placed)
-    _flag(phase0_lock.FLAG, t["tenant_id"])
+    set_live(False)                        # LIVE-1: the lock follows live_trading
     try:
         closed = _exits(t, deadline + timedelta(seconds=1), broker=broker)
     finally:
-        _flag(phase0_lock.FLAG, t["tenant_id"], on=False)
+        set_live(None)                          # LIVE-1: back to the posture
     assert closed == 3
     exits = broker.placed[entries:]
     assert [o.transaction_type.value for o in exits] == ["BUY", "SELL", "SELL"] and all(o.intent != "ENTRY" for o in exits)
@@ -447,11 +448,11 @@ def test_live_complete_the_rest_needs_a_broker_and_the_lock_refuses_it(monkeypat
     broker = _RejectingBroker("24500 PE")
     result = _execute(t, mode="LIVE", key="cl1", broker=broker)
     client.post(f"/api/trading/incomplete/{result.leg_group_id}/answer", headers=t["headers"], json={"action": "complete_rest"})
-    _flag(phase0_lock.FLAG, t["tenant_id"])
+    set_live(False)                        # LIVE-1: the lock follows live_trading
     try:
         outcomes = _complete(t, broker=broker)
     finally:
-        _flag(phase0_lock.FLAG, t["tenant_id"], on=False)
+        set_live(None)                          # LIVE-1: back to the posture
     assert outcomes[0]["state"] == inc.INCOMPLETE and phase0_lock.ENTRY_REASON in outcomes[0]["message"]
     assert len(broker.placed) == 2                                                       # nothing more was sent
     client.post(f"/api/trading/incomplete/{result.leg_group_id}/answer", headers=t["headers"], json={"action": "complete_rest"})

@@ -2,7 +2,7 @@ import { Columns3 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
-import type { ColumnPrefs } from "./model";
+import type { ColumnPrefs, OiUnits } from "./model";
 
 /**
  * OC1: "Columns" - the optional columns of the chain, off by default: the Greeks, bid and ask, and (a phone only) OI
@@ -19,6 +19,12 @@ const CHOICES: { key: keyof ColumnPrefs; label: string; phoneOnly?: boolean }[] 
 const CHOICE_TERMS: Partial<Record<keyof ColumnPrefs, { term: GlossaryKey; from?: "md" }>> = {
   more: { term: "oi-change" }, greeks: { term: "greeks" }, pct: { term: "oi-change", from: "md" },
 };
+
+/** M96 Q3: the unit of OI, OI change and volume on the chain (kept in the same column choice). */
+const UNITS: { key: OiUnits; label: string }[] = [
+  { key: "lakhs", label: "Lakhs (0.50 L)" },
+  { key: "contracts", label: "Contracts (50,000)" },
+];
 
 export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs; onChange: (prefs: ColumnPrefs) => void }) {
   const [open, setOpen] = useState(false);
@@ -54,6 +60,16 @@ export default function ColumnsMenuV2({ prefs, onChange }: { prefs: ColumnPrefs;
               </div>
             );
           })}
+          <div role="radiogroup" aria-label="OI and volume in" data-units className="mt-space-1 border-t border-subtle pt-space-1">
+            <p className="px-space-2 py-space-1 text-t12 font-medium text-fg-muted">OI and volume in</p>
+            {UNITS.map((u) => (
+              <label key={u.key} className="flex min-h-11 cursor-pointer items-center gap-space-3 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">
+                <input type="radio" name={`${id}-units`} value={u.key} checked={(prefs.units ?? "lakhs") === u.key} data-unit={u.key}
+                  onChange={() => onChange({ ...prefs, units: u.key })} className="h-4 w-4 accent-brand" />
+                {u.label}
+              </label>
+            ))}
+          </div>
         </fieldset>
       )}
     </div>

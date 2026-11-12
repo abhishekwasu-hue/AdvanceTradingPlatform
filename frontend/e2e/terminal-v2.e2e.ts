@@ -168,7 +168,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/(expiries|live)/, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/expiries")) return route.fulfill({ json: DATA.expiries });
-    return route.fulfill({ json: { ...DATA.live, market_open: true } });
+    // M96: the server's ATM ± 6 PCR (Trade's banner window), what the context bar shows; made up like the rest.
+    return route.fulfill({ json: { ...DATA.live, summary: { ...(DATA.live.summary as Record<string, unknown>), pcr_oi_atm: 0.91 }, market_open: true } });
   });
   // T1-6: live prices for P&L on every card (the My trades read), the two legs as one basket group.
   await page.route(/\/api(?:\/v1)?\/portfolio\/exposure/, (r) => r.fulfill({ json: {
@@ -180,6 +181,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   await page.route(/\/api(?:\/v1)?\/paper\/fno\//, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    // M96-Q1: the ticket reads whether LIVE can go (off here, as by default).
+    if (url.pathname.endsWith("/live-status")) return route.fulfill({ json: { open: false, text: "Live trading is switched off by the admin." } });
     if (url.pathname.endsWith("/positions/groups")) return route.fulfill({ json: { groups: [{ key: "basket:b1", kind: "basket", name: "Bear call spread", trade_ids: [41, 42], hedge_ids: [42] }] } });
     // CX6: no combined exit set here (its own spec: e2e/combined-exit-v2.e2e.ts).
     if (url.pathname.endsWith("/group-exits")) return route.fulfill({ json: [] });

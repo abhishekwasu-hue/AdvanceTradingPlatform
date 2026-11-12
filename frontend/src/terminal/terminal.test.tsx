@@ -610,11 +610,11 @@ describe("TERM-2 step 1: the context bar", () => {
   }) as unknown as OptionChainData;
 
   it("figures: the live spot wins over the chain's, its Signed change from the previous close, PCR, DTE, VIX band", () => {
-    const f = contextFigures(chainData({ spot: 24400, pcr_oi: 0.91, days_to_expiry: 7, atm_strike: 24500 }),
+    const f = contextFigures(chainData({ spot: 24400, pcr_oi: 0.5, pcr_oi_atm: 0.91, days_to_expiry: 7, atm_strike: 24500 }),
       { ltp: 24480, at: null, source: "tick" }, 24400, 13.4);
     expect(f.spot).toBe(24480);
     expect(f.moved?.change).toBeCloseTo(80);
-    expect(f.pcr).toBe(0.91);
+    expect(f.pcr).toBe(0.91);                          // M96: the PCR over ATM ± 6 (Trade), not the whole chain's 0.5
     expect(f.dte).toBe(7);
     expect(f.vix?.level).toBeTruthy();
     const none = contextFigures(chainData(null), null, null, null);
@@ -625,7 +625,7 @@ describe("TERM-2 step 1: the context bar", () => {
 
   it("renders the symbol, the expiry chosen by the chain read, and ONE PAPER badge", () => {
     const html = renderToStaticMarkup(<MemoryRouter><ContextBarV2 symbol="NIFTY" onSymbol={() => undefined}
-      chain={chainData({ spot: 24400, pcr_oi: 0.91, days_to_expiry: 7, atm_strike: 24500 })} spot={null} prevClose={null} vix={null}
+      chain={chainData({ spot: 24400, pcr_oi: 0.5, pcr_oi_atm: 0.91, days_to_expiry: 7, atm_strike: 24500 })} spot={null} prevClose={null} vix={null}
       mode={{ label: "Paper", title: "Practice" }} /></MemoryRouter>);
     expect(html).toContain('data-expiry="2026-11-03"');
     expect(html).toContain('data-symbol="NIFTY"');

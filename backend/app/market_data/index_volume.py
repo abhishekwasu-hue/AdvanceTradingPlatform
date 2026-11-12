@@ -90,6 +90,24 @@ def replace_volume(bars: Iterable[OHLCVBar], future_bars: Iterable[OHLCVBar]) ->
     return [b.model_copy(update={"volume": volumes.get(_utc(b.timestamp), 0.0)}) for b in bars]
 
 
+def replace_frame_volume(frame: pd.DataFrame, future_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """M99 B1-a: `replace_volume` on a bar frame (indexed by bar start) - a copy whose volume is the future's bar volume
+    at the same instant, 0 where the future has no bar (the same rule as the chart and the screener)."""
+    if future_frame is None or "volume" not in future_frame.columns:
+        volumes = pd.Series(0.0, index=frame.index)
+    else:
+        fut = future_frame["volume"].astype(float).fillna(0.0)
+        fut = fut[~fut.index.duplicated(keep="last")]
+        fut.index = _utc_index(fut.index)
+        volumes = pd.Series(fut.reindex(_utc_index(frame.index)).fillna(0.0).to_numpy(float), index=frame.index)
+    return frame.assign(volume=volumes)
+
+
+def _utc_index(index: pd.Index) -> pd.DatetimeIndex:
+    di = pd.DatetimeIndex(index)
+    return di.tz_localize("UTC") if di.tz is None else di.tz_convert("UTC")
+
+
 def is_index(symbol: str) -> bool:
     """M93-Q3: `symbol` is an index (no traded volume of its own): an F&O index's candle symbol or underlying name
     (`NIFTY 50`, `NIFTY BANK`, `SENSEX`), or a name the platform stores as an index (`NIFTY50` -> NSE_INDEX:NIFTY50)."""

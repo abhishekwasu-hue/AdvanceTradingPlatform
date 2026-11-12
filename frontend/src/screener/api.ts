@@ -112,6 +112,8 @@ export const screenerApi = {
   vsa: () => request<IntradayLibrary>("/screener/vsa"),
   /** M99 P4: the "Wyckoff" scanners' settings (flag `wyckoff_pack`; 503 while off - no settings shown). Same shape. */
   wyckoff: () => request<IntradayLibrary>("/screener/wyckoff"),
+  /** M99 P5: the "Fibonacci + Elliott" scanners' settings (flag `fib_ew_pack`; 503 while off - no settings shown). Same shape. */
+  fibEw: () => request<IntradayLibrary>("/screener/fib-ew"),
   /** M99 P6: the "Price patterns" scanners' settings (flag `pa_pack`; 503 while off - no settings shown). Same shape. */
   pa: () => request<IntradayLibrary>("/screener/pa"),
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */

@@ -43,6 +43,9 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   // M99 P4: the Wyckoff trading ranges - a box per range, the phases A-E and each event with a Why?.
   { id: "wyckoff", group: "layers", label: "Wyckoff", note: "Trading ranges read in phases A-E, with springs, upthrusts, breaks and back-ups, each with a Why?.",
     flag: "wyckoff_pack", keywords: "wyckoff range phase spring upthrust utad sign of strength weakness back-up accumulation distribution" },
+  // M99 P5: the Fibonacci tool, clusters and the wave count with its rules and invalidation lines, each reading with a Why?.
+  { id: "fib_ew", group: "layers", label: "Fibonacci + Elliott", note: "Fibonacci levels and clusters of the latest swings, the wave count with its rule checks and invalidation lines, each reading with a Why?.",
+    flag: "fib_ew_pack", keywords: "fibonacci fib retracement extension golden cluster elliott wave count impulse zigzag triangle diagonal" },
   // M99 P6: the price patterns (swing extremes, missing link, pullback after an acceleration, trigger candles, candles, head and
   // shoulders, cup and handle) with a Why? for each mark.
   { id: "price_patterns", group: "layers", label: "Price patterns", note: "Patterns of the swings and bars, with a Why? for each mark.",

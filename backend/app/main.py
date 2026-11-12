@@ -48,6 +48,7 @@ from app.chart_reader.routes import admin_router as chart_reader_admin_router
 from app.chart_reader.routes import router as chart_reader_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.drawings import router as chart_drawings_router
+from app.charts.fib_ew_layer import router as chart_fib_ew_layer_router
 from app.charts.futures_basis import router as chart_futures_basis_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.pa_layer import router as chart_pa_layer_router
@@ -481,6 +482,7 @@ app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace lay
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_wyckoff_layer_router)  # M99 P4: Wyckoff range, phases and events with Why? on the chart (flag wyckoff_pack, off)
 app.include_router(chart_vsa_layer_router)  # M99 P3: volume spread readings with Why? on the chart (flag vsa_pack, off by default)
+app.include_router(chart_fib_ew_layer_router)  # M99 P5: Fibonacci tool, clusters, the wave count with its rules and Why? on the chart (flag fib_ew_pack, off)
 app.include_router(chart_pa_layer_router)  # M99 P6: price patterns with Why? on the chart (flag pa_pack, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_read_router)               # AUD-T5: Read this chart as of the last closed bar, read-only (ui_v2 + read_chart)

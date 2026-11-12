@@ -177,6 +177,8 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "screener_venues": _behind(),
     "screener_ownership": _decision("A licensed source of ownership data (none chosen)"),
     "screener_waves": _decision("Wave reading is method content; kept off until the chart reader port"),
+    "fib_ew_pack": _ready("The Fibonacci tool and clusters, the rule checklist and invalidation lines, the Fibonacci + Elliott screens, the chart layer with Why? and the L templates",
+                          "Screener > Fibonacci + Elliott; Charts > Layers > Fibonacci + Elliott; Strategy templates > Fibonacci + Elliott"),
     "term_margin_pair": _ready("Your broker's margin where it offers one, else a labelled estimate"),
     "term_roll": _ready(),
     "term_strike_area": _ready("Reads the stored areas"),

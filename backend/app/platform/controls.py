@@ -522,6 +522,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # reason; wave alerts fire on bar close only. Information only - places no orders.
     "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, the wave levels, ratios and "
                       "anchored wave lines and their retest, from confirmed swings (information only)",
+    # M99 P5: the Fibonacci + Elliott pack (app/price_action/fib_ew.py) - the ScreenQL functions FibEw(...) / FibEwLevel(...):
+    # the zigzag wave C and wave 3 readings, the Fibonacci cluster touch, five waves complete (impulse / diagonal rules),
+    # the count's void, the triangle's thrust projection; the "Fibonacci + Elliott" library screens, the chart layer (the
+    # Fibonacci tool, clusters, the count with its rule checklist and invalidation lines, marks with "Why?") and the L
+    # templates. Every count is an interpretation. OFF: hidden and refused, alert rules pause. Signals only - places no orders.
+    "fib_ew_pack": "Fibonacci + Elliott pack: Fibonacci levels and clusters, the wave count's rule checklist and invalidation lines, zigzag wave C and wave 3 readings in screens, on the chart and in templates (a count is an interpretation; signals only, places no orders)",
     # Strategy templates steps 2-3 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3, C1, C3, A2, A5) as
     # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the trading bot form; the user reviews
     # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the

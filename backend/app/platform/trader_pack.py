@@ -95,6 +95,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "ai_research": "Unfinished: the research loop is not complete",
     "vision_byok_v3": "Unfinished: alert reviews and the daily chart review are not complete",
     "screener_waves": "Unfinished: the wave-count work is still open",
+    "fib_ew_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P5)",
     "intraday_pack": "Unfinished: the intraday scanners, templates and risk tools are still being built (M94)",
     "wyckoff_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P4)",
     "vsa_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P3)",

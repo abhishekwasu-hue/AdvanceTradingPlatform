@@ -51,6 +51,7 @@ import { OPTIONS_EM_LAYER_ID, useOptionsExpectedMove } from "../optionChain/expe
 import { TemplateLegend, useTemplateOverlay } from "./TemplateOverlay";
 import { DEFAULT_VSA_OPTIONS, VSA_LAYER_ID, VsaBar, useVsaLayer, type VsaOptions } from "./vsaLayer";
 import { WYCKOFF_LAYER_ID, WyckoffBar, useWyckoffLayer } from "./wyckoffLayer";
+import { DEFAULT_FIB_EW_SHOW, FIB_EW_LAYER_ID, FibEwBar, useFibEwLayer, type FibEwShow } from "./fibEwLayer";
 import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyTemplates/link";
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
@@ -178,6 +179,10 @@ export default function ChartsPageV2(_props: PageProps) {
   const [tplShown, setTplShown] = useState(false);
   const tpl = useTemplateOverlay({ template: tplAsk?.template ?? null, templateTf: tplAsk?.timeframe ?? null, symbol, exchange, timeframe,
     candles: data.candles, on: tplShown && tplAsk !== null && tab === "chart" && !hubView });
+  // M99 P5: the Fibonacci + Elliott layer (flag fib_ew_pack) - the Fibonacci tool, clusters, the count and its rules, marks with "Why?"
+  const [fibEwShow, setFibEwShow] = useState<FibEwShow>(DEFAULT_FIB_EW_SHOW);
+  const fibEwOn = view.layers.includes(FIB_EW_LAYER_ID) && features.on("fib_ew_pack") && tab === "chart" && !hubView;
+  const fibEw = useFibEwLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: fibEwOn, show: fibEwShow });
   // M99 P6: the price pattern readings (flag pa_pack) - read again when a new bar closes; each mark with its "Why?" below
   const [paOptions, setPaOptions] = useState<PaOptions>(DEFAULT_PA_OPTIONS);
   const paOn = view.layers.includes(PA_LAYER_ID) && features.on("pa_pack") && tab === "chart" && !hubView;
@@ -191,9 +196,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const wyckoffOn = view.layers.includes(WYCKOFF_LAYER_ID) && features.on("wyckoff_pack") && tab === "chart" && !hubView;
   const wyckoffLayer = useWyckoffLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: wyckoffOn });
   const chartMarkers = useMemo(() => {
-    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers];
+    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers, ...fibEw.markers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
-  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers]);
+  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers, fibEw.markers]);
   const emNote = useOptionsExpectedMove(engine, symbol, view.layers.includes(OPTIONS_EM_LAYER_ID) && tab === "chart" && !hubView, chip ? chip.open : null);   // M96 N1
   // AUD-T5: Read this chart (ui_v2 + read_chart) - the server's reading as of the last closed bar, drawn while it is on.
   const readOn = features.on("read_chart");
@@ -368,6 +373,7 @@ export default function ChartsPageV2(_props: PageProps) {
             )}
             {vsaOn && !fs.on && <VsaBar state={vsaLayer} options={vsaOptions} onChange={setVsaOptions} />}
             {wyckoffOn && !fs.on && <WyckoffBar state={wyckoffLayer} />}
+            {fibEwOn && !fs.on && <FibEwBar state={fibEw} show={fibEwShow} onShow={setFibEwShow} />}
             {paOn && !fs.on && <PaBar state={paLayer} options={paOptions} onChange={setPaOptions} />}
             {readOn && readTf && reading && !fs.on && <ReadChartPanel state={read} onHide={shellAsk ? () => setReading(false) : undefined} />}
             {(data.error || tradesNote || emNote || data.loadingOlder || drawingText) && (

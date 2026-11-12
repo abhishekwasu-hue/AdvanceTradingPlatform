@@ -62,6 +62,7 @@ WAVES_FLAG = "screener_waves"                  # Wave templates W1: rules using 
 M99_FLAG = "m99_primitives"                    # M99 B1-a: rules using a bar classifier function pause too
 VSA_FLAG = "vsa_pack"                          # M99 P3: rules using the volume spread function pause too
 WYCKOFF_FLAG = "wyckoff_pack"                  # M99 P4: rules using a Wyckoff function pause too
+FIB_EW_FLAG = "fib_ew_pack"                    # M99 P5: rules using a Fibonacci + Elliott function pause too
 PA_FLAG = "pa_pack"                            # M99 P6: rules using a price pattern function pause too
 # (and a confirmation status, RsiDivergence or SwingLabel never fires intrabar: amw_functions.intrabar_calls)
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
@@ -327,7 +328,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                         breakout_extra_flags: Optional[Dict[str, bool]] = None, amw_enabled: bool = False,
                         waves_enabled: bool = False, store_reads: bool = False, m99_enabled: bool = False,
                         vsa_enabled: bool = False, wyckoff_enabled: bool = False,
-                        pa_enabled: bool = False) -> Tuple[str, int]:
+                        pa_enabled: bool = False,
+                        fib_ew_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
     argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in.
@@ -401,6 +403,12 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if wy_calls and (not wyckoff_enabled or intrabar):
             # M99 P4: the rule stays active and resumes when the flag is back; Wyckoff rules fire on bar close only
             rule.last_problem = wyckoff_gate.refusal(wy_calls) if not wyckoff_enabled else wyckoff_gate.intrabar_refusal(wy_calls)
+            return "unsupported", 0
+        from app.screener import fib_ew_gate
+        fib_calls = fib_ew_gate.flagged_calls(ast)
+        if fib_calls and (not fib_ew_enabled or intrabar):
+            # M99 P5: the rule stays active and resumes when the flag is back; Fibonacci + Elliott rules fire on bar close only
+            rule.last_problem = fib_ew_gate.refusal(fib_calls) if not fib_ew_enabled else fib_ew_gate.intrabar_refusal(fib_calls)
             return "unsupported", 0
         from app.screener import pa_gate
         pa_calls = pa_gate.flagged_calls(ast)
@@ -534,6 +542,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     m99_on: dict[int, bool] = {}             # M99 B1-a: m99_primitives per organisation
     vsa_on: dict[int, bool] = {}             # M99 P3: vsa_pack per organisation
     wyckoff_on: dict[int, bool] = {}         # M99 P4: wyckoff_pack per organisation
+    fib_ew_on: dict[int, bool] = {}          # M99 P5: fib_ew_pack per organisation
     pa_on: dict[int, bool] = {}              # M99 P6: pa_pack per organisation
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
@@ -569,6 +578,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             vsa_on[rule.tenant_id] = await flag_enabled(session, VSA_FLAG, rule.tenant_id)
         if rule.tenant_id not in wyckoff_on:
             wyckoff_on[rule.tenant_id] = await flag_enabled(session, WYCKOFF_FLAG, rule.tenant_id)
+        if rule.tenant_id not in fib_ew_on:
+            fib_ew_on[rule.tenant_id] = await flag_enabled(session, FIB_EW_FLAG, rule.tenant_id)
         if rule.tenant_id not in pa_on:
             pa_on[rule.tenant_id] = await flag_enabled(session, PA_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
@@ -585,6 +596,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
                                            breakout_extra_flags=extra_on[rule.tenant_id], amw_enabled=amw_on[rule.tenant_id],
                                            waves_enabled=waves_on[rule.tenant_id], m99_enabled=m99_on[rule.tenant_id],
                                            vsa_enabled=vsa_on[rule.tenant_id], wyckoff_enabled=wyckoff_on[rule.tenant_id],
+                                           fib_ew_enabled=fib_ew_on[rule.tenant_id],
                                            pa_enabled=pa_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id], store_reads=store_on[rule.tenant_id])

@@ -1,0 +1,156 @@
+{
+  "schema": "atp.template/1",
+  "id": "L2",
+  "version": 1,
+  "name": "Wave 3 from the end of wave 2",
+  "family": "L",
+  "idea": "In wave 2 of an impulse that stayed inside the start of wave 1, a signal on the first close beyond the last smaller swing of wave 2 (or the end of wave 1). The mirror: a falling impulse. Wrong beyond the start of wave 1. The count is an interpretation.",
+  "difficulty": "Advanced",
+  "style": "Swing",
+  "allowed_timeframes": [
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
+  "reference_values": true,
+  "params": [
+    {
+      "key": "degree",
+      "label": "Wave size (swing degree the waves are counted at)",
+      "help": "Which swings count as waves: 1 is the smallest, 3 the largest. Larger waves need more history. Reference: 1.",
+      "type": "int",
+      "default": 1,
+      "min": 1,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "atr_n",
+      "label": "Bars for the average true range",
+      "help": "Bars for the average true range the break distance is measured in. Reference: 14.",
+      "type": "int",
+      "default": 14,
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "break_k",
+      "label": "Break distance beyond a level, in average true ranges (0: any close beyond)",
+      "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond). Reference: 0.",
+      "type": "float",
+      "default": 0.0,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "expiry",
+      "label": "Bars a setup stays watched after the count moves on",
+      "help": "After the count moves on, how many bars the setup is still watched for its close beyond the level. Reference: 20.",
+      "type": "int",
+      "default": 20,
+      "min": 1,
+      "max": 500,
+      "step": 1
+    },
+    {
+      "key": "w3_trigger",
+      "label": "Wave 3 trigger: the last smaller swing of wave 2, or the end of wave 1",
+      "help": "The level the close must go beyond: the last smaller swing of wave 2 (none there: the end of wave 1), or always the end of wave 1 (later, more patient).",
+      "type": "enum",
+      "default": "swing",
+      "choices": [
+        "swing",
+        "wave_1_end"
+      ],
+      "choice_labels": [
+        "The last smaller swing of wave 2",
+        "The end of wave 1"
+      ]
+    },
+    {
+      "key": "w2_zone",
+      "label": "Only when wave 2 is inside the depth zone",
+      "help": "Optional: only when wave 2 retraced wave 1 inside the depth zone below.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "key": "w2_min",
+      "label": "Wave 2 depth zone: from (share of wave 1)",
+      "help": "The near edge of the wave 2 depth zone, as a share of wave 1. Reference: 0.5.",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.001
+    },
+    {
+      "key": "w2_max",
+      "label": "Wave 2 depth zone: to (share of wave 1)",
+      "help": "The far edge of the wave 2 depth zone, as a share of wave 1. Reference: 0.786.",
+      "type": "float",
+      "default": 0.786,
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.001
+    },
+    {
+      "key": "w3_void",
+      "label": "Wave 3 idea void beyond",
+      "help": "Where the idea is wrong: beyond the start of wave 1 (the count's own rule), or beyond the extreme of wave 2.",
+      "type": "enum",
+      "default": "wave_1_start",
+      "choices": [
+        "wave_1_start",
+        "wave_2_extreme"
+      ],
+      "choice_labels": [
+        "The start of wave 1",
+        "The extreme of wave 2"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "left": "w2_min",
+      "op": "<",
+      "right": "w2_max",
+      "message": "The wave 2 depth zone must start before it ends."
+    }
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "FibEw(\"wave3_entry\", \"up\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, w3_trigger=$w3_trigger, w2_zone=$w2_zone, w2_min=$w2_min, w2_max=$w2_max, w3_void=$w3_void)",
+    "short": "FibEw(\"wave3_entry\", \"down\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, w3_trigger=$w3_trigger, w2_zone=$w2_zone, w2_min=$w2_min, w2_max=$w2_max, w3_void=$w3_void)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "FibEwLevel(\"wave3_void\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, w3_trigger=$w3_trigger, w2_zone=$w2_zone, w2_min=$w2_min, w2_max=$w2_max, w3_void=$w3_void)",
+    "short": "FibEwLevel(\"wave3_void\", degree=$degree, atr_n=$atr_n, break_k=$break_k, expiry=$expiry, w3_trigger=$w3_trigger, w2_zone=$w2_zone, w2_min=$w2_min, w2_max=$w2_max, w3_void=$w3_void)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "wave_three_up_may_start"
+      },
+      {
+        "token": "count_is_an_interpretation"
+      }
+    ],
+    "short": [
+      {
+        "token": "wave_three_down_may_start"
+      },
+      {
+        "token": "count_is_an_interpretation"
+      }
+    ]
+  }
+}

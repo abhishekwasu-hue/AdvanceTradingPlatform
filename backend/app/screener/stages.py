@@ -84,8 +84,14 @@ def library_source(screen_id: str) -> Tuple[Optional[Tuple[str, str, Dict[str, A
         if found is None:
             return None, "no such price pattern scanner"
         return (found.text, found.base_tf, found.defaults(), found.name), None          # M99 P6
-    return None, ("only Legends, breakout, intraday, volume spread, Wyckoff and price pattern screens are opened from the server"
-                  " (the starters are built in the page)")
+    if screen_id.startswith("fib_ew."):
+        from app.screener import fib_ew_scanners as fes
+        found = fes.scanner(screen_id)
+        if found is None:
+            return None, "no such Fibonacci + Elliott scanner"
+        return (found.text, found.base_tf, found.defaults(), found.name), None                # M99 P5
+    return None, ("only Legends, breakout, intraday, volume spread, Wyckoff, price pattern and Fibonacci + Elliott screens are"
+                  " opened from the server (the starters are built in the page)")
 
 
 __all__ = ["FLAG", "inline", "split", "library_source"]

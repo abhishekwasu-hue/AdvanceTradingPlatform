@@ -280,6 +280,31 @@ _FIB_RATIO = Arg("ratio", NUM, None, True, literal_only=True, bounds=(0.0, 10.0)
 _FIB_DOC = (" - from the pivots CONFIRMED by the bar (P1 the latest): retrace = P1 - ratio x (P1 - P2); extend = P1 + ratio x"
             " (P2 - P3), the swing before laid from P1; golden = P2 + (P1 - P2) / ratio, the end of the move from P2 when P1"
             " sits at that share of it; missing until enough pivots are confirmed (evidence, not a target)")
+# M99 P5 (flag `fib_ew_pack`, off by default): the Fibonacci + Elliott pack (app/price_action/fib_ew.py) - one function
+# for its readings, one for its levels; every setting a named argument read once (a literal or a $parameter) within its
+# bounds, the reference value when left out ("reference - edit before use"; tests/test_m99_p5_fib_ew.py checks them
+# against fib_ew.SETTINGS_TABLE). Closed bars only; every count is an interpretation.
+FIB_EW_FLAG = "fib_ew_pack"
+
+
+def _fib_ew_kwargs() -> tuple[Arg, ...]:
+    from app.price_action.fib_ew import SETTINGS_TABLE
+    out: list[Arg] = []
+    for name, kind, ref, rule, _ in SETTINGS_TABLE:
+        if kind == "flag":
+            out.append(Arg(name, BOOL, ref, False))
+        elif kind == "choice":
+            out.append(Arg(name, STR, ref, False, choices=tuple(rule)))
+        else:
+            out.append(Arg(name, NUM, ref, False, literal_only=True, bounds=(float(rule[0]), float(rule[1]))))
+    return tuple(out)
+
+
+def _fib_ew_values(name: str) -> tuple[str, ...]:
+    from app.price_action import fib_ew
+    return tuple(getattr(fib_ew, name))
+
+
 WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
@@ -1089,6 +1114,25 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="a level of the current Wyckoff range on this bar - range_top / range_bottom (from the automatic reaction on),"
              " shake_extreme (Phase C: the shake's furthest price), break_base (Phase D / E: the furthest price back since the"
              " break began); missing where there is none (closed bars; settings are reference values - edit before use)"),
+    # M99 P5 (flag fib_ew_pack): the Fibonacci + Elliott pack (app/price_action/fib_ew.py) - the readings and their levels
+    Spec("FibEw", "filter", BOOL, None, (Arg("name", STR, choices=_fib_ew_values("NAMES")),
+                                         Arg("side", STR, "any", False, choices=_fib_ew_values("SIDE_CHOICES"))),
+         kwargs=_fib_ew_kwargs(), cost=4.0, min_bars=SWING_DEGREE_MIN_BARS[1], kwarg_degree_bars=(("degree", SWING_DEGREE_MIN_BARS),),
+         flag=FIB_EW_FLAG, ordered_args=(("c_min", "c_max", False), ("w2_min", "w2_max", False)),
+         doc="the named Fibonacci / wave reading on this bar (each on the bar it becomes known): zigzag_c_entry (after a zigzag's"
+             " wave C went beyond the end of wave A, the first close back beyond the last smaller swing of C or the end of B),"
+             " wave3_entry (in wave 2 of an impulse, the first close beyond the last smaller swing of wave 2 or the end of wave"
+             " 1), cluster_touch (the open swing first reaches a cluster of Fibonacci levels from different swings),"
+             " impulse_complete / diagonal_complete (the swing ending a counted fifth wave is confirmed and the hard rules"
+             " hold), count_void (price went through the count's own limit) - side any / up / down. The wave count is an"
+             " interpretation (closed bars; settings are reference values - edit before use)"),
+    Spec("FibEwLevel", "factor", NUM, "price", (Arg("what", STR, choices=_fib_ew_values("LEVELS")),),
+         kwargs=_fib_ew_kwargs(), cost=4.0, min_bars=SWING_DEGREE_MIN_BARS[1], kwarg_degree_bars=(("degree", SWING_DEGREE_MIN_BARS),),
+         flag=FIB_EW_FLAG, ordered_args=(("c_min", "c_max", False), ("w2_min", "w2_max", False)),
+         doc="a level of the Fibonacci / wave reading on this bar: invalidation (the count's own limit), zigzag_c_trigger /"
+             " wave3_trigger (while a setup is watched), zigzag_c_void / wave3_void (on their signal bars: beyond it the idea"
+             " is void), cluster_low / cluster_high (the nearest cluster ahead of the open swing) and thrust (a contracting"
+             " triangle's thrust from the end of wave E - a projection, never a target); missing where there is none"),
     # M99 P6 (flag pa_pack): the price-action pattern pack (app/price_action/pa_pack.py) - the readings and their levels
     Spec("PricePattern", "filter", BOOL, None, (Arg("name", STR, choices=_pa_values("NAMES")),
                                                 Arg("side", STR, "any", False, choices=_pa_values("SIDE_CHOICES"))),
@@ -1127,6 +1171,8 @@ WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items()
 M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 VSA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == VSA_FLAG)
 WYCKOFF_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WYCKOFF_FLAG)
+FIB_EW_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == FIB_EW_FLAG)
+FIB_EW_SETTINGS: tuple[str, ...] = tuple(a.name for a in FUNCTIONS["FibEw"].kwargs)     # M99 P5: the named settings
 PA_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == PA_FLAG)
 PA_SETTINGS: tuple[str, ...] = tuple(a.name for a in FUNCTIONS["PricePattern"].kwargs)        # M99 P6: the named settings
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
@@ -1163,4 +1209,5 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
            "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS", "VSA_FLAG", "VSA_FUNCTIONS", "VSA_KWARGS",
            "WYCKOFF_FLAG", "WYCKOFF_FUNCTIONS", "WYCKOFF_KWARGS",
-           "PA_FLAG", "PA_FUNCTIONS", "PA_SETTINGS"]
+           "PA_FLAG", "PA_FUNCTIONS", "PA_SETTINGS",
+           "FIB_EW_FLAG", "FIB_EW_FUNCTIONS", "FIB_EW_SETTINGS"]

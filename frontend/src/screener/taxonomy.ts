@@ -48,7 +48,8 @@ export interface GalleryFilter { method: string | null; setup: string | null; qu
 export const NO_FILTER: GalleryFilter = { method: null, setup: null, query: "", pack: null };
 
 /** M94: the library sources the gallery offers a chip for, by source id (the chip shows only when one is served). */
-export const PACKS: Record<string, string> = { intraday: "Intraday", vsa: "Volume spread", wyckoff: "Wyckoff", pa: "Price patterns" };   // M99 P3: vsa; P4: wyckoff; P6: pa
+export const PACKS: Record<string, string> = { intraday: "Intraday", vsa: "Volume spread", wyckoff: "Wyckoff", pa: "Price patterns",
+  fib_ew: "Fibonacci + Elliott" };   // M99 P3: vsa; P4: wyckoff; P6: pa; P5: fib_ew
 
 /** The packs with at least one served screen, in PACKS order. */
 export function packsShown(tax: Taxonomy): { id: string; label: string; count: number }[] {

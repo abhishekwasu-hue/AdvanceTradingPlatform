@@ -120,6 +120,12 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         if found_wy is None:
             return None, "no such Wyckoff scanner"
         text, base_tf, params = found_wy.text, found_wy.base_tf, found_wy.defaults()   # M99 P4: every value a reference value
+    elif screen.source == "fib_ew":
+        from app.screener import fib_ew_scanners as fes
+        found = fes.scanner(screen.id)
+        if found is None:
+            return None, "no such Fibonacci + Elliott scanner"
+        text, base_tf, params = found.text, found.base_tf, found.defaults()      # M99 P5: every value a reference value
     elif screen.source == "pa":
         from app.screener import pa_scanners as pas
         found = pas.scanner(screen.id)

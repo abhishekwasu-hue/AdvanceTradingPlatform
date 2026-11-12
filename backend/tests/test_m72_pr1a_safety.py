@@ -11,7 +11,8 @@
   Marathi / Hindi buy / order ask - before any tool runs or any model is called.
 """
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
@@ -24,7 +25,10 @@ from app.market_data import candles_routes
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
 
-NOW = datetime.now(UTC)
+# The trades below close a minute before NOW; keep NOW clear of the IST midnight so "today (IST)" always holds them
+# (a run just after 00:00 IST put the exit on the previous IST day - CI 11 Nov).
+_IST_DAY = datetime.combine(datetime.now(ZoneInfo("Asia/Kolkata")).date(), time(), ZoneInfo("Asia/Kolkata"))
+NOW = max(datetime.now(UTC), (_IST_DAY + timedelta(hours=1)).astimezone(UTC))
 
 
 def _run(coro):

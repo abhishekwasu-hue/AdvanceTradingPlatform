@@ -66,6 +66,8 @@ import { Combobox } from "../ui/Combobox";
  */
 const STATUS_MS = 15_000;
 const LIST_MS = 30_000;
+/** M96 L1: the chain banner's figures the Terminal's context bar shows on a phone (ContextBarV2: spot, PCR, ATM, expiry in). */
+const CONTEXT_BAR_FACTS = ["spot", "pcr", "atm", "dte"] as const;
 const NARROW = NARROW_QUERY;
 const BUTTON = "inline-flex min-h-11 shrink-0 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 md:min-h-9";
 
@@ -238,7 +240,10 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       case "chain": return <div data-terminal-chain data-symbol={underlying} data-expiry={live?.expiry ?? chain.expiry ?? ""}><OptionChainView symbol={underlying} onSymbol={setUnderlying} chain={chain}
         marketOpen={market.status?.sessions?.NSE?.is_open ?? null} prefs={columns} onPrefs={(next) => { setColumns(next); writeColumns(next); }}
         onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} areaMarks={areaMarks.size ? areaMarks : undefined}
-        hide={place && !narrow ? chainHiddenColumns(place.w) : undefined} /></div>;
+        hide={place && !narrow ? chainHiddenColumns(place.w) : undefined}
+        // M96 L1: the panel's title is the heading and the pickers fit it; on a phone the context bar above already shows
+        // the spot, ATM, PCR and days to expiry, so the chain's banner does not repeat them.
+        embedded omitFacts={narrow ? CONTEXT_BAR_FACTS : undefined} /></div>;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} paperBadge={false} />;
       case "positions": {
         const list = <PositionsPanelV2 read={asRead(positionsL)} exposure={dataOf(exposureL) ?? null} canTrade={canTrade} exitNowOn={exitNowOn}

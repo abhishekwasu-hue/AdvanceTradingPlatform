@@ -54,7 +54,7 @@ from app.indicators.volume import mfi as _mfi
 from app.indicators.volume import obv as _obv
 from app.screener import nodes as n
 from app.screener import reasons
-from app.screener.registry import FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
+from app.screener.registry import BAR_CLASS_KWARGS, FUNCTIONS, FUNDAMENTALS_FLAG, PATTERN_SHAPE_KWARGS, PREOPEN_FUNCTIONS, RETEST_WAVE_OF
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
@@ -576,6 +576,12 @@ class _Eval:
             "PriorSwingHigh": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "H"),
             "PriorSwingLow": lambda: _prior_swing(f, int(num(0, 0)), _text(1, "one"), "L"),
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py), settings as named arguments
+            "RelRange": lambda: _bar_class(f, name, win(0, 20), {}),
+            "SpreadClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "ClosePosition": lambda: _bar_class(f, name, 0, {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
+            "BarDirection": lambda: _bar_class(f, name, 0, {}),
+            "VolumeClass": lambda: _bar_class(f, name, win(0, 20), {k: kw(k) for k, _ in BAR_CLASS_KWARGS[name]}),
             "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "SwingZoneEdge": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "edge", num(2, 0.0)),
@@ -623,6 +629,9 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # M99 B1-c (flag m99_primitives): the structure tracker's per-bar BOS / CHoCH and regime (structure_series.py)
+            "StructureEventSeries": lambda: _structure_series(f, tf, "event", {k: kw(k) for k in ("pivot_n", "swing_k")}),
+            "RegimeTag": lambda: _structure_series(f, tf, "regime", {k: kw(k) for k in ("pivot_n", "swing_k", "range_width", "range_swings")}),
             # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
             "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
                 "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
@@ -1375,6 +1384,21 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
 
 
+def _structure_series(f: pd.DataFrame, tf: str, what: str, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-c: StructureEventSeries ("event": "" on bars without one) / RegimeTag ("regime": missing in warm-up) from
+    app/price_action/structure_series.py - the tracker fed the frame's closed bars one at a time (bars <= t decide t)."""
+    from app.price_action import structure_series as ss
+    try:
+        s = ss.settings(**{k: v for k, v in given.items() if v is not None})
+        out = ss.structure_series(f, tf, s)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    values = getattr(out, what)
+    if what == "regime":
+        values = np.where(values == "", None, values)
+    return pd.Series(values, index=f.index, dtype=object)
+
+
 def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
     from app.screener.breakouts.screens import Bars
     try:
@@ -1451,6 +1475,29 @@ def _ownership(data: SymbolData, f: pd.DataFrame, tf: str, what: str, arg: str, 
 def _fundamental(data: SymbolData, f: pd.DataFrame, tf: str, measure: str) -> pd.Series:
     from app.screener.fundamentals import series
     return series(data, f, tf, measure)
+
+
+def _bar_class(f: pd.DataFrame, fn: str, n_: int, given: dict[str, Any]) -> pd.Series:
+    """M99 B1-a: one classifier series per bar (app/price_action/bar_class.py) - RelRange a ratio (NaN while missing), the
+    classes text (None while missing). `given`: the named arguments of the call (None: left out, the reference value)."""
+    from app.price_action import bar_class as bc
+    names = dict(BAR_CLASS_KWARGS.get(fn, ()))
+    values: dict[str, Any] = {names[k]: v for k, v in given.items() if v is not None}
+    if n_:
+        values["avg_n"] = n_
+    try:
+        s = bc.settings_from(values)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if fn == "RelRange":
+        return bc.relative_range(f, s.avg_n)
+    if fn == "SpreadClass":
+        return bc.spread_class(f, s)
+    if fn == "ClosePosition":
+        return bc.close_position(f, s)
+    if fn == "BarDirection":
+        return bc.bar_direction(f)
+    return bc.volume_class(f, s)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
@@ -1711,7 +1758,7 @@ def last_match(symbol: str, value: Any) -> Match:
 # CONFIRMATIONS are not here: they are not applied without volume data (breakouts/screens.py `skip_missing_volume`).
 # VolumeBreakout / VolumeBreakoutRef (B14) are volume itself: the breakout engine reports them `volume_required`.
 VOLUME_FUNCTIONS = frozenset({"VWAP", "MFI", "OBV", "RelVolume", "RelVolumeTOD", "SessionVWAP", "WaveVolumeLower", "SessionVolume",
-                              "PreOpenVolume"})
+                              "PreOpenVolume", "VolumeClass"})     # M99 B1-a: VolumeClass
 
 
 def no_index_volume(universe: list[SymbolData]) -> None:

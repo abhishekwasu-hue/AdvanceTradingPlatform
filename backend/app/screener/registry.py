@@ -258,6 +258,16 @@ _ZDOC = (" - the live zone nearest to the close within tolerance_pct % of it (ro
 # count changes only on a bar that confirmed a new swing of the degree. Close-only in alerts (a forming bar can confirm a
 # swing and take it back, WB13). Degrees 2 and 3 are fetch-dependent like the swings they read.
 WAVES_FLAG = "screener_waves"
+# M99 B1-c (flag `m99_primitives`, off by default): the structure tracker (app/price_action/structure_series.py over
+# structure_tracker.py) as per-bar series - BOS / CHoCH on the bar the close made them known, the trend-or-range regime
+# at each bar's close. Every number a named setting (left out: the tracker's reference values by timeframe).
+M99_FLAG = "m99_primitives"
+_STRUCT_KWARGS: tuple[Arg, ...] = (Arg("pivot_n", NUM, None, False, literal_only=True, bounds=(1, 20)),
+                                   Arg("swing_k", NUM, None, False, literal_only=True, bounds=(0.0, 20.0)))
+_REGIME_KWARGS: tuple[Arg, ...] = _STRUCT_KWARGS + (Arg("range_width", NUM, None, False, literal_only=True, bounds=(0.0, 100.0)),
+                                                    Arg("range_swings", NUM, None, False, literal_only=True, bounds=(2, 20)))
+_SDOC = (" - the structure tracker fed one closed bar at a time (a swing counts from its confirm bar, pivot_n bars after its"
+         " own; swings at least swing_k median ranges apart; named settings, left out: the reference values by timeframe)")
 WAVE_DEGREE_CHOICES: Tuple[int, ...] = (1, 2, 3)
 _WDEGREE = Arg("degree", NUM, 1, False, choices=WAVE_DEGREE_CHOICES)
 _WDOC = (" - from CONFIRMED swings of that degree (the last wave still running); the count is recomputed only when a new"
@@ -354,6 +364,42 @@ _REF_DOC = (" - the same breakout as {fn} with the same arguments (one per leg, 
             " / base_low on its signal bars (missing elsewhere), held_level (the latest signal's level, held until the next"
             " one), stop_level_atr / stop_base / stop_midpoint (the breakout stop reference on its signal bars: the level less"
             " stop_mult ATRs of the bar before, the base's far side, or the base's middle)")
+
+# M99 B1-a (flag `m99_primitives`, off by default): the per-bar classifier (app/price_action/bar_class.py) - relative
+# range, spread class, close position, bar direction and volume class on closed bars. Every number is a setting read once
+# (a literal or a $parameter) within the classifier's own bounds; left out, the reference value ("reference - edit before
+# use"; tests/test_m99_b1a_bar_class.py checks these against bar_class.SETTINGS_TABLE). Close-only in alerts.
+M99_FLAG = "m99_primitives"
+
+
+def _bc(setting: str, arg: str) -> Arg:
+    """A classifier setting as a named argument: its reference value and bounds are bar_class.SETTINGS_TABLE's."""
+    from app.price_action.bar_class import SETTINGS_TABLE
+    _, kind, ref, bounds = next(row for row in SETTINGS_TABLE if row[0] == setting)
+    if kind == "bars":
+        return Arg(arg, "window", ref, False)
+    return Arg(arg, NUM, ref, False, literal_only=True, bounds=bounds)
+
+
+def _bc_values(name: str) -> tuple[str, ...]:
+    from app.price_action import bar_class
+    return tuple(getattr(bar_class, name))
+
+
+_BC_N = _bc("avg_n", "n")
+BAR_CLASS_KWARGS: dict[str, tuple[tuple[str, str], ...]] = {      # function -> (named argument, classifier setting)
+    "SpreadClass": (("narrow", "narrow"), ("wide", "wide"), ("ultra", "ultra_wide")),
+    "VolumeClass": (("low", "vol_low"), ("high", "vol_high"), ("ultra", "vol_ultra")),
+    "ClosePosition": (("part", "close_part"),),
+}
+_BC_ORDER: tuple[tuple[str, str, bool], ...] = (("narrow", "wide", False), ("wide", "ultra", False))
+_BC_VORDER: tuple[tuple[str, str, bool], ...] = (("low", "high", False), ("high", "ultra", False))
+_BC_DOC = " (closed bars; settings are reference values - edit before use)"
+
+
+def _bc_kwargs(fn: str) -> tuple[Arg, ...]:
+    return tuple(_bc(setting, arg) for arg, setting in BAR_CLASS_KWARGS[fn])
+
 
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
@@ -629,6 +675,17 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " is not higher, an equal low not lower); missing before"
              " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
              " timeframe's trend from its closed bars"),
+    # M99 B1-c (flag m99_primitives): the tracker's BOS / CHoCH per bar and its regime - templates and backtests can read them
+    Spec("StructureEventSeries", "classifier", CAT, None, (), kwargs=_STRUCT_KWARGS, cost=3.0, min_bars=SWING_MIN_BARS,
+         values=("BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""), flag=M99_FLAG,
+         doc="the structure event on this bar: BOS_BULLISH / BOS_BEARISH (a close beyond the last swing in the trend's"
+             " direction), CHOCH_BEARISH / CHOCH_BULLISH (a close beyond the protected swing of an up / down trend); empty on"
+             " other bars" + _SDOC),
+    Spec("RegimeTag", "classifier", CAT, None, (), kwargs=_REGIME_KWARGS, cost=3.0, min_bars=SWING_MIN_BARS,
+         values=("UP", "DOWN", "UP_WEAK", "DOWN_WEAK", "RANGE"), flag=M99_FLAG,
+         doc="the structure regime at the bar's close: UP / DOWN (a trend, its pullbacks included), UP_WEAK / DOWN_WEAK (the"
+             " protected swing broken, nothing decided yet), RANGE; with range_width also RANGE while the last range_swings"
+             " swings span at most range_width median ranges; missing before the first trend or range is read" + _SDOC),
     # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one
     # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.
     Spec("ORBreakout", "filter", BOOL, None, (_SIDE, _bk("or_minutes", "minutes", NUM), _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
@@ -948,6 +1005,24 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          kwargs=SD_ALL_KWARGS, cost=6.0, min_bars=SD_MIN_BARS, flag=SD_FLAG, ordered_args=_SD_ORDER,
          doc="true while the nearest live zone of that side and state overlaps a live zone of the same side on the higher"
              " timeframe htf (its closed candles only; the zones are never merged); false with htf none" + _SD_DOC + _SD_ODDS_DOC),
+    # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
+    Spec("RelRange", "factor", NUM, "ratio", (_BC_N,), extra_bars=1, flag=M99_FLAG,
+         doc="(high - low) / the mean (high - low) of the n bars before this one; missing until those bars exist" + _BC_DOC),
+    Spec("SpreadClass", "classifier", CAT, None, (_BC_N,), kwargs=_bc_kwargs("SpreadClass"), extra_bars=1, flag=M99_FLAG,
+         values=_bc_values("SPREAD_CLASSES"), ordered_args=_BC_ORDER,
+         doc="NARROW (RelRange(n) below narrow) / WIDE (above wide) / ULTRA_WIDE (above ultra) / AVERAGE; a value on a limit takes"
+             " the lower class; missing until n bars exist" + _BC_DOC),
+    Spec("ClosePosition", "classifier", CAT, None, (), kwargs=_bc_kwargs("ClosePosition"), flag=M99_FLAG,
+         values=_bc_values("CLOSE_POSITIONS"),
+         doc="where the close sits in the bar's own range, (close - low) / (high - low): LOW (below part) / HIGH (above 1 - part)"
+             " / MIDDLE (part 1/3: thirds); missing on a bar with no range" + _BC_DOC),
+    Spec("BarDirection", "classifier", CAT, None, (), extra_bars=1, flag=M99_FLAG, values=_bc_values("DIRECTIONS"),
+         doc="UP / DOWN / LEVEL: the close against the previous bar's close; missing on the first bar (closed bars)"),
+    Spec("VolumeClass", "classifier", CAT, None, (_BC_N,), kwargs=_bc_kwargs("VolumeClass"), extra_bars=1, flag=M99_FLAG,
+         values=_bc_values("VOLUME_CLASSES"), ordered_args=_BC_VORDER,
+         doc="LOW (volume / the mean volume of the n bars before below low) / HIGH (above high) / ULTRA (above ultra) / AVERAGE;"
+             " NO_VOLUME where the bar's volume is missing or 0 (an index without its future's volume); missing where the"
+             " average cannot be read (a bar without volume data in the n bars before)" + _BC_DOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -966,6 +1041,7 @@ READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "
 AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 WAVE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == WAVES_FLAG)
 SD_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == SD_FLAG)
+M99_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == M99_FLAG)
 INTRADAY_FUNCTIONS: tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if INTRADAY_FLAG in spec.also_flags)
 PREOPEN_FUNCTIONS: tuple[str, ...] = ("PreOpenHigh", "PreOpenLow", "PreOpenVolume")
 
@@ -993,10 +1069,11 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
-           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS", "INTRADAY_FLAG", "INTRADAY_FUNCTIONS", "PREOPEN_FUNCTIONS", "PATTERN_SHAPE_DOC",
+           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "M99_FLAG", "M99_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS", "INTRADAY_FLAG", "INTRADAY_FUNCTIONS", "PREOPEN_FUNCTIONS", "PATTERN_SHAPE_DOC",
            "PATTERN_SHAPE_KWARGS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
            "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
            "SD_FLAG", "SD_FUNCTIONS", "SD_KWARGS", "SD_SIDES", "SD_STATES", "SD_FORMATIONS",
-           "SD_ODDS_KWARGS", "SD_ALL_KWARGS", "SD_HTF_CHOICES", "SD_ENTRY_TYPES"]
+           "SD_ODDS_KWARGS", "SD_ALL_KWARGS", "SD_HTF_CHOICES", "SD_ENTRY_TYPES",
+           "BAR_CLASS_KWARGS"]

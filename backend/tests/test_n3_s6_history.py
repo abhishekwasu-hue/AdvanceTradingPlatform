@@ -345,7 +345,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
                         'base_mult=0.9, kind="both", swing_left=3) > 0',
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
-               "DonchianBreakout", "MABreakout", "RegimeBreakout",
+               "DonchianBreakout", "MABreakout", "RegimeBreakout", "StructureEventSeries",
                "SDZoneEntryRef", "SDZoneEntryScore", "SDZoneHtfWith"}            # M99 P1: entry bars / a weekly tag on 300 days
 
 

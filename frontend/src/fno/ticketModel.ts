@@ -6,7 +6,7 @@
 import { PAPER_TEXT, PAPER_WORD } from "../ui/paperWords";
 import { formatINR, formatNumber, formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
-import type { ContractRight, HeldLeg, OrderAsk, OrderResult, OrderType, Product, Right, Side } from "./api";
+import type { ContractRight, HeldLeg, OrderAsk, OrderMode, OrderResult, OrderType, Product, Right, Side } from "./api";
 
 /** What the ticket is for: one contract of the chain on screen, with the chain's own prices (the price helper).
  * FNO-3: or a future of the futures chain (`right` "FUT", `strike` null). */
@@ -31,6 +31,10 @@ export interface Draft {
   price: string;
   trigger: string;
   stopLoss: string;
+  /** M96 Q2: his own optional target (premium); "" = none. Never prefilled by the platform (no saved target field exists). */
+  target: string;
+  /** M96-Q1 (owner): PAPER unless he picks LIVE on the ticket (no saved LIVE default exists, so never pre-selected). */
+  mode: OrderMode;
 }
 
 /** M63 I-7: `term` names the glossary entry behind the (?) the ticket shows for a trading term (no effect on the order). */
@@ -44,6 +48,11 @@ export const PRODUCT_MISSING = "Pick a product: MIS or NRML";
 /** M68 PR-1 (TS1-003): no order type is pre-selected either - the ticket asks for it, with "Save as my default". */
 export const ORDER_TYPE_UNSET_TEXT = "Pick how the order is sent: Market, Limit, SL or SL-M.";
 export const ORDER_TYPE_MISSING = "Pick an order type: Market, Limit, SL or SL-M";
+/** M96-Q1: the ticket's mode choice. LIVE goes to his own broker; the owner's switches decide whether it can go. */
+export const ORDER_MODES: { value: OrderMode; label: string }[] = [{ value: "PAPER", label: "Paper" }, { value: "LIVE", label: "Live" }];
+/** M96-Q1: the server's own words (app/paper/fno_ticket.py LIVE_OFF / LIVE_MARKET_ONLY). */
+export const LIVE_OFF_TEXT = "Live trading is switched off by the admin.";
+export const LIVE_MARKET_ONLY = "A LIVE order from the ticket is sent as a Market order: Limit, SL and SL-M are not sent to the broker from here yet.";
 /** M68 PR-2 (TS1-020): no lots are pre-filled either - the ticket asks for them, with "Save as my default". */
 export const LOTS_UNSET_TEXT = "Enter the lots (none saved in your Trade settings).";
 export const LOTS_MISSING = "Enter the lots";
@@ -72,7 +81,7 @@ export interface DraftDefaults { lots?: number; product?: Product; orderType?: O
 /** A fresh ticket. With the user's defaults (src/settings/tradingDefaults.ts ticketPrefill) those values start it - the side
  * never comes from a default - and nothing else changes: no defaults gives today's draft exactly. */
 export function newDraft(side: Side, defaults?: DraftDefaults): Draft {
-  const draft: Draft = { side, lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "" };
+  const draft: Draft = { side, lots: null, orderType: null, product: null, price: "", trigger: "", stopLoss: "", target: "", mode: "PAPER" };
   if (!defaults) return draft;
   if (defaults.lots !== undefined) draft.lots = clampLots(defaults.lots);
   if (defaults.orderType !== undefined) draft.orderType = defaults.orderType;
@@ -132,6 +141,9 @@ export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] 
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
+  // M96 Q2: the server checks the target is on the profitable side of the entry (it knows the fill price).
+  if ((d.target ?? "").trim() !== "" && num(d.target) === null) out.push("The target is not a price");
+  if (d.mode === "LIVE" && d.orderType !== null && d.orderType !== "MARKET") out.push(LIVE_MARKET_ONLY);
   return out;
 }
 
@@ -142,6 +154,8 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
     // draftProblems asks for missing lots / order type / product first; the server asks again if one is still missing.
     lots: (d.lots === null ? d.lots : clampLots(d.lots)) as number, order_type: d.orderType as OrderType, product: d.product as Product,
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
+    target: num(d.target ?? ""),
+    mode: d.mode ?? "PAPER",
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
   };
 }
@@ -165,8 +179,9 @@ export function sideWord(side: Side, past = false): string {
 export function resultText(r: OrderResult): string {
   if (r.status === "PLACED" && r.filled) {
     const lots = r.filled.lots;
-    return `Placed in practice mode: ${sideWord(r.side, true)} ${formatNumber(lots, lots % 1 ? 2 : 0)} lot${lots === 1 ? "" : "s"} `
-      + `(${formatNumber(r.filled.quantity, 0)} qty) of ${r.label} at ${formatPrice(r.filled.price)}.`;
+    return `${r.mode === "LIVE" ? "Sent to your broker (LIVE)" : "Placed in practice mode"}: ${sideWord(r.side, true)} ${formatNumber(lots, lots % 1 ? 2 : 0)} lot${lots === 1 ? "" : "s"} `
+      + `(${formatNumber(r.filled.quantity, 0)} qty) of ${r.label} at ${formatPrice(r.filled.price)}.`
+      + (r.target_order ? ` ${r.target_order.text}` : "");
   }
   return r.reasons.length ? `Not placed: ${r.reasons[0]}` : "Not placed.";
 }

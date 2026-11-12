@@ -310,13 +310,13 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M94 | merged (#972-#982); deploy 4a6ff0e2 given, waits for deploy + flag decision + owner ✅ | intraday_pack OFF; proof ZIP sent 10 Nov | DECISIONS 10 Nov (M94) |
 | M95 | merged (#983-#990); waits for deploy (migration a3c5e7f9b1d4) + guest-demo build on the server + flag decisions (guest_demo, marketing_site) + the owner's real WhatsApp preview screenshot + ✅ | proof ZIP sent 11 Nov; left before marketing_site ON: docs/design/M95_MARKETING_SITE_LEFT.md | DECISIONS 10 Nov (M95) |
 | COP-2 | merged (#993, #994); deploy 11081161 given, waits for deploy + owner ✅ | proof ZIP sent 11 Nov; D: no bug (10 Nov NSE holiday) | DECISIONS 11 Nov (COP-2) |
-| M96 | merged (#995, #996, #997, #998, #999, #1002); waits for deploy + owner ✅ | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
+| M96 | merged (#995-#999, #1002); waits for deploy + owner ✅ | audit first (A1, report), no change before it | INBOX 11 Nov (M96) |
 | LIVE-1 | merged (#1006); waits for deploy + owner check of live_trading + ✅ | audit of all gates, then one PR | DECISIONS 11 Nov |
-| M97 | in review: whole stack + M99 P1 as #1017 (replaces #1004-#1009); flag sd_pack OFF | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
-| M99 | B0 #1012 (docs); merged #1013 #1014 #1015 #1016 #1018 #1024; in CI #1019 #1020 #1021 #1023 #1026 #1017; flags OFF per pack; waits for merges, deploy, owner flags + ✅ | all built as draft PRs: B0 #1012, B1 #1013 (merged) #1014 #1015 #1016, P1 #1017, P3 #1018, P4 #1019, P5 #1020, P6 #1021, P7 #1023, P2 #1024; flags OFF per pack; waits for green CI, merges, deploy and the owner's flag decisions + ✅ | INBOX 11 Nov (M99, M100, M101) |
+| M97 | merged via #1036 (replaces #1004-#1009, #1017); flag sd_pack OFF; waits for deploy + owner flag + ✅ | spec review against the code first (docs/design/M97_SUPPLY_DEMAND.md) | INBOX 11 Nov (M97) |
+| M99 | merged: B0 #1012, B1 #1013-#1016, P2 #1024, P3 #1018, P4 #1019, P6 #1021, P5 + P7 + P2 F&O + P1 via #1036; flags OFF per pack; waits for deploy + owner flags + ✅ | all built as draft PRs: B0 #1012, B1 #1013 (merged) #1014 #1015 #1016, P1 #1017, P3 #1018, P4 #1019, P5 #1020, P6 #1021, P7 #1023, P2 #1024; flags OFF per pack; waits for green CI, merges, deploy and the owner's flag decisions + ✅ | INBOX 11 Nov (M99, M100, M101) |
 | PHONE-1 | merged (#1027); waits for deploy + ✅ | the phone layout guard misses sideways scroll inside <main>; fix the 20 pages it finds (Test a strategy, positions, settings, alerts, dashboard, front-page card) and extend the guard in one PR | M99 proof page finding |
-| LIVE-2 | in progress (owner 12 Nov) | basket + Reverse LIVE on the one switch (same code path as the ticket) | DECISIONS 11 Nov (LIVE-1) |
-| ORD-1 | in progress (owner 12 Nov) | Orders tab = today only; PAPER expiry settlement | INBOX 12 Nov |
+| LIVE-2 | merged (#1032); waits for deploy + ✅ | basket + Reverse LIVE on the one switch (same code path as the ticket) | DECISIONS 11 Nov (LIVE-1) |
+| ORD-1 | merged (#1030); waits for deploy + ✅ | Orders tab = today only; PAPER expiry settlement | INBOX 12 Nov |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |

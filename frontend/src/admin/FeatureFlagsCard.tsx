@@ -41,7 +41,7 @@ export default function FeatureFlagsCard({ flags, tenants, onTenants, busy, onSe
   const [typed, setTyped] = useState<Record<string, string>>({});
   const searchId = useId();
   const groups = flags ? groupFlags(flags, query, filter) : [];
-  const all = flags ? Object.values(flags) : [];
+  const all = flags ? Object.values(flags).filter((f) => !f.follows) : [];   // LIVE-1: a derived flag is no switch
   // ADM-1: each category is folded; a search or a filter opens every category that still has a row.
   const narrowed = query.trim() !== "" || filter !== "all";
   return (

@@ -149,6 +149,12 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
+    "RelRange": ["RelRange(20)", "RelRange(5)@1h"],
+    "SpreadClass": ["SpreadClass(20)", "SpreadClass(10, narrow=0.9, wide=1.1, ultra=1.5)", "SpreadClass(5)@1h"],
+    "ClosePosition": ["ClosePosition()", "ClosePosition(part=0.25)", "ClosePosition()@1h"],
+    "BarDirection": ["BarDirection()", "BarDirection()@1h"],
+    "VolumeClass": ["VolumeClass(20)", "VolumeClass(10, low=0.9, high=1.1, ultra=1.5)", "VolumeClass(5)@1h"],
     # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
     # session-time window (a bar's own start time)
     "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],

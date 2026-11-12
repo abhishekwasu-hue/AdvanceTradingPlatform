@@ -305,6 +305,42 @@ _REF_DOC = (" - the same breakout as {fn} with the same arguments (one per leg, 
             " one), stop_level_atr / stop_base / stop_midpoint (the breakout stop reference on its signal bars: the level less"
             " stop_mult ATRs of the bar before, the base's far side, or the base's middle)")
 
+# M99 B1-a (flag `m99_primitives`, off by default): the per-bar classifier (app/price_action/bar_class.py) - relative
+# range, spread class, close position, bar direction and volume class on closed bars. Every number is a setting read once
+# (a literal or a $parameter) within the classifier's own bounds; left out, the reference value ("reference - edit before
+# use"; tests/test_m99_b1a_bar_class.py checks these against bar_class.SETTINGS_TABLE). Close-only in alerts.
+M99_FLAG = "m99_primitives"
+
+
+def _bc(setting: str, arg: str) -> Arg:
+    """A classifier setting as a named argument: its reference value and bounds are bar_class.SETTINGS_TABLE's."""
+    from app.price_action.bar_class import SETTINGS_TABLE
+    _, kind, ref, bounds = next(row for row in SETTINGS_TABLE if row[0] == setting)
+    if kind == "bars":
+        return Arg(arg, "window", ref, False)
+    return Arg(arg, NUM, ref, False, literal_only=True, bounds=bounds)
+
+
+def _bc_values(name: str) -> tuple[str, ...]:
+    from app.price_action import bar_class
+    return tuple(getattr(bar_class, name))
+
+
+_BC_N = _bc("avg_n", "n")
+BAR_CLASS_KWARGS: dict[str, tuple[tuple[str, str], ...]] = {      # function -> (named argument, classifier setting)
+    "SpreadClass": (("narrow", "narrow"), ("wide", "wide"), ("ultra", "ultra_wide")),
+    "VolumeClass": (("low", "vol_low"), ("high", "vol_high"), ("ultra", "vol_ultra")),
+    "ClosePosition": (("part", "close_part"),),
+}
+_BC_ORDER: tuple[tuple[str, str, bool], ...] = (("narrow", "wide", False), ("wide", "ultra", False))
+_BC_VORDER: tuple[tuple[str, str, bool], ...] = (("low", "high", False), ("high", "ultra", False))
+_BC_DOC = " (closed bars; settings are reference values - edit before use)"
+
+
+def _bc_kwargs(fn: str) -> tuple[Arg, ...]:
+    return tuple(_bc(setting, arg) for arg, setting in BAR_CLASS_KWARGS[fn])
+
+
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
     Spec("EMA", "factor", NUM, "same", (_X, _N), doc="exponential moving average"),
@@ -871,6 +907,24 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the level gate's invalidation on its entry candles (missing elsewhere): beyond the area's far edge (and the lowest"
              " low / highest high since the visit) by sl_buffer_mr median ranges - the same entries as AreaGate with the same"
              " settings"),
+    # M99 B1-a (flag m99_primitives): the per-bar classifier (app/price_action/bar_class.py)
+    Spec("RelRange", "factor", NUM, "ratio", (_BC_N,), extra_bars=1, flag=M99_FLAG,
+         doc="(high - low) / the mean (high - low) of the n bars before this one; missing until those bars exist" + _BC_DOC),
+    Spec("SpreadClass", "classifier", CAT, None, (_BC_N,), kwargs=_bc_kwargs("SpreadClass"), extra_bars=1, flag=M99_FLAG,
+         values=_bc_values("SPREAD_CLASSES"), ordered_args=_BC_ORDER,
+         doc="NARROW (RelRange(n) below narrow) / WIDE (above wide) / ULTRA_WIDE (above ultra) / AVERAGE; a value on a limit takes"
+             " the lower class; missing until n bars exist" + _BC_DOC),
+    Spec("ClosePosition", "classifier", CAT, None, (), kwargs=_bc_kwargs("ClosePosition"), flag=M99_FLAG,
+         values=_bc_values("CLOSE_POSITIONS"),
+         doc="where the close sits in the bar's own range, (close - low) / (high - low): LOW (below part) / HIGH (above 1 - part)"
+             " / MIDDLE (part 1/3: thirds); missing on a bar with no range" + _BC_DOC),
+    Spec("BarDirection", "classifier", CAT, None, (), extra_bars=1, flag=M99_FLAG, values=_bc_values("DIRECTIONS"),
+         doc="UP / DOWN / LEVEL: the close against the previous bar's close; missing on the first bar (closed bars)"),
+    Spec("VolumeClass", "classifier", CAT, None, (_BC_N,), kwargs=_bc_kwargs("VolumeClass"), extra_bars=1, flag=M99_FLAG,
+         values=_bc_values("VOLUME_CLASSES"), ordered_args=_BC_VORDER,
+         doc="LOW (volume / the mean volume of the n bars before below low) / HIGH (above high) / ULTRA (above ultra) / AVERAGE;"
+             " NO_VOLUME where the bar's volume is missing or 0 (an index without its future's volume); missing where the"
+             " average cannot be read (a bar without volume data in the n bars before)" + _BC_DOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -920,4 +974,5 @@ __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg
            "PATTERN_SHAPE_KWARGS",
            "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR", "WAVES_FLAG", "WAVE_FUNCTIONS", "WAVE_DEGREE_CHOICES",
-           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec"]
+           "RETEST_WAVE_OF", "RETEST_OF_CHOICES", "RETEST_REF_OF", "RETEST_REF_WHATS", "RETEST_DOC", "describe_spec",
+           "M99_FLAG", "M99_FUNCTIONS", "BAR_CLASS_KWARGS"]

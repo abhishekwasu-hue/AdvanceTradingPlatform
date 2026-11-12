@@ -472,7 +472,7 @@ def run_option_backtest(
                     margin_calls += 1
                 if reason is None and template_exit and pos.signal_direction and i + 1 < len(primary_df):
                     window_now = cursor.at(decision_time(ts, primary_tf))
-                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction))   # type: ignore[attr-defined]
+                    exit_due = bool(strategy.exit_signal(window_now, pos.signal_direction, symbol))   # type: ignore[attr-defined]
                 if (reason is None and manages and pos.single and pos.signal_direction and pos.entry_index is not None
                         and i > pos.entry_index):
                     # M99 P2: the options on this bar's close, on the underlying's bars after the entry (entry_index+1..i)

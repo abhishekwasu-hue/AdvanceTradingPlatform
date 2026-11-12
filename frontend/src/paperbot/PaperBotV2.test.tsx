@@ -6,7 +6,8 @@ import oldPageSource from "../pages/DeploymentsPage.tsx?raw";
 import routesSource from "../routes.ts?raw";
 import { NAV_SECTIONS_V2 } from "../shell/navModel";
 import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
-import type { Deployment, StrategyInfo } from "../types";
+import type { Deployment, StrategyInfo, TenantFeatures } from "../types";
+import { FeaturesProvider } from "../ui/useFeatures";
 import modelSource from "./model.ts?raw";
 import pageSource from "./PaperBotV2.tsx?raw";
 import { BotRow, StartBotV2, removeConsequence, strategyOptions } from "./PaperBotV2";
@@ -58,10 +59,23 @@ describe("UX2 fix 4 wiring", () => {
     expect(old).toContain('const [mode, setMode] = useState<ExecutionMode>("PAPER")');
   });
 
-  it("never offers LIVE: the request is always PAPER and the page has no mode switch", () => {
-    expect(code(pageSource)).not.toMatch(/"LIVE"\s*\)|setMode|mode:\s*"LIVE"/);
+  it("LIVE-1: Paper is the default; Live is offered only through the one live switch (useLiveAvailable)", () => {
+    // was "never offers LIVE": the owner's one live switch (11 Nov) - each user picks his own mode while it is on.
     expect(code(modelSource)).toContain('mode: "PAPER"');
-    expect(code(modelSource)).not.toContain('"LIVE"');
+    expect(code(modelSource)).not.toContain('"LIVE"');                           // the pre-fill itself stays PAPER
+    expect(code(pageSource)).toContain('useState<"PAPER" | "LIVE">("PAPER")');
+    expect(code(pageSource)).toContain("const live = liveAvailable && modePick === \"LIVE\"");
+    expect(code(pageSource)).toMatch(/\{liveAvailable && \(\s*<fieldset className="space-y-space-1" data-bot-mode>/);
+  });
+
+  it("LIVE-1: with the switch on the form shows Paper (picked) and Live; with it off, no mode choice", () => {
+    const form = (live: boolean) => text(renderToStaticMarkup(
+      <FeaturesProvider userKey={1} value={{ live_trading: live, phase0_paper_only: !live } as TenantFeatures}>
+        <MemoryRouter><StartBotV2 library={[intraday]} custom={[]} hasBroker firstField={createRef<HTMLButtonElement>()} onStarted={noop} /></MemoryRouter>
+      </FeaturesProvider>));
+    expect(form(true)).toMatch(/Mode Paper Live .*Start on paper/);
+    expect(form(false)).not.toContain("Mode Paper Live");
+    expect(form(false)).toContain("Start on paper");
   });
 });
 

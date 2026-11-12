@@ -110,8 +110,8 @@ def test_the_mode_is_paper_unless_he_picks_live(setup):
 
 @pytest.mark.parametrize("live_on,granted,lock", [
     (False, False, False),      # the defaults: live_trading off
-    (True, False, False),       # on, but not granted to this organisation
-    (True, True, True),         # on and granted, but the Phase 0 lock holds for it
+    (False, True, False),       # LIVE-1: an organisation list does not open LIVE while the one switch is off
+    (False, True, True),        # LIVE-1: nor does a per-tenant lock entry change it - the switch alone decides
 ])
 def test_live_is_refused_while_the_switches_say_so_and_never_reaches_a_broker(setup, live_on, granted, lock):
     t, expiry, strike, _, spy = setup
@@ -122,6 +122,16 @@ def test_live_is_refused_while_the_switches_say_so_and_never_reaches_a_broker(se
     assert placed["status"] == "REFUSED" and placed["order_id"] is None and fno_ticket.LIVE_OFF in placed["reasons"]
     assert spy.built == 0 and spy.placed == []
     assert _orders(t["tenant_id"]) == []
+
+
+def test_live1_switch_on_opens_live_whatever_the_retired_lists_say(setup):
+    """LIVE-1 (one switch): with live_trading ON the former organisation grant and per-tenant lock lists no longer
+    refuse LIVE - the switch-off refusal is gone; the order still needs his own broker and his own Place."""
+    t, expiry, strike, _, spy = setup
+    _switches(t, live_on=True, granted=False, lock=True)
+    view = _preview(t, _body(expiry, strike, mode="LIVE", client_ref=_ref()))
+    assert view["mode"] == "LIVE" and fno_ticket.LIVE_OFF not in view["refusals"]
+    assert spy.placed == []                                                 # a preview never reaches the broker
 
 
 def test_at_place_the_lock_assertion_still_refuses_live(setup, monkeypatch):

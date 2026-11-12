@@ -27,7 +27,7 @@ from app.auth.dependencies import current_session_id, ensure_live_step_up, get_c
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
-from app.custom_strategies.resolver import TEMPLATE_PREFIX, normalize_strategy_id, resolve_strategy
+from app.custom_strategies.resolver import normalize_strategy_id, resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.contract_execution import contract_ltp
@@ -623,14 +623,17 @@ async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_n
 
 
 async def _live_gates(session: AsyncSession, user: User, why: str) -> None:
-    """Phase N: LIVE needs the `trading:live` scope, the `live_trading` feature flag and (when the
-    operator requires it) a verified email. Exits and PAPER are untouched."""
+    """Phase N / LIVE-1: LIVE needs the one live switch (`live_trading` ON, app/platform/live_switch.py), the
+    `trading:live` scope (every USER has it by default; a team owner may deny a member) and (when the operator requires
+    it) a verified email. Exits and PAPER are untouched."""
     from app.auth.scopes import has_scope, scope_denied
     from app.auth.verification import ensure_verified
-    from app.platform.controls import require_flag
+    from app.platform import live_switch
+    refusal = await live_switch.live_refusal(session, user.tenant_id)
+    if refusal:
+        raise HTTPException(status_code=503, detail=refusal, headers={"X-Feature-Disabled": live_switch.FLAG})
     if not has_scope(user, "trading:live"):
         raise scope_denied(user, "trading:live")
-    await require_flag(session, "live_trading", user.tenant_id)
     ensure_verified(user, why)
 
 
@@ -668,9 +671,9 @@ async def create_deployment(
     pack_problem = packs.contract_problem(request.strategy_id, request.instrument_kind, request.option_strategy, request.option_position)
     if pack_problem:
         raise HTTPException(status_code=400, detail=pack_problem)
-    if request.strategy_id.startswith(TEMPLATE_PREFIX) and request.mode != ExecutionMode.PAPER:
-        # Strategy templates step 2: signals only, PAPER only (owner order section 10) - a template never runs LIVE here.
-        raise HTTPException(status_code=400, detail="Strategy templates run on paper only for now")
+    # LIVE-1 (owner order: ONE live switch): a strategy template runs PAPER or LIVE like any strategy - the user's own
+    # choice, LIVE only while live_trading is ON (_live_gates above). The former "templates run on paper only" refusal is
+    # folded into the switch.
     # Section 5: the template's exit choice, checked against the instrument it will trade (plain messages)
     try:
         template_exits = exit_settings.checked(strategy, request.template_exits, request.instrument_kind, request.option_strategy)
@@ -734,6 +737,12 @@ async def create_deployment(
     if request.routing_policy not in (None, RoutingPolicy.EXPLICIT) and request.mode != ExecutionMode.LIVE:
         raise HTTPException(status_code=400, detail="A routing policy only applies to LIVE deployments (paper trades need no account)")
     if request.mode == ExecutionMode.LIVE:
+        if not broker_name:
+            # LIVE-1: the v2 bot form names no broker - his ONE stored broker is the one (several: he names it).
+            stored = list(await session.scalars(
+                select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+            if len(stored) == 1:
+                broker_name = stored[0].broker_name
         if not broker_name:
             raise HTTPException(status_code=400, detail="LIVE deployments must name the broker to trade through")
         if account is not None and account.status != "ACTIVE":

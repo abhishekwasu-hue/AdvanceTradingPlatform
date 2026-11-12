@@ -121,8 +121,8 @@ WAIT_HISTORY = "Waiting: more candles needed"
 WAIT_DATA_BROKER = "Waiting: a broker that may show its data in the app is needed"
 WAIT_NO_USER = "Waiting: no active user in the organisation"
 WAIT_ORG_INACTIVE = "Waiting: the account is not active"
-WAIT_PRACTICE_ONLY = "Waiting: practice (PAPER) only for now"
-WAIT_PLAN = "Waiting: your plan does not include live trading"
+WAIT_PRACTICE_ONLY = "Waiting: live trading is switched off by the admin (paper bots keep running)"   # LIVE-1
+WAIT_PLAN = "Waiting: live trading is not available for this account right now"   # LIVE-1: the one switch
 WAIT_NEXT_CHECK = "Waiting: the next check"
 WAIT_BROKER_CHECK = "Waiting: a broker check is needed"
 WAIT_OWNER = "Waiting: the person who set up this bot cannot trade right now"
@@ -518,18 +518,18 @@ class TradingWorker:
         except Exception:  # noqa: BLE001 - never prevents the worker from starting
             logger.exception("Phase 0 start-up check failed")
             return {"error": "failed"}
-        self._live_paths_locked = bool(state.get("phase0_paper_only"))
+        self._live_paths_locked = not bool(state.get("live_trading"))        # LIVE-1: the one switch
         return state
 
     def _note_lock_state(self) -> None:
-        """Logs when the global PAPER-only lock changes between cycles (the owner switched it in Admin -> Controls)."""
+        """Logs when the PAPER-only lock changes between cycles (LIVE-1: it follows live_trading, the owner's one switch)."""
         locked = phase0_lock.locked(None)
         if locked != self._live_paths_locked:
             from app.platform.deployment_phase import LIVE_PATHS_NOT_STARTED
             if locked:
                 logger.warning("Trading worker: %s", LIVE_PATHS_NOT_STARTED)
             else:
-                logger.warning("Trading worker: phase0_paper_only is off - LIVE deployments are evaluated again (flags and plans decide)")
+                logger.warning("Trading worker: live_trading is on - LIVE deployments are evaluated again (each user's own mode)")
             self._live_paths_locked = locked
 
     # --- one cycle ---------------------------------------------------------------------------
@@ -1731,7 +1731,8 @@ class TradingWorker:
                 await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
-                dep.last_error = "Plan does not include live trading - LIVE entries skipped"
+                from app.platform.live_switch import LIVE_OFF
+                dep.last_error = LIVE_OFF + " (LIVE entries skipped)"   # LIVE-1: the one live switch is off
                 _waiting(dep, now, WAIT_PLAN)
                 await session.commit()
                 continue
@@ -2735,7 +2736,9 @@ class TradingWorker:
 
     async def _template_exit(self, session: AsyncSession, dep: StrategyDeploymentRecord, strategy: Any, frames, market_data: MarketDataService,
                              user_id: int) -> int:
-        """Strategy templates R5 / S10 (the user's TEMPLATE_EXIT choice): the deployment's OWN open PAPER trades whose side
+        """Strategy templates R5 / S10 (the user's TEMPLATE_EXIT choice): the deployment's OWN open trades (PAPER or LIVE -
+        LIVE-1: a template runs LIVE like any strategy; a LIVE trade is closed at the account that holds it,
+        `broker_for_trade`, exactly as the square-off does) whose side
         the template's exit signal ends on the last closed bar are closed at the current price, reason "Template exit".
         Only a bar that closed after the trade's entry counts (the backtests read it from the bar after the entry). An
         exit only: it never blocks or delays any other exit (ADR-0004); a failed close is left to the next cycle and the
@@ -2752,13 +2755,11 @@ class TradingWorker:
         singles: List[TradeRecord] = []
         groups: Dict[str, List[TradeRecord]] = {}
         for trade in trades:
-            if trade.mode != ExecutionMode.PAPER.value:
-                continue                                   # templates run on paper only; never a LIVE action from here
             entered = trade.entry_time if trade.entry_time is None or trade.entry_time.tzinfo else trade.entry_time.replace(tzinfo=timezone.utc)
             if entered is None or entered >= bar_close:
                 continue
             side = trade.underlying_direction or trade.direction
-            if not strategy.exit_signal(frames, side):
+            if not strategy.exit_signal(frames, side, dep.symbol):
                 continue
             if trade.leg_group_id:
                 groups.setdefault(trade.leg_group_id, []).append(trade)
@@ -2771,16 +2772,18 @@ class TradingWorker:
         for trade in singles:
             try:
                 price = await market_data.get_ltp(trade.symbol, venues[trade.id])
+                broker = await broker_for_trade(session, trade)     # None for PAPER; his own account for LIVE
                 async with guarded(session, keep=(trade,)):
-                    outcome = await close_position(session, trade, price, EXIT_REASON, broker=None, user_id=user_id)
+                    outcome = await close_position(session, trade, price, EXIT_REASON, broker=broker, user_id=user_id)
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open: the next cycle reads the exit again
                 logger.warning("Deployment %s: template exit of trade %s failed: %s", dep.id, trade.id, exc)
         for group_id, legs in groups.items():
             try:
                 prices = {leg.id: await market_data.get_ltp(leg.symbol, venues[leg.id]) for leg in legs}
+                broker = await broker_for_trade(session, legs[0])   # one structure sits in one account (None for PAPER)
                 async with guarded(session, keep=tuple(legs)):
-                    outcomes = await close_group(session, legs, prices, EXIT_REASON, broker=None, user_id=user_id)
+                    outcomes = await close_group(session, legs, prices, EXIT_REASON, broker=broker, user_id=user_id)
                 closed += sum(int(o.closed) for o in outcomes)
             except Exception as exc:  # noqa: BLE001 - left open: the next cycle reads the exit again
                 logger.warning("Deployment %s: template exit of group %s failed: %s", dep.id, group_id, exc)

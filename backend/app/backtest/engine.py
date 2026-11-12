@@ -194,7 +194,7 @@ def run_backtest(
 
             if outcome is None and template_exit and i + 1 < len(primary_df):
                 # R5 / S10: read on this bar's close for the open trade's own side; acted on at the next bar's open
-                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction))   # type: ignore[attr-defined]
+                exit_due = bool(strategy.exit_signal(cursor.at(decision_time(current_time, primary_tf)), direction, symbol))   # type: ignore[attr-defined]
 
             if outcome is None and manages and i >= first_after:
                 # M99 P2: the management options on this bar's close (the bars after the entry: first_after..i)

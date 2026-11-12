@@ -595,6 +595,21 @@ def test_m94_session_functions():
     assert _ev("PreOpenVolume()", SymbolData("S", {"5m": day})).isna().all()    # no pre-open bars: missing, never 0
 
 
+def test_m99_bar_class_functions():
+    """M99 B1-a: the per-bar classifier (the full fixtures: tests/test_m99_b1a_bar_class.py) - a wide, high-volume up bar
+    closing in its top third after four equal bars."""
+    rows = [(0.0, 2.0, 0.0, 1.0)] * 4 + [(1.0, 3.0, 0.0, 2.9)]
+    o, h, lo, c = (np.array(col, dtype=float) for col in zip(*rows))
+    f = pd.DataFrame({"open": o, "high": h, "low": lo, "close": c, "volume": [100.0] * 4 + [150.0]},
+                     index=pd.date_range("2026-03-02 03:45", periods=5, freq="5min", tz="UTC"))
+    d = SymbolData("S", {"5m": f})
+    assert _ev("RelRange(4)", d).iloc[-1] == pytest.approx(1.5) and np.isnan(_ev("RelRange(4)", d).iloc[3])
+    assert _ev("SpreadClass(4)", d).iloc[-1] == "WIDE" and _ev("SpreadClass(4)", d).iloc[3] is None
+    assert _ev("ClosePosition()", d).tolist() == ["MIDDLE"] * 4 + ["HIGH"]
+    assert _ev("BarDirection()", d).tolist() == [None, "LEVEL", "LEVEL", "LEVEL", "UP"]
+    assert _ev("VolumeClass(4)", d).iloc[-1] == "HIGH" and _ev("VolumeClass(4, high=1.6, ultra=2)", d).iloc[-1] == "AVERAGE"
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

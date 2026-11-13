@@ -127,7 +127,8 @@ test.describe("v2 positions 1440 desktop", () => {
       await expect(option.locator("[data-levels]")).toContainText(l);
     }
     await expect(option).toContainText("+₹3,120");
-    await expect(option.getByRole("link", { name: "Chart" })).toHaveAttribute("href", "/charts/NIFTY%2050");
+    // Owner bug report 13 Nov: Chart opens the contract held (its own premium chart), not its underlying
+    await expect(option.getByRole("link", { name: "Chart" })).toHaveAttribute("href", "/charts/NIFTY%2024800%20CE?exchange=NFO&position=201");
     const short = page.locator("[data-position='202']");
     await expect(short).toContainText("Short");
     await expect(short).toContainText("+₹1,000");
@@ -141,6 +142,14 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(closed.first()).toContainText("HDFCBANK");
     await expect(page.locator("[data-closed='191']")).toContainText("Charges ₹52.10 (from your contract note)");
     await expect(page.locator("[data-closed='191']")).toContainText("Entered before the level held.");
+
+    // Owner bug report 13 Nov: the option's own chart opens in place, with the one-tap switch to its underlying
+    await option.getByRole("link", { name: "Chart" }).click();
+    const chart = page.locator("[data-position-chart='201']");
+    await expect(chart).toHaveAttribute("data-view", "contract");
+    const which = chart.getByRole("group", { name: "Which chart" });
+    await expect(which.getByRole("button", { name: "Option" })).toHaveAttribute("aria-pressed", "true");
+    await expect(which.getByRole("button", { name: "NIFTY 50" })).toBeVisible();
   });
 
   test("Exit now: neutral, enabled, only on paper positions; today's confirm first, then today's endpoint", async ({ page }) => {

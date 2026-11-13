@@ -9,7 +9,7 @@ import {
   pcrZone, signalTone, todayIst,
 } from "./oiDiff";
 import OiDiffTableV2, { ChgCell, NetDiffTableBody } from "./OiDiffTableV2";
-import { TradeOiBannerView, bannerLines } from "./TradeOiBannerV2";
+import { INTERVALS, IntervalPicker, TradeOiBannerView, bannerLines } from "./TradeOiBannerV2";
 import bannerSource from "./TradeOiBannerV2.tsx?raw";
 import type { OiBannerResponse, OiBannerRow, OiHistoryResponse } from "../oi/types";
 import ChainTableV2 from "./ChainTableV2";
@@ -179,6 +179,65 @@ describe("M96 L1: Trade's banner", () => {
     expect(html).toMatch(/class="[^"]*text-up" data-history-signal="true">BEARISH \(Weakening\)/);   // weakening: the other colour
     expect(t).not.toMatch(/short call|short put|don't|cautious|\bbuy\b|\bsell\b/i);
     expect(bannerSource).not.toMatch(/[\u0900-\u097f]|\p{Extended_Pictographic}/u);
+  });
+
+  it("owner 13 Nov: the banner shows Trade's stable Signal of the latest reading, with Trade's five labels and colours", () => {
+    const cases: [string, "up" | "down" | "muted"][] = [["BULLISH (Strong)", "up"], ["BULLISH (Weakening)", "down"], ["BEARISH (Strong)", "down"],
+      ["BEARISH (Weakening)", "up"], ["NEUTRAL", "muted"]];
+    for (const [signal, tone] of cases) {
+      expect(bannerLines("NIFTY", banner({ signal }), live(), "2026-11-11")).toMatchObject({ signal, signalTone: tone });
+      const html = renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={live()} state={{ banner: banner({ signal }), history: null, loaded: true }}
+        interval={5} onInterval={noop} now={NOW} />);
+      const cls = { up: "text-up", down: "text-down", muted: "text-fg-muted" }[tone];
+      expect(html).toContain(`<span class="${cls}" data-banner-signal-label="true">${signal}</span>`);
+      expect(text(html)).toContain(`Signal: ${signal}`);
+    }
+    // before the day's first reading: no Signal line (never a made-up one)
+    expect(bannerLines("NIFTY", null, live(), "2026-11-11").signal).toBeNull();
+    expect(renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={live()} state={{ banner: null, history: null, loaded: true }}
+      interval={5} onInterval={noop} now={NOW} />)).not.toContain("data-banner-signal");
+    // no ATP-invented words for the signal (the per-strike Dominance words stay in the Net Diff table only)
+    expect(bannerSource).not.toMatch(/"Bulls"|"Bears"|Bullish weakening|Bearish weakening/);
+  });
+
+  it("owner 13 Nov: Trade's View interval 5 / 10 / 15 minutes in sight above the History, 5 first; a choice opens the table", () => {
+    expect([...INTERVALS]).toEqual([5, 10, 15]);
+    const html = renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={live()} state={{ banner: banner(), history: null, loaded: true }}
+      interval={5} onInterval={noop} now={NOW} />);
+    const pickerAt = html.indexOf("data-oi-interval=");
+    expect(pickerAt).toBeGreaterThan(-1);
+    expect(pickerAt).toBeLessThan(html.indexOf("<details"));                      // outside the collapsed History
+    expect(text(html)).toContain("View interval 5 min 10 min 15 min");
+    expect(html).toMatch(/aria-checked="true"[^>]*data-oi-interval-option="5"/);
+    expect(html).toMatch(/aria-checked="false"[^>]*data-oi-interval-option="10"/);
+    expect(html).not.toMatch(/<details[^>]*open=""/);                             // collapsed until asked, as Trade's expander
+    const picked: number[] = [];
+    const tree = IntervalPicker({ id: "i", interval: 10, onPick: (n) => picked.push(n) });
+    const buttons = elements(tree).filter((e) => e.type === "button");
+    expect(buttons.map((b) => (b.props as Record<string, unknown>)["aria-checked"])).toEqual([false, true, false]);
+    for (const b of buttons) {
+      expect(String((b.props as { className: string }).className)).toContain("min-h-11");          // 44 px on a phone
+      (b.props as { onClick: () => void }).onClick();
+    }
+    expect(picked).toEqual([5, 10, 15]);
+    // the view passes the choice to the History read (the server buckets Trade's way) and opens the table
+    expect(bannerSource).toMatch(/onPick=\{\(n\) => \{ onInterval\(n\); setOpen\(true\); \}\}/);
+    expect(bannerSource).toMatch(/api\.oiHistory\(underlying, interval\)/);
+    expect(bannerSource).toMatch(/useState<Interval>\(5\)/);
+    // a 10-minute row: Trade's History "Time" is the bucket's start (10:20), not its last reading's slot (10:25)
+    const ten: OiHistoryResponse = { underlying: "NIFTY", date: "2026-11-11", interval: 10, market_open: true, stale: false, age_minutes: 1,
+      stale_after_minutes: 15, rows: [{ ...row(), bucket: "2026-11-11T10:20:00+05:30" }] };
+    const tenHtml = text(renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={live()} state={{ banner: banner(), history: ten, loaded: true }}
+      interval={10} onInterval={noop} now={NOW} />));
+    expect(tenHtml).toContain("10:20 90.00 L");
+    expect(tenHtml).not.toContain("10:25 90.00 L");
+  });
+
+  it("owner 13 Nov: the Net Diff table keeps Trade's own column words (Dominance: Bulls / Bears / Neutral, TOTAL)", () => {
+    const html = renderToStaticMarkup(<OiDiffTableV2 live={live()} centreKey="k" />);
+    const t = text(html);
+    for (const h of ["CE Chg OI", "CE Total OI", "CE LTP", "Strike", "PE LTP", "PE Total OI", "PE Chg OI", "Net Diff", "Dominance"]) expect(t).toContain(h);
+    expect(t).toContain("TOTAL");
   });
 });
 

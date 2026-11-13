@@ -328,3 +328,65 @@ def test_the_block_read_from_trade_is_the_net_diff_block(trade):
     _, block = trade
     assert "PE Chg OI" in block and "Net Diff" in block and "TOTAL" in block and "day_baseline_oi" in block
     assert block.count("\n") < 140                                              # the block, not the whole page
+
+
+# ------------------------------------------------------------------------------------------------ owner bug report 13 Nov
+# "the signals were Bullish, Bearish, Bullish weakening, Bearish weakening; and a choice of 5, 10, 15 minutes": Trade's
+# stable OI Diff signal with each of its five labels, and Trade's History "View Interval" (5 / 10 / 15, 5 first), on the
+# same chains - Trade's own code against the port.
+
+def _balanced_start(seed: int):
+    """A seeded day whose first reading has total put OI = total call OI over the window (Trade's NEUTRAL)."""
+    strikes, seq = _sequence(seed)
+    spot, call, put, cprem, pprem = seq[0]
+    seq[0] = (spot, call, dict(call), cprem, pprem)
+    return strikes, seq
+
+
+def _label(signal: str) -> str:
+    """Trade's label without its leading emoji (the port leaves the emoji out)."""
+    return signal.split(" ", 1)[1] if signal and not signal[0].isascii() else signal
+
+
+TRADE_LABELS = {"BULLISH (Strong)", "BULLISH (Weakening)", "BEARISH (Strong)", "BEARISH (Weakening)", "NEUTRAL"}
+
+
+def test_each_of_trades_five_signal_labels_matches_the_port(trade, tmp_path):
+    oa, block = trade
+    seen: set[str] = set()
+    days = [_sequence(seed) for seed in SEEDS] + [_balanced_start(seed) for seed in (1, 2)]
+    for n, (strikes, seq) in enumerate(days):
+        theirs = _trade_run(oa, block, strikes, seq, _trade_db(tmp_path / f"labels_{n}.db"))
+        ours = _atp_banner(strikes, seq, OIRegimeSettings(structural_flip_min_rise_pct=None))
+        for i, (t, e) in enumerate(zip(theirs, ours)):
+            label = _label(t["snap"]["signal"])
+            assert e.state.stable_signal.label == label, (n, i)                # the same words, the emoji left out
+            assert snapshots.entry_json(e)["signal"] == label, (n, i)           # and the same on the wire
+            seen.add(label)
+    assert seen == TRADE_LABELS, seen
+
+
+@pytest.mark.parametrize("minutes", [5, 10, 15])
+def test_each_view_interval_matches_trades_history_table(trade, tmp_path, minutes):
+    oa, block = trade
+    for seed in SEEDS:
+        strikes, seq = _sequence(seed)
+        db = _trade_db(tmp_path / f"window_{minutes}_{seed}.db")
+        _trade_run(oa, block, strikes, seq, db)
+        conn = sqlite3.connect(db)
+        hist = pd.read_sql_query(                                               # the dashboard's own History query
+            """SELECT snapshot_time AS Time, total_call_oi AS "Total Call OI", total_put_oi AS "Total Put OI", diff AS Diff,
+                      delta_diff AS "Δ Diff", signal AS Signal FROM oi_diff_snapshots WHERE symbol=? AND trade_date=?
+               ORDER BY snapshot_time DESC""", conn, params=(SYMBOL, DAY.isoformat()))
+        conn.close()
+        theirs = oa.aggregate_oi_history(hist, minutes)
+        timeline = _atp_banner(strikes, seq, OIRegimeSettings(structural_flip_min_rise_pct=None))
+        ours = [{**snapshots.entry_json(e), "bucket": floor.isoformat()}           # the /history row, as the route builds it
+                for floor, e in oi_regime.aggregate_history(timeline, minutes, lambda e: e.slot_start.astimezone(IST))]
+        assert len(ours) == len(theirs), (seed, minutes)
+        for (_, t), o in zip(theirs.iterrows(), ours):
+            where = (seed, minutes, t["Time"])
+            assert o["bucket"][11:16] == t["Time"], where                       # newest first, the bucket's start time
+            assert (o["total_call_oi"], o["total_put_oi"], o["diff"], o["delta_diff"]) == (
+                t["Total Call OI"], t["Total Put OI"], t["Diff"], t["Δ Diff"]), where
+            assert o["signal"] == _label(t["Signal"]), where

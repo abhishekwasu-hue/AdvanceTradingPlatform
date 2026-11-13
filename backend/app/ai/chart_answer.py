@@ -76,13 +76,15 @@ def chart_parts(calls: list[dict[str, Any]], results: dict[str, Any],
         return None, None
     data = results[structure["id"]]
     symbol = str(data.get("symbol") or (structure.get("arguments") or {}).get("symbol") or "").upper()
-    tf = str((structure.get("arguments") or {}).get("timeframe") or "1d")
+    # owner 13 Nov: the timeframe the structure tool read (asked, else the open chart, else daily) - never assumed daily
+    tf = str(data.get("timeframe") or (structure.get("arguments") or {}).get("timeframe") or "1d")
     res = ToolResult(True, data, structure.get("as_of"), "price_action_layer")
     zones_call = next((c for c in reversed(calls) if c.get("ok") and c.get("name") == "get_market_zones"
                        and str((c.get("arguments") or {}).get("symbol") or "").upper() == symbol), None)
     zones = (ToolResult(True, results[zones_call["id"]], zones_call.get("as_of"), "market_zones") if zones_call is not None
              else ToolResult(False, None, None, "market_zones", error="not read"))
-    return copilot_chat.chart_headline(symbol, tf, res, zones, live), copilot_chat.structure_card(symbol, tf, res, zones)
+    live = live or copilot_chat.zones_live(zones)          # the live price the zones tool read the roles at, if any
+    return copilot_chat.chart_headline(symbol, tf, res, zones, live), copilot_chat.structure_card(symbol, tf, res, zones, live)
 
 
 async def live_price(ctx: Any, symbol: str, exchange: str) -> dict[str, Any] | None:

@@ -233,9 +233,12 @@ async def chat_ask(body: ChatBody, user: User = Depends(require_ai_acknowledged)
         except chat_history.NotYours:
             raise _not_found() from None
     token = chat.CONTEXT_SYMBOL.set(ask_context.symbol_of(context))
+    # owner 13 Nov: a chart read follows the timeframe of the chart the question was asked from
+    tf_token = chat.CONTEXT_TIMEFRAME.set(chat.context_timeframe((context or {}).get("timeframe")))
     try:
         result = await _chat_ask(body, session, tenant_id, user_id, admin, context)
     finally:
+        chat.CONTEXT_TIMEFRAME.reset(tf_token)
         chat.CONTEXT_SYMBOL.reset(token)
     if context:
         result["context"] = {"symbol": context.get("symbol"), "kind": (context.get("object") or {}).get("kind")}

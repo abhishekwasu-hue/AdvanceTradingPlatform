@@ -11,6 +11,9 @@ GET /api/charts/layers/market-zones?instrument=NSE:BANKNIFTY&at=<ISO time>&price
     snapshot when it is at least as new as the other one (`scope: "own"`); nobody else ever reads it.
   * `price` (default: the snapshot's own last close): the price roles and distances are measured from - a chart passes
     its last close so "demand" / "supply" follow the price on screen.
+  * `timeframe` (optional; owner 13 Nov, the M98 T1 rule): the bands are that timeframe's zones only, and
+    `context_bands` the nearest higher-timeframe zone per role (context, labelled with its timeframe). Omitted: every
+    timeframe, as before.
   * The response carries every number the chart draws (bounds, label prices, touches, strength, distances) and the
     labels themselves ("demand 512.30 (fresh)", "2 touches"); `zones` are all live candidates, for a chart that re-picks
     its bands as the price moves (the same rule, frontend/src/charting/marketZones.ts).
@@ -61,6 +64,7 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
                              price: Optional[float] = Query(default=None, gt=0),
                              family: Literal["all", "zones", "levels"] = "all",
                              max_bands: int = Query(default=chart.MAX_BANDS, ge=1, le=chart.MAX_BANDS),
+                             timeframe: str | None = Query(default=None, pattern=r"^(1m|3m|5m|15m|30m|1h|4h|1d|1w)$"),
                              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     now = datetime.now(timezone.utc)
@@ -85,12 +89,20 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
                 "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "reason": NO_ZONES, "note": NOTE}
     ref, source = (price, "request") if price is not None else (snap.price, "snapshot")
     cands = chart.candidates(snap.rows, family)
-    bands = chart.select_bands(cands, ref, max_bands=max_bands) if ref is not None else []
+    context_bands: list[dict[str, Any]] = []
+    if timeframe is not None:
+        own, higher = chart.split_by_timeframe(cands, timeframe)
+        bands = chart.select_bands(own, ref, max_bands=max_bands) if ref is not None else []
+        context_bands = (chart.select_bands(higher, ref, max_bands=2 * chart.CONTEXT_PER_ROLE, per_role=chart.CONTEXT_PER_ROLE)
+                         if ref is not None else [])
+    else:
+        bands = chart.select_bands(cands, ref, max_bands=max_bands) if ref is not None else []
     scope = "platform" if snap.scope == "platform" else ("own" if str(snap.scope or "").startswith("own:") else
                                                          "organisation" if snap.scope else None)
     return {"instrument": key, "at": _iso(when), "as_of": _iso(snap.as_of), "scope": scope, "fallback": snap.fallback,
             "settings_note": FALLBACK_NOTE if snap.fallback else None, "price": ref, "price_source": source,
-            "price_text": None if ref is None else chart.price_text(ref), "bands": bands, "zones": cands, "live_count": len(cands),
+            "price_text": None if ref is None else chart.price_text(ref), "bands": bands,
+            **({"timeframe": timeframe, "context_bands": context_bands} if timeframe is not None else {}), "zones": cands, "live_count": len(cands),
             "max_bands": max_bands, "reason": None if bands else (NO_ZONES if not cands else FAR_ZONES), "note": NOTE}
 
 

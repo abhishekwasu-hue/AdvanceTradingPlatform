@@ -47,11 +47,18 @@ export interface AnswerHeadline {
   weak?: boolean;
   area: { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number; distance_pct: number | null;
           /** M78 (F3): the area's own timeframe and state, when the server sends them. */
-          timeframe?: string | null; state?: string | null } | null;
+          timeframe?: string | null; state?: string | null;
+          /** Owner 13 Nov: "line" = an S/R level (one price, from = to); `as_of` = the closed bars its state is read on. */
+          kind?: "line" | "band"; as_of?: string | null } | null;
   chart: { symbol: string; exchange: string; timeframe: string } | null;
 }
 /** M59 CR-1: one stored area beside the price on the structure card (distance in points to its near edge, 0 inside). */
-export interface CardArea { side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number }
+/** Owner 13 Nov: the side is read at the live price while the market is open (else the last close); `kind` "line" = an
+ * S/R level (one price); `timeframe` / `state` label it; `context` = a higher timeframe's area added to the read. */
+export interface CardArea {
+  side: "demand" | "supply" | null; from: number; to: number; where: "above" | "below" | "inside"; distance: number;
+  kind?: "line" | "band"; timeframe?: string | null; state?: string | null; context?: boolean;
+}
 /** M59 CR-1: one timeframe row of the structure card; `ready` false = that timeframe's history is not stored yet. */
 export interface CardTimeframe {
   tf: string; label: string; ready: boolean; trend: "up" | "down" | "sideways" | null; weak: boolean; protected: number | null;
@@ -60,6 +67,8 @@ export interface CardTimeframe {
 /** M59 CR-1: the chart reader's structure answer as data (backend copilot_chat.structure_card) - the card draws it. */
 export interface StructureCard {
   symbol: string; price: number | null; timeframe: string; timeframes: CardTimeframe[];
+  /** Owner 13 Nov: the live price the areas' sides and distances were read at (market open); the areas' snapshot time. */
+  live_price?: number | null; live_at?: string | null; areas_as_of?: string | null;
   areas_above: CardArea[]; areas_below: CardArea[]; swing_levels: { side: "high" | "low" | null; price: number }[]; watch: string | null;
 }
 export interface ChatHome {
@@ -419,7 +428,13 @@ export function chartQuestionFor(symbol: string): string {
 /** CU3: the nearest area as "Demand 24,520 – 24,610" (the side word only when the server knows it). */
 export function areaText(area: NonNullable<AnswerHeadline["area"]>, price: (v: number) => string): string {
   const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} ` : "";
-  return `${side}${price(area.from)} – ${price(area.to)}`;
+  return `${side}${areaRangeText(area, price)}`;
+}
+
+/** Owner 13 Nov: an area's price text - "25,080.00 – 25,160.00", or "Level 25,333.65" for a line level (from = to:
+ * one price, never a range of zero width). */
+export function areaRangeText(area: { from: number; to: number; kind?: "line" | "band" }, num: (v: number) => string): string {
+  return area.kind === "line" || area.from === area.to ? `Level ${num(area.from)}` : `${num(area.from)} – ${num(area.to)}`;
 }
 
 /** CU3: how far the price is from that area: "inside", or "229.5 (0.92%) above" / "below" (where the area sits). */
@@ -456,14 +471,24 @@ export function cardTrendText(row: Pick<CardTimeframe, "trend" | "weak">): strin
 /** M59 CR-1: one area line - "Supply 25,080.00 – 25,160.00 · 229.50 pts" ("price inside" at 0). */
 export function cardAreaText(area: CardArea, num: (v: number) => string): string {
   const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} ` : "";
-  const gap = area.where === "inside" ? "price inside" : `${num(area.distance)} pts`;
-  return `${side}${num(area.from)} – ${num(area.to)} · ${gap}`;
+  return `${side}${areaRangeText(area, num)} · ${[...areaTags(area), areaGap(area, num)].join(" · ")}`;
 }
 
-/** M59 CR-1: an area's second line on the card - "Supply · 229.50 pts" / "Demand · price inside". */
+/** Owner 13 Nov: the area's timeframe (a higher one marked "context") and its state (read on closed bars). */
+function areaTags(area: CardArea): string[] {
+  const tf = area.timeframe ? (area.context ? `${area.timeframe} context` : area.timeframe) : null;
+  return [tf, area.state ?? null].filter((p): p is string => typeof p === "string" && p.trim() !== "");
+}
+
+function areaGap(area: CardArea, num: (v: number) => string): string {
+  return area.where === "inside" ? "price inside" : `${num(area.distance)} pts`;
+}
+
+/** M59 CR-1: an area's second line on the card - "Supply · 229.50 pts" / "Demand · price inside"; owner 13 Nov: with its
+ * timeframe and state when the server sends them ("Supply · 1d context · tested · 106.75 pts"). */
 export function areaNote(area: CardArea, num: (v: number) => string = String): string {
-  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)} · ` : "";
-  return `${side}${area.where === "inside" ? "price inside" : `${num(area.distance)} pts`}`;
+  const side = area.side ? `${area.side[0].toUpperCase()}${area.side.slice(1)}` : "";
+  return [side, ...areaTags(area), areaGap(area, num)].filter((p) => p !== "").join(" · ");
 }
 
 /** M59 CR-1: a swing level chip - "Swing high 25,010.50" / "Swing low 24,600.50". */

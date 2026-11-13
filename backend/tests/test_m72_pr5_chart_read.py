@@ -217,7 +217,7 @@ def test_the_planner_sends_and_shows_no_private_engine_content(owner, engine):
     shown = json.dumps({"text": ans.text, "cards": ans.cards, "headline": ans.chart_headline, "chips": ans.chips}, default=str)
     _clean(shown)
     assert ans.chart_headline["area"] == {"side": "demand", "from": 99.0, "to": 100.0, "where": "below", "distance": 1.5,
-                                          "distance_pct": 1.48, "timeframe": "15m", "state": "fresh"}
+                                          "distance_pct": 1.48, "kind": "band", "timeframe": "15m", "state": "fresh"}
     assert ans.chart_headline["trend"] == "up" and ans.structure_card is None
     assert all(c["kind"] != "chart" for c in ans.chips)                    # the headline's own "Open chart" opens it
     rows = ans.cards[0]["table"]["rows"]

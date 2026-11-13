@@ -93,6 +93,8 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   basket?: unknown[]; routes?: (page: Page) => Promise<void>;
   /** M75 NAV-3: another Terminal address (the previous Terminal at `?view=classic`). */
   path?: string;
+  /** The layout in use stored on the server (owner 13 Nov: "option_buyer"); absent: none (the Option seller). */
+  active?: string;
 } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
@@ -134,7 +136,7 @@ async function open(page: Page, theme: "light" | "dark", opts: {
         symbols: { [body.symbols[0]]: { bars, count: bars.length, first: bars[0]?.timestamp ?? null, last: bars.at(-1)?.timestamp ?? null, error: null, volume_source: null } } } });
     });
   }
-  let stored: Record<string, unknown> = { layouts: {}, active: null };
+  let stored: Record<string, unknown> = { layouts: {}, active: opts.active ?? null };
   let version = 0;
   await page.route(/\/api(?:\/v1)?\/me\/prefs(\/[a-z_]+)?(\?.*)?$/, async (route) => {
     const req = route.request();
@@ -290,6 +292,51 @@ test.describe("v2 terminal 1440", () => {
     // Reset brings the preset's panels back (unsaved until Save).
     await page.locator("[data-terminal='reset']").click();
     await expect(page.locator("[data-panel='basket']")).toBeVisible();
+  });
+
+  // Owner 13 Nov: a third ready layout, "Option buyer" - its basket lists the option-buying structures.
+  const BUYER = ["Long call", "Long put", "Bull call spread", "Bear put spread", "Straddle", "Strangle"];
+  for (const theme of THEMES) {
+    test(`the Option buyer layout: its panels and the buyer strategies in the basket (${theme})`, async ({ page }) => {
+      const seen = await open(page, theme);
+      const layout = page.locator("[data-terminal='layout']");
+      await layout.click();
+      await expect(page.locator("[data-combobox-list] [role='option']").first()).toBeVisible();
+      for (const name of ["Option seller", "Option buyer", "Quick trade"]) await expect(page.getByRole("option", { name })).toHaveCount(1);
+      await shot(page, `buyer-after-1440-${theme}-menu`);
+      await page.keyboard.press("Escape");
+      // Before: the Option seller basket keeps its usual list.
+      await expect(page.locator("[data-panel='basket'] [data-strategy]").first()).toHaveText("Bull put spread");
+      await pickOption(page, layout, "option_buyer");
+      await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "option_buyer");
+      expect(seen.puts.at(-1)?.body).toMatchObject({ active: "option_buyer" });
+      await expect(page.locator("[data-terminal-grid] [data-panel]")).toHaveCount(4);
+      for (const id of ["chart-1", "chain", "basket", "positions"]) await expect(page.locator(`[data-panel='${id}']`)).toBeVisible();
+      const chips = page.locator("[data-panel='basket'] [data-strategy]");
+      await expect(chips).toHaveText(BUYER);
+      // One tap: the debit spread around the ATM, his own width (2 strikes) and lots (1) from his settings.
+      await chips.filter({ hasText: "Bull call spread" }).click();
+      await expect(page.locator("[data-panel='basket'] [data-basket-note='done']")).toContainText("Bull call spread around 24,500: 2 legs");
+      await noSidewaysScroll(page);
+      await settle(page);
+      await shot(page, `buyer-after-1440-${theme}`);
+    });
+  }
+
+  test("Option buyer: Save as mine keeps it as the layout's base; Reset goes back to it", async ({ page }) => {
+    const seen = await open(page, "light", { active: "option_buyer" });
+    await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "option_buyer");
+    await page.locator("[data-panel-close='positions']").click();
+    await page.locator("[data-terminal='save']").click();
+    await page.locator("[data-terminal='name']").fill("Buyer desk");
+    await page.locator("[data-terminal='ask-ok']").click();
+    await expect(page.locator("[data-terminal='count']")).toHaveText("1 of 10 saved");
+    const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { name: string; preset: string }>; active: string };
+    expect(saved.layouts[saved.active]).toMatchObject({ name: "Buyer desk", preset: "option_buyer" });
+    await expect(page.locator("[data-panel='basket'] [data-strategy]")).toHaveText(BUYER);   // his own layout keeps the list
+    await page.locator("[data-terminal='reset']").click();
+    await expect(page.locator("[data-panel='positions']")).toBeVisible();
+    await expect(page.locator("[data-terminal='reset']")).toHaveAttribute("title", "Back to the Option buyer layout");
   });
 
   test("a panel moves with the keyboard and never onto another one", async ({ page }) => {
@@ -451,6 +498,19 @@ for (const size of [{ width: 360, height: 800 }, { width: 390, height: 844 }]) {
         await shot(page, `terminal-${size.width}-${theme}-positions`);
       });
     }
+
+    // Owner 13 Nov: with the Option buyer layout in use, the phone still shows the panels as tabs; its basket lists the
+    // option-buying structures.
+    test(`Option buyer on the phone: the same tabs; the basket lists the buyer strategies (dark)`, async ({ page }) => {
+      await open(page, "dark", { active: "option_buyer" });
+      await expect(page.locator("[data-terminal-grid]")).toHaveCount(0);
+      await expect(page.locator("[data-terminal-tabs] [role='tab']")).toHaveText([/^Chart$/, /^Chain$/, /^Basket$/, /^Positions\s*2$/, /^Orders$/, /^Payoff$/, /^Bots$/]);
+      await page.locator("[data-tab='basket']").tap();
+      await expect(page.locator("[data-phone-panel='basket'] [data-strategy]")).toHaveText(["Long call", "Long put", "Bull call spread", "Bear put spread", "Straddle", "Strangle"]);
+      await settle(page);
+      await expectPhoneLayout(page);
+      await shot(page, `buyer-after-${size.width}-dark-basket`);
+    });
 
     test("no sideways scroll and 44 px targets on every tab; a chain price opens the one ticket as a sheet", async ({ page }) => {
       await open(page, "light");

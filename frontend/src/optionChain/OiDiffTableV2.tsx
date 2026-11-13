@@ -51,7 +51,7 @@ export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
   return (
     <section aria-label="OI difference" data-block="oi-diff" className="space-y-space-2">
       <h2 className="text-t14 font-semibold text-fg">OI difference by strike{" "}
-        <span className="font-normal text-fg-muted">(ATM ± 6 · <span data-oi-unit>{oiUnitCaption(units)}</span>)</span></h2>
+        <span className="font-normal text-fg-muted">(ATM ± 6 · <span className="whitespace-nowrap" data-oi-unit>{oiUnitCaption(units)}</span>)</span></h2>
       {status === "none" || !nd ? (
         <p className="text-t13 text-fg-muted" data-oi-diff-state="none">The OI difference shows once the spot price of the chain is known.</p>
       ) : (

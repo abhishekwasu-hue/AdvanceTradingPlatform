@@ -259,9 +259,9 @@ describe("M96 L1: Trade's banner", () => {
     for (const h of ["CE Chg OI", "CE Total OI", "CE LTP", "Strike", "PE LTP", "PE Total OI", "PE Chg OI", "Net Diff", "Dominance"]) expect(t).toContain(h);
     expect(t).toContain("TOTAL");
     // owner 13 Nov: the unit once in the heading, by the Lakhs / Contracts choice (M96 Q3)
-    expect(html).toMatch(/\(ATM ± 6 · <span data-oi-unit="true">OI in lakhs<\/span>\)/);
+    expect(html).toMatch(/\(ATM ± 6 · <span class="whitespace-nowrap" data-oi-unit="true">OI in lakhs<\/span>\)/);
     const inContracts = renderToStaticMarkup(<OiDiffTableV2 live={live()} units="contracts" centreKey="k" />);
-    expect(inContracts).toContain('<span data-oi-unit="true">OI in contracts</span>');
+    expect(inContracts).toContain('data-oi-unit="true">OI in contracts</span>');
     expect(text(inContracts)).not.toMatch(/\d L\b/);
   });
 });

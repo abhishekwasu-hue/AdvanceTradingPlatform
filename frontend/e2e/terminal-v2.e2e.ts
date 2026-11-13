@@ -360,7 +360,9 @@ test.describe("v2 terminal 1440", () => {
     await open(page, "light");
     const chain = page.locator("[data-panel='chain']");
     // TERM-2 step 2: the chain page's own chain and summary strip (one spot card; Greeks from the columns menu).
-    for (const col of ["call-oi", "call-oi_change", "call-iv", "call-ltp", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    // Owner 13 Nov: the chain at 4 of the 12 columns (the chart widest) - IV goes first, OI and OI change stay (T4-5).
+    for (const col of ["call-oi", "call-oi_change", "call-ltp", "put-oi"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    for (const col of ["call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`)).toHaveCount(0);
     await expect(chain.locator("[data-summary='spot']")).toContainText(/[\d,.]+/);
     await expect(chain.locator("[data-summary]")).not.toHaveCount(0);
     await expect(chain.locator("[data-strike-range]")).toBeVisible();
@@ -1008,13 +1010,12 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await settle(page);
       await page.locator("[data-terminal='panels'] summary").click();
       const width = page.locator("[data-size='chart-1:w']");
-      await expect(width).toHaveText("7");
+      await expect(width).toHaveText("8");                                              // owner 13 Nov: Chart 8 · Chain 4 (no watchlist)
       await expect(page.locator("[data-size-min='chart-1:w']")).toContainText("min 3");
       await page.locator("[data-size-step='chart-1:w:+1']").click();
-      await expect(width).toHaveText("8");
-      await expect(page.locator("[data-size='chain:w']")).toHaveText("4");             // the neighbour gave a column
+      await expect(width).toHaveText("9");
+      await expect(page.locator("[data-size='chain:w']")).toHaveText("3");             // the neighbour gave a column: its smallest
       await shotView(page, `m58-${size.width}-dialog`);
-      await page.locator("[data-size-step='chain:w:-1']").click();                       // 3: its smallest
       await expect(page.locator("[data-size-step='chain:w:-1']")).toBeDisabled();
       await page.locator("[data-terminal='equal-widths']").click();
       // UX-3 + TA-4: two rows - Chart | Option chain, and Positions & orders | Basket - each shares the 12 columns.
@@ -1256,26 +1257,27 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     const col = (chain0.x + chain0.width - chart0.x + 8) / 12;
     const v = page.locator("[data-gutter-ids='chart-1|chain']");
     await expect(v).toHaveAttribute("role", "separator");
-    await expect(v).toHaveAttribute("aria-valuetext", "Chart 7 columns wide, Option chain 5 columns wide.");
-    // The grab area is 16 px: 4 px into the chart's own edge still takes the line.
+    await expect(v).toHaveAttribute("aria-valuetext", "Chart 8 columns wide, Option chain 4 columns wide.");
+    // The grab area is 16 px: 4 px into the chart's own edge still takes the line. Owner 13 Nov: the chart starts widest,
+    // so the drag goes left (the chain wider).
     const g = (await v.boundingBox())!;
     await page.mouse.move(g.x - 3, g.y + g.height / 2);
     await expect(v).toHaveCSS("cursor", "col-resize");
     await page.mouse.down();
-    await page.mouse.move(g.x - 3 + 20, g.y + g.height / 2, { steps: 4 });                // under half a column: the guide moves at once
+    await page.mouse.move(g.x - 3 - 20, g.y + g.height / 2, { steps: 4 });                // under half a column: the guide moves at once
     const guide = page.locator("[data-terminal-guide='x']");
     await expect(guide).toBeVisible();
-    expect((await guide.boundingBox())!.x).toBeGreaterThan(g.x + 10);
-    await page.mouse.move(g.x - 3 + col, g.y + g.height / 2, { steps: 8 });
+    expect((await guide.boundingBox())!.x).toBeLessThan(g.x - 10);
+    await page.mouse.move(g.x - 3 - col, g.y + g.height / 2, { steps: 8 });
     await page.mouse.up();
     await expect(guide).toHaveCount(0);
     const chart1 = await box(page, "chart-1"), chain1 = await box(page, "chain");
-    expect(chart1.width).toBeGreaterThan(chart0.width + col / 2);
-    expect(chain1.width).toBeLessThan(chain0.width - col / 2);
-    await expect(v).toHaveAttribute("aria-valuetext", "Chart 8 columns wide, Option chain 4 columns wide.");
+    expect(chart1.width).toBeLessThan(chart0.width - col / 2);
+    expect(chain1.width).toBeGreaterThan(chain0.width + col / 2);
+    await expect(v).toHaveAttribute("aria-valuetext", "Chart 7 columns wide, Option chain 5 columns wide.");
     // The chart re-fits: its canvas follows the panel's new width.
     await expect.poll(async () => page.evaluate(() => Math.max(...Array.from(document.querySelectorAll("[data-panel='chart-1'] canvas")).map((c) => c.getBoundingClientRect().width))))
-      .toBeGreaterThan(chart0.width * 0.8 + col / 2);
+      .toBeLessThan(chart0.width - col / 2);
     await view(page, "resize-1440-dark-size-a");
     // The line under the top row: Positions & orders and the Basket get taller (keyboard too: the arrow keys move it).
     const h = page.locator("[data-gutter-ids='chart-1|chain|positions|basket']");
@@ -1290,7 +1292,7 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     await page.locator("[data-terminal='ask-ok']").click();
     await expect(page.locator("[data-note='terminal-layout'], [data-testid='terminal-layout']").first()).toContainText("Saved as");
     const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { panels: { id: string; w: number; h: number }[] }>; active: string };
-    expect(saved.layouts[saved.active].panels.find((q) => q.id === "chart-1")).toMatchObject({ w: 8, h: 10 });
+    expect(saved.layouts[saved.active].panels.find((q) => q.id === "chart-1")).toMatchObject({ w: 7, h: 10 });
     const before = { chart: await box(page, "chart-1"), positions: await box(page, "positions") };
     await page.reload();
     await settle(page);
@@ -1321,11 +1323,12 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     expect(chart1.height).toBeGreaterThan(chart0.height + 80);
     expect(pos1.y).toBeGreaterThan(pos0.y + 80);
     await view(page, "resize-1440-dark-size-b");
-    // The minimum holds and says why.
+    // The minimum holds and says why (the taller chart's corner can sit below the window: bring it into view first).
+    await page.locator("[data-panel-resize='chart-1']").scrollIntoViewIfNeeded();
     const c2 = (await page.locator("[data-panel-resize='chart-1']").boundingBox())!;
     await page.mouse.move(c2.x + 10, c2.y + 10);
     await page.mouse.down();
-    await page.mouse.move(c2.x + 10 + col * 6, c2.y + 10, { steps: 10 });
+    await page.mouse.move(c2.x + 10 + col * 5, c2.y + 10, { steps: 10 });          // the chain (6 wide) stops at 3
     await expect(page.locator("[data-terminal-limit]")).toContainText("Option chain cannot be narrower than 3 columns.");
     await page.mouse.up();
   });

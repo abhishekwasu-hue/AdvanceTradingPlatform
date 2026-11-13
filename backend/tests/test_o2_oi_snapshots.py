@@ -142,6 +142,11 @@ def test_history_api_intervals_strikes_and_banner():
     assert len(five["rows"]) == 4 and five["rows"][0]["slot"].startswith("2026-03-10T09:35") and "stale" in five and "market_open" in five
     ten = client.get(f"/api/option-chain/{UND}/history", params={"date": DAY.isoformat(), "interval": 10}, headers=headers).json()
     assert [r["total_put_oi"] for r in ten["rows"]] == [13 * 2300.0, 13 * 2100.0]        # the last value per bucket
+    # owner 13 Nov (M96 Trade AS IS): each row's "bucket" is Trade's History Time - the bucket's start; slot = its reading
+    assert [r["bucket"] for r in five["rows"]] == [r["slot"] for r in five["rows"]]
+    assert [(r["bucket"][11:16], r["slot"][11:16]) for r in ten["rows"]] == [("09:30", "09:35"), ("09:20", "09:25")]
+    fifteen = client.get(f"/api/option-chain/{UND}/history", params={"date": DAY.isoformat(), "interval": 15}, headers=headers).json()
+    assert [(r["bucket"][11:16], r["slot"][11:16]) for r in fifteen["rows"]] == [("09:30", "09:35"), ("09:15", "09:25")]
     assert client.get(f"/api/option-chain/{UND}/history", params={"interval": 7}, headers=headers).status_code == 422
     strikes = client.get(f"/api/option-chain/{UND}/strikes", params={"date": DAY.isoformat()}, headers=headers).json()
     assert len(strikes["strikes"]) == 13 and len(strikes["strikes"][0]["points"]) == 4 and strikes["strikes"][0]["baseline_put_oi"] == 2000.0

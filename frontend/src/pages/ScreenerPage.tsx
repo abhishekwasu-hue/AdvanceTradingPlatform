@@ -22,8 +22,9 @@ import { PlainTimeframes } from "../screener/TimeframeChip";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, offeredRegistry, parseSymbols, runBlocker, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, timeframeWords, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
-import { nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
+import { BROKER_LIMIT, brokerLimitLine, heldBackLine, nothingRead, tally, unreadReason, unreadRows } from "../screener/readCounts";
 import { UnreadNote } from "../screener/UnreadNote";
+import { KillerNote } from "../screener/KillerNote";
 import type { ReadAction } from "../screener/api";
 import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
@@ -651,6 +652,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
   }
   // SCR-FIX B4: one count source - the answer's own funnel ("Matched N of 50 · K had data"), never the list's length
   const counts = shown ? tally(shown.funnel, shown.matched) : null;
+  // one notice for the broker's limit: when the grouped reason below is that limit, its note (with Retry) says it
+  const heldInNote = !readProblem && shown?.reason?.code === BROKER_LIMIT;
   const onReadAction = (action: ReadAction) => {
     if (action === "login" || action === "connect") inPlace.open("/broker");   // M75 NAV-5a: the broker drawer, in place
     else if (action === "retry") void doRun();
@@ -933,13 +936,9 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
           {/* Results: nothing before the first run (one quiet line on a wide page); "Matched N of M" once, after it */}
           <div className="screener-results space-y-3">
             {killer && registry && (
-              <div role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg">
-                <p>This condition removes every symbol. Loosen it or disable it to see candidates.</p>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" onClick={() => { setConditionsOpen(true); window.setTimeout(() => showStage(killer.id), 0); }}>Show the stage</Button>
-                  <Button size="sm" onClick={() => setStages((all) => all.map((s) => (s.id === killer.id ? { ...s, enabled: false } : s)))}>Disable it</Button>
-                </div>
-              </div>
+              <KillerNote removed={killer.removed} unread={counts?.unread ?? 0}
+                          onShow={() => { setConditionsOpen(true); window.setTimeout(() => showStage(killer.id), 0); }}
+                          onDisable={() => setStages((all) => all.map((s) => (s.id === killer.id ? { ...s, enabled: false } : s)))} />
             )}
             {progress && (
               <div role="status" className="rounded-panel border border-border bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-progress">
@@ -964,14 +963,14 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
                   <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
                   <DataTierBadge badge={run?.data_tier} />
                   {run?.session_held_back ? (
-                    <span className="text-t12 text-fg-muted" data-testid="session-held-back">{run.session_held_back} held back by the session budget</span>
+                    <span className="text-t12 text-fg-muted" data-testid="session-held-back">{heldBackLine(run.session_held_back)}</span>
                   ) : null}
                 </span>
               </div>
             )}
-            {held.length > 0 && !running && (
+            {held.length > 0 && !running && !heldInNote && (
               <p role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-held">
-                {held.length} {held.length === 1 ? "stock waited" : "stocks waited"} for your broker&apos;s limit. Run again in a minute to include {held.length === 1 ? "it" : "them"}.
+                {brokerLimitLine(held.length)}
               </p>
             )}
             {/* SCR-FIX B1 / B2: the grouped reason and ONE action (the count is in the header above) */}
@@ -1049,7 +1048,7 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
         <DataTierBadge badge={run?.data_tier} />
         {/* SCR-FIX A6: said once - these symbols were still read, from history instead of the live session */}
         {run?.session_held_back ? (
-          <span className="text-t12 text-fg-muted" data-testid="session-held-back">{run.session_held_back} held back by the session budget</span>
+          <span className="text-t12 text-fg-muted" data-testid="session-held-back">{heldBackLine(run.session_held_back)}</span>
         ) : null}
         {/* SCR-FIX D9: up to eight tools - inline from the small-tablet width up, one "More" sheet on a phone */}
         {narrow ? (
@@ -1151,13 +1150,8 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
         {/* Results */}
         <div className="screener-results space-y-3">
           {killer && registry && (
-            <div role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg">
-              <p>This condition removes every symbol. Loosen it or disable it to see candidates.</p>
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" onClick={() => showStage(killer.id)}>Show the stage</Button>
-                <Button size="sm" onClick={() => setStages((all) => all.map((s) => (s.id === killer.id ? { ...s, enabled: false } : s)))}>Disable it</Button>
-              </div>
-            </div>
+            <KillerNote removed={killer.removed} unread={counts?.unread ?? 0} onShow={() => showStage(killer.id)}
+                        onDisable={() => setStages((all) => all.map((s) => (s.id === killer.id ? { ...s, enabled: false } : s)))} />
           )}
           {progress && (
             <div role="status" className="rounded-panel border border-border bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-progress">
@@ -1170,9 +1164,9 @@ export default function ScreenerPage({ conditionsOpen: openAtStart = false }: Pa
               </div>
             </div>
           )}
-          {held.length > 0 && !running && (
+          {held.length > 0 && !running && !heldInNote && (
             <p role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-held">
-              {held.length} {held.length === 1 ? "stock waited" : "stocks waited"} for your broker&apos;s limit. Run again in a minute to include {held.length === 1 ? "it" : "them"}.
+              {brokerLimitLine(held.length)}
             </p>
           )}
           {/* SCR-FIX B1 / B2: "N matched · M could not be read", the grouped reason and ONE action */}

@@ -457,6 +457,59 @@ def test_a_held_back_daily_symbol_the_api_budget_refuses_reads_stored_daily_bars
     assert problems == {} and sorted(d.symbol for d in universe) == ["AAA", "BBB"] and tier["held_back"] == 1
 
 
+def test_a_held_back_symbol_the_api_budget_refuses_is_counted_once_as_unread(monkeypatch):
+    """Owner screenshot (5m scan): "5 could not be read" beside "7 held back by the session budget" - the 5 refused were
+    counted twice. Only the held-back symbols that were read count as held back; a refused one is "could not be read"."""
+    from app.market_data import api_budget
+    from app.screener import routes, stored_history
+
+    class Refuses(StrictBroker):
+        """The API budget has no token for HBREF's calls (raised inside the budgeted call, as a refused take does)."""
+
+        async def get_historical_data(self, symbol, *a, **kw):
+            if symbol == "HBREF":
+                raise api_budget.BudgetUsed(api_budget.BUSY_GAP)
+            return await super().get_historical_data(symbol, *a, **kw)
+
+        async def get_intraday_candles(self, symbol, *a, **kw):
+            if symbol == "HBREF":
+                raise api_budget.BudgetUsed(api_budget.BUSY_GAP)
+            return await super().get_intraday_candles(symbol, *a, **kw)
+
+    async def token(*a, **kw):
+        return True
+
+    async def nothing_stored(*a, **kw):
+        return None
+    broker = Refuses()
+    _patch_own(monkeypatch, broker, live={"HBLIVE"})
+    monkeypatch.setattr(api_budget, "take", token)
+    monkeypatch.setattr(stored_history, "stored_universe", nothing_stored)
+    tier: dict[str, Any] = {}
+    universe, problems, _ = _run(routes.fetch_frames(None, 1, ["HBLIVE", "HBREAD", "HBREF"], "NSE", "15m", {"15m": 20},
+                                                     user_id=1, tier_out=tier))
+    assert sorted(d.symbol for d in universe) == ["HBLIVE", "HBREAD"] and str(problems["HBREF"]) == routes.BUDGET_WAIT
+    assert tier["held_back"] == 1                    # 2 held back: 1 read + 1 could not be read, never "2 held back"
+
+
+def test_no_held_back_count_when_every_held_back_symbol_was_refused(monkeypatch):
+    from app.market_data import api_budget
+    from app.screener import routes, stored_history
+    broker = StrictBroker()
+    _patch_own(monkeypatch, broker, live={"NHLIVE"})
+
+    async def no_token(*a, **kw):
+        return False
+
+    async def nothing_stored(*a, **kw):
+        return None
+    monkeypatch.setattr(api_budget, "take", no_token)
+    monkeypatch.setattr(stored_history, "stored_universe", nothing_stored)
+    tier: dict[str, Any] = {}
+    universe, problems, _ = _run(routes.fetch_frames(None, 1, ["NHLIVE", "NHREF"], "NSE", "15m", {"15m": 20}, user_id=1, tier_out=tier))
+    assert [d.symbol for d in universe] == ["NHLIVE"] and set(problems) == {"NHREF"} and "held_back" not in tier
+
+
 def test_a_run_says_once_how_many_were_held_back():
     from app.screener.routes import held_back_notice
     assert held_back_notice(3).startswith("3 held back by the session budget")

@@ -4,7 +4,7 @@ import { Activity, CalendarDays, ChartColumn, Sparkles, Table2 } from "lucide-re
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMarketStatus } from "../chart/useMarketStatus";
-import { useChainTrading } from "../fno/ChainTradingV2";
+import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { readCarry } from "../fno/hubModel";
 import { SetupPanelV2, useSetupStrikes } from "../fno/InsightsV2";
 import { SIGNAL_PARAM, TRADE_PARAM, setupMarks, setupTrade, type SetupItem } from "../fno/insights";
@@ -12,7 +12,7 @@ import SymbolHubTabsV2 from "../fno/SymbolHubTabsV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatTimeIST } from "../ui/format";
-import { useTerminalSpot } from "../terminal/spot";
+import { useTerminalSpot, type TerminalSpot } from "../terminal/spot";
 import { PageIntro } from "../ui/PageIntro";
 import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
@@ -141,7 +141,7 @@ export { expiryComboOptions, symbolOptions };
 /** M96 L1: the summary card the Trade banner replaces in the chain view (its expiry line counts calendar days, Trade). */
 const TRADE_BANNER_HAS = ["dte"] as const;
 
-export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false, onTicket, areaMarks, hide, embedded = false, omitFacts }: {
+export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, onPrefs, signal = null, onClearSignal, autoTrade = false, onTicket, areaMarks, hide, embedded = false, omitFacts, spot: hostSpot }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -158,6 +158,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   onTicket?: Parameters<typeof useChainTrading>[0]["onTicket"];
   /** TERM-2 R3 (in the Terminal): each short strike's distance to the nearest area. */
   areaMarks?: ReadonlyMap<string, string>;
+  /** Owner bug 13 Nov (in the Terminal): the page's ONE spot (its context bar and chart show the same); left out, this
+   * view reads its own the same way. */
+  spot?: TerminalSpot | null;
   /** M58 T4-5 (in the Terminal): the columns a narrow chain panel leaves out. */
   hide?: readonly ColumnKey[];
   /** M96 L1: inside the Terminal's panel (its title is the heading; the pickers row fits the panel; a compact banner). */
@@ -176,7 +179,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   const live = chain.live;
   const noBroker = useNoBroker();
   // T1-3 on this page (owner 25 Oct): the spot card reads the same feed and time as the chart (src/terminal/spot.ts).
-  const spot = useTerminalSpot({ symbol, hub: useFeatures().on("data_hub"), enabled: true, chain: live ?? null });
+  // The index's own price symbol ("NIFTY 50" for NIFTY), as the Terminal reads it (owner bug 13 Nov).
+  const ownSpot = useTerminalSpot({ symbol: spotSymbolOf(symbol), hub: useFeatures().on("data_hub"), enabled: hostSpot === undefined, chain: live ?? null });
+  const spot = hostSpot === undefined ? ownSpot : hostSpot;
   const notes = chainNotes(live, marketOpen, (iso) => formatTimeIST(iso));
   const prevClose = usePrevClose(symbol);
   const auth = useOptionalAuth();

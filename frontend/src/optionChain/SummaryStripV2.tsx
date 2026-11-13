@@ -6,7 +6,7 @@ import { TermHint } from "../ui/TermHint";
 import { flashClass, useTickFlash } from "../ui/useTickFlash";
 import { Signed } from "../ui/numbersFirst";
 import { position } from "../ui/RangeBar";
-import { daysText, formatIv, formatStrike } from "./model";
+import { tradingDaysText, formatIv, formatStrike } from "./model";
 import type { ChainSummary } from "./types";
 import { Skeleton } from "../components/primitives";
 import { spotChange } from "./spotChange";
@@ -88,7 +88,7 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
       extra: maxPainDistance(s, live ? live.ltp : s?.spot) == null ? undefined
         : <span className="text-t12 text-fg-muted"><Signed value={maxPainDistance(s, live ? live.ltp : s?.spot)} kind="count" /> pts from spot</span> },
     { key: "atm-iv", label: "ATM IV", term: "iv", value: formatIv(s?.atm_iv) },
-    { key: "dte", label: "Days to expiry", term: "expiry", value: daysText(s?.days_to_expiry),
+    { key: "dte", label: "Days to expiry", term: "expiry", value: tradingDaysText(s?.days_to_expiry),
       caption: expiry ? formatDateIST(expiry) : undefined },
     // OC-4: the OI walls - the put and the call strike with the most open interest (the chain marks the same rows).
     { key: "oi-walls", label: "OI walls", value: s?.max_put_oi_strike == null && s?.max_call_oi_strike == null ? "–"

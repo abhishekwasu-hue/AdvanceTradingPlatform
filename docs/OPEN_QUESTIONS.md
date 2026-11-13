@@ -593,3 +593,11 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | M96-L3 | Which broker when he has several signed in (the ticket has no account picker) | Exactly one signed-in own session; more than one is refused in a plain sentence | app/paper/fno_ticket.py `_own_session` | open (default stated) |
 | M96-L4 | "LIVE never pre-selected unless he saved it as his own default" - no such saved setting exists | PAPER always pre-selected; no new setting added | frontend/src/fno/ticketModel.ts `newDraft` | open (default stated) |
 | M96-L5 | A bought option with no stop of his own: the pipeline sizes against a one-tick stop, which LIVE would send as a broker stop | No broker stop unless he entered one (`protective_stop`) | app/execution/signal_execution.py | open (default stated) |
+
+## SPOT-13N: the Terminal's one spot and the days left (owner bug 13 Nov, `claude/fix-terminal-spot-source`)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| SPOT-1 | Days left: the chain's OI banner counts calendar days (Trade compute_dte, M96 "AS IS"); the context bar and the "Days to expiry" card count trading days (B3, DECISIONS 24 Oct). | The banner stays Trade's, unchanged (coordinator, M96 binding); ATP's own labels name their unit: "Expiry in 2 trading days", card "2 trading days". | `optionChain/model.ts` `tradingDaysText` | open (default stated) |
+| SPOT-2 | When a live tick stops counting, and when the spot says "as of". | A tick this tab has not heard for 30 s goes out (the LTP read returns); the bar's spot says "as of <time>" once older than 60 s or while the market is closed. | `terminal/spot.ts` `TICK_FRESH_MS`, `SPOT_AS_OF_AFTER_MS` | open (default stated) |
+| SPOT-3 | The chart's last-price tag vs the spot. | No separate "last candle" label: every timeframe's forming bar now takes the one spot whenever it is newer than the bar's start, so the tag is the spot; only a 1-minute candle newer than the spot shows its own close. | `chart/timeframes.ts` `foldLive` (unchanged) | open (default stated) |

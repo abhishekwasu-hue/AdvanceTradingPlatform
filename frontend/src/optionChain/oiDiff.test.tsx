@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { formatContracts, formatCount, formatLakhs } from "../ui/format";
 import { leg, liveChain, rows } from "./chain.fixture";
-import { DEFAULT_COLUMNS, formatOi, readColumns, COLUMNS_KEY } from "./model";
+import { DEFAULT_COLUMNS, tradingDaysText, formatOi, readColumns, COLUMNS_KEY } from "./model";
 import {
   PCR_ZONE_LABEL, bannerTone, calendarDte, classText, dominanceOf, expiryLine, inTradeWindow, netDiffRows, netDiffStatus, netDiffTotal,
   pcrZone, signalTone, todayIst,
@@ -155,6 +155,15 @@ describe("M96 L1: Trade's banner", () => {
     expect(bannerLines("NIFTY", banner({}, false), live(), "2026-11-11")).toMatchObject({ tone: "neutral", message: "Market closed",
       classes: "Put: Not enough data · Call: Not enough data" });
     expect(bannerLines("SENSEX", null, null, "2026-11-11")).toMatchObject({ message: "No OI reading of SENSEX yet today", pcr: "PCR (ATM ± 6): not available" });
+  });
+
+  it("owner bug 13 Nov: the banner keeps Trade's calendar days (M96 AS IS); ATP's own labels name their unit, trading days", () => {
+    const fri = { ...live(), expiry: "2026-11-17", summary: { ...live().summary, days_to_expiry: 2 } };
+    expect(bannerLines("NIFTY", banner(), fri, "2026-11-13").expiry).toBe("Expiry: 17 Nov 2026 (4 days left)");   // Trade's sentence, unchanged
+    expect(tradingDaysText(fri.summary.days_to_expiry)).toBe("2 trading days");        // the context bar's "Expiry in" and the card
+    expect(tradingDaysText(1)).toBe("1 trading day");
+    expect(tradingDaysText(0)).toBe("Today");
+    expect(tradingDaysText(null)).toBe("–");
   });
 
   it("the banner and its History table (Trade's columns, lakhs, the stable Signal), no advice words", () => {

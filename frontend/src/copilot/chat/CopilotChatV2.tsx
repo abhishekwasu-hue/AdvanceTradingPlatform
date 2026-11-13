@@ -243,6 +243,7 @@ export function FocusHeader({ focus, onLeave }: { focus: Focus; onLeave?: () => 
           ))}
         </ul>
       )}
+      {focus.note && <p className="text-t13 text-fg-muted" role="status" data-focus-note>{focus.note}</p>}
     </div>
   );
 }

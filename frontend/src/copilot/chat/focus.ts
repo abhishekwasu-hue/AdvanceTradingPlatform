@@ -31,7 +31,12 @@ export interface Focus {
   title: string;
   facts: FocusFact[];
   suggestions: string[];
+  /** A read behind the facts failed: said in one line under the header ("Some facts are not available right now."). */
+  note?: string;
 }
+
+/** What the header says when a read behind the facts failed (the facts it did read still show). */
+export const FACTS_UNAVAILABLE = "Some facts about this item are not available right now.";
 
 const CHART_PAGES = new Set(["charts", "chart", "terminal-chart"]);
 const STRIKE_PAGES = new Set(["option-chain", "chain", "terminal-chain"]);
@@ -127,21 +132,31 @@ export function useFocus(ctx: AskContext | null): Focus | null {
     if (k !== "position" || !c.object) return undefined;
     let live = true;
     const id = c.object.id;
+    // Each read that fails is logged and said under the header (FACTS_UNAVAILABLE); the facts that were read still show.
+    let failed = false;
+    const miss = (what: string) => (e: unknown) => {
+      failed = true;
+      console.warn(`Copilot focus: ${what} could not be read`, e);
+      return null;
+    };
     void (async () => {
-      const list = await api.listPositions().catch(() => null);
+      const list = await api.listPositions().catch(miss("positions"));
       const p = list?.find((x) => x.id === id) ?? null;
-      if (!p || !live) {
-        if (live && !p && list) setFocus(symbolFocus("trade", c));     // no longer open: a trade
+      if (!live) return;
+      if (!p) {
+        if (list) setFocus(symbolFocus("trade", c));                     // no longer open: a trade
+        else setFocus({ ...symbolFocus(k, c), note: FACTS_UNAVAILABLE });
         return;
       }
       const [exposure, day] = await Promise.all([
-        api.portfolioExposure(true).catch((): PortfolioExposure | null => null),
-        api.myDay().catch(() => null),
+        api.portfolioExposure(true).catch(miss("prices")) as Promise<PortfolioExposure | null>,
+        api.myDay().catch(miss("areas and expiry")),
       ]);
       if (!live) return;
       const row = heldRows([p], exposure)[0] ?? null;
       const mine = day?.positions.find((x) => x.id === id) ?? null;
-      setFocus(positionFocus(p, row, mine?.area ?? null, mine?.expiry_sessions ?? null));
+      const focus = positionFocus(p, row, mine?.area ?? null, mine?.expiry_sessions ?? null);
+      setFocus(failed ? { ...focus, note: FACTS_UNAVAILABLE } : focus);
     })();
     return () => { live = false; };
   }, [key]);

@@ -9,7 +9,8 @@ import { copilotI18n } from "../i18n";
 import { AnswerV2, sectionTone } from "./AnswerV2";
 import { ChatView } from "./CopilotChatV2";
 import chatSource from "./CopilotChatV2.tsx?raw";
-import { focusKind, positionFocus, symbolFocus } from "./focus";
+import { FACTS_UNAVAILABLE, focusKind, positionFocus, symbolFocus } from "./focus";
+import focusSource from "./focus.ts?raw";
 import { asOfText, marketPills } from "./MarketLineV2";
 import type { ChatAnswer, ChatHome } from "./model";
 import { newlySettled, shouldJump, showJump } from "./useChatScroll";
@@ -205,6 +206,14 @@ describe("owner 13 Nov: Ask AI on an item opens a focused chat", () => {
     expect(html).not.toContain("data-about-stub");                                  // the header names the item instead
     expect(html).not.toContain("data-market-line=");
     expect(html).toContain("data-focus-leave");
+  });
+
+  it("a read behind the facts that fails is logged and said under the header, never silently dropped", () => {
+    expect(focusSource).not.toMatch(/\.catch\(\s*\([^)]*\)\s*(?::[^=]+)?=>\s*null\s*\)/);
+    expect(focusSource).toContain("console.warn(`Copilot focus: ${what} could not be read`, e);");
+    const focus = { ...positionFocus(POSITION, ROW, AREA, 4), note: FACTS_UNAVAILABLE };
+    const html = render(<ChatView home={HOME} homeError={null} turns={[]} draft="" busy={false} placement="inline" onDraft={noop} onAsk={noop} focus={focus} />);
+    expect(html).toMatch(/data-focus-note="true">Some facts about this item are not available right now\.</);
   });
 
   it("Ask AI from a position starts a NEW conversation (no old messages); the top bar's general chat is unchanged", () => {

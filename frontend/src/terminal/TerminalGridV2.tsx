@@ -2,7 +2,7 @@ import { GripVertical, Minimize2, Move, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import {
-  COLUMNS, PANELS, ROWS, gutterLabel, gutters, maximiseView, movePanel, placeLimit, readingOrder, resetEdge, resizeAcrossEdge, resizePanel,
+  COLUMNS, PANELS, ROWS, gutterLabel, gutters, maximiseView, movePanel, placeLimit, readingOrder, resetEdge, resizeAcrossEdge, resizeFromCorner,
   usedRows, type Gutter, type PanelId, type PanelPlace, type PresetId, type SizeLimit,
 } from "./layoutModel";
 
@@ -18,6 +18,12 @@ import {
  * resizeAcrossEdge); it takes the arrow keys too, and a double-click puts the ready layout's sizes back. A size or move
  * that cannot be applied says why at once (T4-2): a short note on the grid, and the line turns amber. A double-click on
  * a panel's title maximises it (the others collapse to their titles); again restores. The corner stays as a second way.
+ *
+ * Owner bug 13 Nov ("panels do not become small or big by dragging"): the corner refused every step that touched a
+ * neighbour, so in the Option seller layout it did nothing; it now moves the shared line like a gutter (layoutModel
+ * resizeFromCorner), and so do Shift + the arrow keys. A line drag snaps to whole columns / rows, so a guide now follows
+ * the pointer at once while the panels snap behind it; the grab area of a line is 16 px (the 8 px gap plus 4 px into each
+ * panel's edge).
  */
 export const ROW_REM = 2.5;
 const LIMIT_MS = 4000;
@@ -26,6 +32,8 @@ type Gesture = {
   id: PanelId | null; kind: "move" | "resize" | "edge"; gutter?: Gutter; startX: number; startY: number; base: PanelPlace | null; colPx: number; rowPx: number;
 };
 type Limit = { text: string; gutter?: string };
+/** The guide that follows the pointer while a line is dragged (px, relative to the grid). */
+type Guide = { axis: "x" | "y"; left: number; top: number; length: number };
 
 function cellSize(grid: HTMLElement | null): { colPx: number; rowPx: number } {
   if (!grid) return { colPx: 80, rowPx: 48 };
@@ -70,6 +78,8 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
   const [said, setSaid] = useState("");
   const [limit, setLimit] = useState<Limit | null>(null);
   const [maxed, setMaxed] = useState<PanelId | null>(null);
+  const [guide, setGuide] = useState<Guide | null>(null);
+  const guideStart = useRef<Guide | null>(null);
   const shown = draft ?? [...panels];
   const maxId = maxed && panels.some((x) => x.id === maxed && x.open) ? maxed : null;
   const view = maxId ? maximiseView(shown, maxId) : shown;
@@ -100,6 +110,15 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
   function startEdge(e: ReactPointerEvent, gutter: Gutter) {
     if (e.button !== 0) return;
     begin(e, { id: null, kind: "edge", gutter, startX: e.clientX, startY: e.clientY, base: null, ...cellSize(grid.current) });
+    const box = grid.current?.getBoundingClientRect();
+    const own = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (box) {
+      const g: Guide = gutter.axis === "x"
+        ? { axis: "x", left: own.left - box.left + own.width / 2, top: own.top - box.top, length: own.height }
+        : { axis: "y", left: own.left - box.left, top: own.top - box.top + own.height / 2, length: own.width };
+      guideStart.current = g;
+      setGuide(g);
+    }
   }
 
   function move(e: ReactPointerEvent) {
@@ -108,21 +127,31 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     const dx = Math.round((e.clientX - g.startX) / g.colPx);
     const dy = Math.round((e.clientY - g.startY) / g.rowPx);
     if (g.kind === "edge" && g.gutter) {
+      const s0 = guideStart.current;
+      if (s0) setGuide(s0.axis === "x" ? { ...s0, left: s0.left + e.clientX - g.startX } : { ...s0, top: s0.top + e.clientY - g.startY });
       const r = resizeAcrossEdge(panels, g.gutter, g.gutter.axis === "x" ? dx : dy);
       setDraft(r.panels);
       showLimit(r.limit, g.gutter, false);
       return;
     }
     if (!g.base || !g.id) return;
-    const [a, b] = g.kind === "move" ? [g.base.x + dx, g.base.y + dy] : [g.base.w + dx, g.base.h + dy];
-    const next = g.kind === "move" ? movePanel(panels, g.id, a, b) : resizePanel(panels, g.id, a, b);
+    if (g.kind === "resize") {                                 // the corner: the shared lines move (owner bug 13 Nov)
+      const r = resizeFromCorner(panels, g.id, g.base.w + dx, g.base.h + dy);
+      setDraft(r.panels);
+      showLimit(r.limit, undefined, false);
+      return;
+    }
+    const [a, b] = [g.base.x + dx, g.base.y + dy];
+    const next = movePanel(panels, g.id, a, b);
     if (next) setDraft(next);                                  // a place that covers another panel is skipped: the last good one stays
-    showLimit(dx || dy ? placeLimit(panels, g.id, g.kind === "move" ? "move" : "resize", a, b) : null, undefined, false);
+    showLimit(dx || dy ? placeLimit(panels, g.id, "move", a, b) : null, undefined, false);
   }
 
   function end() {
     const g = gesture.current;
     gesture.current = null;
+    guideStart.current = null;
+    setGuide(null);
     if (g && draft && !same(draft, panels)) onChange(draft);
     setDraft(null);
     if (limit) {                                               // the note stays a moment after the drag ends
@@ -137,10 +166,10 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     if (!d) return;
     e.preventDefault();
     const label = PANELS[place.id].label;
-    const kind = e.shiftKey ? "resize" : "move";
     const [a, b] = e.shiftKey ? [place.w + d[0], place.h + d[1]] : [place.x + d[0], place.y + d[1]];
-    const next = e.shiftKey ? resizePanel(panels, place.id, a, b) : movePanel(panels, place.id, a, b);
-    const why = placeLimit(panels, place.id, kind, a, b);
+    const sized = e.shiftKey ? resizeFromCorner(panels, place.id, a, b) : null;
+    const next = sized ? sized.panels : movePanel(panels, place.id, a, b);
+    const why = sized ? sized.limit : placeLimit(panels, place.id, "move", a, b);
     if (why) showLimit(why);
     const after = next?.find((x) => x.id === place.id);
     if (!next || !after || (after.x === place.x && after.y === place.y && after.w === place.w && after.h === place.h)) {
@@ -238,13 +267,15 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
           const warn = limit?.gutter === k;
           return (
             <div key={k} role="separator" tabIndex={0} aria-orientation={vertical ? "vertical" : "horizontal"} aria-label={gutterLabel(g)}
-              aria-valuenow={g.at} aria-valuemin={0} aria-valuemax={vertical ? COLUMNS : ROWS}
+              aria-valuenow={g.at} aria-valuemin={0} aria-valuemax={vertical ? COLUMNS : ROWS} aria-valuetext={sizesText(shown, [...g.before, ...g.after], g.axis)}
               data-gutter={g.axis} data-gutter-ids={[...g.before, ...g.after].join("|")} data-limit={warn ? "true" : undefined}
               title="Drag to resize · double-click for the ready sizes"
               onPointerDown={(e) => startEdge(e, g)} onDoubleClick={() => reset(g)} onKeyDown={(e) => edgeKey(e, g)}
               style={vertical ? { gridColumn: `${g.at + 1} / span 1`, gridRow: `${g.from + 1} / ${g.to + 1}` }
                 : { gridRow: `${g.at + 1} / span 1`, gridColumn: `${g.from + 1} / ${g.to + 1}` }}
               className={cx("group relative z-10 touch-none rounded-pill transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                // The grab area: the 8 px gap plus 4 px into each panel's edge (16 px); the line itself stays 8 px.
+                "after:absolute after:content-['']", vertical ? "after:-inset-x-1 after:inset-y-0" : "after:-inset-y-1 after:inset-x-0",
                 vertical ? "-ml-space-2 w-space-2 cursor-col-resize justify-self-start" : "-mt-space-2 h-space-2 cursor-row-resize self-start",
                 warn ? "bg-warn" : dragging ? "bg-brand" : "hover:bg-brand focus-visible:bg-brand")}>
               <span aria-hidden className={cx("pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-pill",
@@ -253,6 +284,11 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
           );
         })}
       </div>
+      {guide && (
+        <div aria-hidden data-terminal-guide={guide.axis}
+          className={cx("pointer-events-none absolute z-20 rounded-pill bg-brand", guide.axis === "x" ? "w-0.5 -translate-x-1/2" : "h-0.5 -translate-y-1/2")}
+          style={guide.axis === "x" ? { left: guide.left, top: guide.top, height: guide.length } : { left: guide.left, top: guide.top, width: guide.length }} />
+      )}
       {limit && (
         <p role="status" data-terminal-limit
           className="pointer-events-none absolute left-1/2 top-space-2 z-20 -translate-x-1/2 whitespace-nowrap rounded-control border border-warn bg-warn-tint px-space-3 py-space-1 text-t13 font-medium text-fg shadow-raised">

@@ -749,8 +749,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(UTC))
-        if held:
-            tier_out["held_back"] = len(held)
+        # A6: only the held-back symbols that WERE read count here ("read from history instead"); one the API budget
+        # refused (and no stored bars replaced) stays in `problems` and is counted once, as "could not be read"
+        read_held = sum(1 for s in held if s not in problems)
+        if read_held:
+            tier_out["held_back"] = read_held
     if budget_out is not None:
         from app.market_data.api_budget import api_limits
         budget_out.update({"broker_calls": int(getattr(adapter, "taken", 0)), "refused": int(getattr(adapter, "refused", 0)),
@@ -1059,7 +1062,8 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
 
 
 def held_back_notice(count: int) -> str:
-    """SCR-FIX A6: the one line a run shows when symbols were outside the live session budget (they were still read)."""
+    """SCR-FIX A6: the one line a run shows when symbols outside the live session budget were still read (`count`: only
+    the ones read - a symbol the API budget refused is "could not be read", never counted here as well)."""
     return f"{count} held back by the session budget - read from history instead"
 
 

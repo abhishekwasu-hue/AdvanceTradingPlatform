@@ -56,15 +56,17 @@ function withPosition(path: string, p: Record<string, string | undefined>): stri
   return extra ? `${path}${path.includes("?") ? "&" : "?"}${extra}` : path;
 }
 
-/** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`. */
+/** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`.
+ * Owner bug report 13 Nov: `position` / `on` / `nocandles` - a position's own chart (its contract, or its underlying),
+ * trailing so older addresses read as before (src/chart/positionChart.ts). */
 export const CHART_PANEL: PanelEntry = {
   kind: "chart",
   // M91 C1: `wscreen` - the watchlist's chosen screen the chart draws (absent: none; trailing, so older addresses read as before)
-  // Owner bug report 13 Nov: `position` / `on` / `nocandles` - a position's own chart (its contract, or its underlying),
-  // trailing so older addresses read as before (src/chart/positionChart.ts).
   keys: ["symbol", "tf", "exchange", "wscreen", POSITION_PARAM, VIEW_PARAM, NO_CANDLES_PARAM],
   title: (p) => p.symbol ?? "Chart",
   presentation: "side-wide",
+  fill: true,   // CEPE-1: the chart fills the panel (was a fixed 384 px with the rest of the panel blank)
+  phoneFull: true,   // CEPE-1: and the whole screen on a phone (the shared full-height sheet)
   match: ({ pathname, search }) => {
     const fromPath = chartsSymbolFromPath(pathname);
     const symbol = fromPath ?? search.get("chart")?.trim().toUpperCase() ?? null;

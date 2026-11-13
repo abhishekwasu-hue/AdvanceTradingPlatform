@@ -80,6 +80,8 @@ export interface ChartEngine {
   /** CH5: shows the crosshair at this time (its own bar at or before it), or hides it with null - for the workspace's
    * crosshair link. Optional: an engine without it is simply not followed. */
   setCrosshair?(time: number | null): void;
+  /** CEPE-1: shows this time range (seconds) - a linked chart's scroll / zoom. Optional, as setCrosshair. */
+  setVisibleTimeRange?(from: number, to: number): void;
   on(listener: (event: EngineEvent) => void): () => void;
   dispose(): void;
 }

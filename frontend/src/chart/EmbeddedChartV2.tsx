@@ -2,7 +2,7 @@ import { ExternalLink, Filter } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
-import type { LtpResponse } from "../types";
+import type { LtpResponse, OHLCVBar } from "../types";
 import { cx } from "../components/primitives/cx";
 import { useInPlace } from "../inplace/context";
 import ChartV2 from "./ChartV2";
@@ -76,7 +76,14 @@ export interface EmbeddedChartV2Props {
   screenId?: number | null;
   /** Owner bug report 13 Nov: the read's state for the host (a position's contract chart shows its underlying, labelled,
    * when the contract has no candles). Left out: nothing is reported. */
-  onCandles?: (state: { loading: boolean; count: number; empty: string | null; error: string | null }) => void;
+  onRead?: (state: { loading: boolean; count: number; empty: string | null; error: string | null }) => void;
+  /** CEPE-1: false hides this chart's own control bar (a host that shows one bar for two linked charts). Default on. */
+  toolbar?: boolean;
+  /** CEPE-1: the price-pane lines kept by the host (two linked charts share them); left out, the chart keeps its own. */
+  overlays?: OverlayId[];
+  onOverlays?: (overlays: OverlayId[]) => void;
+  /** CEPE-1: the candles shown, handed to the host (its header's last price and change; no read of its own). */
+  onCandles?: (candles: readonly OHLCVBar[]) => void;
   /** Owner report 13 Nov: the drawing tools on this chart (the Terminal's chart panel) - the Charts page's own rail
    * (foldable) from 768 px and its Draw menu on a phone, on the same drawings (saved per user and symbol), so a line
    * drawn here shows on the Charts page and back. Off (default): no drawings, as before. */
@@ -85,10 +92,12 @@ export interface EmbeddedChartV2Props {
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null, onCandles, drawing = false,
+  onEngine, emptyNote, screenId = null, drawing = false, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
-  const [overlays, setOverlays] = useState<OverlayId[]>([]);
+  const [ownOverlays, setOwnOverlays] = useState<OverlayId[]>([]);
+  const overlays = hostOverlays ?? ownOverlays;
+  const setOverlays = (next: OverlayId[]) => { setOwnOverlays(next); onOverlays?.(next); };
   const prefs = useChartPrefs(user?.id ?? null);
   // The price pane alone: in a chart this small a lower pane would sit under the library's attribution mark.
   const shown = useMemo(() => ({ ...prefs.prefs, indicators: NO_PANES }), [prefs.prefs]);
@@ -106,11 +115,14 @@ export default function EmbeddedChartV2({
   const marketOpen = market ? market.open : null;
   const sym = symbol.trim().toUpperCase();
   const data = useChartCandles({ enabled: !!sym, paused: !visible, symbol: sym, exchange, timeframe });
-  const reportRef = useRef(onCandles);
-  reportRef.current = onCandles;
+  const reportRef = useRef(onRead);
+  reportRef.current = onRead;
   const count = data.candles.length;
   useEffect(() => { reportRef.current?.({ loading: data.loading, count, empty: data.empty, error: data.error }); }, [data.loading, count, data.empty, data.error]);
   const last = data.candles[data.candles.length - 1];
+  const candlesTo = useRef(onCandles);
+  candlesTo.current = onCandles;
+  useEffect(() => { candlesTo.current?.(data.candles); }, [data.candles]);
   // As on the Chart tab: intraday while the market is not known to be closed; day only while its bar is forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : marketOpen !== false;
   const ownLive = useLiveLtp(hostLive === undefined && liveOn && data.candles.length > 0, sym, exchange);
@@ -140,7 +152,7 @@ export default function EmbeddedChartV2({
 
   return (
     <section aria-label={`Chart of ${sym}`} data-embedded-chart={sym} className="overflow-hidden rounded-panel border border-subtle bg-surface-1">
-      <ChartToolbar mode="compact" label={`Chart controls for ${sym}`}
+      {toolbar && <ChartToolbar mode="compact" label={`Chart controls for ${sym}`}
         symbol={onSymbol ? { value: sym, exchange, onPick: onSymbol, storageKey: recentKeyFor(user?.id ?? null), universe: symbolUniverse } : undefined}
         timeframe={{ offered: TIMEFRAMES, value: timeframe, onChange: setTimeframe,
           favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
@@ -152,7 +164,7 @@ export default function EmbeddedChartV2({
             moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
             icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
           ...(openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []),
-        ]} />
+        ]} />}
       {/* a column that fills a flex host (the Terminal's panel), so a host's `flex-1` on the chart still works */}
       <div className="flex min-h-0 flex-1">
       {drawingProps && <CollapsibleDrawingRail {...drawingProps} />}

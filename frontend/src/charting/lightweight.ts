@@ -53,6 +53,8 @@ export interface ChartLike {
     unsubscribeVisibleTimeRangeChange(handler: (r: { from: unknown; to: unknown } | null) => void): void;
     logicalToCoordinate(logical: number): number | null;
     coordinateToLogical(x: number): number | null;
+    // CEPE-1: the time range sync of two charts side by side (optional: test fakes without it are simply not moved).
+    setVisibleRange?(range: { from: never; to: never }): void;
   };
 }
 
@@ -423,6 +425,14 @@ export class LightweightEngine implements ChartEngine {
     const price = bar?.close ?? bar?.value;
     if (price == null || !Number.isFinite(price)) { this.chart.clearCrosshairPosition?.(); return; }
     this.chart.setCrosshairPosition?.(price, times[lo] as never, this.candles as never);
+  }
+
+  /** CEPE-1: shows the time range `from`..`to` (seconds), as a linked chart's scroll / zoom; ignored when the chart has
+   * no bars yet (the library throws on an empty time scale). */
+  setVisibleTimeRange(from: number, to: number) {
+    if (this.disposed || this.times().length === 0 || !(from < to)) return;
+    try { this.chart.timeScale().setVisibleRange?.({ from: from as never, to: to as never }); }
+    catch { /* intentional: a range the library cannot show yet (data still loading) - the next move sets it */ }
   }
 
   on(listener: (event: EngineEvent) => void) {

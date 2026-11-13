@@ -32,6 +32,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { SETTINGS_INDEX, settingsSectionAt, type SettingsSectionId } from "./paths";
 import { useLiveHidden } from "./useLiveHidden";
 import VisionReviewSwitchesV2 from "./VisionReviewSwitchesV2";
+import { OppositeOiSymbolsV2 } from "../optionChain/OppositeOiAlertV2";
 
 /**
  * Settings redesign part B (B1, behind `ui_v2`): one small page per Settings row, at `/settings/<section>`. The cards
@@ -148,6 +149,8 @@ function AlertsSection() {
           <Card title="Copilot watch"><CopilotWatchV2 key={telegramChanged} /></Card>
         </div>
       )}
+      {/* Owner order 13 Nov: the opposite call / put OI move alert, per symbol (off until he turns it on). */}
+      <OppositeOiSymbolsV2 />
       <Fold id="channels" title="More ways to get alerts" line="Email, app notifications, SMS and others">
         <AlertChannelsCard ownBotOnly part="channels" />
       </Fold>

@@ -3,6 +3,7 @@ import { LEGAL_TITLES } from "../legal/legal";
 import { SETTINGS_PATH } from "../settings/paths";
 import { SCREEN_PARAM, screenIdOf, withScreen } from "../chart/screenParam";
 import { chartTabPath, chartsSymbolFromPath } from "../shell/shellRoutes";
+import { NO_CANDLES_PARAM, POSITION_PARAM, VIEW_PARAM } from "../chart/positionChart";
 import { askAiPath, askContextFrom } from "../copilot/askContext";
 import { copilotToolPath, signalsPanelPath } from "./copilotPaths";
 import { OPTION_CHAIN_KEYS, futuresPanelPath, optionChainPanelPath } from "./fnoPaths";
@@ -47,11 +48,21 @@ function pagePanel(o: { kind: string; title: string; presentation: Presentation;
   };
 }
 
-/** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`. */
+/** The position keys of a chart panel's address, appended in their order (none: the path as it is). */
+function withPosition(path: string, p: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const k of [POSITION_PARAM, VIEW_PARAM, NO_CANDLES_PARAM]) if (p[k]) q.set(k, p[k] as string);
+  const extra = q.toString();
+  return extra ? `${path}${path.includes("?") ? "&" : "?"}${extra}` : path;
+}
+
+/** A chart: `/charts/NIFTY?tf=15min&exchange=BSE`, or the classic chart window's `?chart=NIFTY&tf=5min`.
+ * Owner bug report 13 Nov: `position` / `on` / `nocandles` - a position's own chart (its contract, or its underlying),
+ * trailing so older addresses read as before (src/chart/positionChart.ts). */
 export const CHART_PANEL: PanelEntry = {
   kind: "chart",
   // M91 C1: `wscreen` - the watchlist's chosen screen the chart draws (absent: none; trailing, so older addresses read as before)
-  keys: ["symbol", "tf", "exchange", "wscreen"],
+  keys: ["symbol", "tf", "exchange", "wscreen", POSITION_PARAM, VIEW_PARAM, NO_CANDLES_PARAM],
   title: (p) => p.symbol ?? "Chart",
   presentation: "side-wide",
   fill: true,   // CEPE-1: the chart fills the panel (was a fixed 384 px with the rest of the panel blank)
@@ -60,9 +71,12 @@ export const CHART_PANEL: PanelEntry = {
     const fromPath = chartsSymbolFromPath(pathname);
     const symbol = fromPath ?? search.get("chart")?.trim().toUpperCase() ?? null;
     if (!symbol) return null;
-    return only({ symbol, tf: search.get("tf"), exchange: search.get("exchange")?.trim().toUpperCase(), wscreen: screenIdOf(search.get(SCREEN_PARAM)) });
+    const position = /^\d+$/.test(search.get(POSITION_PARAM)?.trim() ?? "") ? search.get(POSITION_PARAM)?.trim() : null;
+    return only({ symbol, tf: search.get("tf"), exchange: search.get("exchange")?.trim().toUpperCase(), wscreen: screenIdOf(search.get(SCREEN_PARAM)),
+      [POSITION_PARAM]: position, [VIEW_PARAM]: position && search.get(VIEW_PARAM) === "underlying" ? "underlying" : null,
+      [NO_CANDLES_PARAM]: position && search.get(NO_CANDLES_PARAM) === "1" ? "1" : null });
   },
-  href: (p) => withScreen(chartTabPath(p.symbol ?? "", p.exchange, p.tf), screenIdOf(p.wscreen) ? { screenId: Number(p.wscreen) } : null),
+  href: (p) => withPosition(withScreen(chartTabPath(p.symbol ?? "", p.exchange, p.tf), screenIdOf(p.wscreen) ? { screenId: Number(p.wscreen) } : null), p),
   load: () => import("./panels/ChartPanel"),
 };
 

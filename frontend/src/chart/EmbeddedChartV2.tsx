@@ -74,6 +74,9 @@ export interface EmbeddedChartV2Props {
   emptyNote?: string;
   /** M91 C1: the watchlist's chosen screen (his own saved screen) drawn on the chart with its legend and one toggle. */
   screenId?: number | null;
+  /** Owner bug report 13 Nov: the read's state for the host (a position's contract chart shows its underlying, labelled,
+   * when the contract has no candles). Left out: nothing is reported. */
+  onRead?: (state: { loading: boolean; count: number; empty: string | null; error: string | null }) => void;
   /** CEPE-1: false hides this chart's own control bar (a host that shows one bar for two linked charts). Default on. */
   toolbar?: boolean;
   /** CEPE-1: the price-pane lines kept by the host (two linked charts share them); left out, the chart keeps its own. */
@@ -89,7 +92,7 @@ export interface EmbeddedChartV2Props {
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null, drawing = false, toolbar = true, overlays: hostOverlays, onOverlays, onCandles,
+  onEngine, emptyNote, screenId = null, drawing = false, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [ownOverlays, setOwnOverlays] = useState<OverlayId[]>([]);
@@ -112,6 +115,10 @@ export default function EmbeddedChartV2({
   const marketOpen = market ? market.open : null;
   const sym = symbol.trim().toUpperCase();
   const data = useChartCandles({ enabled: !!sym, paused: !visible, symbol: sym, exchange, timeframe });
+  const reportRef = useRef(onRead);
+  reportRef.current = onRead;
+  const count = data.candles.length;
+  useEffect(() => { reportRef.current?.({ loading: data.loading, count, empty: data.empty, error: data.error }); }, [data.loading, count, data.empty, data.error]);
   const last = data.candles[data.candles.length - 1];
   const candlesTo = useRef(onCandles);
   candlesTo.current = onCandles;

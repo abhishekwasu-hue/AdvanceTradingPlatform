@@ -32,7 +32,6 @@ import { itemKey } from "../chart/watchlistsV2";
 import DecisionToolsCard from "../progression/DecisionToolsCard";
 import ExperienceCard from "../progression/ExperienceCard";
 import type { PageProps } from "../routes";
-import { chartsPath } from "../shell/shellRoutes";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession } from "../ui/brokerSession";
@@ -626,7 +625,8 @@ export function PositionRowV2({ row, position, actions, prices = true, inGroup =
             <SlidersHorizontal size={16} aria-hidden />Adjust
           </InPlaceLink>
         )}
-        <InPlaceLink to={chartsPath(row.chartSymbol)} className={BUTTON_SECONDARY}>
+        {/* Owner bug report 13 Nov: the contract held (an option's premium, a future's price), not its underlying */}
+        <InPlaceLink to={row.chartPath} data-testid="position-chart" className={BUTTON_SECONDARY}>
           <ChartCandlestick size={16} aria-hidden />Chart
         </InPlaceLink>
         {/* M72 PR-3: the Copilot beside the page, about this position (the server re-reads it; information only) */}

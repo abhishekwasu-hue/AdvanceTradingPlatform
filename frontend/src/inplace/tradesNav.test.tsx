@@ -99,7 +99,7 @@ describe("NAV-5b: the sites use the host (source)", () => {
     ["trading/PositionsV2.tsx", /onConnect=\{\(\) => inPlace\.open\(CONNECT_BROKER_PATH\)\}/],
     ["trading/PositionsV2.tsx", /action=\{\{ label: "Find setups", to: "\/screener" \}\}/],
     ["trading/PositionsV2.tsx", /<InPlaceLink to=\{adjust\} data-testid="fno-adjust"/],
-    ["trading/PositionsV2.tsx", /<InPlaceLink to=\{chartsPath\(row\.chartSymbol\)\}/],
+    ["trading/PositionsV2.tsx", /<InPlaceLink to=\{row\.chartPath\} data-testid="position-chart"/],
     ["trading/PositionsV2.tsx", /more=\{\{ label: "Orders", to: "\/positions\/orders" \}\}/],
     ["trading/RiskV2.tsx", /<InPlaceLink to=\{RISK_LIMITS_PATH\}/],
     ["trading/RiskV2.tsx", /<InPlaceLink to=\{SETUP_PATH\}/],

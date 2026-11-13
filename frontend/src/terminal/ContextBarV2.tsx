@@ -3,7 +3,7 @@ import { useId, useMemo, type ReactNode } from "react";
 import { usePolled, dataOf } from "../dashboard/useDashboardData";
 import { vixBand } from "../dashboard/model";
 import { api } from "../api/client";
-import { INDEX_SYMBOLS, STOCK_SYMBOLS, daysText, expiryComboOptions, formatStrike, symbolOptions } from "../optionChain/model";
+import { INDEX_SYMBOLS, STOCK_SYMBOLS, tradingDaysText, expiryComboOptions, formatStrike, symbolOptions } from "../optionChain/model";
 import { prevCloseOf, spotChange } from "../optionChain/spotChange";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { Combobox } from "../ui/Combobox";
@@ -109,7 +109,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
         </Figure>
         <Figure name="pcr" label="PCR" term="pcr">{formatNumber(f.pcr, 2)}</Figure>
         <Figure name="atm" label="ATM" term="atm">{formatStrike(f.atm)}</Figure>
-        <Figure name="dte" label="Expiry in">{daysText(f.dte)}</Figure>
+        <Figure name="dte" label="Expiry in">{tradingDaysText(f.dte)}</Figure>
       </dl>
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
         className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-3 text-t12 font-bold tracking-wide",

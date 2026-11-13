@@ -3,7 +3,7 @@ import { Fragment } from "react";
 import { cx } from "../../components/primitives/cx";
 import { HelpPopover } from "../../ui/HelpPopover";
 import { EMPTY, formatNumber } from "../../ui/format";
-import { areaNote, cardAreaText, cardTrendText, notReadyText, swingText, type CardArea, type StructureCard } from "./model";
+import { areaNote, areaRangeText, cardAreaText, cardTrendText, notReadyText, swingText, type CardArea, type StructureCard } from "./model";
 
 /**
  * M59 CR-1 (owner order ATP_ORDER_M59): the Copilot's chart reading as a card, not prose - the structure per timeframe
@@ -24,8 +24,8 @@ function AreaList({ title, areas, tone }: { title: string; areas: CardArea[]; to
       {areas.length === 0 ? <p className="mt-space-1 text-t13 text-fg-muted">{EMPTY}</p> : (
         <ul className="mt-space-1 space-y-space-1">
           {areas.map((a) => (
-            <li key={`${a.from}-${a.to}`} className="font-tabular" data-area={a.where} aria-label={cardAreaText(a, num)}>
-              <span className={cx("block break-words text-t12 font-semibold md:text-t13", tone === "up" ? "text-up" : "text-down")}>{num(a.from)} – {num(a.to)}</span>
+            <li key={`${a.from}-${a.to}-${a.timeframe ?? ""}`} className="font-tabular" data-area={a.where} aria-label={cardAreaText(a, num)}>
+              <span className={cx("block break-words text-t12 font-semibold md:text-t13", tone === "up" ? "text-up" : "text-down")}>{areaRangeText(a, num)}</span>
               <span className="block text-t12 text-fg-muted">{areaNote(a, num)}</span>
             </li>
           ))}

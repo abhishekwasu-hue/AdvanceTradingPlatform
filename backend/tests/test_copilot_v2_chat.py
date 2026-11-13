@@ -93,7 +93,9 @@ def test_job1_brief_calls_the_context_structure_and_zone_tools():
 def test_job2_chart_reader_says_it_reads_atps_zone_layers():
     out, called, calls = _answer("read the bank nifty 15 min chart")
     assert called == ["get_chart_structure", "get_market_zones"] and calls[0]["args"] == {"symbol": "BANKNIFTY", "timeframe": "15m"}
-    assert calls[1]["args"]["price"] == 52100.0                     # the zones are read at the chart's own last close
+    # owner 13 Nov: no reference price is sent - the zones tool reads the roles at the live price (market open, Trade's
+    # compute_current_role on the LTP), else at the last close; and the asked timeframe's areas only
+    assert calls[1]["args"] == {"symbol": "BANKNIFTY", "timeframe": "15m"}
     assert chat.CHART_NOTE in out.notes and "zone layers" in chat.CHART_NOTE
     out, _, _ = _answer("Read the NIFTY chart")
     assert out.summary[0].startswith("NIFTY last closed at 24,850.5") and "protected level 24,310" in out.summary[0]
@@ -134,8 +136,10 @@ def test_m59_the_chart_answer_carries_a_structure_card_from_the_tools_only():
     assert weekly == {"tf": "1w", "label": "Weekly", "ready": True, "trend": "sideways", "weak": False, "protected": None, "last_break": None}
     assert daily["trend"] == "up" and daily["protected"] == 24310.0 and daily["last_break"] == {"label": "Swing break", "price": 24790.0}
     assert hourly["trend"] == "down" and hourly["weak"] is True and hourly["last_break"]["label"] == "Break against the trend"
-    assert card["areas_above"] == [{"side": "supply", "from": 25080.0, "to": 25160.0, "where": "above", "distance": 229.5}]
-    assert card["areas_below"] == [{"side": "demand", "from": 24520.0, "to": 24610.0, "where": "below", "distance": 240.5}]
+    tags = {"kind": "band", "timeframe": "1d", "context": False}         # owner 13 Nov: the kind, timeframe and state label it
+    assert card["areas_above"] == [{"side": "supply", "from": 25080.0, "to": 25160.0, "where": "above", "distance": 229.5, **tags, "state": "fresh"}]
+    assert card["areas_below"] == [{"side": "demand", "from": 24520.0, "to": 24610.0, "where": "below", "distance": 240.5, **tags,
+                                    "state": card["areas_below"][0]["state"]}]
     assert card["swing_levels"] == [{"side": "high", "price": 25010.5}, {"side": "low", "price": 24600.5}]
     assert card["watch"] and not findings(card["watch"]) and not re.search(r"\b(buy|sell|target|stop)\b|\d", card["watch"], re.I)
     assert "**" not in json.dumps(card)

@@ -17,9 +17,12 @@ price moves; both are checked against the same cases (`tests/fixtures/zones/char
   * labels: "demand 512.30 (fresh)", "supply 530.00 (tested)" and the touch count ("2 touches").
   * `nearest_zone(...)`: the live zone nearest to a price within a tolerance - what NearZone / ZoneRole / ZoneState /
     ZoneStrength read on each bar.
+  * `split_by_timeframe(cands, tf)` (owner 13 Nov, the M98 T1 rule): the candidates of the read timeframe, and those of
+    the higher timeframes (added context only, each labelled with its own timeframe); lower timeframes are left out.
 """
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
+from app.price_action.zones.settings import TF_MINUTES
 from app.price_action.zones.snapshot import family_of, is_line
 
 DEMAND, SUPPLY = "demand", "supply"
@@ -171,6 +174,21 @@ def select_bands(cands: Sequence[Mapping[str, Any]], price: float, max_bands: in
     return out
 
 
+CONTEXT_PER_ROLE = 1                              # higher-timeframe context: the nearest one per role (presentation)
+
+
+def split_by_timeframe(cands: Sequence[Mapping[str, Any]], timeframe: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(the candidates of `timeframe`, the candidates of every higher timeframe). A zone is read on the bars of its own
+    timeframe, so the read of a chart is its own timeframe's zones; a higher one is context only. Lower timeframes and an
+    unknown timeframe are left out of both. Pure."""
+    rank = TF_MINUTES.get(timeframe)
+    if rank is None:
+        raise ValueError(f"unknown timeframe {timeframe!r}")
+    own = [dict(c) for c in cands if str(c.get("timeframe")) == timeframe]
+    higher = [dict(c) for c in cands if TF_MINUTES.get(str(c.get("timeframe")), 0) > rank]
+    return own, higher
+
+
 def bands_from_rows(rows: Iterable[Mapping[str, Any]], price: float, family: str = "all", max_bands: int = MAX_BANDS) -> List[Dict[str, Any]]:
     """Snapshot rows straight to the bands a chart draws at `price` (what a server-side chart image calls)."""
     return select_bands(candidates(rows, family), price, max_bands=max_bands)
@@ -199,4 +217,4 @@ def nearest_zone(rows: Iterable[Mapping[str, Any]], price: float, role: str = "a
 
 
 __all__ = ["DEMAND", "SUPPLY", "FAMILIES", "MAX_BANDS", "PER_ROLE", "MAX_DISTANCE_PCT", "role_at", "distance_pct", "zone_strength",
-           "candidate", "candidates", "select_bands", "bands_from_rows", "nearest_zone", "label", "touch_text", "price_text", "is_live"]
+           "candidate", "candidates", "select_bands", "split_by_timeframe", "CONTEXT_PER_ROLE", "bands_from_rows", "nearest_zone", "label", "touch_text", "price_text", "is_live"]

@@ -118,7 +118,7 @@ ALLOWED: Dict[Tuple[str, str, str], str] = {
     (_EX + "tagging.py", "LEG_STOP", "SL"): "the broker order-tag code of a stop leg (a label)",
     (_EX + "resting_book.py", "MAX_TRAIL", "50"): "the number of order-trail log lines kept on a resting order (a record size)",
     (_PAPER + "fno_journal.py", "MAX_TRADES", "60"): "how many closed legs the journal drafts read at most (a list size)",
-    ("frontend/src/trading/model.ts", "PLACEHOLDER_STOP_MAX", "0.1"): "display only: the one-tick placeholder stop of a bought option without a stop reads \"no stop\" (owner fix T1-6)",
+    ("frontend/src/trading/positionStops.ts", "PLACEHOLDER_STOP_MAX", "0.1"): "display only: the one-tick placeholder stop of a bought option or future without a stop reads \"no stop\" (owner fix T1-6; moved from model.ts, owner bug report 13 Nov)",
     ("frontend/src/fno/ChainActionSheetV2.tsx", "cooldown_minutes", "60"): "a price alert's repeat gap: the alert only notifies, places nothing (not a trading cool-down)",
     ("frontend/src/fno/positionInsights.ts", "cooldown_minutes", "60"): "a price alert's repeat gap: the alert only notifies, places nothing (not a trading cool-down)",
     # --- size multipliers of 1.0 = no change ---------------------------------------------------------------------------------

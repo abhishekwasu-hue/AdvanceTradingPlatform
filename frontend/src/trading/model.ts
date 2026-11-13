@@ -5,6 +5,8 @@ import type {
   TradeRecord,
 } from "../types";
 import { strategyDisplayName } from "../ui/strategyName";
+import { positionChartPath, positionChartTarget } from "../chart/positionChart";
+import { PLACEHOLDER_STOP_MAX, ownLevel, ownStop } from "./positionStops";
 import { formatDateIST, formatDateTimeIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR } from "../ui/format";
 
 /**
@@ -16,6 +18,8 @@ import { formatDateIST, formatDateTimeIST, formatINR, formatLots, formatNumber, 
  * through src/ui/format.ts. Colour is a meaning chosen here (up / down for price and P&L only, warn for a real warning)
  * and drawn with the semantic tokens by the pages.
  */
+
+export { ownLevel, ownStop } from "./positionStops";
 
 // --- My positions -----------------------------------------------------------------------------------------------------
 
@@ -37,8 +41,11 @@ export interface HeldRow {
   /** "Credit 45.00 · most it can lose 155.00 a unit · closes at or below 20.00, or at or above 90.00". */
   structureNote: string | null;
   strategy: string;
-  /** The symbol the Charts page opens: the underlying for an option or future. */
+  /** The symbol the Chart button opens: the contract itself (an option's premium, a future's price), a stock as held. */
   chartSymbol: string;
+  /** Owner bug report 13 Nov: the Chart button's address - the contract's own chart with this position's lines on it,
+   * and a one-tap switch to the underlying (src/chart/positionChart.ts). */
+  chartPath: string;
   ltp: number | null;
   pnl: number | null;
   pnlPct: number | null;
@@ -92,35 +99,29 @@ function sideWord(direction: string | null | undefined): string {
 /** Owner fix T1-6: a position without a stop of its own reads "no stop" - never "–" or the one-tick stop a bought option
  *  without one is stored with (backend paper/fno_ticket.py position_stop: the whole premium at risk). */
 export const NO_STOP = "no stop";
-const PLACEHOLDER_STOP_MAX = 0.1;
 export function stopText(v: number | null | undefined, placeholder = false): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return NO_STOP;
   if (placeholder && v <= PLACEHOLDER_STOP_MAX) return NO_STOP;
   return formatPrice(v);
 }
-/** A bought option's stored stop of one tick is the "no stop of his own" placeholder. */
-function premiumPlaceholder(p: TradeRecord): boolean {
-  return p.instrument_kind === "OPTION" && p.option_position !== "WRITE";
-}
-
 export function positionLevels(p: TradeRecord): { on: string | null; levels: Level[] } {
   if (isDerivative(p)) {
     const side = sideWord(p.underlying_direction);
     const levels: Level[] = [
-      { label: "Stop", value: stopText(p.underlying_stop_loss), tone: "down" },
+      { label: "Stop", value: stopText(ownLevel(p.underlying_stop_loss)), tone: "down" },
       { label: "Target", value: formatPrice(p.underlying_target1), tone: "up" },
     ];
     if (p.instrument_kind === "OPTION") {
-      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "neutral" });
+      levels.push({ label: p.option_position === "WRITE" ? "Premium ceiling" : "Premium floor", value: stopText(ownStop(p)), tone: "neutral" });
     } else {
-      levels.push({ label: "Contract stop", value: stopText(p.stop_loss), tone: "neutral" });
+      levels.push({ label: "Contract stop", value: stopText(ownStop(p)), tone: "neutral" });
     }
     return { on: `On ${p.underlying_symbol}${side ? ` (${side})` : ""}:`, levels };
   }
   return {
     on: null,
     levels: [
-      { label: "Stop", value: stopText(p.stop_loss, premiumPlaceholder(p)), tone: "down" },
+      { label: "Stop", value: stopText(ownStop(p)), tone: "down" },
       { label: "Target", value: formatPrice(p.target1), tone: "up" },
     ],
   };
@@ -152,7 +153,7 @@ export function heldRows(positions: TradeRecord[], exposure: PortfolioExposure |
     return {
       id: p.id, symbol: p.symbol, mode: row.mode, paper: p.mode !== "LIVE", side: row.side, detail: row.detail,
       levelsOn: on, levels, structure: s.label, structureNote: s.note, strategy: strategyDisplayName(p.strategy_id),
-      chartSymbol: isDerivative(p) ? (p.underlying_symbol as string) : p.symbol,
+      chartSymbol: positionChartTarget(p, "contract").symbol, chartPath: positionChartPath(p),
       ltp: row.ltp, pnl: row.pnl, pnlPct: row.pnlPct,
       instrument: instrumentName(p.symbol, p.expiry), expiryLabel: expiryLabel(p.expiry) ?? symbolExpiryLabel(p.symbol),
       qtyText: qtyText(p.quantity, p.lot_size, p.direction !== "SHORT"), avg: p.entry_price,

@@ -1,5 +1,5 @@
 import { ExternalLink, Filter } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
 import type { LtpResponse } from "../types";
@@ -70,11 +70,14 @@ export interface EmbeddedChartV2Props {
   emptyNote?: string;
   /** M91 C1: the watchlist's chosen screen (his own saved screen) drawn on the chart with its legend and one toggle. */
   screenId?: number | null;
+  /** Owner bug report 13 Nov: the read's state for the host (a position's contract chart shows its underlying, labelled,
+   * when the contract has no candles). Left out: nothing is reported. */
+  onCandles?: (state: { loading: boolean; count: number; empty: string | null; error: string | null }) => void;
 }
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null,
+  onEngine, emptyNote, screenId = null, onCandles,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [overlays, setOverlays] = useState<OverlayId[]>([]);
@@ -95,6 +98,10 @@ export default function EmbeddedChartV2({
   const marketOpen = market ? market.open : null;
   const sym = symbol.trim().toUpperCase();
   const data = useChartCandles({ enabled: !!sym, paused: !visible, symbol: sym, exchange, timeframe });
+  const reportRef = useRef(onCandles);
+  reportRef.current = onCandles;
+  const count = data.candles.length;
+  useEffect(() => { reportRef.current?.({ loading: data.loading, count, empty: data.empty, error: data.error }); }, [data.loading, count, data.empty, data.error]);
   const last = data.candles[data.candles.length - 1];
   // As on the Chart tab: intraday while the market is not known to be closed; day only while its bar is forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : marketOpen !== false;

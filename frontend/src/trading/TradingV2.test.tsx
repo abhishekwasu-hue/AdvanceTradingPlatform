@@ -103,7 +103,7 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(words).not.toContain("Buy ·");                      // the Long chip says the side
     expect(html).toMatch(/data-signed="up"[^>]*>.*\+₹1,500/);
     expect(html).toContain('data-chip="level"');
-    expect(html).toContain('href="/charts/DEMO%20A"');
+    expect(html).toContain('href="/charts/DEMO%20A?position=1"');   // owner 13 Nov: the position's own chart (its lines on it)
   });
 
   it("UX-15: a missing price is one amber chip; a stop that is not set is an amber chip, never red text", () => {

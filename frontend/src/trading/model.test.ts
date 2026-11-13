@@ -38,7 +38,7 @@ describe("My positions rows", () => {
     expect(l.on).toBe("On DEMO IDX (Long):");
     expect(l.levels.map((x) => `${x.label} ${x.value}`)).toEqual(["Stop 24,700.00", "Target 24,900.00", "Premium floor 60.00"]);
     expect(positionLevels({ ...opt, option_position: "WRITE" }).levels[2].label).toBe("Premium ceiling");
-    expect(heldRows([opt], null)[0].chartSymbol).toBe("DEMO IDX");
+    expect(heldRows([opt], null)[0].chartSymbol).toBe("DEMO 24800 CE");   // owner 13 Nov: the contract held, not the underlying
   });
 
   it("a structure leg names the structure, its credit, worst case and exit levels", () => {

@@ -91,13 +91,16 @@ export function formatCountChange(v: Num): string {
  * same unit: 50,000 -> "0.50 L", 12,34,567 -> "12.35 L", 2,50,00,000 -> "250.00 L" (Indian grouping above 999 L).
  * `signed` (a change): "+0.50 L", "−0.50 L", and "0.00 L" for a value that rounds to zero. A missing value is "–".
  * formatCount (above) stays as it is for every other caller.
+ * `unit: false` (owner 13 Nov, "no 'L' in the OI table; say it once above: OI in lakhs"): the bare figure ("0.50",
+ * "+0.50") for a table cell whose table names its unit once (optionChain/model.ts oiUnitCaption).
  */
-export function formatLakhs(v: Num, opts: { signed?: boolean } = {}): string {
+export function formatLakhs(v: Num, opts: { signed?: boolean; unit?: boolean } = {}): string {
   if (!finite(v)) return EMPTY;
+  const unit = opts.unit === false ? "" : " L";
   const hundredths = Math.round(Math.abs(v) / 1e3);         // whole hundredths of a lakh (half away from zero)
-  if (hundredths === 0) return "0.00 L";
+  if (hundredths === 0) return `0.00${unit}`;
   const sign = v < 0 ? MINUS : opts.signed ? "+" : "";
-  return `${sign}${magnitude(hundredths / 100, 2)} L`;
+  return `${sign}${magnitude(hundredths / 100, 2)}${unit}`;
 }
 
 /** M96 Q3: the same figures as the whole number the broker sends (the chain's "Contracts" choice): "50,000", signed

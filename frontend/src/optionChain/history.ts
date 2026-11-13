@@ -49,9 +49,10 @@ export interface ExpiriesReply { underlying: string; day: string; at: string; ex
 
 // OI units (owner Q3: always lakhs, 2 decimals) - the shared formatter in src/ui/format.ts.
 export { formatLakhs };
-/** A change in lakhs, signed: "+0.61 L", "−1.70 L", "0.00 L". */
-export function formatLakhsChange(v: number | null | undefined): string {
-  return formatLakhs(v, { signed: true });
+/** A change in lakhs, signed: "+0.61 L", "−1.70 L", "0.00 L"; `unit = false` (owner 13 Nov): the bare figure for a table
+ *  cell whose table says "OI in lakhs" once above it. */
+export function formatLakhsChange(v: number | null | undefined, unit = true): string {
+  return formatLakhs(v, { signed: true, unit });
 }
 
 const q = (o: Record<string, string | number>) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&");

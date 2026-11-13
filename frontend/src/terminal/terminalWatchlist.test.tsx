@@ -21,12 +21,13 @@ describe("TA-4: the Option seller layout", () => {
   it("Watchlist (left) · Chart · Chain on top; Positions & orders (tabs) below with the basket compact beside it", () => {
     const panels = presetLayout("option_seller").panels;
     const row = (y: number) => open(panels).filter((p) => p.y === y).sort((a, b) => a.x - b.x).map((p) => [p.id, p.w]);
-    expect(row(0)).toEqual([["watchlist", 3], ["chart-1", 4], ["chain", 5]]);
+    expect(row(0)).toEqual([["watchlist", 3], ["chart-1", 5], ["chain", 4]]);   // owner 13 Nov: the chart widest
     expect(row(12)).toEqual([["positions", 9], ["basket", 3]]);
     const chart = at(panels, "chart-1");
     expect(chart.w).toBeGreaterThanOrEqual(PANELS["chart-1"].minW + 1);             // TA-4 "Chart largest" vs T1-3: owner decision (PR 8)
     expect(at(panels, "watchlist").w).toBe(PANELS.watchlist.w);                     // 3: symbol, price and change readable
-    expect(chainHiddenColumns(at(panels, "chain").w)).toEqual([]);                 // owner fix T1-3: OI change and IV on screen
+    expect(chart.w).toBeGreaterThan(at(panels, "chain").w);                         // owner 13 Nov: "make the default like this"
+    expect(chainHiddenColumns(at(panels, "chain").w)).toEqual(["iv"]);             // at 4 columns IV goes first; OI change stays
     expect(at(panels, "order").open).toBe(false);                                   // TERM-2: Buy / Sell open the one ticket
     expect(open(panels).reduce((n, p) => n + p.w * p.h, 0)).toBe(COLUMNS * 20);     // the 20 rows are filled, no gap
   });
@@ -52,7 +53,7 @@ describe("UX-3: while `watchlists` is off the panel is not shown and leaves no g
       }
     }
     expect(open(withoutWatchlist(presetLayout("option_seller").panels)).filter((p) => p.y === 0).map((p) => [p.id, p.x, p.w]))
-      .toEqual([["chart-1", 0, 7], ["chain", 7, 5]]);
+      .toEqual([["chart-1", 0, 8], ["chain", 8, 4]]);
   });
 
   it("a layout with the watchlist closed (or without it) is left as it is", () => {

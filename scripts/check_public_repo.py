@@ -188,7 +188,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "ed0530199bad39021edf8e4777700dedb99619c0eeeaca623dcf958d015e22ad",
     "backend/evals/sets/tool_args.jsonl": "578efa3d69f7d860f221068273a074b018e7998b71bdf8c55d5bdbd66d7f862b",
-    "backend/evals/sets/copilot_jobs.jsonl": "571e6d59bc541582594776320250484c80712850ed0d77465d64495f1e498a0a",
+    "backend/evals/sets/copilot_jobs.jsonl": "fd51395abc815500262ddafb53c8c9b470988ff138210477b98e66e155683a62",
     "backend/evals/sets/copilot_safety.jsonl": "6957614b58ca737a77f1445e2d3bd0a13fa5c3063c829e75506e6043a3a37287",
     "backend/evals/sets/copilot_tools.json": "39bbfbb4e1e2e94c6bec38490ca623d128c7324b10691e781a6b93fce5cf3744",
     # M72 CP-0: the trader eval (backend/evals/trader_eval.py) - 60 questions, the safety block, the language lists, the recorded

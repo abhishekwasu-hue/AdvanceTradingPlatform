@@ -209,7 +209,7 @@ test.describe("Copilot strategy builder behaviour", () => {
     await expect(answer).not.toContainText("Profit objective:");
     await expect(answer.locator("[data-unknowns]")).toContainText("I don't know how this idea did in the past");
     await expect(answer.locator("[data-details='copilot.answer']")).not.toHaveAttribute("open", "");     // CU3: theory folded
-    await expect(page.locator("[data-page='copilot-v2'] > [data-disclaimer]")).toContainText("not advice");    // the page's one line
+    await expect(page.locator("[data-page='copilot-v2'] [data-composer-dock] > [data-disclaimer]")).toContainText("not advice");    // the page's one line
   });
 
   test("the hand-over: he fills in his own values, saves it himself, and the bot form picks it; nothing starts", async ({ page }) => {

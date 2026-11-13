@@ -136,8 +136,11 @@ describe("owner 8 Nov: a conversation already open", () => {
   });
 
   it("the asked turn is brought into view as soon as it is on screen, not only when its answer is back", () => {
-    expect(chatSource).toMatch(/reveal\.current = id;\n\s*setTurns\(\(all\) => withTurn\(all, \{ id, question, answer: null/);
-    expect(chatSource).toMatch(/useEffect\(\(\) => \{\n\s*if \(reveal\.current === null\) return;[\s\S]*?scrollIntoView[\s\S]*?\}, \[turns\]\);/);
+    // Owner 13 Nov (chat redesign): ChatView's useChatScroll jumps to the newest message when a turn is added (the
+    // question and its typing dots), and brings the answer into view when it lands while he is at the latest.
+    expect(chatSource).toMatch(/setTurns\(\(all\) => withTurn\(all, \{ id, question, answer: null, error: null, sentAt:/);
+    expect(chatSource).toMatch(/const scroll = useChatScroll\(lastId\);/);
+    expect(chatSource).toContain("for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id);");
   });
 });
 
@@ -148,14 +151,17 @@ describe("the chat-first Copilot page", () => {
     expect(pageSource).toContain('lazy(() => import("../../pages/AiCopilotPage"))');
   });
 
-  it("CU2: screen 1 reads numbers strip, then the four chips, then the question box - in that order", () => {
+  it("owner 13 Nov: the market line, Advanced, the conversation (welcome + chips), then the question box at the foot", () => {
     const html = view({ strip: { status: "ok", data: STRIP } });
     const at = (needle: string) => { const i = html.indexOf(needle); expect(i, needle).toBeGreaterThan(-1); return i; };
-    expect(at("data-numbers-strip")).toBeLessThan(at("data-quick-chips"));
-    expect(at("data-quick-chips")).toBeLessThan(at('data-composer="inline"'));
-    expect(at('data-composer="inline"')).toBeLessThan(at('data-details="copilot.chat.advanced"'));
+    expect(at("data-numbers-strip")).toBeLessThan(at('data-details="copilot.chat.advanced"'));
+    expect(at('data-details="copilot.chat.advanced"')).toBeLessThan(at("data-conversation-area"));
+    expect(at("data-chat-welcome")).toBeLessThan(at("data-quick-chips"));
+    expect(at("data-quick-chips")).toBeLessThan(at("data-composer-dock"));
+    expect(at("data-composer-dock")).toBeLessThan(at('data-composer="inline"'));
+    expect(at('data-composer="inline"')).toBeLessThan(at("data-disclaimer"));
     const t = text(html);
-    for (const label of ["NIFTY 50", "BANK NIFTY", "SENSEX"]) expect(html).toContain(`data-index="${label === "BANK NIFTY" ? "NIFTY BANK" : label}"`);
+    for (const key of ["NIFTY 50", "NIFTY BANK", "SENSEX", "INDIA VIX"]) expect(html).toContain(`data-index="${key}"`);
     expect(t).toContain("81,261.10");
     expect(html).toContain('data-vix-level="');
     expect(t).toContain("FII net");
@@ -163,6 +169,20 @@ describe("the chat-first Copilot page", () => {
     expect(t).toMatch(/−1,235\s*cr/);
     expect([...html.matchAll(/data-quick="([a-z_]+)"/g)].map((m) => m[1])).toEqual(["brief", "chart", "trade_check", "positions"]);
     expect(t).toContain("Brief Read chart Check my trade My positions");
+  });
+
+  it("owner 13 Nov: with a conversation the chips sit just above the input, and the input is pinned at the foot", () => {
+    const kept: Turn[] = [{ id: 1, question: "Read the NIFTY chart", answer: HEADLINED, error: null }];
+    const html = view({ turns: kept });
+    const dock = html.slice(html.indexOf("data-composer-dock"));
+    expect(html.indexOf("data-conversation")).toBeLessThan(html.indexOf("data-composer-dock"));
+    expect(dock.indexOf("data-quick-chips")).toBeGreaterThan(-1);
+    expect(dock.indexOf("data-quick-chips")).toBeLessThan(dock.indexOf('data-composer="inline"'));
+    expect(html).not.toContain("data-chat-welcome");
+    expect(html).toMatch(/data-composer-dock="sticky" class="sticky -bottom-4/);
+    expect(view({ turns: kept, placement: "bottom" })).toMatch(/data-composer-dock="fixed" class="fixed inset-x-0/);
+    expect(html).toMatch(/class="flex flex-col items-end gap-space-1" data-msg="user"/);            // his message on the right
+    expect(html).toMatch(/data-msg="copilot"><p [^>]*data-msg-head="true"><span aria-hidden="true" data-copilot-avatar/);            // the Copilot's, with its mark
   });
 
   it("CU2: the question box is the ONLY primary action on screen 1; the jobs sit under Advanced, with no Ready pills", () => {
@@ -217,10 +237,15 @@ describe("the chat-first Copilot page", () => {
     expect(view({ home: { ...HOME, ai: { ...HOME.ai, ready: true, title: null, line: null } } })).toContain('data-ai-state="on"');
   });
 
-  it("CU2: the numbers strip says a dash for what is not known, never 0", () => {
+  it("owner 13 Nov: a value that is not known is left out - never a dash, never 0", () => {
     const html = view({ strip: { status: "error" }, home: { ...HOME, market_line: { ...HOME.market_line, fii_net_crore: null } } });
-    expect(html).toContain('data-fii-net="unknown"');
-    expect(html).toContain('data-vix-level="unknown"');
+    expect(html).not.toContain("data-fii-net");
+    expect(html).not.toContain('data-vix-level="unknown"');
+    expect(text(html.slice(html.indexOf("data-numbers-strip"), html.indexOf("data-details")))).not.toContain("–");
+    const noChange = { ...STRIP, indices: STRIP.indices.map((i) => (i.key === "NIFTY BANK" ? { ...i, change: null, change_pct: null } : i)) };
+    const bank = /<li[^>]*data-index="NIFTY BANK"[^>]*>[\s\S]*?<\/li>/.exec(view({ strip: { status: "ok", data: noChange } }))?.[0] ?? "";
+    expect(text(bank)).toContain("BANK NIFTY");
+    expect(text(bank)).not.toMatch(/–|%/);                                        // the price shows; the unknown change is hidden
     expect(numbersCells(null).map((c) => c.index)).toEqual([null, null, null]);
     expect(quickChips(JOBS.slice(2)).map((c) => c.id)).toEqual(["trade_check", "positions"]);
   });

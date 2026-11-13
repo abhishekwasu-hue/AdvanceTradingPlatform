@@ -15,7 +15,8 @@ import { areaNote, cardAreaText, cardTrendText, notReadyText, swingText, type Ca
  */
 const num = (v: number) => formatNumber(v, 2);
 const TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", sideways: "bg-surface-2 text-fg" } as const;
-const CHIP = "inline-flex min-h-7 items-center whitespace-nowrap rounded-pill px-space-2 text-t12 font-semibold";
+// Owner 13 Nov (phone 360 / 390): a chip may wrap to two lines on a phone, so the table fits without a sideways scroll.
+const CHIP = "inline-flex min-h-7 items-center rounded-pill px-space-2 text-t12 font-semibold md:whitespace-nowrap";
 
 function AreaList({ title, areas, tone }: { title: string; areas: CardArea[]; tone: "up" | "down" }) {
   return (
@@ -54,14 +55,14 @@ export function StructureCardV2({ card }: { card: StructureCard }) {
   // phone: the swing levels sit behind a (?) beside "Areas nearby" (no extra block on the first screen)
   const swingHelp = swings && <span className="md:hidden"><HelpPopover title="Swing levels" align="end"><SwingChips levels={card.swing_levels} /></HelpPopover></span>;
   return (
-    <section className="space-y-space-3 rounded-control border border-subtle p-space-3" data-structure-card={card.symbol} aria-label={`${card.symbol} structure`}>
+    <section className="space-y-space-3 rounded-control border border-subtle p-space-2 md:p-space-3" data-structure-card={card.symbol} aria-label={`${card.symbol} structure`}>
       <div className="-mx-space-1 overflow-x-auto md:max-w-3xl" data-card-block="table">
         <table className="w-full min-w-0 border-collapse text-left">
           <thead>
             <tr className="text-t12 font-medium uppercase text-fg-muted">
               <th scope="col" className="px-space-1 py-space-1 font-medium">Timeframe</th>
               <th scope="col" className="px-space-1 py-space-1 font-medium">Trend</th>
-              <th scope="col" className="px-space-1 py-space-1 text-right font-medium">Protected level</th>
+              <th scope="col" className="px-space-1 py-space-1 text-right font-medium leading-tight">Protected level</th>
               <th scope="col" className="hidden px-space-1 py-space-1 font-medium md:table-cell">Last break</th>
             </tr>
           </thead>
@@ -76,7 +77,7 @@ export function StructureCardV2({ card }: { card: StructureCard }) {
                         <span className={cx(CHIP, row.trend ? TONE[row.trend] : "bg-surface-2 text-fg-muted")} data-trend={row.trend ?? "none"}
                           data-weak={row.weak || undefined}>{cardTrendText(row)}</span>
                       </td>
-                      <td className="px-space-1 py-space-2 text-right font-tabular text-t13 text-fg">{row.protected === null ? EMPTY : num(row.protected)}</td>
+                      <td className="whitespace-nowrap px-space-1 py-space-2 text-right font-tabular text-t13 text-fg">{row.protected === null ? EMPTY : num(row.protected)}</td>
                       <td className="hidden px-space-1 py-space-2 text-t13 text-fg-muted md:table-cell" data-last-break>
                         {row.last_break ? <>{row.last_break.label} <span className="font-tabular text-fg">{num(row.last_break.price)}</span></> : EMPTY}
                       </td>

@@ -1,6 +1,6 @@
 import { SETTINGS_PATH } from "../../settings/paths";
 import { askContextLabel, type AskContext } from "../askContext";
-import { KeyRound, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowDown, KeyRound, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
 import { IndexCell } from "../../dashboard/MarketStripV2";
 import { ConnectLiveButton } from "../../ui/ConnectLive";
 import { useNoBroker } from "../../ui/noBroker";
@@ -10,7 +10,7 @@ import { stripDelay, usePolled, type Loadable } from "../../dashboard/useDashboa
 import { Skeleton } from "../../components/primitives/Feedback";
 import { LevelChip } from "../../ui/LevelChip";
 import { Signed } from "../../ui/numbersFirst";
-import { EMPTY, formatPrice } from "../../ui/format";
+import { EMPTY, formatPrice, formatTimeIST } from "../../ui/format";
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { useInPanel } from "../../inplace/inPanel";
@@ -43,6 +43,9 @@ import { friendlyError as apiFriendlyError } from "../../api/errors";
 import { Details } from "../../ui/Details";
 import { recentKeyFor, SymbolPicker } from "../../ui/SymbolPicker";
 import { watchIstDate } from "./istDate";
+import { MarketLineV2 } from "./MarketLineV2";
+import { newlySettled, showJump, useChatScroll } from "./useChatScroll";
+import { focusKind, useFocus, type Focus } from "./focus";
 
 // M59 CR-2: the attached chart's turn (the chart drawing and the reading) loads in its own chunk, only when used.
 const ChartTurnV2 = lazy(() => import("./ChartTurnV2"));
@@ -90,9 +93,15 @@ export interface ChatViewProps {
   compact?: boolean;
   /** COP-2 B: this user's recent-symbols key for the Read chart picker (`recentKeyFor(user.id)`); null: none kept. */
   recentKey?: string | null;
+  /** Owner 13 Nov: "Ask AI" on an item - the focused chat (its header, facts and own questions; the market folded). */
+  focus?: Focus | null;
+  /** Owner 13 Nov: leave the item for the general chat. */
+  onLeaveFocus?: () => void;
 }
 
-export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string }) {
+export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach, docked = false }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string;
+  /** Owner 13 Nov: the box sits in the chat's dock (pinned at the foot with the chips above it), not placed itself. */
+  docked?: boolean }) {
   const t = useCopilotT();
   const aiPrefs = useAiPrefs();          // M72 PR-10: his voice choice (flag copilot_languages); null while off
   const submit = (e: FormEvent) => { e.preventDefault(); const q = cleanQuestion(draft); if (q && !busy) onAsk(q); };
@@ -105,11 +114,16 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, 
     if (image) { e.preventDefault(); onAttach!({ kind: "file", file: image, name: image.name || "pasted-chart.png" }); }
   };
   const bottom = placement === "bottom";
+  // Owner 13 Nov: Shift+Enter makes a new line and the box grows with it (up to its max height), like a chat app.
+  const grow = (el: HTMLTextAreaElement) => { if (!docked) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 160)}px`; };
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { if (!draft && box.current) box.current.style.height = ""; }, [draft]);     // sent: back to one line
   // M60 default 1: the Ask box's attach button opens Analyze a chart (upload a chart or a TradingView snapshot link).
   const analyzeOn = useFeatures().on("chart_analyze");
   return (
     <form onSubmit={submit} data-composer={placement} data-tour="copilot-ask"
-      className={bottom
+      className={docked ? "flex items-end gap-space-2"
+        : bottom
         ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 flex items-end gap-space-2 border-t border-subtle bg-surface-1 px-space-4 py-space-2 shadow-raised"
         : "sticky top-space-2 z-10 flex items-end gap-space-2 rounded-panel border border-border bg-surface-1 p-space-3 shadow-card"}>
       {/* M59 CR-2 attaches the chart in the chat itself when the Copilot can read charts; otherwise the M60 attach
@@ -121,9 +135,9 @@ export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, 
         </InPlaceLink>
       )}
       <label className="sr-only" htmlFor="copilot-question">{t("chat.boxLabel")}</label>
-      <textarea id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom ? 1 : 2} onChange={(e) => onDraft(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
+      <textarea ref={box} id="copilot-question" value={draft} maxLength={MAX_QUESTION} rows={bottom || docked ? 1 : 2} onChange={(e) => { onDraft(e.target.value); grow(e.target); }} onKeyDown={onKey} onPaste={onPaste}
         placeholder={placeholder ?? t("chat.placeholder")} disabled={busy}
-        className={`min-w-0 flex-1 resize-none rounded-control border border-border bg-surface-2 px-space-3 py-space-2 text-t15 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60 ${bottom ? "min-h-11" : "min-h-16"}`} />
+        className={`min-w-0 flex-1 resize-none rounded-control border border-border bg-surface-2 px-space-3 py-space-2 text-t15 text-fg placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-60 ${bottom || docked ? "max-h-40 min-h-11" : "min-h-16"}`} />
       <VoiceButtonV2 prefs={aiPrefs} draft={draft} onDraft={onDraft} disabled={busy} />
       <button type="submit" className={BUTTON} disabled={busy || !cleanQuestion(draft)} aria-label={t("chat.ask")} data-primary>
         <SendHorizontal size={16} aria-hidden /><span className={bottom ? "sr-only" : ""}>{busy ? t("chat.asking") : t("chat.ask")}</span>
@@ -174,7 +188,126 @@ export function NumbersStrip({ strip, home, nowMs }: { strip: Loadable<MarketStr
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false, recentKey = null }: ChatViewProps) {
+/** Owner 13 Nov (chat redesign): "HH:MM" of a message sent or answered on this screen (IST). */
+function clock(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const text = formatTimeIST(iso, { suffix: false });
+  return text === EMPTY ? null : text;
+}
+
+/** The Copilot's small round mark beside its messages. */
+function Avatar() {
+  return (
+    <span aria-hidden data-copilot-avatar className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ai-tint text-ai">
+      <Sparkles size={16} />
+    </span>
+  );
+}
+
+/** Owner 13 Nov: the answer is on its way - three dots, said in words for a screen reader. */
+export function TypingIndicator() {
+  const t = useCopilotT();
+  return (
+    <p role="status" aria-busy="true" data-typing className="inline-flex min-h-9 items-center gap-space-1 rounded-panel bg-surface-2 px-space-3 text-fg-muted">
+      <span className="sr-only">{t("chat.asking")}</span>
+      <span aria-hidden className="flex gap-space-1">
+        {[0, 1, 2].map((i) => <span key={i} className="size-2 animate-pulse rounded-full bg-current motion-reduce:animate-none" style={{ animationDelay: `${i * 160}ms` }} />)}
+      </span>
+      <span aria-hidden className="ml-space-1 text-t13">{t("chat.asking")}</span>
+    </p>
+  );
+}
+
+/** The focused chat's header: the item in plain words, then its facts as one line of chips (numbers first). */
+export function FocusHeader({ focus, onLeave }: { focus: Focus; onLeave?: () => void }) {
+  const t = useCopilotT();
+  const TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", warn: "bg-warn-tint text-warn", neutral: "bg-surface-2 text-fg" } as const;
+  return (
+    <div className="min-w-0 flex-1 space-y-space-2" data-focus-header={focus.kind}>
+      <div className="flex min-w-0 items-start gap-space-2">
+        <h2 className="min-w-0 flex-1 text-t15 font-semibold text-fg" data-focus-title>{focus.title}</h2>
+        {onLeave && (
+          <button type="button" onClick={onLeave} aria-label={t("chat.focusLeave")} title={t("chat.focusLeave")} data-focus-leave
+            className="inline-flex size-11 shrink-0 md:size-9 items-center justify-center rounded-pill text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+            <X size={16} aria-hidden />
+          </button>
+        )}
+      </div>
+      {focus.facts.length > 0 && (
+        <ul className="flex flex-wrap gap-space-2" data-focus-facts>
+          {focus.facts.map((f) => (
+            <li key={f.key} className={`inline-flex min-h-7 items-center gap-space-1 rounded-pill px-space-3 text-t13 ${TONE[f.tone]}`} data-fact={f.key} data-tone={f.tone}>
+              <span className={f.tone === "neutral" ? "text-fg-muted" : ""}>{f.label}</span>
+              <span className="font-tabular font-semibold">{f.value}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Turns({ turns, busy, onAsk }: { turns: readonly Turn[]; busy: boolean; onAsk: (q: string) => void }) {
+  const t = useCopilotT();
+  return (
+    <ol className="space-y-space-5" aria-live="polite" data-conversation>
+      {turns.map((turn) => {
+        const sent = turn.at ? `${t("chat.askedEarlier")}${stampText(turn.at) ? ` · ${stampText(turn.at)}` : ""}` : clock(turn.sentAt);
+        const answered = clock(turn.answeredAt);
+        return (
+          <li key={turn.id} className="space-y-space-3" data-turn={turn.id}>
+            <div className="flex flex-col items-end gap-space-1" data-msg="user">
+              <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-panel rounded-br-sm bg-brand-tint px-space-4 py-space-2 text-t14 text-fg">
+                <span className="sr-only">{t("chat.youAsked")}: </span>{turn.question}
+              </p>
+              {sent && <p className="text-t12 text-fg-muted" data-turn-at={turn.at ? true : undefined} data-sent-at={turn.at ? undefined : true}>{sent}</p>}
+            </div>
+            <div className="min-w-0 space-y-space-2" data-msg="copilot">
+              <p className="flex items-center gap-space-2 text-t12 text-fg-muted" data-msg-head>
+                <Avatar />
+                <span className="font-semibold text-fg">{t("chat.copilotName")}</span>{answered && <span>{answered}</span>}
+              </p>
+              <div className="min-w-0">
+                {turn.chart ? (
+                  <>
+                    {/* M59 CR-2: the attached chart's analysis, then the Copilot's own structure card for its symbol (CR-1) */}
+                    <div className={`${CARD} p-space-4`} data-chart-card>
+                      <Suspense fallback={<TypingIndicator />}><ChartTurnV2 chart={turn.chart} /></Suspense>
+                    </div>
+                    {turn.answer && (
+                      <div className={`${CARD} space-y-space-2 p-space-4`} data-chart-reading>
+                        <h3 className="text-t13 font-semibold text-fg-muted">{t("chat.chartReading")}</h3>
+                        <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                        {(() => {
+                          // M59 CR-2: the AI words only on the user's own tap (an ordinary question, metered as any other)
+                          const question = turn.chart.status === "done" ? readingQuestion(turn.chart.item) : null;
+                          return question ? (
+                            <button type="button" className={CHIP} disabled={busy} data-explain-words onClick={() => onAsk(question)}>
+                              {t("chat.explainWords")}
+                            </button>
+                          ) : null;
+                        })()}
+                      </div>
+                    )}
+                  </>
+                ) : turn.answer ? (
+                  <div className={`${CARD} p-space-3 md:p-space-4`} data-answer-card>
+                    <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
+                    {/* M72 PR-9: the order ticket prepared from his own message (never on a refused question) */}
+                    {!turn.answer.refused && <TicketPrepV2 question={turn.question} />}
+                  </div>
+                ) : turn.error ? <p role="alert" className="rounded-panel border border-subtle bg-surface-1 px-space-3 py-space-2 text-t14 text-fg">{turn.error}</p>
+                  : <TypingIndicator />}
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false, recentKey = null, focus = null, onLeaveFocus }: ChatViewProps) {
   const t = useCopilotT();
   // COP-2 B (owner 11 Nov): "Read chart" asks which chart first - any share or index the chart reader reads.
   const [picking, setPicking] = useState(false);
@@ -185,20 +318,49 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
     field?.focus({ preventScroll: true });
     field?.scrollIntoView?.({ block: "center", behavior: "smooth" });              // room for the list above the phone's ask box
   }, [picking, pickerId]);
+  const noBroker = useNoBroker();
   const line = marketLineText(home);
-  const chips = home ? quickChips(home.jobs) : [];
+  const chips = home && !focus ? quickChips(home.jobs) : [];
   const empty = turns.length === 0;
   const aiOff = needsKey(home);
-  const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach}
-    placeholder={placement === "bottom" || compact ? t("chat.placeholderShort") : home?.top_line} />;
+  // Owner 13 Nov: the conversation scrolls to its newest message; an answer arriving is brought into view only while
+  // he is at the latest, else a "Jump to latest" button shows.
+  const lastId = turns.length ? turns[turns.length - 1].id : null;
+  const scroll = useChatScroll(lastId);
+  const settledIds = useRef(new Set<number>());
+  useEffect(() => { for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id); }, [turns, scroll]);
+  const docked = placement === "bottom" && !compact;
+  const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach} docked
+    placeholder={focus ? t("chat.focusPlaceholder") : placement === "bottom" || compact ? t("chat.placeholderShort") : home?.top_line} />;
+  const chipButton = (c: { id: string; label: string; question: string }, wide: boolean) => (
+    c.id === "chart" ? (
+      <button key={c.id} type="button" className={`${CHIP} ${wide ? "justify-center font-medium sm:justify-start" : "shrink-0 whitespace-nowrap font-medium"}`} disabled={busy} aria-expanded={picking}
+        onClick={() => setPicking((p) => !p)} data-quick={c.id}>{c.label}</button>
+    ) : (
+      <button key={c.id} type="button" className={`${CHIP} ${wide ? "justify-center font-medium sm:justify-start" : "shrink-0 whitespace-nowrap font-medium"}`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>{c.label}</button>
+    )
+  );
+  const suggestions = focus?.suggestions ?? [];
+  const suggestionList = (wide: boolean) => (
+    <nav aria-label={t("chat.quick")} data-focus-suggestions className={wide ? "flex flex-col gap-space-2" : "flex gap-space-2 overflow-x-auto pb-space-1"}>
+      {suggestions.map((q) => (
+        <button key={q} type="button" disabled={busy} onClick={() => onAsk(q)} data-suggestion
+          className={`${CHIP} ${wide ? "w-full" : "max-w-[80%] shrink-0 truncate"}`} title={q}>{q}</button>
+      ))}
+    </nav>
+  );
   return (
-    <div className="space-y-space-4" data-page="copilot-v2" data-placement={placement}>
-      <header className="flex items-center justify-between gap-space-2">
+    // Owner 13 Nov: the chat fills its panel / sheet / page, so the input sits at the foot even before a first question.
+    <div className={`flex min-w-0 flex-col gap-space-3 ${docked ? "" : "min-h-[calc(100dvh-12rem)]"}`} data-page="copilot-v2" data-placement={placement} data-focus={focus?.kind}>
+      <header className="flex min-w-0 items-start justify-between gap-space-2" data-chat-header>
         <h1 className="sr-only">{t("chat.title")}</h1>
         <p className="sr-only" data-top-line>{home?.top_line ?? t("chat.topLine")}</p>
-        <p className={`min-w-0 truncate text-t13 ${line.empty ? "text-fg-muted" : "text-fg"}`} data-market-line={line.empty ? "empty" : "ok"} title={line.text || undefined}>
-          {homeError ?? (home ? line.text : t("chat.loading"))}
-        </p>
+        {focus ? <FocusHeader focus={focus} onLeave={onLeaveFocus} /> : (
+          // Owner 13 Nov: the one-line summary wraps - never cut mid-sentence.
+          <p className={`min-w-0 flex-1 break-words text-t13 ${line.empty ? "text-fg-muted" : "text-fg"}`} data-market-line={line.empty ? "empty" : "ok"}>
+            {homeError ?? (home ? line.text : t("chat.loading"))}
+          </p>
+        )}
         <div className="shrink-0">
           {home && !aiOff && aiChip ? aiChip : home && !aiOff ? (
             <InPlaceLink to={home.ai.settings ?? SETTINGS_PATH.ai} className={SMALL_CHIP} data-ai-state="on">
@@ -225,88 +387,15 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
 
       {aiOff && connect && keyOpen && <div data-connect-slot>{connect}</div>}
 
-      {!compact && <NumbersStrip strip={strip} home={home} nowMs={Date.now()} />}
-
-      {!compact && chips.length > 0 && (
-        <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="grid grid-cols-2 gap-space-2 sm:flex sm:flex-wrap">
-          {chips.map((c) => (
-            c.id === "chart" ? (
-              <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} aria-expanded={picking}
-                onClick={() => setPicking((p) => !p)} data-quick={c.id}>
-                {c.label}
-              </button>
-            ) : (
-              <button key={c.id} type="button" className={`${CHIP} justify-center font-medium sm:justify-start`} disabled={busy} onClick={() => onAsk(c.question)} data-quick={c.id}>
-                {c.label}
-              </button>
-            )
-          ))}
-        </nav>
+      {/* Owner 13 Nov: the market numbers as one compact, foldable line; a focused chat starts with it folded. */}
+      {!compact && (
+        <MarketLineV2 strip={strip} fii={home?.market_line.fii_net_crore ?? null} fiiAsOf={home?.market_line.fii_as_of ?? null} nowMs={Date.now()}
+          startFolded={focus ? true : undefined} />
       )}
-      {!compact && picking && (
-        <div className="flex min-w-0 flex-wrap items-end gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-3" data-chart-picker>
-          <div className="min-w-0 flex-1 space-y-space-1">
-            <label htmlFor={pickerId} className="block text-t13 font-medium text-fg">{t("chat.pickChart")}</label>
-            <SymbolPicker id={pickerId} label={t("chat.pickChart")} value="" exchange="NSE" storageKey={recentKey} suggestions={CHART_SUGGESTIONS}
-              rowFilter={chartPickable} placeholder={t("chat.pickChartPlaceholder")} className="min-w-0 w-full"
-              onPick={(p) => { setPicking(false); onAsk(chartQuestionFor(p.symbol)); }} />
-          </div>
-          <button type="button" className={SMALL_CHIP} onClick={() => setPicking(false)} data-chart-picker-close>{t("chat.pickChartClose")}</button>
-        </div>
-      )}
-
-      {about}
-      {placement === "inline" && !compact && composer}
-
-      {!empty && (
-        <ol className="space-y-space-4" aria-live="polite" data-conversation>
-          {turns.map((turn) => (
-            <li key={turn.id} className="space-y-space-2" data-turn={turn.id}>
-              {turn.at && <p className="text-right text-t12 text-fg-muted" data-turn-at>{t("chat.askedEarlier")}{stampText(turn.at) ? ` · ${stampText(turn.at)}` : ""}</p>}
-              <p className="ml-auto w-fit max-w-full rounded-panel bg-surface-2 px-space-4 py-space-2 text-t14 text-fg">
-                <span className="sr-only">{t("chat.youAsked")}: </span>{turn.question}
-              </p>
-              {turn.chart ? (
-                <>
-                  {/* M59 CR-2: the attached chart's analysis, then the Copilot's own structure card for its symbol (CR-1) */}
-                  <div className={`${CARD} p-space-4`} data-chart-card>
-                    <Suspense fallback={<p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.chartAnalysing")}</p>}><ChartTurnV2 chart={turn.chart} /></Suspense>
-                  </div>
-                  {turn.answer && (
-                    <div className={`${CARD} space-y-space-2 p-space-4`} data-chart-reading>
-                      <h3 className="text-t13 font-semibold text-fg-muted">{t("chat.chartReading")}</h3>
-                      <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
-                      {(() => {
-                        // M59 CR-2: the AI words only on the user's own tap (an ordinary question, metered as any other)
-                        const question = turn.chart.status === "done" ? readingQuestion(turn.chart.item) : null;
-                        return question ? (
-                          <button type="button" className={CHIP} disabled={busy} data-explain-words onClick={() => onAsk(question)}>
-                            {t("chat.explainWords")}
-                          </button>
-                        ) : null;
-                      })()}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className={`${CARD} p-space-4`}>
-                  {turn.answer ? (
-                    <>
-                      <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
-                      {/* M72 PR-9: the order ticket prepared from his own message (never on a refused question) */}
-                      {!turn.answer.refused && <TicketPrepV2 question={turn.question} />}
-                    </>
-                  ) : turn.error ? <p role="alert" className="text-t14 text-fg">{turn.error}</p>
-                    : <p aria-busy="true" className="text-t14 text-fg-muted">{t("chat.asking")}</p>}
-                </div>
-              )}
-            </li>
-          ))}
-        </ol>
-      )}
+      {!compact && !focus && noBroker && <ConnectLiveButton />}
 
       {/* CU2: every job and the older Copilot pages fold under one closed "Advanced" (nothing removed; each still opens). */}
-      {!compact && <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
+      {!compact && !focus && <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
         {home && (
           <section aria-labelledby="copilot-can-do" data-can-do>
             <h2 id="copilot-can-do" className="mb-space-1 font-semibold text-fg-muted">{t("chat.canDo")}</h2>
@@ -337,16 +426,61 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
         </nav>
       </Details></div>}
 
-      <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
+      <section className="min-w-0 flex-1" data-conversation-area aria-label={t("chat.conversations")}>
+        {empty ? (
+          // Owner 13 Nov: the empty state - a short welcome and the four chips (or, about an item, its own questions).
+          <div className="flex flex-col items-center gap-space-3 py-space-6 text-center" data-chat-welcome>
+            <Avatar />
+            {!focus && <p className="text-t15 font-semibold text-fg">{t("chat.welcomeTitle")}</p>}
+            <p className="max-w-md text-t13 text-fg-muted">{focus ? t("chat.focusWelcome") : t("chat.welcomeLine")}</p>
+            {!compact && chips.length > 0 && (
+              <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="grid w-full max-w-md grid-cols-2 gap-space-2">
+                {chips.map((c) => chipButton(c, true))}
+              </nav>
+            )}
+            {focus && suggestions.length > 0 && <div className="w-full max-w-md text-left">{suggestionList(true)}</div>}
+          </div>
+        ) : <Turns turns={turns} busy={busy} onAsk={onAsk} />}
+        {!compact && picking && (
+          <div className="mt-space-3 flex min-w-0 flex-wrap items-end gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-3" data-chart-picker>
+            <div className="min-w-0 flex-1 space-y-space-1">
+              <label htmlFor={pickerId} className="block text-t13 font-medium text-fg">{t("chat.pickChart")}</label>
+              <SymbolPicker id={pickerId} label={t("chat.pickChart")} value="" exchange="NSE" storageKey={recentKey} suggestions={CHART_SUGGESTIONS}
+                rowFilter={chartPickable} placeholder={t("chat.pickChartPlaceholder")} className="min-w-0 w-full"
+                onPick={(p) => { setPicking(false); onAsk(chartQuestionFor(p.symbol)); }} />
+            </div>
+            <button type="button" className={SMALL_CHIP} onClick={() => setPicking(false)} data-chart-picker-close>{t("chat.pickChartClose")}</button>
+          </div>
+        )}
+        <div ref={scroll.end} aria-hidden className="h-px" data-chat-end />
+      </section>
 
-      {compact ? (
-        <div className="sticky bottom-0 z-10 -mx-space-1 border-t border-subtle bg-surface-1 px-space-1 pb-space-1 pt-space-2" data-compact-composer>{composer}</div>
-      ) : placement === "bottom" && (
-        <>
-          <div aria-hidden className="h-20" />
-          {composer}
-        </>
-      )}
+      <div data-composer-dock={docked ? "fixed" : "sticky"}
+        className={docked
+          ? "fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 space-y-space-2 border-t border-subtle bg-surface-1 px-space-4 pb-space-2 pt-space-2 shadow-raised"
+          // -bottom-4 + its own bottom padding: a panel's scroll area keeps 1rem of padding under the sticky box, where
+          // the conversation would otherwise show through below the input.
+          : "sticky -bottom-4 z-10 -mx-space-1 space-y-space-2 border-t border-subtle bg-surface-1 px-space-1 pb-space-4 pt-space-2"}>
+        {showJump(scroll.atLatest, turns.length) && (
+          <div className="pointer-events-none absolute inset-x-0 -top-space-12 flex justify-center">
+            <button type="button" onClick={() => scroll.jump("smooth")} data-jump-latest
+              className="pointer-events-auto inline-flex min-h-11 items-center md:min-h-9 gap-space-1 rounded-pill border border-border bg-surface-1 px-space-3 text-t13 font-medium text-fg shadow-raised hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+              <ArrowDown size={14} aria-hidden />{t("chat.jumpLatest")}
+            </button>
+          </div>
+        )}
+        {!focus && about}
+        {!empty && !compact && chips.length > 0 && (
+          <nav aria-label={t("chat.quick")} data-quick-chips data-tour="copilot-jobs" className="flex gap-space-2 overflow-x-auto pb-space-1">
+            {chips.map((c) => chipButton(c, false))}
+          </nav>
+        )}
+        {!empty && focus && suggestions.length > 0 && suggestionList(false)}
+        {compact && <div data-compact-composer>{composer}</div>}
+        {!compact && composer}
+        <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
+      </div>
+      {docked && <div aria-hidden className="h-48" />}
     </div>
   );
 }
@@ -392,6 +526,11 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
   const contextKey = JSON.stringify(context);
   const [about, setAbout] = useState<AskContext | null>(context);
   useEffect(() => setAbout(JSON.parse(contextKey) as AskContext | null), [contextKey]);
+  // Owner 13 Nov: "Ask AI" on an item (a position, an order, a signal, a scan result...) opens a FOCUSED chat - a new
+  // conversation about that item only; the earlier one stays in the Conversations list. The bubble's compact chat and
+  // the Copilot opened from the top bar (no item) are the general chat, as before.
+  const focused = !compact && focusKind(context) !== null;
+  const focus = useFocus(compact ? null : about);
   const [home, setHome] = useState<ChatHome | null>(null);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -399,17 +538,8 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
   const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(DEFAULT_KEEP);
   const next = useRef(1);
-  // Owner 8 Nov: the asked turn is brought into view as soon as it is on screen ("Reading ATP's data…"), not only once
-  // its answer is back - else, in a conversation already open, the screen keeps showing the chips and the OLDEST kept
-  // answer under them (an earlier read with its own close and date) for the whole read, and a tap looks like nothing.
-  const reveal = useRef<number | null>(null);
-  useEffect(() => {
-    if (reveal.current === null) return;
-    const el = document.querySelector(`[data-turn='${reveal.current}']`);
-    if (!el) return;
-    reveal.current = null;
-    el.scrollIntoView?.({ block: "start", behavior: "smooth" });
-  }, [turns]);
+  // Owner 8 Nov: the asked turn is brought into view as soon as it is on screen; owner 13 Nov (chat redesign): ChatView
+  // scrolls to the newest message (useChatScroll) and brings an answer into view while he is at the latest.
   // CH-2: the conversation on screen (null: none yet, or "New chat" pressed - the next question starts a new one)
   const [convo, setConvo] = useState<Conversation | null>(null);
   const fresh = useRef(false);
@@ -445,7 +575,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
     let live = true;
     chatApi.history().then((h) => {
       if (!live) return;
-      if (h.turns.length > 0 && !keptIsCurrent(h)) {                  // nothing kept: as before (no new_chat sent)
+      if (focused || (h.turns.length > 0 && !keptIsCurrent(h))) {      // an item asked about, or an old chat: start a new one
         setKeep(h.keep);
         if (!convoRef.current) fresh.current = true;
         return;
@@ -457,7 +587,19 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
       next.current = Math.max(next.current, restored.length + 1);
     }).catch(() => { /* intentional: nothing kept or not reachable: the page starts empty */ });
     return () => { live = false; };
-  }, [t]);
+  }, [t, focused]);
+
+  // Owner 13 Nov: another item asked about while the chat is open (the panel re-used) starts its own new chat too.
+  const firstContext = useRef(contextKey);
+  useEffect(() => {
+    if (contextKey === firstContext.current) return;
+    firstContext.current = contextKey;
+    if (!focused) return;
+    fresh.current = true;
+    setConvo(null);
+    setTurns([]);
+    setDraft("");
+  }, [contextKey, focused]);
 
   // COP-2 A (owner 11 Nov): when the India date changes while the page stays open (midnight, or the tab coming back on a
   // later date), the conversation on screen goes away and the next question starts a new chat; it stays in the list.
@@ -488,8 +630,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
 
   async function ask(question: string) {
     const id = next.current++;
-    reveal.current = id;
-    setTurns((all) => withTurn(all, { id, question, answer: null, error: null }, home?.keep ?? keep));
+    setTurns((all) => withTurn(all, { id, question, answer: null, error: null, sentAt: new Date().toISOString() }, home?.keep ?? keep));
     setDraft("");
     setBusy(true);
     try {
@@ -500,7 +641,6 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
       setTurns((all) => settled(all, id, null, friendlyError(e, t) || t("chat.failed")));
     } finally {
       setBusy(false);
-      document.querySelector(`[data-turn='${id}']`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     }
   }
 
@@ -508,8 +648,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
   // analyse, Image only); the result is this turn; then the Copilot's own reading of the symbol the picture shows.
   async function attachChart(source: ChartSource) {
     const id = next.current++;
-    reveal.current = id;
-    setTurns((all) => withTurn(all, { id, question: chartQuestion(source), answer: null, error: null, chart: { status: "working", step: "adding" } }, home?.keep ?? keep));
+    setTurns((all) => withTurn(all, { id, question: chartQuestion(source), answer: null, error: null, chart: { status: "working", step: "adding" }, sentAt: new Date().toISOString() }, home?.keep ?? keep));
     setBusy(true);
     const show = (chart: Parameters<typeof withChart>[2]) => setTurns((all) => withChart(all, id, chart));
     try {
@@ -542,7 +681,6 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
       else show({ status: "failed", message: apiFriendlyError(e) || t("chat.failed") });
     } finally {
       setBusy(false);
-      document.querySelector(`[data-turn='${id}']`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     }
   }
 
@@ -582,7 +720,8 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
       <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} recentKey={recentKey} onDraft={setDraft} onAsk={(q) => void ask(q)}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
-        about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined} />
+        about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined}
+        focus={focus} onLeaveFocus={() => setAbout(null)} />
     </>
   );
 }

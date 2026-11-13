@@ -121,6 +121,6 @@ function PanelLayer({ entry, params, phone, top, level, openers, handed, close, 
       </InPanelContext.Provider>
     </div>
   );
-  const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide };
+  const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide, tall: phone && !!entry.phoneFull && shape.side === "bottom" };
   return shape.shell === "dialog" ? <Dialog {...common}>{body}</Dialog> : <Sheet side={shape.side} {...common}>{body}</Sheet>;
 }

@@ -8,6 +8,7 @@ import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
+import { strategiesFor } from "../fno/basketModel";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
@@ -257,7 +258,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
       // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
       case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={() => { afterOrder(); writePending(null); }} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
-        chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
+        strategies={strategiesFor(working.preset)} chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       // UX-3: the Charts watchlist panel as it is; a row with options becomes the active symbol (on a phone: the Chart tab).
       case "watchlist": return <TerminalWatchlistV2 underlying={underlying} spotSymbol={spotSymbol} touch={narrow} liveTicks={features.on("data_hub")}
         onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} />;

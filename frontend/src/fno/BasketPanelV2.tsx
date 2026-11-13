@@ -95,8 +95,10 @@ const num = (text: string): number | null => {
 };
 const strip = (l: BasketLeg): NewLeg => { const { id: _id, ...rest } = l; return rest; };
 
-export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced, embedded = false, onNumbers }: {
+export default function BasketPanelV2({ open, onClose, chain, store = defaultBasket, api = basketApi, fetcher = request, onPlaced, embedded = false, onNumbers, strategies }: {
   open: boolean;
+  /** Owner 13 Nov: the ready strategies offered (the Terminal's "Option buyer" layout: the option-buying ones); absent: the usual list. */
+  strategies?: readonly StrategyName[];
   /** TERM-2 step 2: the server's figures as they change (the Terminal draws the breakevens on its chart). */
   onNumbers?: (numbers: BasketNumbers | null) => void;
   /** TERM-2 step 2: the same basket placed inside a page (the Terminal's basket panel) instead of a side sheet - the
@@ -262,7 +264,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     const built = readyStrategy(name, { underlying: chain.symbol, expiry: live.expiry, rows, around: pick, settings, next });
     if (built.problem) { setNote({ tone: "warn", text: built.problem }); return; }
     store.replace(built.legs);
-    setNote({ tone: "done", text: `${name} around ${formatNumber(pick, 0)}: ${built.legs.length} legs. Edit any leg before you execute.` });
+    setNote({ tone: "done", text: `${name} around ${formatNumber(pick, 0)}: ${built.legs.length} leg${built.legs.length === 1 ? "" : "s"}. Edit any leg before you execute.` });
   }
 
   function moveStrike(id: string, strike: number) {
@@ -414,7 +416,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     <>
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} settingsFailed={settingsFailed} rows={rows} pick={pick} atm={atm} spot={spot}
-              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks}
+              product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks} strategies={strategies}
               mode={modeOn ? { node: <OrderModeChoice mode={mode} onMode={setMode} live={liveState} testId="basket-mode" />, blocked: liveIsOff(mode, liveState) } : undefined}
               whatif={whatifOn ? { view: payoffView, onView: setPayoffView } : undefined}
               exits={(
@@ -530,7 +532,9 @@ export function whatIfLegs(legs: readonly BasketLeg[], numbers: BasketNumbers): 
   return w && w.ok ? [...w.open_legs, ...chartLegs(legs, numbers)] : chartLegs(legs, numbers);
 }
 
-export function BasketBody({ legs, numbers, problems, settings, settingsFailed = false, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif, mode }: {
+export function BasketBody({ legs, numbers, problems, settings, settingsFailed = false, rows, pick, atm, spot, product, note, tool, saved, saveName, idPrefix, on, budget, compare, checks, exits, whatif, mode, strategies = STRATEGIES }: {
+  /** The ready strategies offered (default: the usual list). */
+  strategies?: readonly StrategyName[];
   legs: readonly BasketLeg[]; numbers: BasketNumbers | null; problems: string[]; settings: BasketSettings | null; rows: LiveChain["rows"];
   /** M68 PR-2: his settings could not be read (null settings and false: still loading). */
   settingsFailed?: boolean;
@@ -571,7 +575,7 @@ export function BasketBody({ legs, numbers, problems, settings, settingsFailed =
             </div>
           </div>
           <div className="-mx-space-4 flex gap-space-2 overflow-x-auto px-space-4 pb-space-1">
-            {STRATEGIES.map((name) => (
+            {strategies.map((name) => (
               <button key={name} type="button" className={CHIP} disabled={!rows.length || settings === null} title={STRATEGY_TEXT[name]} onClick={() => on.onReady(name)} data-strategy={name}>
                 {name}
               </button>

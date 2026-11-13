@@ -354,6 +354,52 @@ export function resizeAcrossEdge(panels: readonly PanelPlace[], g: Gutter, delta
 }
 
 /**
+ * Owner bug 13 Nov (panels do not resize by dragging): the corner (and Shift + the arrow keys) asks for a `w` x `h`
+ * panel. Before, `resizePanel` refused the whole step as soon as a neighbour was in the way - in the Option seller layout
+ * every panel touches one, so dragging a corner did nothing. Now, per axis: when a neighbour shares the panel's right
+ * (or bottom) edge, that line moves as a gutter drag does (the neighbour gives or takes the space, down to its minimum);
+ * with no neighbour there, the panel grows or shrinks into the free space. A step that does not fully fit stops at the
+ * largest one that does and `limit` says why (T4-2).
+ */
+export function resizeFromCorner(panels: readonly PanelPlace[], id: PanelId, w: number, h: number): SizeResult {
+  const q0 = panels.find((x) => x.id === id && x.open);
+  if (!q0) return { panels: [...panels], moved: 0, limit: null };
+  let now: PanelPlace[] = [...panels];
+  let moved = 0;
+  let limit: SizeLimit | null = null;
+  for (const axis of ["x", "y"] as const) {
+    const q = now.find((x) => x.id === id)!;
+    const want = Math.round(axis === "x" ? w : h);
+    const delta = want - sizeOf(q, axis);
+    if (delta === 0) continue;
+    const far = gutters(now).find((g) => g.axis === axis && g.before.includes(id));
+    if (far) {
+      const r = resizeAcrossEdge(now, far, delta);
+      now = r.panels;
+      moved += Math.abs(r.moved);
+      limit = limit ?? r.limit;
+      continue;
+    }
+    const info = PANELS[id];
+    const min = axis === "x" ? info.minW : info.minH;
+    const max = axis === "x" ? COLUMNS - q.x : Math.min(MAX_HEIGHT, ROWS - q.y);
+    const target = Math.max(min, Math.min(max, want));
+    let applied = 0;
+    for (let k = target - sizeOf(q, axis); k !== 0; k -= Math.sign(k)) {
+      const next = resizePanel(now, id, axis === "x" ? q.w + k : q.w, axis === "y" ? q.h + k : q.h);
+      if (next) { now = next; applied = k; break; }
+    }
+    moved += Math.abs(applied);
+    if (applied !== delta) {
+      limit = limit ?? (want < min ? { kind: "min", panel: id, text: minText(id, axis) }
+        : axis === "y" && want > MAX_HEIGHT ? { kind: "max", panel: id, text: maxText(id) }
+        : want > max ? { kind: "edge", panel: id, text: EDGE_TEXT } : { kind: "blocked", panel: id, text: BLOCKED_TEXT });
+    }
+  }
+  return { panels: now, moved, limit };
+}
+
+/**
  * T4-2: why a move to column `a`, row `b` (kind "move") or a resize to `a` x `b` (kind "resize", by the corner or Shift
  * and the arrow keys) is not applied as asked; null when it is.
  */

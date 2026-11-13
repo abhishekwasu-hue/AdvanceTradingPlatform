@@ -730,7 +730,7 @@
      "citation": "Long-Term Secrets to Short-Term Trading (1999), Larry Williams"
     }
    ],
-   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures (editable here).",
+   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures. It fires often: at k 0.5 about 4 in 10 stock-days match; a larger k fires less.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Williams. Educational tool, not investment advice.",
    "review": {
     "status": "verified",

@@ -201,7 +201,7 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
         if cls not in (INV, REFL, NEG, COMP):
             raise NoMirror(_part(node), "not mirrored")
         return (INV if cls == INV else NEG), _same_call(node, name, [x, *_kept(list(node.args[1:]))])
-    if name in ("Count", "CountStreak", "SessionCount"):            # M94 PR-2: SessionCount counts like Count
+    if name in ("Count", "CountStreak", "SessionCount", "FirstInSession"):   # M94 PR-2 / SCR-FIX round 2: count / first like Count
         cond = node.args[-1]
         ccls, cexpr = rewrite(cond)
         if ccls != INV:

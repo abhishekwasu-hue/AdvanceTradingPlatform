@@ -643,6 +643,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("PDC", "factor", NUM, "price", (), cost=1.5, doc="previous session close"),
     Spec("ORHigh", "factor", NUM, "price", (Arg("minutes", "window"),), doc="opening-range high, visible once the range is complete"),
     Spec("ORLow", "factor", NUM, "price", (Arg("minutes", "window"),), doc="opening-range low, visible once the range is complete"),
+    # SCR-FIX round 2 (Crabel opening-range card): the first bar of the session where cond holds - the session as ORHigh /
+    # DayOpen / PDH read it (the bar's exchange trading date); each bar reads only the session's bars up to itself
+    Spec("FirstInSession", "filter", BOOL, None, (Arg("cond", BOOL),), cost=1.5, timeframes=INTRADAY_SERIES_TFS,
+         doc="cond holds on this bar and on no earlier bar of the same session (the trading date); starts again at each session"),
     # S1c: the scanner's structure and option filters - evaluated on the last closed bar only
     Spec("Trend", "classifier", CAT, None, (Arg("swing", "window", 3, False),), cost=3.0, timeframed=False,
          values=("UPTREND", "DOWNTREND", "RANGE"),

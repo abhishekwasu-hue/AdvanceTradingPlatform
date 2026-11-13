@@ -128,6 +128,7 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "IchimokuSpanA": ["IchimokuSpanA(9, 26, 26)", "IchimokuSpanA(3, 6, 5)@1h"],
     "IchimokuSpanB": ["IchimokuSpanB(52, 26)", "IchimokuSpanB(8, 5)@1h"],
     "DayOpen": ["DayOpen()"],
+    "FirstInSession": ["FirstInSession(close > ORHigh(30))", "FirstInSession(close > open)@15m"],
     "PDH": ["PDH()"],
     "PDL": ["PDL()"],
     "PDC": ["PDC()"],

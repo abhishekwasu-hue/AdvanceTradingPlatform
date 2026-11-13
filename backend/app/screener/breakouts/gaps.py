@@ -13,7 +13,9 @@ classification (spec docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md B8; behind `s
              GAP_HOLD    held, but the close is back between the open and the level
              GAP_FILL    a close back inside the level within the window (no signal; the class is still reported)
 
-The signal (held: GAP_AND_GO or GAP_HOLD) is one bar per session by construction, so there is no leg dedupe. Intraday
+The signal (held: GAP_AND_GO or GAP_HOLD) is one bar per session by construction, so intraday there is no leg dedupe. On
+Daily each session is one bar, so one per session is no dedupe at all (a run of gap days signalled every day; SCR-FIX
+round 2): Daily B8 takes the one-per-leg rule of the other breakouts (screens.one_per_event / one_per_leg). Intraday
 sessions come from the exchange calendar (session.py, as BK2); a value at bar j uses bars 0..j only. The down side is the
 up rule on mirrored prices.
 """

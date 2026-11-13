@@ -228,6 +228,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await deployment_phase_startup(session, "api")
         except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
             logging.getLogger(__name__).exception("Phase 0 start-up check failed")
+        from app.market_data.calendar import warm_known_holidays
+        await warm_known_holidays(session)   # SCR-FIX round 2: the screener's week / month close reads the holiday list
     yield
 
 

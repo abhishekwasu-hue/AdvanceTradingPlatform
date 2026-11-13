@@ -121,6 +121,8 @@ async def upload_holidays(file: UploadFile = File(...), exchange: str = Form("NS
     await write_audit_log(session, user.tenant_id, user.id, "history_holidays_upload",
                           f"{exchange.upper()} {file.filename}: {report.added} added, years {report.years}, allow_future={allow_future}")
     await session.commit()
+    from app.market_data.calendar import warm_known_holidays
+    await warm_known_holidays(session)   # SCR-FIX round 2: the screener clock reads the new list
     return report.as_dict()
 
 
@@ -134,4 +136,6 @@ async def remove_uploaded_holidays(file: UploadFile = File(...), exchange: str =
     await write_audit_log(session, user.tenant_id, user.id, "history_holidays_removed",
                           f"{exchange.upper()} {file.filename}: {report.removed} removed, years {report.years}")
     await session.commit()
+    from app.market_data.calendar import warm_known_holidays
+    await warm_known_holidays(session)   # SCR-FIX round 2: the screener clock reads the new list
     return report.as_dict()

@@ -232,12 +232,17 @@ def test_no_value_changes_when_later_bars_arrive(daily, m5, screen, params):
                     pd.testing.assert_series_equal(part[side][col], full[side][col].iloc[:cut], check_names=False)
 
 
-def test_one_signal_per_leg_and_per_event(daily):
+def test_one_signal_per_leg_and_per_event(daily, m5):
     out = evaluate_screen(daily, "B5", bp.settings(min_break_atr=0.0))
     assert any(out[s]["raw"].sum() > out[s]["signal"].sum() for s in ("up", "down"))   # B5 dedupes per leg
-    for screen in ("B8", "B9"):                                                       # one per session / per breakout
-        out = evaluate_screen(daily, screen, bp.settings(retest_reversal=False), tf="1d")
-        assert all((out[s]["raw"] == out[s]["signal"]).all() for s in ("up", "down"))
+    out = evaluate_screen(daily, "B9", bp.settings(retest_reversal=False), tf="1d")    # one per breakout
+    assert all((out[s]["raw"] == out[s]["signal"]).all() for s in ("up", "down"))
+    out = evaluate_screen(m5, "B8", bp.settings(), tf="5m")                            # intraday B8: one per session
+    assert all((out[s]["raw"] == out[s]["signal"]).all() for s in ("up", "down"))
+    # SCR-FIX round 2: on Daily a session is one bar, so B8 takes the one-per-leg rule (tests/test_scr_fix_round2.py)
+    out = evaluate_screen(daily, "B8", bp.settings(), tf="1d")
+    for s in ("up", "down"):
+        assert not (out[s]["signal"] & ~out[s]["raw"]).any()
 
 
 def test_grade_is_deterministic_and_fixed_at_the_signal_bar():

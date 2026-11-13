@@ -681,7 +681,7 @@
    "id": "legends.crabel_opening_range_breakout",
    "source": "legends",
    "name": "Crabel-style opening-range breakout",
-   "definition": "An intraday close crossing above the high of the session's opening range, the range of its first 30 minutes.",
+   "definition": "An intraday close crossing above the high of the session's opening range (its first 30 minutes); by default only the session's first such cross.",
    "method": "legends",
    "setup": "breakout",
    "timeframe_family": ["intraday"],

@@ -8,6 +8,7 @@
 import { ApiError } from "../api/errors";
 import type { ReadAction, RunResult, UnreadReason } from "./api";
 import type { FunnelResult } from "./model";
+import { RATE_LIMITED } from "./universe";
 
 export const ACTION_LABEL: Record<ReadAction, string> = {
   login: "Log in", connect: "Connect broker", retry: "Retry", timeframe: "Try another timeframe",
@@ -37,6 +38,28 @@ export function tally(funnel: FunnelResult, matched: number): ReadTally {
 /** "4 matched · 46 could not be read" (the second part only when some could not be read). */
 export function countLine(t: ReadTally): string {
   return t.unread > 0 ? `${t.matched} matched · ${t.unread} could not be read` : `${t.matched} matched`;
+}
+
+/** A row's code when the broker's request limit held the symbol back (the server's reasons.RATE_LIMITED). */
+export const BROKER_LIMIT = RATE_LIMITED;
+
+/** The broker-limit sentence: "5 stocks waited for your broker's limit. Run again in a minute to include them." */
+export function brokerLimitLine(count: number): string {
+  return `${count} ${count === 1 ? "stock waited" : "stocks waited"} for your broker's limit. Run again in a minute to include ${count === 1 ? "it" : "them"}.`;
+}
+
+/** SCR-FIX A6: the symbols outside the live session limit that were still read (never the ones that could not be read:
+ * those are in "could not be read"). */
+export function heldBackLine(count: number): string {
+  return `${count} read from history (your live session limit was full)`;
+}
+
+/** The grouped reason as one plain sentence: the broker's limit in its own words, else "N stocks: <reason>" (the count
+ * only with an answer's counts - a run-level error has none). */
+export function reasonLine(reason: { text: string; count?: number; code?: string }, counted: boolean): string {
+  const count = counted ? reason.count : undefined;
+  if (reason.code === BROKER_LIMIT && count != null && count > 0) return brokerLimitLine(count);
+  return `${count != null ? `${count} ${count === 1 ? "stock" : "stocks"}: ` : ""}${reason.text}`;
 }
 
 function isAction(v: unknown): v is ReadAction {

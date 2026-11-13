@@ -4,12 +4,12 @@
  */
 import { Button } from "../components/primitives";
 import type { ReadAction, UnreadReason } from "./api";
-import { ACTION_LABEL, countLine, type ReadTally } from "./readCounts";
+import { ACTION_LABEL, countLine, reasonLine, type ReadTally } from "./readCounts";
 
 export interface UnreadNoteProps {
   /** the answer's counts; null for a run-level error (nothing could be read) */
   tally: ReadTally | null;
-  reason: Pick<UnreadReason, "text" | "action"> & { count?: number } | null;
+  reason: Pick<UnreadReason, "text" | "action"> & { count?: number; code?: string } | null;
   onAction: (action: ReadAction) => void;
   /** M49 U6: the page says "Matched N of M" once in its results header - this note then gives only the reason. */
   hideCount?: boolean;
@@ -17,13 +17,12 @@ export interface UnreadNoteProps {
 
 export function UnreadNote({ tally, reason, onAction, hideCount = false }: UnreadNoteProps) {
   if (tally ? tally.unread <= 0 : !reason) return null;
-  const count = reason?.count;
   return (
     <div role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg" data-testid="scan-unread">
       {tally && !hideCount && <p className="font-medium" data-testid="scan-unread-count">{countLine(tally)}</p>}
       {reason && (
         <p className="mt-1 text-fg-muted" data-testid="scan-unread-reason">
-          {count != null && tally ? `${count} ${count === 1 ? "stock" : "stocks"}: ` : ""}{reason.text}
+          {reasonLine(reason, !!tally)}
         </p>
       )}
       {reason && (

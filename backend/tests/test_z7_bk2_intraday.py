@@ -851,3 +851,24 @@ def test_the_alert_engine_rechecks_the_clock_and_keeps_a_failing_screen_on_its_r
     nse = _rule(me["tenant_id"], symbol="TCS", condition='ORBreakout("up")', tf="5m")
     (state, fired), problem = evaluate_once(nse)
     assert (state, fired) == ("error", 0) and "boom" in problem
+
+
+def test_the_prev_day_break_ready_scan_reads_as_two_whole_sides():
+    """Owner screenshot: the Ready scan's text is `A AND B AND C OR D AND E AND F`. ScreenQL binds AND tighter than OR,
+    so it parses as (up-break AND 15m AND 1h not down) OR (down-break AND 15m AND 1h not up) - the tree the template
+    builds, never A AND B AND (C OR D) AND E AND F."""
+    from app.screener import nodes
+    from app.screener.breakouts import templates
+    t = next(t for t in templates.TEMPLATES if t.id == "intraday_5m_prev_day")
+    text, why = templates.screenql(t.screen, t.signal_tf, templates.template_params(t))
+    assert text is not None, why
+    tree = templates.screenql_ast(t.screen, t.signal_tf, templates.template_params(t))[0]
+    parsed = parse(text)
+    assert parsed == tree
+    assert isinstance(parsed, nodes.Logic) and parsed.op == "ANY" and len(parsed.items) == 2
+    for side, item in zip(("up", "down"), parsed.items):
+        assert isinstance(item, nodes.Logic) and item.op == "ALL" and len(item.items) == 3
+        call = item.items[0]
+        assert isinstance(call, nodes.Call) and call.name == "DayLevelBreak" and call.args[0] == nodes.Str(side)
+        assert [c.left.tf for c in item.items[1:]] == ["15m", "1h"]
+    assert parse("close > 1 AND open > 2 OR high > 3 AND low > 4") == parse("(close > 1 AND open > 2) OR (high > 3 AND low > 4)")

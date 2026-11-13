@@ -1,0 +1,2 @@
+/* Owner 13 Nov chat redesign: an answer card photographed alone - the chat's pinned dock and the bottom bar hidden. */
+[data-composer-dock], [data-bottom-nav-v2] { visibility: hidden !important; }

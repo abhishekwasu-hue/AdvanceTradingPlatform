@@ -137,7 +137,9 @@ describe("M96 N1: expiries side by side", () => {
     expect(html).toContain('data-source="stored"');
     expect(html).toContain("Live");
     expect(html).toContain("18.5%");
-    expect(html).toContain("+0.01 L");                                         // OI in lakhs, never "1,200"
+    expect(html).toContain("(OI in lakhs)");                                    // owner 13 Nov: the unit once above the table
+    expect(html).toContain(">+0.01<");                                          // OI in lakhs, never "1,200"; no "L" per cell
+    expect(html.replace(/<[^>]+>/g, " ")).not.toMatch(/\d L\b/);
     expect(html).toMatch(/text-down"[^>]*data-tone="text-down">−0.00 L|data-tone="text-down"/);   // down = red, not overridden
     expect(html).not.toMatch(/text-fg text-down|text-down text-fg/);
     expect(html).not.toMatch(/\b(buy|sell|target|bullish|bearish)\b/i);

@@ -32,6 +32,8 @@ export interface PanelEntry {
   keys: readonly string[];
   title: (params: PanelParams) => string;
   presentation: Presentation;
+  /** Owner 13 Nov (Copilot chat): on a phone the bottom sheet takes the whole screen. */
+  phoneFull?: boolean;
   /** The parameters when this panel answers for a full route (pathname and search), null otherwise. */
   match: (url: { pathname: string; search: URLSearchParams; hash: string }) => PanelParams | null;
   /** The full route that shows the same facility as a page: the link's real address and the fallback navigation. */

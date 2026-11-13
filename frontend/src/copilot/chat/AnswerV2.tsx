@@ -28,30 +28,56 @@ const TREND_TONE = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", s
 // CU3: the mini chart is the Charts page's own embedded chart (its own chunk: the chart library loads with it).
 const EmbeddedChartV2 = lazy(() => import("../../chart/EmbeddedChartV2"));
 
+/** Owner 13 Nov (chat redesign): one meaning chip for a section, read from its own words (none when nothing matches) -
+ * green for with his side / within his risk / an up structure, red for a down structure, amber for against his side /
+ * above his risk. Pure; the words stay the server's. */
+export function sectionTone(lines: readonly string[]): { tone: "up" | "down" | "warn" | "neutral"; label: string } | null {
+  const all = lines.join(" ").toLowerCase();
+  if (/\bagainst (it|your side)\b/.test(all)) return { tone: "warn", label: "Against your side" };
+  if (/above your risk/.test(all)) return { tone: "warn", label: "Above your risk" };
+  if (/\bis with it\b|an area on your side/.test(all)) return { tone: "up", label: "With your side" };
+  if (/within your risk/.test(all)) return { tone: "up", label: "Within your risk" };
+  const up = /reads up\b/.test(all), down = /reads down\b/.test(all);
+  if (up && !down) return { tone: "up", label: "Up" };
+  if (down && !up) return { tone: "down", label: "Down" };
+  if (/reads (range|sideways)\b/.test(all) && !up && !down) return { tone: "neutral", label: "Sideways" };
+  return null;
+}
+
+const TONE_CHIP = { up: "bg-up-tint text-up", down: "bg-down-tint text-down", warn: "bg-warn-tint text-warn", neutral: "bg-surface-1 text-fg" } as const;
+
+function SectionLine({ line }: { line: string }) {
+  const row = answerRow(line);
+  // UI-28 U2.4: "Label: value" lines are rows with the number right-aligned and signed; sentences stay text.
+  return row ? (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-space-3 text-t14" data-answer-row>
+      <span className="shrink-0 text-fg-muted">{row.label}:</span>
+      <span className={cx("min-w-0 break-words text-right font-tabular font-semibold", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
+        data-signed={row.dir ?? undefined}>
+        {row.dir && <span aria-hidden className="text-t12">{row.dir === "up" ? "▲" : "▼"}</span>}{row.value}
+      </span>
+    </li>
+  ) : <li className="text-t14 text-fg">{line}</li>;
+}
+
 function Sections({ sections }: { sections: ChatAnswer["sections"] }) {
   if (sections.length === 0) return null;
   return (
     <div className="grid gap-space-3 md:grid-cols-2">
-      {sections.map((s) => (
-        <section key={s.title} className="min-w-0 rounded-control border border-subtle bg-surface-2 p-space-3" data-section={s.title}>
-          <h3 className="text-t13 font-semibold text-fg">{s.title}</h3>
-          <ul className="mt-space-1 space-y-space-1">
-            {s.lines.map((line, i) => {
-              const row = answerRow(line);
-              // UI-28 U2.4: "Label: value" lines are rows with the number right-aligned and signed; sentences stay text.
-              return row ? (
-                <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-space-3 text-t14" data-answer-row>
-                  <span className="shrink-0 text-fg-muted">{row.label}:</span>
-                  <span className={cx("shrink-0 font-tabular", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
-                    data-signed={row.dir ?? undefined}>
-                    {row.dir && <span aria-hidden className="text-t12">{row.dir === "up" ? "▲" : "▼"}</span>}{row.value}
-                  </span>
-                </li>
-              ) : <li key={i} className="text-t14 text-fg">{line}</li>;
-            })}
-          </ul>
-        </section>
-      ))}
+      {sections.map((s) => {
+        const tone = sectionTone(s.lines);
+        return (
+          <section key={s.title} className="min-w-0 rounded-control border border-subtle bg-surface-2 p-space-3" data-section={s.title}>
+            <div className="flex flex-wrap items-center justify-between gap-space-2">
+              <h3 className="text-t13 font-semibold text-fg">{s.title}</h3>
+              {tone && <span className={cx("inline-flex min-h-6 items-center rounded-pill px-space-2 text-t12 font-semibold", TONE_CHIP[tone.tone])} data-section-tone={tone.tone}>{tone.label}</span>}
+            </div>
+            <ul className="mt-space-1 space-y-space-1">
+              {s.lines.map((line, i) => <SectionLine key={i} line={line} />)}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }

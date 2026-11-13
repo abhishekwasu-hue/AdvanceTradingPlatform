@@ -72,7 +72,7 @@ def test_job3_an_unknown_lot_size_is_said_and_never_assumed_to_be_1():
 
 def test_job3_checks_the_idea_and_lists_what_is_missing_without_adding_rules():
     out, called = _answer(IDEA)
-    assert called == ["get_chart_structure", "get_market_zones", "get_risk_limits", "get_market_context"]
+    assert called == ["get_chart_structure", "get_quote", "get_market_zones", "get_risk_limits", "get_market_context"]   # owner 13 Nov: the live price
     text = "\n".join(out.lines())
     assert "your bullish idea is with it" in text and "an area on your side" in text and "18,000 at risk: above your risk per trade" in text
     assert "What your plan does not say yet" not in [s["title"] for s in out.sections]       # everything was stated

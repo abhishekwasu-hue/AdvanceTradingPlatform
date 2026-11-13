@@ -1,9 +1,10 @@
-import { Ellipsis, Eye, EyeOff, Minus, MoveUpRight, PenLine, RectangleHorizontal, Ruler, Slash, Trash2, Type, type LucideIcon } from "lucide-react";
+import { ChevronsLeft, Ellipsis, Eye, EyeOff, Minus, MoveUpRight, PenLine, RectangleHorizontal, Ruler, Slash, Trash2, Type, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import { TOOLBAR_KINDS } from "../charting/DrawingToolbar";
 import { cx } from "../components/primitives/cx";
+import { Sheet } from "../components/primitives/Dialog";
 import { ConfirmBox } from "./ConfirmBox";
 import { MORE_TOOLS, RAIL_TOOLS, deleteAllText, isMoreTool } from "./drawingRail";
 
@@ -124,9 +125,48 @@ export function DrawingRail(props: DrawingToolsProps) {
   );
 }
 
+const RAIL_OPEN_KEY = "atp_embedded_draw_rail:1";
+function readRailOpen(): boolean {
+  try { return localStorage.getItem(RAIL_OPEN_KEY) !== "closed"; } catch { return true; }
+}
+
+/** Owner report 13 Nov ("the drawing toolkit on the chart - where did it go?"): the same rail on an embedded chart (the
+ * Terminal's chart panel), folding to one pen button so a small panel keeps its width; open or folded is remembered on
+ * this device (localStorage, every access in try / catch). Desktop and tablet only - a phone uses `DrawingMenu`. */
+export function CollapsibleDrawingRail(props: DrawingToolsProps) {
+  const [open, setOpen] = useState(readRailOpen);
+  const set = (next: boolean) => {
+    setOpen(next);
+    try { localStorage.setItem(RAIL_OPEN_KEY, next ? "open" : "closed"); } catch { /* intentional: storage unavailable - open next time */ }
+  };
+  if (!open) {
+    return (
+      <div className="hidden shrink-0 flex-col items-center border-r border-subtle p-space-1 md:flex" data-drawing-rail-folded>
+        <button type="button" aria-label="Show drawing tools" title="Show drawing tools" aria-expanded={false} onClick={() => set(true)}
+          className={cx("h-9 w-9", toolBtn(!!props.tools?.view?.tool))}>
+          <PenLine size={16} aria-hidden />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="hidden shrink-0 flex-col md:flex" data-drawing-rail-open>
+      <button type="button" aria-label="Fold drawing tools" title="Fold drawing tools" aria-expanded onClick={() => set(false)}
+        className={cx("mx-space-1 mt-space-1 h-7 w-9 border-r-0", toolBtn(false))}>
+        <ChevronsLeft size={16} aria-hidden />
+      </button>
+      <DrawingRail {...props} />
+    </div>
+  );
+}
+
 /** The phone's compact menu: one "Draw" button, the tools as a grid of 44 px buttons. Picking a tool closes it, so
  * the next tap on the chart places the drawing. */
-export function DrawingMenu(props: DrawingToolsProps) {
+export function DrawingMenu({ sheet = false, ...props }: DrawingToolsProps & {
+  /** Owner report 13 Nov: inside a small panel (an embedded chart clips what overflows it) the tools open as a bottom
+   * sheet over the page instead of under the bar. */
+  sheet?: boolean;
+}) {
   const { view, ready, deletable, pick, asking, setAsking, question, confirm } = useDrawingActions(props);
   const { hidden, onHidden } = props;
   const [open, setOpen] = useState(false);
@@ -134,62 +174,72 @@ export function DrawingMenu(props: DrawingToolsProps) {
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || sheet) return undefined;          // a sheet closes itself (Escape, its overlay)
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !asking && !e.defaultPrevented) { setOpen(false); trigger.current?.focus(); } };
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);
     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("pointerdown", onDown); };
-  }, [open, asking]);
+  }, [open, asking, sheet]);
   useEffect(() => { if (!open) setAsking(false); }, [open, setAsking]);
   const choose = (kind: DrawingKind) => { pick(kind); setOpen(false); };
   const cell = (on: boolean) => cx("flex min-h-11 flex-col items-center justify-center gap-space-1 px-space-1 py-space-1 text-t12", toolBtn(on));
   const active = !!view?.tool;
+  const tools = (
+    <>
+      {asking ? (
+        <ConfirmBox {...question} confirm="Delete all" onConfirm={() => { confirm(); setOpen(false); }} onCancel={() => setAsking(false)} flat />
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-space-1">
+            {RAIL_TOOLS.map((t) => {
+              const Icon = ICONS[t.kind] ?? PenLine;
+              return (
+                <button key={t.kind} type="button" aria-pressed={view?.tool === t.kind} disabled={!ready} onClick={() => choose(t.kind)} className={cell(view?.tool === t.kind)}>
+                  <Icon size={16} aria-hidden />{t.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-space-2 px-space-1 text-t12 font-medium text-fg-muted">More</p>
+          <div className="grid grid-cols-2 gap-space-1">
+            {MORE_TOOLS.map((t) => (
+              <button key={t.kind} type="button" aria-pressed={view?.tool === t.kind} disabled={!ready} onClick={() => choose(t.kind)}
+                className={cx("min-h-11 px-space-2 text-left text-t13", toolBtn(view?.tool === t.kind))}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-space-2 grid grid-cols-2 gap-space-1 border-t border-subtle pt-space-2">
+            <button type="button" aria-pressed={hidden} onClick={() => onHidden(!hidden)} className={cx("min-h-11 gap-space-1 px-space-2 text-t13", toolBtn(hidden))}>
+              {hidden ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}Hide all
+            </button>
+            <button type="button" disabled={!ready || !deletable} onClick={() => setAsking(true)} className={cx("min-h-11 gap-space-1 px-space-2 text-t13", toolBtn(false))}>
+              <Trash2 size={16} aria-hidden />Delete all
+            </button>
+          </div>
+        </>
+      )}
+    </>
+  );
   return (
     // Not positioned itself: the menu opens under the whole top bar (which is), across the screen's width.
     <div ref={ref} className="inline-flex md:hidden">
       <button ref={trigger} type="button" aria-label="Drawing tools" title="Drawing tools" aria-haspopup="dialog" aria-expanded={open}
-        aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)}
+        aria-controls={open && !sheet ? id : undefined} onClick={() => setOpen((o) => !o)}
         className={cx("min-h-11 min-w-11", toolBtn(active))}>
         <PenLine size={16} aria-hidden />
       </button>
-      {open && (
+      {open && !sheet && (
         <div id={id} role="dialog" aria-label="Drawing tools"
           className="absolute inset-x-space-2 top-full z-30 mt-space-1 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t14 text-fg shadow-raised">
-          {asking ? (
-            <ConfirmBox {...question} confirm="Delete all" onConfirm={() => { confirm(); setOpen(false); }} onCancel={() => setAsking(false)} flat />
-          ) : (
-            <>
-              <div className="grid grid-cols-3 gap-space-1">
-                {RAIL_TOOLS.map((t) => {
-                  const Icon = ICONS[t.kind] ?? PenLine;
-                  return (
-                    <button key={t.kind} type="button" aria-pressed={view?.tool === t.kind} disabled={!ready} onClick={() => choose(t.kind)} className={cell(view?.tool === t.kind)}>
-                      <Icon size={16} aria-hidden />{t.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-space-2 px-space-1 text-t12 font-medium text-fg-muted">More</p>
-              <div className="grid grid-cols-2 gap-space-1">
-                {MORE_TOOLS.map((t) => (
-                  <button key={t.kind} type="button" aria-pressed={view?.tool === t.kind} disabled={!ready} onClick={() => choose(t.kind)}
-                    className={cx("min-h-11 px-space-2 text-left text-t13", toolBtn(view?.tool === t.kind))}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-space-2 grid grid-cols-2 gap-space-1 border-t border-subtle pt-space-2">
-                <button type="button" aria-pressed={hidden} onClick={() => onHidden(!hidden)} className={cx("min-h-11 gap-space-1 px-space-2 text-t13", toolBtn(hidden))}>
-                  {hidden ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}Hide all
-                </button>
-                <button type="button" disabled={!ready || !deletable} onClick={() => setAsking(true)} className={cx("min-h-11 gap-space-1 px-space-2 text-t13", toolBtn(false))}>
-                  <Trash2 size={16} aria-hidden />Delete all
-                </button>
-              </div>
-            </>
-          )}
+          {tools}
         </div>
+      )}
+      {sheet && (
+        <Sheet side="bottom" open={open} onOpenChange={setOpen} title="Drawing tools">
+          <div className="text-t14 text-fg">{tools}</div>
+        </Sheet>
       )}
     </div>
   );

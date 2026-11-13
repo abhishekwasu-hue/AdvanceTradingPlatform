@@ -107,6 +107,7 @@ export const COPILOT_PANEL: PanelEntry = {
   keys: ["tab", "symbol", "action", "tf", "ctx", "from"],
   title: (p) => (p.tab ? COPILOT_TITLE[p.tab] ?? "Copilot" : "Copilot"),
   presentation: "side-wide",
+  phoneFull: true,              // owner 13 Nov: the chat as a full-height sheet on a phone, its input pinned
   match: ({ pathname, search }) => {
     const path = clean(pathname);
     const forwarded = COPILOT_FORWARDED[path];

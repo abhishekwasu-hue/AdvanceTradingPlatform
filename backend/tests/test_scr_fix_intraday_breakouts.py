@@ -11,8 +11,6 @@ positive / negative cases, the early window (too few sessions with volume), the 
 """
 from __future__ import annotations
 
-from typing import List, Tuple
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,7 +20,7 @@ from app.screener.breakouts.screens import VOLUME_SKIPPED_NOTE
 from app.screener.runtime import SymbolData, evaluate, run_screen
 from tests.breakout_fixtures import sessions_frame
 
-Bar = Tuple[float, float, float, float, float]
+Bar = tuple[float, float, float, float, float]
 
 # The six screens' own calls (templates.py / resolved ScreenQL; the up side, without the DowTrend context parts, which
 # read no volume): (screen id, base timeframe, ScreenQL, bar of the session at which the test day breaks).
@@ -43,12 +41,12 @@ FIRST_REAL = 23                            # the future's volume starts here; 0 
 VOL = 1000.0                               # flat traded volume, so every average (plain or same time of day) is 1000
 
 
-def _quiet(n: int, volume: float) -> List[Bar]:
+def _quiet(n: int, volume: float) -> list[Bar]:
     """A flat session: closes alternate 99.9 / 100.1, every high 100.25 and low 99.75 (equal ranges: each bar is an NR7)."""
     return [((99.9, 100.25, 99.75, 100.1, volume) if i % 2 == 0 else (100.1, 100.25, 99.75, 99.9, volume)) for i in range(n)]
 
 
-def _break_day(n: int, slot: int, volume: float, break_volume: float) -> List[Bar]:
+def _break_day(n: int, slot: int, volume: float, break_volume: float) -> list[Bar]:
     """A quiet session whose bar `slot` closes at 102.0, far beyond every level the six screens read (the 15 / 30-minute
     range, the first hour, the previous session and the session's high so far are all 100.25), then quiet again."""
     day = _quiet(n, volume)

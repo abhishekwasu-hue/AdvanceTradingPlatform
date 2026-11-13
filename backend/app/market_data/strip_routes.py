@@ -34,7 +34,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import MarketHolidayRecord, MarketSnapshotRecord, User
 from app.db.session import get_session
 from app.market_data import quotes_routes
-from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, session_status
+from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, next_trading_day, session_status
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,32 @@ async def _from_eod(session: AsyncSession, base: Dict[str, Any]) -> Dict[str, An
             "as_of": got["date"], "stale": False, "source": "eod", "missing": False}
 
 
+async def _with_eod_prev(session: AsyncSession, item: dict[str, Any], holidays: dict[date, str]) -> dict[str, Any]:
+    """A priced index with no change: its change from the previous session's close in the NSE daily files - the last
+    stored close dated before the price's own IST day (the one before it when the files already hold that day). The
+    item unchanged when no such close is stored, or when the stored close is not the session right before the price's
+    day (the files are behind). No look-ahead: a close from the price's day or later is never used as its base."""
+    from app.market_data.eod_routes import last_close
+    try:
+        at = datetime.fromisoformat(str(item["as_of"])) if item.get("as_of") else None
+    except ValueError:
+        at = None
+    if at is None:
+        return item
+    day = (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).astimezone(IST).date()
+    got = await last_close(session, item["symbol"])
+    if got["missing"] or not got["date"]:
+        return item
+    stored = date.fromisoformat(str(got["date"])[:10])
+    if stored < day and next_trading_day(stored, holidays) != day:
+        return item                                   # a session is missing from the files: its change is not known
+    prev = got["close"] if stored < day else got["prev_close"] if stored == day else None
+    if not isinstance(prev, (int, float)) or not prev > 0:
+        return item
+    change = round(item["ltp"] - prev, 2)
+    return {**item, "prev_close": round(float(prev), 2), "change": change, "change_pct": round(change / prev * 100, 2)}
+
+
 async def _memory(session: AsyncSession, tenant_id: int, symbols: List[str], now: datetime) -> Dict[str, MarketSnapshotRecord]:
     """The newest market-memory reading per symbol, of this organisation only, at most MEMORY_MAX_AGE old. One small
     query per symbol (newest first, one row): a symbol whose captures stopped is still found however many newer rows
@@ -186,7 +212,8 @@ async def _live(session: AsyncSession, user: User,
 async def strip(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
                 sensex: bool = Query(False, description="CU2: add SENSEX (BSE) after BANK NIFTY, for the Copilot's numbers strip")) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
-    market = market_state(now, await _holidays(session, now))
+    holidays = await _holidays(session, now)
+    market = market_state(now, holidays)
     wanted = (*INDICES[:2], SENSEX, *INDICES[2:]) if sensex else INDICES
     live_rows, source_broker = await _live(session, user, wanted)
     indices: List[Dict[str, Any]] = []
@@ -207,6 +234,11 @@ async def strip(user: User = Depends(get_current_user), session: AsyncSession = 
         for n, item in enumerate(indices):
             if item["missing"]:
                 indices[n] = await _from_eod(session, item)
+    for n, item in enumerate(indices):
+        if not item["missing"] and item["change"] is None and item["source"] in ("live", "memory"):
+            # Owner 13 Nov ("BANK NIFTY – (–)"): a tick-fed price carries no previous close until a quote of the day
+            # has given one; the previous session's close then comes from the NSE daily files.
+            indices[n] = await _with_eod_prev(session, item, holidays)
     sources = {i["source"] for i in indices if not i["missing"]}
     source = "none" if not sources else sources.pop() if len(sources) == 1 else "mixed"
     open_or_soon = market["phase"] in ("open", "pre-open")

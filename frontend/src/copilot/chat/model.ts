@@ -183,6 +183,10 @@ export interface Turn {
   /** When a turn restored from the server's kept conversation was asked (null / absent: asked on this screen). Shown
    * on the turn, so an earlier answer (its own close and date) is never taken for a fresh read. */
   at?: string | null;
+  /** Owner 13 Nov (chat redesign): when this screen sent the question and when its answer came back (ISO), for the
+   * messages' time stamps. Absent on a restored turn (its `at` says when it was asked). */
+  sentAt?: string;
+  answeredAt?: string;
 }
 
 /** M59 CR-2: what the user attached in the Ask box - a chart image (picked or pasted) or a snapshot link. */
@@ -344,7 +348,8 @@ export function withTurn(turns: readonly Turn[], turn: Turn, keep = DEFAULT_KEEP
 
 /** Puts the answer (or the error) on its turn. */
 export function settled(turns: readonly Turn[], id: number, answer: ChatAnswer | null, error: string | null): Turn[] {
-  return turns.map((t) => (t.id === id ? { ...t, answer, error } : t));
+  const now = new Date().toISOString();
+  return turns.map((t) => (t.id === id ? { ...t, answer, error, ...(t.at ? {} : { answeredAt: now }) } : t));
 }
 
 /** "How I worked this out": one line per tool, its time stamp and the numbers it returned. */

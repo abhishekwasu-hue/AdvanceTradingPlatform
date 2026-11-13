@@ -8,6 +8,7 @@ const LABEL: Record<string, string> = {
   DIRECTION_CHANGE: "OI read change", STABLE_FLIP: "Confirmed OI lead flip", STRENGTH_CHANGE: "OI lead growing ↔ not growing",
   PCR_BAND: "PCR band change", MAX_PAIN_MOVE: "Max pain move", OI_WALL: "OI wall formed / broken", DTE: "Expiry tomorrow / today",
   COLLECTOR_STALE: "Readings are late", STRIKE_OI_CHANGE: "OI change at a strike", PCR_CROSS: "PCR crossed my level",
+  OPPOSITE_OI: "Opposite OI move",
 };
 
 /** OI Banner (O4b): which banner changes notify, how often, quiet hours and the daily digest (owner saves; the server
@@ -72,7 +73,9 @@ export default function OiAlertsCard({ underlying }: { underlying: string }) {
         <ul className="space-y-0.5 tabular-nums">
           {log.alerts.slice(0, 20).map((a, i) => (
             <li key={i} className="text-fg-muted">
-              {slotTime(a.slot)} · {LABEL[a.alert_type] ?? a.alert_type}: {alertStateWords(a.alert_type, a.old_state)} → {alertStateWords(a.alert_type, a.new_state)}
+              {slotTime(a.slot)} · {LABEL[a.alert_type] ?? a.alert_type}: {a.alert_type === "OPPOSITE_OI" && !a.old_state
+                ? alertStateWords(a.alert_type, a.new_state)
+                : <>{alertStateWords(a.alert_type, a.old_state)} → {alertStateWords(a.alert_type, a.new_state)}</>}
               <span className={a.status === "SENT" ? " text-fg" : " text-warn"}> · {a.status.toLowerCase()}</span>
             </li>
           ))}

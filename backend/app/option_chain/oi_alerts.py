@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import NotificationRecord, OIAlertLogRecord, OIBannerStateRecord
 from app.notifications.service import notify
-from app.option_chain import oi_regime, oi_words, snapshots
+from app.option_chain import oi_opposite, oi_regime, oi_words, snapshots
 from app.option_chain.oi_regime import BannerState, Direction, OIAlertSettings, PcrBand
 from app.option_chain.snapshots import IST
 
@@ -281,19 +281,23 @@ async def _decide(session: AsyncSession, tenant_id: int, underlying: str, event:
 
 async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str, now: datetime, *, market_open: bool = True) -> List[str]:
     """Stores this tenant's banner state for the latest slot (once) and raises the alerts its changes call for.
-    Returns the decisions taken ("SENT", "COOLDOWN", ...). Does nothing for a tenant with alerts off."""
+    Returns the decisions taken ("SENT", "COOLDOWN", ...). Does nothing for a tenant with alerts off.
+    Owner 13 Nov: the opposite-OI alert has its own switch (the bell beside the OI history, OPPOSITE_OI in `types`): with
+    the banner alerts off and that one on, only it is evaluated."""
     settings = await snapshots.settings_for(session, tenant_id, underlying)
-    if not settings.alerts.enabled or not market_open:
+    _, own = await snapshots.settings_rows(session, tenant_id, underlying)
+    banner_on = settings.alerts.enabled
+    opposite_on = oi_opposite.ALERT_TYPE in settings.alerts.types and oi_opposite.bell_on(own)
+    if not (banner_on or opposite_on) or not market_open:
         return []
     from app.market_data import live_access
     if await live_access.byob_on(session, tenant_id):
         return []        # BT1b: no alerts from the shared OI collector while the bring-your-own-broker data tier is on
-    _, own = await snapshots.settings_rows(session, tenant_id, underlying)
     snoozed = own.snoozed_until if own is not None else None
     day = now.astimezone(IST).date()
     decisions: List[str] = []
     flags = snapshots.staleness(await snapshots.latest_capture(session, underlying, tenant_id=tenant_id), now, settings, market_open)
-    if flags["stale"] and "COLLECTOR_STALE" in settings.alerts.types:
+    if banner_on and flags["stale"] and "COLLECTOR_STALE" in settings.alerts.types:
         stale_event = AlertEvent("COLLECTOR_STALE", None, f"stale {day.isoformat()}", NotificationSeverity.WARNING)
         age = flags["age_minutes"]
         rendered = {"title": f"{underlying} OI collector stale", "payload": {"schema": SCHEMA, "underlying": underlying, "alert_type": "COLLECTOR_STALE",
@@ -322,8 +326,10 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     cur = StateView(state.direction.value, state.stable_signal.direction.value,
                     state.stable_signal.strength.value if state.stable_signal.strength else None,
                     state.pcr_band.value if state.pcr_band else None, state.max_pain, None, state.dte, wall)
-    events = detect(prev, cur, settings.alerts, step)
-    thresholds = _threshold_events(timeline, slots, latest, base, settings.alerts)
+    events = detect(prev, cur, settings.alerts, step) if banner_on else []
+    thresholds = _threshold_events(timeline, slots, latest, base, settings.alerts) if banner_on else []
+    opposite = (oi_opposite.latest_move(oi_opposite.points_of(timeline), settings.alerts,
+                                        oi_opposite.collector_slot_minutes(), latest.slot_start) if opposite_on else None)
     moved = any(e.alert_type == "MAX_PAIN_MOVE" for e in events)
     ref = state.max_pain if (prev is None or moved) else (prev.max_pain_ref if prev.max_pain_ref is not None else prev.max_pain)
     session.add(OIBannerStateRecord(tenant_id=tenant_id, underlying=underlying, slot_start=latest.slot_start, direction=cur.direction,
@@ -340,13 +346,19 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     for event in thresholds:
         decisions.append(await _decide(session, tenant_id, underlying, event, latest.slot_start, now, settings.alerts, snoozed,
                                        render_threshold(underlying, event, latest.slot_start, latest.captured_at)))
+    if opposite is not None:
+        event = AlertEvent(oi_opposite.ALERT_TYPE, None, opposite.state(), NotificationSeverity.INFO,
+                           {"call_change": opposite.call_change, "put_change": opposite.put_change, "window": opposite.window})
+        decisions.append(await _decide(session, tenant_id, underlying, event, latest.slot_start, now, settings.alerts, snoozed,
+                                       oi_opposite.render(underlying, opposite, settings.alerts, settings.atm_range, state.expiry.isoformat() if state.expiry else None,
+                                                          latest.slot_start, latest.captured_at, SCHEMA)))
     return decisions
 
 
 def _threshold_events(timeline, slots, latest, base: dict[float, tuple], alerts: OIAlertSettings) -> list[AlertEvent]:
     """M96 N1: the latest slot against the stored slot just before it (both at or before the latest - no look-ahead)."""
     from app.option_chain.oi_regime import THRESHOLD_ALERT_TYPES
-    if not set(alerts.types) & set(THRESHOLD_ALERT_TYPES) or len(timeline) < 2:
+    if not set(alerts.types) & (set(THRESHOLD_ALERT_TYPES) - {oi_opposite.ALERT_TYPE}) or len(timeline) < 2:
         return []
     by_slot = {s.slot_start: s for s in slots}
     cur_slot = by_slot.get(latest.slot_start)

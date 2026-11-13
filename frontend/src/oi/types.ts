@@ -51,7 +51,7 @@ export interface OiHistoryResponse extends OiFreshness {
   date: string;
   interval: number;
   /** Owner 13 Nov: `bucket` = Trade's History "Time", the start of the row's 5 / 10 / 15 minute bucket (IST ISO). */
-  rows: (OiBannerRow & { bucket?: string })[];
+  rows: (OiBannerRow & { bucket?: string; opposite?: OiOppositeMark })[];
 }
 
 export interface OiStrikeSeries {
@@ -92,13 +92,21 @@ export interface OiAlertSettings {
   strike_rules?: OiStrikeRule[];
   /** M96 N1: the user's own PCR level (none until he types one). */
   pcr_level?: number | null;
+  /** Owner 13 Nov: the opposite call / put OI move alert (OPPOSITE_OI in `types`, per symbol from the bell). */
+  opposite_window_minutes?: 5 | 10 | 15;
+  opposite_min_change_pct?: number;
+  opposite_relative_k?: number;
+  opposite_relative_windows?: number;
 }
 
 /** M96 N1: notify when this strike's call (CE) or put (PE) OI change since the day's first reading reaches `threshold`. */
 export interface OiStrikeRule { strike: number; side: "CE" | "PE"; threshold: number }
 
 /** M96 N1: the threshold alert types (managed in their own card, src/optionChain/OiThresholdAlertsV2.tsx). */
-export const OI_THRESHOLD_ALERT_TYPES = ["STRIKE_OI_CHANGE", "PCR_CROSS"] as const;
+export const OI_THRESHOLD_ALERT_TYPES = ["STRIKE_OI_CHANGE", "PCR_CROSS", "OPPOSITE_OI"] as const;
+
+/** Owner 13 Nov: a History row whose window closed with an opposite call / put OI move (his own levels). */
+export interface OiOppositeMark { call_change: number; put_change: number; window: number }
 
 export interface OiAlertLogResponse {
   underlying: string;

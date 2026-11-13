@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { cx } from "../components/primitives/cx";
@@ -8,6 +8,7 @@ import { OI_POLL_MS, shouldPoll } from "./oiTab";
 import {
   PCR_ZONE_LABEL, PCR_ZONE_TONE, bannerTone, calendarDte, classText, expiryLine, pcrZone, signalTone, todayIst, type BannerTone,
 } from "./oiDiff";
+import OppositeOiAlertV2 from "./OppositeOiAlertV2";
 import type { LiveChain } from "./types";
 
 /**
@@ -32,6 +33,8 @@ import type { LiveChain } from "./types";
  *   emoji left out), coloured as Trade's History table colours them (a weakening side in the OTHER side's colour);
  * - the "View interval" choice (Trade: 5 / 10 / 15 minutes, 5 first) stays in sight above the History table; a choice
  *   opens the table. The Net Diff table's per-strike Dominance column is Trade's own and stays as it is.
+ * Owner order 13 Nov: the "Alert me on opposite OI moves" bell beside the View interval (./OppositeOiAlertV2.tsx); with it
+ * on, a History row whose window closed with an opposite call / put OI move says so under its Signal.
  */
 export type Interval = 5 | 10 | 15;
 
@@ -70,7 +73,8 @@ export function useTradeBanner(underlying: string, interval: Interval): TradeBan
 export default function TradeOiBannerV2({ symbol, live }: { symbol: string; live: LiveChain | null }) {
   const [interval, setMinutes] = useState<Interval>(5);
   const state = useTradeBanner(symbol, interval);
-  return <TradeOiBannerView symbol={symbol} live={live} state={state} interval={interval} onInterval={setMinutes} />;
+  return <TradeOiBannerView symbol={symbol} live={live} state={state} interval={interval} onInterval={setMinutes}
+    bell={<OppositeOiAlertV2 symbol={symbol} />} />;
 }
 
 const BORDER: Record<BannerTone, string> = { up: "border-l-up", down: "border-l-down", warn: "border-l-warn", neutral: "border-l-border" };
@@ -137,8 +141,9 @@ export function IntervalPicker({ id, interval, onPick }: { id: string; interval:
 }
 
 /** The banner for data already in hand (pure: no reads, no timers) - tests and screenshots render it directly. */
-export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now() }: {
+export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now(), bell }: {
   symbol: string; live: LiveChain | null; state: TradeBannerState; interval: Interval; onInterval: (i: Interval) => void; now?: number;
+  bell?: ReactNode;
 }) {
   const l = bannerLines(symbol, state.banner, live, todayIst(now));
   const rows = state.history?.rows ?? [];
@@ -160,6 +165,7 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
       </div>
       {l.firstReading && <p className="text-t12 text-fg-muted" data-banner-caption>The first reading of the day shows "Not enough data": the reading needs history.</p>}
       <IntervalPicker id={intervalId} interval={interval} onPick={(n) => { onInterval(n); setOpen(true); }} />
+      {bell}
       <details className="rounded-panel border border-subtle bg-surface-1" data-oi-history-trade open={open}
         onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
         <summary className="flex min-h-11 cursor-pointer items-center px-space-3 text-t14 font-semibold text-fg md:min-h-9">OI history (Signal)</summary>
@@ -182,7 +188,11 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
                       <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_put_oi)}</td>
                       <td className={cx("px-space-1 py-space-1 text-right", r.diff > 0 ? "text-up" : r.diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.diff, { signed: true })}</td>
                       <td className={cx("px-space-1 py-space-1 text-right", r.delta_diff > 0 ? "text-up" : r.delta_diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.delta_diff, { signed: true })}</td>
-                      <td className={cx("px-space-1 py-space-1 text-left", TEXT[signalTone(r.signal)])} data-history-signal>{r.signal}</td>
+                      <td className={cx("px-space-1 py-space-1 text-left", TEXT[signalTone(r.signal)])} data-history-signal>{r.signal}
+                        {r.opposite && <div className="text-t12 font-semibold text-warn" data-history-opposite>
+                          Opposite OI move: Call {formatLakhs(r.opposite.call_change, { signed: true })} · Put {formatLakhs(r.opposite.put_change, { signed: true })}
+                        </div>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

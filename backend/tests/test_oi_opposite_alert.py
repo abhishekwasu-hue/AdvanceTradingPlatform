@@ -162,6 +162,9 @@ def test_parity_with_trades_rotation_rule():
 
 @pytest.fixture()
 def _clean_oi():
+    """Empty OI tables before AND after: this file sorts after the last OI suite that cleans up (test_o2_oi_snapshots'
+    autouse fixture), so an enabled OI settings row left here would reach tests/test_trading_worker.py, where the
+    worker's OI step opens its own sessions on the shared in-memory SQLite connection and ends the cycle's savepoint."""
     async def go():
         async with _session_factory() as session:
             for model in (OIAlertLogRecord, OIBannerStateRecord, StrikeOISnapshotRecord, OISnapshotRecord, OIDayBaselineRecord, OIBannerSettingRecord):
@@ -169,6 +172,7 @@ def _clean_oi():
             await session.commit()
     _run(go())
     yield
+    _run(go())
 
 
 def _evaluate_sequence(tenant_id, seq, monkeypatch):

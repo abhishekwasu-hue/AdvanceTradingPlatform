@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { formatContracts, formatCount, formatLakhs } from "../ui/format";
 import { leg, liveChain, rows } from "./chain.fixture";
-import { DEFAULT_COLUMNS, formatOi, readColumns, COLUMNS_KEY } from "./model";
+import { DEFAULT_COLUMNS, daysText, formatOi, readColumns, COLUMNS_KEY } from "./model";
 import {
   PCR_ZONE_LABEL, bannerTone, calendarDte, classText, dominanceOf, expiryLine, inTradeWindow, netDiffRows, netDiffStatus, netDiffTotal,
   pcrZone, signalTone, todayIst,
@@ -142,19 +142,29 @@ describe("M96 L1: Trade's banner", () => {
     expiry: "2026-11-13", dte: 2, first_of_day: false, ...over });
   const banner = (over: Partial<OiBannerRow> = {}, open = true): OiBannerResponse => ({ underlying: "NIFTY", date: "2026-11-11", banner: row(over),
     market_open: open, stale: false, age_minutes: 1, stale_after_minutes: 15 });
-  const live = () => ({ ...liveChain(), expiry: "2026-11-13", summary: { ...liveChain().summary, pcr_oi_atm: 1.14 }, net_diff: netDiff() });
+  const live = () => ({ ...liveChain(), expiry: "2026-11-13", summary: { ...liveChain().summary, pcr_oi_atm: 1.14, days_to_expiry: 2 }, net_diff: netDiff() });
   const NOW = Date.parse("2026-11-11T05:00:00Z");
 
-  it("the banner lines: message, classes, PCR ATM +- 6 with its zone, calendar expiry, the reading time", () => {
+  it("the banner lines: message, classes, PCR ATM +- 6 with its zone, the expiry, the reading time", () => {
     const l = bannerLines("NIFTY", banner(), live(), "2026-11-11");
     expect(l).toMatchObject({ tone: "up", message: "Put writing rising → NIFTY OI readings lean up", classes: "Put: Writing · Call: Flat or unclear",
       pcr: "PCR (ATM ± 6): 1.14", pcrZone: "Mild bullish trend (not yet overbought)", pcrTone: "up",
       expiry: "Expiry: 13 Nov 2026 (2 days left)", expiryNear: false, readingAt: "10:26 IST" });
-    expect(bannerLines("NIFTY", banner({ direction: "MIXED" }), live(), "2026-11-12")).toMatchObject({ tone: "warn", expiryNear: true });
+    const nextDay = { ...live(), summary: { ...live().summary, days_to_expiry: 1 } };
+    expect(bannerLines("NIFTY", banner({ direction: "MIXED" }), nextDay, "2026-11-12")).toMatchObject({ tone: "warn", expiryNear: true });
     // closed market: Trade shows "Market closed", grey, no classes
     expect(bannerLines("NIFTY", banner({}, false), live(), "2026-11-11")).toMatchObject({ tone: "neutral", message: "Market closed",
       classes: "Put: Not enough data · Call: Not enough data" });
     expect(bannerLines("SENSEX", null, null, "2026-11-11")).toMatchObject({ message: "No OI reading of SENSEX yet today", pcr: "PCR (ATM ± 6): not available" });
+  });
+
+  it("owner bug 13 Nov: the days left are the chain's TRADING days, as the context bar's (Fri -> Tue = 2, not 4)", () => {
+    const fri = { ...live(), expiry: "2026-11-17", summary: { ...live().summary, days_to_expiry: 2 } };
+    expect(bannerLines("NIFTY", banner(), fri, "2026-11-13").expiry).toBe("Expiry: 17 Nov 2026 (2 days left)");
+    expect(daysText(fri.summary.days_to_expiry)).toBe("2 days");                       // the context bar's "Expiry in", same count
+    // a chain without its own count: calendar days stand (never an empty line)
+    const none = { ...fri, summary: { ...fri.summary, days_to_expiry: null } };
+    expect(bannerLines("NIFTY", banner(), none, "2026-11-13").expiry).toBe("Expiry: 17 Nov 2026 (4 days left)");
   });
 
   it("the banner and its History table (Trade's columns, lakhs, the stable Signal), no advice words", () => {

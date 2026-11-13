@@ -19,7 +19,8 @@ import type { LiveChain } from "./types";
  *   `fact_message`); "Market closed" while the market is closed (Trade);
  * - "Put: <class> · Call: <class>" in English (default 2);
  * - the PCR over ATM ± 6 (the OI-difference table's window, the same number) with Trade's five zones in English;
- * - the expiry with CALENDAR days left (Trade compute_dte), "Expiry today" at 0, in red at one day or less;
+ * - the expiry with the days left - the app's one count, TRADING days (B3; owner bug 13 Nov: it read calendar days, Trade
+ *   compute_dte, beside a trading-day count of the same expiry), "Expiry today" at 0, in red at one day or less;
  * - Trade's caption while this is the day's first reading ("Not enough data" until the history builds), and the time;
  * - under it Trade's History table: Time, Total Call OI, Total Put OI, Diff, Δ Diff and the stable Signal (the
  *   hysteresis-confirmed one) in 5 / 10 / 15 minute buckets, newest first, lakhs.
@@ -93,7 +94,10 @@ export function bannerLines(symbol: string, banner: OiBannerResponse | null, liv
   const pcr = live?.summary.pcr_oi_atm ?? null;
   const zone = pcrZone(pcr);
   const expiry = live?.expiry ?? null;
-  const dte = calendarDte(expiry, today);
+  // Owner bug 13 Nov: the days left are the chain's own TRADING days (server B3, app/market_data/calendar.py) - the same
+  // count as the context bar's "Expiry in" and the "Days to expiry" card; calendar days only when the chain has none.
+  const served = live?.summary.days_to_expiry;
+  const dte = typeof served === "number" && Number.isFinite(served) && served >= 0 ? served : calendarDte(expiry, today);
   return {
     tone, message, classes,
     pcr: pcr === null ? "PCR (ATM ± 6): not available" : `PCR (ATM ± 6): ${formatNumber(pcr, 2)}`,

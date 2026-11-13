@@ -8,7 +8,7 @@ import {
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
 import { BasketPanelBodyV2, BotsViewV2, ChainPanelV2, OrdersPanelV2, PAYOFF_NEEDS_SPOT, PayoffViewV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
-import { chartLiveOf, pickSpot } from "./spot";
+import { SPOT_AS_OF_AFTER_MS, TICK_FRESH_MS, chartLiveOf, freshTick, pickSpot, spotAsOf } from "./spot";
 import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
 import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
 import { TicketBody } from "../fno/OrderTicketV2";
@@ -31,6 +31,8 @@ import type { SignalFeedItem } from "../signals/feed";
 import type { PosLeg } from "../fno/positionInsights";
 import { heldSide, payoffScope } from "./payoffModel";
 import type { OptionChainData } from "../optionChain/useOptionChain";
+import { summaryCards } from "../optionChain/SummaryStripV2";
+import { foldLive } from "../chart/timeframes";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
@@ -516,7 +518,8 @@ describe("owner fixes T1-2 .. T1-7", () => {
     const html = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} spot={spot} /></MemoryRouter>);
     expect(html).toMatch(/<details data-details="terminal.chain"[\s\S]*Tap a price to buy, sell or add it to your basket\.[\s\S]*<\/details>/);
     expect(pageSource).toMatch(/useTerminalSpot\(/);
-    expect(pageSource).toMatch(/chartLiveOf\(spot\)/);
+    expect(pageSource).toMatch(/chartLiveOf\(spot, live\?\.market_open === true\)/);
+    expect(pageSource).toContain("areaMarks={areaMarks.size ? areaMarks : undefined} spot={spot}");         // the chain view shows the page's ONE spot
   });
 
   it("T1-4: the spread builder places the hedge (buy) first, then the sell; flags a sell with no hedge", () => {
@@ -607,6 +610,69 @@ describe("M63 I-5: Bots & signals and Payoff are built, so they are offered (R6:
     const read = readPrefs(stored);
     const panels = read.layouts.mine.panels;
     expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1", "bots", "payoff"]);
+  });
+});
+
+describe("owner bug 13 Nov: one spot for the context bar, the chain and the chart", () => {
+  const at = (hhmmss: string) => `2026-11-13T${hhmmss}+05:30`;
+  const chainAt = (spot: number, when: string, open = true): LiveChain => ({ ...CHAIN, market_open: open, data_as_of: at(when), fetched_at: at(when),
+    summary: { ...CHAIN.summary, spot } });
+
+  it("a tick or quote older than the chain's newer spot never holds the spot (the screenshot: 25,168.70 vs 25,131.80)", () => {
+    const oldTick = { symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") };
+    const oldLtp = { ltp: 25168.7, timestamp: at("11:52:00"), fetched_at: at("12:05:10") };
+    const chain = chainAt(25131.8, "12:05:00");
+    expect(pickSpot(oldTick, null, chain)).toEqual({ ltp: 25131.8, at: at("12:05:00"), source: "chain" });
+    expect(pickSpot(undefined, oldLtp, chain)?.ltp).toBe(25131.8);
+    // a newer tick still wins over the chain (it is the newest read)
+    expect(pickSpot({ ...oldTick, ltp: 25130.5, ts: at("12:05:20") }, null, chain)).toMatchObject({ ltp: 25130.5, source: "tick" });
+    // an LTP the server flags stale is never used
+    expect(pickSpot(undefined, { ...oldLtp, timestamp: at("12:05:30"), stale: true }, chain)?.source).toBe("chain");
+  });
+
+  it("a tick this tab stopped hearing goes out (the LTP read comes back)", () => {
+    const tick = { symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") };
+    const now = Date.parse(at("12:05:00"));
+    expect(freshTick(tick, now - 5_000, now)).toBe(tick);
+    expect(freshTick(tick, now - TICK_FRESH_MS - 1, now)).toBeUndefined();
+    expect(freshTick(tick, undefined, now)).toBeUndefined();
+  });
+
+  it("the context bar and the chain's spot card show the SAME spot from one source", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const spot = pickSpot({ symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") }, null, chain);
+    const data = { expiries: null, expiry: "2026-10-27", setExpiry: () => undefined, loading: false, problem: null, live: chain } as unknown as OptionChainData;
+    const f = contextFigures(data, spot, 25299.35, 16.17, Date.parse(at("12:05:20")));
+    const card = summaryCards(chain.summary, chain.expiry, spot, 25299.35).find((c) => c.key === "spot");
+    expect(f.spot).toBe(25131.8);
+    expect(card?.num).toBe(25131.8);
+    expect(f.moved?.change).toBeCloseTo(-167.55);                          // the chain banner's own change
+    expect(f.spotAsOf).toBeNull();                                         // current: no "as of"
+  });
+
+  it("a spot that is not current says \"as of <time>\"; the closed market's spot too", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const data = { expiries: null, expiry: "2026-10-27", setExpiry: () => undefined, loading: false, problem: null, live: chain } as unknown as OptionChainData;
+    const spot = pickSpot(undefined, null, chain);
+    const later = Date.parse(at("12:05:00")) + SPOT_AS_OF_AFTER_MS + 1_000;
+    expect(contextFigures(data, spot, null, null, later).spotAsOf).toBe(at("12:05:00"));
+    expect(spotAsOf(spot, false, Date.parse(at("12:05:01")))).toBe(at("12:05:00"));
+    const html = renderToStaticMarkup(<MemoryRouter><ContextBarV2 symbol="NIFTY" onSymbol={() => undefined} chain={data} spot={spot} prevClose={null}
+      vix={null} mode={{ label: "Paper", title: "Practice" }} /></MemoryRouter>);
+    expect(html).toContain("data-spot-as-of");                             // the fixture's time is long past: labelled, never "live"
+  });
+
+  it("the chart's forming bar takes the one spot on EVERY timeframe while open; a closed chain's last close never moves it", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const spot = pickSpot(undefined, null, chain);
+    const live = chartLiveOf(spot, true);
+    expect(live).toEqual({ ltp: 25131.8, timestamp: at("12:05:00"), fetched_at: at("12:05:00") });
+    expect(chartLiveOf(spot, false)).toBeNull();
+    const bar = (start: string, close: number) => ({ timestamp: at(start), open: close, high: close, low: close, close, volume: 0 });
+    for (const [tf, start] of [["1min", "12:05:00"], ["15min", "12:00:00"], ["60min", "11:15:00"]] as const) {
+      const out = foldLive([bar(start, 25146.7)], live?.ltp, live?.timestamp, tf);
+      expect(out[out.length - 1].close).toBe(25131.8);
+    }
   });
 });
 

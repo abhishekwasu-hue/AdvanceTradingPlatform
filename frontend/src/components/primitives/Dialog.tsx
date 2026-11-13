@@ -9,9 +9,11 @@ interface Base {
   onCloseAutoFocus?: (e: Event) => void;
   /** Owner 13 Nov (Copilot chat): a bottom sheet that takes the whole phone screen (a chat with its input pinned). */
   tall?: boolean;
+  /** CEPE-1: the body is a column that fills the panel's height (a chart workspace); with `tall` it fills the phone screen. */
+  fill?: boolean;
 }
 
-function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false, onCloseAutoFocus, tall = false }: Base & { side?: "right" | "bottom" }) {
+function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false, onCloseAutoFocus, tall = false, fill = false }: Base & { side?: "right" | "bottom" }) {
   const panel = side === "right"
     ? `inset-y-0 right-0 h-full w-full ${wide ? "max-w-3xl" : "max-w-md"} border-l`   // wide: a workspace side panel (M75 NAV-1)
     : side === "bottom"
@@ -32,7 +34,7 @@ function Shell({ side, open, onOpenChange, title, description, children, footer,
             </div>
             <RD.Close aria-label="Close" className="rounded p-1 text-fg-muted hover:bg-surface-2 hover:text-fg"><X size={16} /></RD.Close>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm">{children}</div>
+          <div className={cx("min-h-0 flex-1 overflow-y-auto text-sm", fill ? "flex flex-col px-space-3 py-space-3 md:px-5 md:py-4" : "px-5 py-4")}>{children}</div>
           {footer && <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
         </RD.Content>
       </RD.Portal>

@@ -423,7 +423,7 @@ TERMINAL_ROWS = 64
 TERMINAL_MAX_HEIGHT = 32
 TERMINAL_LAYOUT_ID = r"^[a-z0-9]{4,16}$"
 TERMINAL_LAYOUT_NAME = r"^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$"
-TerminalPreset = Literal["option_seller", "quick_trade", "multi_chart"]
+TerminalPreset = Literal["option_seller", "option_buyer", "quick_trade", "multi_chart"]
 TerminalPanelId = Literal["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]
 TERMINAL_PANEL_IDS: Tuple[str, ...] = ("watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket",
                                        "bots", "payoff")
@@ -491,7 +491,7 @@ class TerminalPrefs(_Prefs):
         names = [layout.name.strip().lower() for layout in self.layouts.values()]
         if len(set(names)) != len(names):
             raise ValueError("two layouts cannot have the same name")
-        presets = ("option_seller", "quick_trade", "multi_chart")
+        presets = ("option_seller", "option_buyer", "quick_trade", "multi_chart")
         if self.active is not None and self.active not in presets and self.active not in self.layouts:
             raise ValueError("the layout in use must be a preset or one of your layouts")
         return self

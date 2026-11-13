@@ -149,6 +149,16 @@ def test_closed_panels_may_overlap_and_names_and_counts_are_checked():
     assert _put(who, {"layouts": eleven}).status_code == 422               # the 11th layout is refused
 
 
+def test_the_option_buyer_preset_is_accepted_in_use_and_as_the_base_of_his_own_layout():
+    # Owner 13 Nov: the "Option buyer" ready layout - "Save as mine" keeps it as the layout's preset (Reset goes back to it).
+    who = _who("buyer")
+    assert _put(who, {"layouts": {}, "active": "option_buyer"}).status_code == 200
+    body = {"layouts": {"buy001": {"name": "My buyer desk", "preset": "option_buyer", "panels": SELLER}}, "active": "buy001"}
+    saved = _put(who, body, version=1)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["value"]["layouts"]["buy001"]["preset"] == "option_buyer"
+
+
 def test_ten_layouts_at_their_largest_fit_inside_the_size_cap():
     # Every panel, every chart with a 30-character symbol, 40-character names, every optional field set.
     panels = []

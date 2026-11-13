@@ -3,7 +3,8 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { orderGroup, orderRowWords, statusWords, terminalApi, type TerminalStatus } from "./api";
 import {
-  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns, changed, closePanel,
+  isPreset,
   firstFree, forSave, layoutFor, layoutProblem, liftedY, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
@@ -57,9 +58,31 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, 
 const DEV = /\b(undefined|null|NaN|error:|exception|id=|T[1-9]\b|PAPER_|ui_v2|terminal_)\b/;
 const T = new Date("2026-10-24T10:00:00Z");
 
+describe("owner 13 Nov: the Option buyer ready layout", () => {
+  it("chart, the chain at 5 columns (IV and OI change on screen), positions & orders and a wider basket; Reset and Save as mine keep it", () => {
+    const l = presetLayout("option_buyer");
+    expect(l).toMatchObject({ name: "Option buyer", preset: "option_buyer", underlying: null });
+    const at = (id: string) => l.panels.find((p) => p.id === id);
+    expect(at("chain")).toMatchObject({ x: 7, y: 0, w: 5, open: true });
+    expect(chainHiddenColumns(at("chain")!.w)).toEqual([]);
+    expect(at("chart-1")).toMatchObject({ open: true });
+    expect(at("positions")).toMatchObject({ x: 0, w: 8, open: true });
+    expect(at("basket")).toMatchObject({ x: 8, w: 4, open: true });
+    expect(at("basket")!.w).toBeGreaterThan(PRESETS.option_seller.panels.find((p) => p.id === "basket")!.w);
+    expect(isPreset("option_buyer")).toBe(true);
+    const moved = { ...l, underlying: "BANKNIFTY", panels: l.panels.map((p) => (p.id === "basket" ? { ...p, open: false } : p)) };
+    expect(resetToPreset(moved)).toMatchObject({ preset: "option_buyer", underlying: "BANKNIFTY", panels: presetLayout("option_buyer").panels });
+    const mine = saveAs(EMPTY_PREFS, moved, "My buyer desk", "buy00001", T);
+    if ("error" in mine) throw new Error(mine.error);
+    expect(mine.prefs.layouts.buy00001).toMatchObject({ name: "My buyer desk", preset: "option_buyer" });
+    expect(readPrefs(mine.prefs).layouts.buy00001.preset).toBe("option_buyer");
+    expect(switchTo(EMPTY_PREFS, "option_buyer").active).toBe("option_buyer");
+  });
+});
+
 describe("layout model: presets", () => {
-  it("three presets, each valid on the 12-column grid; Option seller is the default (T-D1)", () => {
-    expect(PRESET_IDS).toEqual(["option_seller", "quick_trade", "multi_chart"]);
+  it("four presets, each valid on the 12-column grid; Option seller is the default (T-D1)", () => {
+    expect(PRESET_IDS).toEqual(["option_seller", "option_buyer", "quick_trade", "multi_chart"]);
     expect(DEFAULT_PRESET).toBe("option_seller");
     expect(activeKey(EMPTY_PREFS)).toBe("option_seller");
     for (const id of PRESET_IDS) {
@@ -71,6 +94,7 @@ describe("layout model: presets", () => {
     // TERM-2 step 3: chart | chain | basket, and chain | order - each above the one bottom panel (positions & orders).
     // UX-3 (PR 8): the watchlist docked left and open in every preset.
     expect(open("option_seller")).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
+    expect(open("option_buyer")).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
     expect(open("quick_trade")).toEqual(["watchlist", "chain", "order", "positions"]);
     expect(open("multi_chart")).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "positions"]);
     for (const id of PRESET_IDS) expect(presetLayout(id).panels.find((p) => p.id === "watchlist"), id).toMatchObject({ x: 0, y: 0, open: true });

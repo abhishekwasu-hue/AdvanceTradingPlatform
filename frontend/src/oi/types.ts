@@ -50,7 +50,8 @@ export interface OiHistoryResponse extends OiFreshness {
   underlying: string;
   date: string;
   interval: number;
-  rows: OiBannerRow[];
+  /** Owner 13 Nov: `bucket` = Trade's History "Time", the start of the row's 5 / 10 / 15 minute bucket (IST ISO). */
+  rows: (OiBannerRow & { bucket?: string })[];
 }
 
 export interface OiStrikeSeries {

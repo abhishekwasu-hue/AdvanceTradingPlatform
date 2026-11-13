@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useMarketStatus } from "../chart/useMarketStatus";
 import { cx } from "../components/primitives/cx";
@@ -24,8 +24,16 @@ import type { LiveChain } from "./types";
  * - under it Trade's History table: Time, Total Call OI, Total Put OI, Diff, Δ Diff and the stable Signal (the
  *   hysteresis-confirmed one) in 5 / 10 / 15 minute buckets, newest first, lakhs.
  * The spot / future, ATM and max pain (whole chain, as Trade) are the summary cards right above (SummaryStripV2).
+ *
+ * Owner bug report 13 Nov (the Terminal showed only the Net Diff table's per-strike Dominance, no signal and no
+ * 5 / 10 / 15 choice):
+ * - the banner's "Signal" line: the stable OI Diff signal of the latest reading - Trade's compute_oi_signal_with_hysteresis
+ *   and its labels (BULLISH (Strong) / BULLISH (Weakening) / BEARISH (Strong) / BEARISH (Weakening) / NEUTRAL, Trade's
+ *   emoji left out), coloured as Trade's History table colours them (a weakening side in the OTHER side's colour);
+ * - the "View interval" choice (Trade: 5 / 10 / 15 minutes, 5 first) stays in sight above the History table; a choice
+ *   opens the table. The Net Diff table's per-strike Dominance column is Trade's own and stays as it is.
  */
-type Interval = 5 | 10 | 15;
+export type Interval = 5 | 10 | 15;
 
 export interface TradeBannerState { banner: OiBannerResponse | null; history: OiHistoryResponse | null; loaded: boolean }
 
@@ -72,6 +80,9 @@ const TEXT = { up: "text-up", down: "text-down", warn: "text-warn", muted: "text
 export interface BannerLines {
   tone: BannerTone;
   message: string;
+  /** Trade's stable OI Diff signal of the latest reading (null before the day's first reading). */
+  signal: string | null;
+  signalTone: "up" | "down" | "muted";
   classes: string;
   pcr: string;
   pcrZone: string | null;
@@ -94,8 +105,9 @@ export function bannerLines(symbol: string, banner: OiBannerResponse | null, liv
   const zone = pcrZone(pcr);
   const expiry = live?.expiry ?? null;
   const dte = calendarDte(expiry, today);
+  const signal = b?.signal || null;
   return {
-    tone, message, classes,
+    tone, message, signal, signalTone: signalTone(signal), classes,
     pcr: pcr === null ? "PCR (ATM ± 6): not available" : `PCR (ATM ± 6): ${formatNumber(pcr, 2)}`,
     pcrZone: zone ? PCR_ZONE_LABEL[zone] : null, pcrTone: zone ? PCR_ZONE_TONE[zone] : null,
     expiry: expiryLine(expiry, dte), expiryNear: dte !== null && dte <= 1,
@@ -104,16 +116,41 @@ export function bannerLines(symbol: string, banner: OiBannerResponse | null, liv
   };
 }
 
+/** Trade's "View Interval" choice (5 / 10 / 15 minutes, 5 first): in sight above the History table (owner 13 Nov). */
+export const INTERVALS = [5, 10, 15] as const;
+
+export function IntervalPicker({ id, interval, onPick }: { id: string; interval: Interval; onPick: (n: Interval) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-space-2" data-oi-interval>
+      <span className="text-t12 font-medium text-fg-muted" id={id}>View interval</span>
+      <div role="radiogroup" aria-labelledby={id} className="flex gap-space-2">
+        {INTERVALS.map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={interval === n} onClick={() => onPick(n)} data-oi-interval-option={n}
+            className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 md:min-h-8",
+              interval === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
+            {n} min
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** The banner for data already in hand (pure: no reads, no timers) - tests and screenshots render it directly. */
 export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now() }: {
   symbol: string; live: LiveChain | null; state: TradeBannerState; interval: Interval; onInterval: (i: Interval) => void; now?: number;
 }) {
   const l = bannerLines(symbol, state.banner, live, todayIst(now));
   const rows = state.history?.rows ?? [];
+  const [open, setOpen] = useState(false);
+  const intervalId = useId();
   return (
     <section aria-label="OI banner" data-block="oi-banner" className="space-y-space-2">
       <div data-banner-tone={l.tone} className={cx("rounded-panel border border-l-4 border-subtle px-space-3 py-space-3 md:px-space-4", BORDER[l.tone], TINT[l.tone])}>
         <div className="text-t16 font-semibold text-fg" data-banner-message>{l.message}</div>
+        {l.signal && <div className="mt-space-1 text-t14 font-semibold text-fg" data-banner-signal>
+          Signal: <span className={TEXT[l.signalTone]} data-banner-signal-label>{l.signal}</span>
+        </div>}
         <div className="mt-space-1 text-t12 text-fg-muted" data-banner-classes>{l.classes}</div>
         <div className="mt-space-1 text-t14 font-semibold text-fg" data-banner-pcr>
           {l.pcr}{l.pcrZone && <> <span aria-hidden>-</span> <span className={l.pcrTone ? TEXT[l.pcrTone] : undefined}>{l.pcrZone}</span></>}
@@ -122,18 +159,11 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
         <div className="mt-space-1 text-t12 text-fg-muted" data-banner-time>{l.readingAt ? `OI reading at ${l.readingAt}` : "No OI reading yet"}</div>
       </div>
       {l.firstReading && <p className="text-t12 text-fg-muted" data-banner-caption>The first reading of the day shows "Not enough data": the reading needs history.</p>}
-      <details className="rounded-panel border border-subtle bg-surface-1" data-oi-history-trade>
+      <IntervalPicker id={intervalId} interval={interval} onPick={(n) => { onInterval(n); setOpen(true); }} />
+      <details className="rounded-panel border border-subtle bg-surface-1" data-oi-history-trade open={open}
+        onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
         <summary className="flex min-h-11 cursor-pointer items-center px-space-3 text-t14 font-semibold text-fg md:min-h-9">OI history (Signal)</summary>
         <div className="space-y-space-2 px-space-3 pb-space-3">
-          <div role="radiogroup" aria-label="View interval" className="flex gap-space-2">
-            {([5, 10, 15] as const).map((n) => (
-              <button key={n} type="button" role="radio" aria-checked={interval === n} onClick={() => onInterval(n)}
-                className={cx("inline-flex min-h-11 items-center rounded-pill border px-space-3 text-t13 md:min-h-8",
-                  interval === n ? "border-brand bg-brand-tint font-semibold text-fg" : "border-border text-fg-muted hover:text-fg")}>
-                {n} min
-              </button>
-            ))}
-          </div>
           {rows.length === 0 ? (
             <p className="text-t13 text-fg-muted">No OI reading is stored for today yet.</p>
           ) : (
@@ -147,7 +177,7 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.slot} className="border-t border-subtle font-tabular font-semibold" data-history-slot={r.slot}>
-                      <td className="px-space-1 py-space-1 text-left text-fg">{formatTimeIST(r.slot, { suffix: false })}</td>
+                      <td className="px-space-1 py-space-1 text-left text-fg">{formatTimeIST(r.bucket ?? r.slot, { suffix: false })}</td>
                       <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_call_oi)}</td>
                       <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_put_oi)}</td>
                       <td className={cx("px-space-1 py-space-1 text-right", r.diff > 0 ? "text-up" : r.diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.diff, { signed: true })}</td>

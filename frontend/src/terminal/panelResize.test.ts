@@ -8,7 +8,7 @@ import {
  * Owner bug 13 Nov: "chart and the other panels do not become small or big by dragging". The size model behind the
  * Terminal's lines and corners: a corner drag moves the shared line (it was refused whenever a neighbour touched);
  * minimums hold; the sizes are kept with "Save as mine", read back on load, and "Reset" brings the ready sizes back.
- * The layout as the owner sees it: Option seller with the watchlist off (Chart 7 · Chain 5 over Positions 9 · Basket 3).
+ * The layout as the owner sees it: Option seller with the watchlist off (Chart 8 · Chain 4 over Positions 9 · Basket 3).
  */
 const seen = () => withoutWatchlist(presetLayout("option_seller").panels);
 const at = (panels: readonly PanelPlace[], id: PanelId) => panels.find((p) => p.id === id)!;
@@ -59,7 +59,7 @@ describe("the corner moves the shared line (owner bug 13 Nov)", () => {
 
 describe("sizes: saved with Save as mine, restored on load, Reset", () => {
   const dragged = () => {
-    const a = resizeAcrossEdge(seen(), line(seen(), "chart-1|chain"), 1).panels;
+    const a = resizeAcrossEdge(seen(), line(seen(), "chart-1|chain"), -1).panels;
     return resizeAcrossEdge(a, line(a, "chart-1|chain|positions|basket"), -3).panels;
   };
 
@@ -69,8 +69,8 @@ describe("sizes: saved with Save as mine, restored on load, Reset", () => {
     if ("error" in r) throw new Error(r.error);
     const loaded = readPrefs(JSON.parse(JSON.stringify(r.prefs)));            // the server's copy, read back on load
     const back = layoutFor(loaded, activeKey(loaded)).panels;
-    expect(at(back, "chart-1")).toMatchObject({ w: 8, h: 9 });
-    expect(at(back, "chain")).toMatchObject({ x: 8, w: 4, h: 9 });
+    expect(at(back, "chart-1")).toMatchObject({ w: 7, h: 9 });
+    expect(at(back, "chain")).toMatchObject({ x: 7, w: 5, h: 9 });
     expect(at(back, "positions")).toMatchObject({ y: 9, h: 11 });
   });
 

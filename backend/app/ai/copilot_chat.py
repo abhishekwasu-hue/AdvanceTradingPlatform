@@ -1398,21 +1398,79 @@ def _trend_line(side: Optional[str], row: Dict[str, Any]) -> str:
     return base + "; there is no trend side to be with or against."
 
 
+def _quoted(answer: Answer, res: ToolResult) -> tuple[float, str] | None:
+    """The quote's last traded price and its IST time in words: "12:10" when it is from today, "12 Nov 15:29" when it
+    is older (the market closed). None without a real price. The time words join the answer's trusted text: their
+    digits are the quote's own time, not a market number."""
+    ltp = (res.data or {}).get("ltp") if res.ok and isinstance(res.data, dict) else None
+    if not isinstance(ltp, (int, float)) or isinstance(ltp, bool) or ltp <= 0:
+        return None
+    try:
+        at = datetime.fromisoformat(str(res.as_of))
+    except (TypeError, ValueError):
+        return None
+    at = (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).astimezone(IST)
+    today = datetime.now(timezone.utc).astimezone(IST).date()
+    words = at.strftime("%H:%M") if at.date() == today else f"{at.day} {_MONTHS[at.month - 1]} {at.strftime('%H:%M')}"
+    answer.trusted_text.append(words)
+    return float(ltp), words
+
+
+def _last_close(res: ToolResult) -> tuple[float, str] | None:
+    """The structure tool's last daily close and its date in words ("12 Nov 2026"; "" when the tool gave none)."""
+    if not res.ok or not isinstance(res.data, dict):
+        return None
+    d = res.data
+    oc = d.get("official_close") or {}
+    close = oc.get("close") if isinstance(oc.get("close"), (int, float)) else d.get("last_close")
+    if not isinstance(close, (int, float)) or isinstance(close, bool) or close <= 0:
+        return None
+    when = oc.get("date") or d.get("as_of") or res.as_of
+    return float(close), day_words(when) if when else ""
+
+
 async def trade_check(answer: Answer, run: Runner, message: str) -> None:
     """Job 3: the trader's own idea checked against the structure, ATP's stored areas, his own risk settings and this
     week's events. It lists what the idea does not state yet and never adds a rule of its own."""
     idea, symbol, tf = read_idea(message), symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf}, ("last_close",))
+    # Owner 13 Nov: "the price" of the idea is the live / last traded price with its time, never the last daily close
+    # passed off as current; with no quote the last close is said as such, with its date.
+    from app.ai.tools.copilot import INDEX_NAMES
+    quote = await _call(answer, run, "get_quote", f"{symbol} live price", {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol)},
+                        ("ltp",))
+    answer.worked[-1].args = {**answer.worked[-1].args, "symbol": symbol}     # one symbol read ("NIFTY"), not two spellings
+    now_price = _quoted(answer, quote)
+    close = _last_close(res)
     # owner 13 Nov: the areas of the chosen timeframe (higher ones as context), roles at his entry when he states one,
     # else at the live price while the market is open (Trade: role by the LTP), else at the last close
     zones = await _call(answer, run, "get_market_zones", f"{symbol} market zones ({TF_LABELS.get(tf, tf).lower()})",
                         {"symbol": symbol, "timeframe": tf, **({"price": idea.entry} if idea.entry else {})}, ("price",))
-    price = idea.entry or ((zones.data or {}).get("price") if zones.ok else None) or ((res.data or {}).get("last_close") if res.ok else None)
+    # The price the area is said from: his entry; else the zone tool's live price; else the quote (with its time); else
+    # the zone tool's price or the last close, said as the last close with its date.
+    zone_price = (zones.data or {}).get("price") if zones.ok else None
+    price: Optional[float]
+    if idea.entry:
+        price, price_words = idea.entry, f"Your entry {_f(idea.entry)}"
+    elif zone_price and zones_live(zones):
+        price, price_words = zone_price, f"The live price {_f(zone_price)}"
+    elif now_price:
+        price, price_words = now_price[0], f"The price {_f(now_price[0])} at {now_price[1]}"
+    elif zone_price or close:
+        price = zone_price if zone_price else close[0] if close else None
+        when = close[1] if close is not None and close[1] and float(price or 0) == close[0] else ""
+        price_words = f"The last close {_f(price)}" + (f" ({when})" if when else "")
+    else:
+        price, price_words = None, ""
     risk = await _call(answer, run, "get_risk_limits", "Your own risk settings", {}, ("capital", "risk_per_trade_pct", "lot_size", "min_risk_reward"))
     ctx = await _call(answer, run, "get_market_context", "This week's events", {})
     answer.notes.append(CHART_NOTE)
     missing: List[str] = []
 
+    if now_price:
+        answer.section("Price", [f"Price: {_f(now_price[0])} at {now_price[1]}"])
+    elif close:
+        answer.section("Price", [f"Last close: {_f(close[0])}" + (f" ({close[1]})" if close[1] else "")])
     stated = [f"{symbol}", f"{idea.side} side" if idea.side else None, f"entry {_f(idea.entry)}" if idea.entry else None,
               f"invalidation {_f(idea.invalidation)}" if idea.invalidation else None,
               f"{idea.lots} {'lot' if idea.lots == 1 else 'lots'}" if idea.lots else f"{idea.shares} shares" if idea.shares else None,
@@ -1433,8 +1491,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
     bands = (zones.data or {}).get("bands") or [] if zones.ok else []
     if zones.ok and price:
         at = _band_at(bands, float(price))
-        what = (f"Your entry {_f(idea.entry)}" if idea.entry else
-                f"The live price {_f(price)}" if zones_live(zones) else f"The price {_f(price)}")
+        what = price_words
         if at:
             side = _role_side(at.get("role"))
             fit = "" if idea.side is None or side is None else (": an area on your side" if side == idea.side else ": an area against your side")

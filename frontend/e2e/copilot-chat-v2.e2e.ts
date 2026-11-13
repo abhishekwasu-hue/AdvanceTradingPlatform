@@ -158,7 +158,7 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await expect(answer).toContainText("Structure reading from ATP's zone layers");
     await expect(answer.locator("[data-block='table']").first()).toBeVisible();
     await expect(answer.locator("[data-step='get_chart_structure']")).toContainText("last close 24850.5");
-    await expect(page.locator("[data-page='copilot-v2'] > [data-disclaimer]")).toContainText("not advice");
+    await expect(page.locator("[data-page='copilot-v2'] [data-composer-dock] > [data-disclaimer]")).toContainText("not advice");
     expect(asked).toEqual(["Read the NIFTY chart"]);
   });
 

@@ -83,7 +83,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
     <section aria-label="Symbol and expiry" data-block="terminal-context" data-symbol={symbol} data-expiry={chain.expiry ?? ""}
       className="relative flex flex-wrap items-end gap-x-space-4 gap-y-space-2 rounded-panel border border-border border-l-4 bg-surface-1 px-space-3 py-space-2"
       style={{ borderLeftColor: LINK_COLOUR }}>
-      <div className={cx("grid min-w-0 grid-cols-2 gap-space-2", compact ? "w-full" : "w-[26rem] max-w-full")}>
+      <div className={cx("grid min-w-0 grid-cols-2 gap-space-2", compact ? "w-full" : "w-[24rem] max-w-full")}>
         <div className="min-w-0">
           <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
           <Combobox id={symbolId} label="Symbol" value={symbol} onChange={onSymbol} searchable className="w-full"
@@ -98,7 +98,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
             dataAttrs={{ "data-terminal": "expiry" }} />
         </div>
       </div>
-      <dl className="flex min-w-0 flex-wrap items-end gap-x-space-4 gap-y-space-1 text-t12" data-context-figures>
+      <dl className="flex min-w-0 flex-wrap items-end gap-x-space-3 gap-y-space-1 text-t12" data-context-figures>
         <Figure name="spot" label="Spot">
           <span className="text-t16 font-semibold text-fg">{formatPrice(f.spot)}</span>
           {f.moved && <span className="ml-space-1"><Signed value={f.moved.pct} kind="pct" /></span>}
@@ -109,7 +109,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
         </Figure>
         <Figure name="pcr" label="PCR" term="pcr">{formatNumber(f.pcr, 2)}</Figure>
         <Figure name="atm" label="ATM" term="atm">{formatStrike(f.atm)}</Figure>
-        <Figure name="dte" label="Expiry in">{tradingDaysText(f.dte)}</Figure>
+        <Figure name="dte" label="Expiry in"><DaysLeft text={tradingDaysText(f.dte)} /></Figure>
       </dl>
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
         className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-3 text-t12 font-bold tracking-wide",
@@ -120,6 +120,14 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
       </span>
     </section>
   );
+}
+
+/** "7 trading days": the number at the bar's figure size, its unit small and muted, so the bar keeps one row on a
+ * 1440 desktop (the PAPER badge wrapped to a second row and pushed the panels down, main red 13 Nov). */
+function DaysLeft({ text }: { text: string }) {
+  const m = /^(\d+)( trading days?)$/.exec(text);
+  if (!m) return <>{text}</>;
+  return <>{m[1]}<span className="text-t12 font-normal text-fg-muted">{m[2]}</span></>;
 }
 
 function Figure({ name, label, children, term }: { name: string; label: string; children: ReactNode; term?: GlossaryKey }) {

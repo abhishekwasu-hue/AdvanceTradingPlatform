@@ -173,6 +173,9 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
           {rows.length === 0 ? (
             <p className="text-t13 text-fg-muted">No OI reading is stored for today yet.</p>
           ) : (
+            <>
+            {/* Owner 13 Nov: the unit once above the table; the cells carry the bare figures. */}
+            <p className="text-right text-t12 text-fg-muted" data-oi-unit>(OI in lakhs)</p>
             <div className="max-h-[22rem] overflow-auto" data-oi-history-trade-scroll>
               <table className="w-full min-w-[34rem] whitespace-nowrap text-t12" aria-label={`${symbol} OI history`}>
                 <thead className="sticky top-0 bg-surface-1 text-fg-muted">
@@ -184,13 +187,13 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
                   {rows.map((r) => (
                     <tr key={r.slot} className="border-t border-subtle font-tabular font-semibold" data-history-slot={r.slot}>
                       <td className="px-space-1 py-space-1 text-left text-fg">{formatTimeIST(r.bucket ?? r.slot, { suffix: false })}</td>
-                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_call_oi)}</td>
-                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_put_oi)}</td>
-                      <td className={cx("px-space-1 py-space-1 text-right", r.diff > 0 ? "text-up" : r.diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.diff, { signed: true })}</td>
-                      <td className={cx("px-space-1 py-space-1 text-right", r.delta_diff > 0 ? "text-up" : r.delta_diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.delta_diff, { signed: true })}</td>
+                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_call_oi, { unit: false })}</td>
+                      <td className="px-space-1 py-space-1 text-right text-fg">{formatLakhs(r.total_put_oi, { unit: false })}</td>
+                      <td className={cx("px-space-1 py-space-1 text-right", r.diff > 0 ? "text-up" : r.diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.diff, { signed: true, unit: false })}</td>
+                      <td className={cx("px-space-1 py-space-1 text-right", r.delta_diff > 0 ? "text-up" : r.delta_diff < 0 ? "text-down" : "text-fg")}>{formatLakhs(r.delta_diff, { signed: true, unit: false })}</td>
                       <td className={cx("px-space-1 py-space-1 text-left", TEXT[signalTone(r.signal)])} data-history-signal>{r.signal}
                         {r.opposite && <div className="text-t12 font-semibold text-warn" data-history-opposite>
-                          Opposite OI move: Call {formatLakhs(r.opposite.call_change, { signed: true })} · Put {formatLakhs(r.opposite.put_change, { signed: true })}
+                          Opposite OI move: Call {formatLakhs(r.opposite.call_change, { signed: true, unit: false })} · Put {formatLakhs(r.opposite.put_change, { signed: true, unit: false })}
                         </div>}
                       </td>
                     </tr>
@@ -198,6 +201,7 @@ export function TradeOiBannerView({ symbol, live, state, interval, onInterval, n
                 </tbody>
               </table>
             </div>
+            </>
           )}
           <p className="text-t12 text-fg-muted">Diff = Total Put OI − Total Call OI over ATM ± 6 (a level). Δ Diff = the change from the
             reading before. "Weakening": the side is not confirmed yet (a change of side needs three readings in a row and a real

@@ -88,10 +88,13 @@ export const PRESETS: Record<PresetId, { name: string; description: string; pane
   // show a symbol, its price and change; the chain keeps 5 so OI change and IV stay on screen (owner fix T1-3,
   // chainHiddenColumns); that leaves the chart 4 of the 12 columns - "Chart largest" (TA-4) is an owner decision in the
   // PR 8 report.
+  // Owner 13 Nov ("make the default panel setting like this", his Terminal screenshot): the chart is the widest panel of
+  // the top row - Watchlist 3 · Chart 5 · Chain 4 (the nearest whole columns to his screenshot); the chain at 4 hides IV
+  // first (chainHiddenColumns) and its tables scroll sideways inside their own box with the strike column sticky.
   option_seller: {
     name: "Option seller",
     description: "Your watchlist, the chart and the option chain side by side; positions, orders and alerts below, with your basket beside them.",
-    panels: [p("watchlist", 0, 0, 3, 12), p("chart-1", 3, 0, 4, 12), p("chain", 7, 0, 5, 12), p("positions", 0, 12, 9, 8), p("basket", 9, 12, 3, 8),
+    panels: [p("watchlist", 0, 0, 3, 12), p("chart-1", 3, 0, 5, 12), p("chain", 8, 0, 4, 12), p("positions", 0, 12, 9, 8), p("basket", 9, 12, 3, 8),
       p("order", 0, 20, 4, 11, false), p("orders", 8, 20, 4, 7, false), p("bots", 0, 31, 6, 6, false), p("payoff", 6, 31, 6, 6, false)],
   },
   // Owner 13 Nov: "Option buyer" - the same row of watchlist · chart · chain (the chain keeps 5 columns, so IV and OI

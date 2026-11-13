@@ -79,7 +79,7 @@ describe("opposite OI move alert", () => {
     const html = renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={{ ...liveChain(), expiry: "2026-11-13" }}
       state={{ banner: null, history, loaded: true }} interval={5} onInterval={noop} now={Date.parse("2026-11-11T05:00:00Z")} bell={<i data-bell />} />);
     expect(html.match(/data-history-opposite/g)?.length).toBe(1);
-    expect(text(html)).toContain("Opposite OI move: Call +12.40 L · Put −8.10 L");
+    expect(text(html)).toContain("Opposite OI move: Call +12.40 · Put −8.10");   // the unit once, above the table (#1055)
     expect(html).toContain("data-bell");
   });
 });

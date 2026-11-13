@@ -5,8 +5,8 @@
  * - ATP's own 12-column grid (no grid library, TT-17): a panel sits at column `x`, row `y`, `w` columns wide and `h` rows
  *   high. Open panels never overlap and always fit inside the 12 columns; a move or resize that would break either is
  *   refused (the panel stays where it was).
- * - Three presets in code ("Option seller" - the default for a new user, owner decision T-D1 -, "Quick trade" and
- *   "Multi-chart"), never stored, so "Reset" needs no server.
+ * - Four presets in code ("Option seller" - the default for a new user, owner decision T-D1 -, "Option buyer",
+ *   "Quick trade" and "Multi-chart"), never stored, so "Reset" needs no server.
  * - Up to MAX_LAYOUTS of the user's own layouts, stored on the server per user (prefs namespace `terminal`, backend
  *   app/me/prefs.py TerminalPrefs - the same limits): save, save as, rename, delete, switch, reset to the preset.
  */
@@ -20,7 +20,7 @@ export const NAMESPACE = "terminal";
 export const NAME_RULE = /^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$/;
 
 export type PanelId = "watchlist" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chain" | "order" | "positions" | "orders" | "basket" | "bots" | "payoff";
-export type PresetId = "option_seller" | "quick_trade" | "multi_chart";
+export type PresetId = "option_seller" | "option_buyer" | "quick_trade" | "multi_chart";
 
 export interface PanelPlace {
   id: PanelId;
@@ -94,6 +94,15 @@ export const PRESETS: Record<PresetId, { name: string; description: string; pane
     panels: [p("watchlist", 0, 0, 3, 12), p("chart-1", 3, 0, 4, 12), p("chain", 7, 0, 5, 12), p("positions", 0, 12, 9, 8), p("basket", 9, 12, 3, 8),
       p("order", 0, 20, 4, 11, false), p("orders", 8, 20, 4, 7, false), p("bots", 0, 31, 6, 6, false), p("payoff", 6, 31, 6, 6, false)],
   },
+  // Owner 13 Nov: "Option buyer" - the same row of watchlist · chart · chain (the chain keeps 5 columns, so IV and OI
+  // change stay on screen), then positions, orders and alerts with a wider basket beside them for the debit structures
+  // (its Ready strategies list shows the option-buying ones first: src/fno/basketModel.ts strategiesFor).
+  option_buyer: {
+    name: "Option buyer",
+    description: "Your watchlist, the chart and the option chain side by side; positions, orders and alerts below, with a wider basket for option-buying strategies.",
+    panels: [p("watchlist", 0, 0, 3, 12), p("chart-1", 3, 0, 4, 12), p("chain", 7, 0, 5, 12), p("positions", 0, 12, 8, 9), p("basket", 8, 12, 4, 9),
+      p("order", 0, 21, 4, 11, false), p("orders", 8, 21, 4, 7, false), p("bots", 0, 32, 6, 6, false), p("payoff", 6, 32, 6, 6, false)],
+  },
   quick_trade: {
     name: "Quick trade",
     description: "Your watchlist, the option chain and the order panel beside it; positions, orders and alerts below.",
@@ -109,7 +118,7 @@ export const PRESETS: Record<PresetId, { name: string; description: string; pane
   },
 };
 
-export const PRESET_IDS: readonly PresetId[] = ["option_seller", "quick_trade", "multi_chart"];
+export const PRESET_IDS: readonly PresetId[] = ["option_seller", "option_buyer", "quick_trade", "multi_chart"];
 export const DEFAULT_PRESET: PresetId = "option_seller";
 
 export const isPreset = (key: string | null | undefined): key is PresetId => !!key && (PRESET_IDS as readonly string[]).includes(key);
@@ -351,6 +360,52 @@ export function resizeAcrossEdge(panels: readonly PanelPlace[], g: Gutter, delta
     if (limitOf(next, ids, g.axis) === null) return { panels: next, moved: k, limit: k === d ? null : limitOf(apply(k + sign), ids, g.axis) };
   }
   return { panels: [...panels], moved: 0, limit: limitOf(apply(sign), ids, g.axis) };
+}
+
+/**
+ * Owner bug 13 Nov (panels do not resize by dragging): the corner (and Shift + the arrow keys) asks for a `w` x `h`
+ * panel. Before, `resizePanel` refused the whole step as soon as a neighbour was in the way - in the Option seller layout
+ * every panel touches one, so dragging a corner did nothing. Now, per axis: when a neighbour shares the panel's right
+ * (or bottom) edge, that line moves as a gutter drag does (the neighbour gives or takes the space, down to its minimum);
+ * with no neighbour there, the panel grows or shrinks into the free space. A step that does not fully fit stops at the
+ * largest one that does and `limit` says why (T4-2).
+ */
+export function resizeFromCorner(panels: readonly PanelPlace[], id: PanelId, w: number, h: number): SizeResult {
+  const q0 = panels.find((x) => x.id === id && x.open);
+  if (!q0) return { panels: [...panels], moved: 0, limit: null };
+  let now: PanelPlace[] = [...panels];
+  let moved = 0;
+  let limit: SizeLimit | null = null;
+  for (const axis of ["x", "y"] as const) {
+    const q = now.find((x) => x.id === id)!;
+    const want = Math.round(axis === "x" ? w : h);
+    const delta = want - sizeOf(q, axis);
+    if (delta === 0) continue;
+    const far = gutters(now).find((g) => g.axis === axis && g.before.includes(id));
+    if (far) {
+      const r = resizeAcrossEdge(now, far, delta);
+      now = r.panels;
+      moved += Math.abs(r.moved);
+      limit = limit ?? r.limit;
+      continue;
+    }
+    const info = PANELS[id];
+    const min = axis === "x" ? info.minW : info.minH;
+    const max = axis === "x" ? COLUMNS - q.x : Math.min(MAX_HEIGHT, ROWS - q.y);
+    const target = Math.max(min, Math.min(max, want));
+    let applied = 0;
+    for (let k = target - sizeOf(q, axis); k !== 0; k -= Math.sign(k)) {
+      const next = resizePanel(now, id, axis === "x" ? q.w + k : q.w, axis === "y" ? q.h + k : q.h);
+      if (next) { now = next; applied = k; break; }
+    }
+    moved += Math.abs(applied);
+    if (applied !== delta) {
+      limit = limit ?? (want < min ? { kind: "min", panel: id, text: minText(id, axis) }
+        : axis === "y" && want > MAX_HEIGHT ? { kind: "max", panel: id, text: maxText(id) }
+        : want > max ? { kind: "edge", panel: id, text: EDGE_TEXT } : { kind: "blocked", panel: id, text: BLOCKED_TEXT });
+    }
+  }
+  return { panels: now, moved, limit };
 }
 
 /**

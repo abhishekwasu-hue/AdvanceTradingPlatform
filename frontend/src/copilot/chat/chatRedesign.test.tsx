@@ -11,7 +11,7 @@ import { ChatView } from "./CopilotChatV2";
 import chatSource from "./CopilotChatV2.tsx?raw";
 import { FACTS_UNAVAILABLE, focusKind, positionFocus, symbolFocus } from "./focus";
 import focusSource from "./focus.ts?raw";
-import { asOfText, marketPills } from "./MarketLineV2";
+import { asOfText, marketPills, MarketLineV2 } from "./MarketLineV2";
 import type { ChatAnswer, ChatHome } from "./model";
 import { newlySettled, shouldJump, showJump } from "./useChatScroll";
 
@@ -89,6 +89,8 @@ describe("owner 13 Nov: auto-scroll", () => {
     expect(showJump(false, 3)).toBe(true);
     expect(showJump(true, 3)).toBe(false);
     expect(showJump(false, 0)).toBe(false);
+    expect(showJump(false, 3, false)).toBe(false);                               // the screen moved, not he
+    expect(chatSource).toContain("showJump(scroll.atLatest, turns.length, scroll.scrolledByHim)");
   });
 });
 
@@ -101,6 +103,12 @@ describe("owner 13 Nov: a missing value is hidden, a stale one says when", () =>
     const strip = html.slice(html.indexOf("data-numbers-strip"), html.indexOf("data-details"));
     expect(text(strip)).not.toContain("–");
     expect(strip).not.toContain("data-fii-net");                                   // FII net not known: left out
+  });
+
+  it("M86 D3: with no broker the one connect button sits inside the numbers strip", () => {
+    const html = render(<MarketLineV2 strip={{ status: "ok", data: STRIP }} fii={null} nowMs={0} startFolded={false} connect />);
+    expect(html.match(/data-connect-live/g)).toHaveLength(1);
+    expect(render(<MarketLineV2 strip={{ status: "ok", data: STRIP }} fii={null} nowMs={0} startFolded={false} />)).not.toContain("data-connect-live");
   });
 
   it("a live price has no 'as of'; a remembered level its time; the last close its date", () => {

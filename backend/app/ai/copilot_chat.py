@@ -309,13 +309,40 @@ def exchange_of(symbol: str) -> str:
     return INDEX_EXCHANGE.get((symbol or "").strip().upper(), "NSE")
 
 
-def timeframe_in(message: str) -> str:
+# Owner 13 Nov ("analysis daily bar varcha yete; timeframe nivadlya nusar analysis yayla pahije"): a chart read follows the
+# timeframe the user selected - the one his question names, else the chart he asked from (set by the chat route for one
+# request, like CONTEXT_SYMBOL), else daily, and the answer then says daily was used (`timeframe_note`).
+CONTEXT_TIMEFRAME: ContextVar[str | None] = ContextVar("copilot_context_timeframe", default=None)
+READ_TIMEFRAMES = ("15m", "1h", "1d")                        # the timeframes get_chart_structure reads
+_PAGE_TF = {"15m": "15m", "15min": "15m", "1h": "1h", "60m": "1h", "60min": "1h", "1d": "1d", "day": "1d", "d": "1d", "daily": "1d"}
+
+
+def context_timeframe(raw: Any) -> str | None:
+    """The page's chart timeframe ("15min", "60min", "day", ...) as a read timeframe; None when it is not one."""
+    return _PAGE_TF.get(str(raw or "").strip().lower())
+
+
+def timeframe_named(message: str) -> str | None:
     q = _norm(message)
     if re.search(r"\b15 ?(m|min|mins|minute|minutes)\b|\b15-minute\b", q):
         return "15m"
     if re.search(r"\b(1 ?h|hourly|1-hour|60 ?(m|min))\b|\bhour\b", q):
         return "1h"
-    return "1d"
+    if re.search(r"\b(1 ?d|daily|day chart|daily chart)\b", q):
+        return "1d"
+    return None
+
+
+def timeframe_in(message: str) -> str:
+    """The timeframe a chart read uses: the one the message names, else the open chart's, else daily."""
+    return timeframe_named(message) or CONTEXT_TIMEFRAME.get() or "1d"
+
+
+def timeframe_note(message: str) -> str | None:
+    """The line an answer adds when it read daily only because no timeframe was selected (never silently daily)."""
+    if timeframe_named(message) or CONTEXT_TIMEFRAME.get():
+        return None
+    return "Read on the daily chart: no timeframe was selected. Open a chart or name one (15m, 1h) to read that timeframe."
 
 
 def lots_in(message: str) -> Optional[int]:
@@ -675,14 +702,29 @@ def _structure_table(symbol: str, res: ToolResult) -> Optional[Dict[str, Any]]:
                   "last": last(r)} for r in rows]}}
 
 
+def zones_live(zones: ToolResult) -> dict[str, Any] | None:
+    """The live price the zones tool read the roles at (market open), as `_live_fields` takes it; None otherwise."""
+    d = (zones.data or {}) if zones.ok else {}
+    return {"price": d["price"], "at": d.get("price_at")} if d.get("price_source") == "live" and isinstance(d.get("price"), (int, float)) else None
+
+
 def _zone_lines(res: ToolResult) -> List[str]:
+    """One line per area: its side (role at the tool's price), the range - or the one price of a line level (low = high,
+    owner 13 Nov) - its kind, timeframe, state and touches; a higher timeframe's area is marked as context."""
     if not res.ok:
         return []
+    d = res.data or {}
     out = []
-    for b in (res.data or {}).get("bands") or []:
+    for b in [*(d.get("bands") or []), *(d.get("context_bands") or [])]:
+        if not isinstance(b.get("low"), (int, float)) or not isinstance(b.get("high"), (int, float)):
+            continue
         what = str(b.get("zone_type") or b.get("family") or "zone").replace("_", " ").lower()
-        out.append(f"{str(b.get('role') or '').capitalize()} area {_f(b['low'])} - {_f(b['high'])} ({what}, {b.get('state')}"
-                   + (f", {b['touches']} {'touch' if b.get('touches') == 1 else 'touches'}" if b.get("touches") else "") + ")")
+        line = b.get("kind") == "line" or b["low"] == b["high"]
+        where = f"level {_f(b['low'])}" if line else f"area {_f(b['low'])} - {_f(b['high'])}"
+        tf_word = f", {b['timeframe']}" if b.get("timeframe") else ""
+        ctx = f" - {b['timeframe']} context" if b.get("context") and b.get("timeframe") else ""
+        out.append(f"{str(b.get('role') or '').capitalize()} {where} ({what}{tf_word}, {b.get('state')}"
+                   + (f", {b['touches']} {'touch' if b.get('touches') == 1 else 'touches'}" if b.get("touches") else "") + f"){ctx}")
     return out
 
 
@@ -822,6 +864,30 @@ def _text_or_none(v: Any) -> Optional[str]:
     return v.strip() if isinstance(v, str) and v.strip() else None
 
 
+def read_bands(bands: Sequence[dict[str, Any]], price: float, tf: str | None = None) -> list[dict[str, Any]]:
+    """The bands of the read: those of timeframe `tf` (a band without a timeframe counts as the read's; None = all),
+    each with its role read at `price` - Trade's compute_current_role (`chart.role_at`): the mid above the price is
+    supply (a seller area), else demand, whatever the zone's origin. Pure."""
+    from app.price_action.zones.chart import role_at
+    out = []
+    for b in bands:
+        low, high = b.get("low"), b.get("high")
+        if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+            continue
+        if tf is not None and b.get("timeframe") not in (None, "", tf) and not b.get("context"):
+            continue
+        out.append({**b, "role": role_at({"zone_low": low, "zone_high": high}, price) if price > 0 else b.get("role")})
+    return out
+
+
+def _zone_bands(zones: ToolResult, price: Any, tf: str | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(the read timeframe's bands, the higher timeframes' context bands), roles at `price`."""
+    if not zones.ok or not isinstance(price, (int, float)) or price <= 0:
+        return [], []
+    d = zones.data or {}
+    return read_bands(d.get("bands") or [], float(price), tf), read_bands(d.get("context_bands") or [], float(price))
+
+
 def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
     """The stored area closest to the price: its side, from - to, its timeframe and state (M78), and how far the price is from its near edge (0 inside),
     in points and in percent of the price, with where the area sits ("below", "above", "inside"). Pure."""
@@ -837,6 +903,7 @@ def nearest_area(price: float, bands: Sequence[dict[str, Any]]) -> dict[str, Any
             side = {"bullish": "demand", "bearish": "supply"}.get(_role_side(b.get("role")) or "")
             best = (gap, {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2),
                           "distance_pct": round(gap / price * 100, 2) if price else None,
+                          "kind": "line" if b.get("kind") == "line" or low == high else "band",
                           # M78 (F3): the area's own timeframe and state as stored (None when the band has none), so
                           # the answer chart labels it like the Charts tab ("Seller area · 1d · fresh")
                           "timeframe": _text_or_none(b.get("timeframe")), "state": _text_or_none(b.get("state"))})
@@ -865,12 +932,15 @@ def chart_headline(symbol: str, tf: str, res: ToolResult, zones: ToolResult, liv
     # COP-2 C (owner 11 Nov): the same trend word as the structure card ("up (weak)" -> up, weak); not known only when
     # the direction is none / empty or the history is short.
     trend, weak = _card_trend(raw) if raw and not (row or {}).get("short") else (None, False)
-    bands = (zones.data or {}).get("bands") or [] if zones.ok else []
     extra = _live_fields(live)
     # DATA-FIX D1: where the price is against the area is said from the live price when there is one (the reading
-    # itself - trend, areas, breaks - stays on closed bars).
+    # itself - trend, areas, breaks - stays on closed bars). Owner 13 Nov: the area's role too (Trade: role by the LTP),
+    # and only the read timeframe's own areas (M98 T1).
     ref = extra["live_price"] if extra["live_price"] is not None else price
-    area = nearest_area(float(ref), bands) if isinstance(ref, (int, float)) and ref > 0 else None
+    own, _ = _zone_bands(zones, ref, tf)
+    area = nearest_area(float(ref), own) if isinstance(ref, (int, float)) and ref > 0 else None
+    if area is not None:
+        area["as_of"] = (zones.data or {}).get("as_of")        # the area's state is read on closed bars up to this time
     label = "Provisional close" if oc.get("provisional") and oc.get("close") is not None else "Last close"
     return {"symbol": symbol, "price": price, "price_label": label, **extra, "as_of": oc.get("date") or d.get("as_of"),
             "trend": trend, "weak": bool(weak and trend), "timeframe": TF_LABELS.get(tf, tf), "area": area,
@@ -899,7 +969,26 @@ def _card_side(role: Any) -> str | None:
     return {"bullish": "demand", "bearish": "supply"}.get(_role_side(role) or "")
 
 
-def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> dict[str, Any] | None:
+def _card_item(b: dict[str, Any], price: float) -> tuple[bool, dict[str, Any]]:
+    """(goes above, the card's area item) for one band at `price` (its role already read at that price)."""
+    low, high = min(b["low"], b["high"]), max(b["low"], b["high"])
+    side = _card_side(b.get("role"))
+    if low <= price <= high:
+        where, gap = "inside", 0.0
+    elif high < price:
+        where, gap = "below", price - high
+    else:
+        where, gap = "above", low - price
+    item = {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2),
+            # owner 13 Nov: a line (S/R level, low = high) is one price, never a "from - to" range; the timeframe and
+            # the state (closed bars) label the area; `context` = a higher timeframe's area added to the read
+            "kind": "line" if b.get("kind") == "line" or low == high else "band",
+            "timeframe": _text_or_none(b.get("timeframe")), "state": _text_or_none(b.get("state")), "context": bool(b.get("context"))}
+    # an area the price is inside sits with its own side: a buyer area under the price, a seller area over it
+    return where == "above" or (where == "inside" and side == "supply"), item
+
+
+def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult, live: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """M59 CR-1: the chart reader's structure answer as data for a card - per timeframe (Weekly, Daily, 1-hour,
     15-minute; always all four, in that order) the trend word, weak or not, the protected level and the last break, or
     `ready: false` when that timeframe's history is not stored yet (the card says "data not ready", never a bar count);
@@ -928,32 +1017,27 @@ def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult) -> 
                            "protected": r.get("protected") if isinstance(r.get("protected"), (int, float)) else None, "last_break": last})
     above: list[dict[str, Any]] = []
     below: list[dict[str, Any]] = []
-    if zones.ok and isinstance(price, (int, float)) and price > 0:
-        for b in (zones.data or {}).get("bands") or []:
-            low, high = b.get("low"), b.get("high")
-            if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
-                continue
-            low, high = min(low, high), max(low, high)
-            side = _card_side(b.get("role"))
-            if low <= price <= high:
-                where, gap = "inside", 0.0
-            elif high < price:
-                where, gap = "below", price - high
-            else:
-                where, gap = "above", low - price
-            item = {"side": side, "from": float(low), "to": float(high), "where": where, "distance": round(gap, 2)}
-            # an area the price is inside sits with its own side: a buyer area under the price, a seller area over it
-            goes_above = where == "above" or (where == "inside" and side == "supply")
-            (above if goes_above else below).append(item)
-    above.sort(key=lambda a: a["distance"])
-    below.sort(key=lambda a: a["distance"])
+    extra = _live_fields(live)
+    # owner 13 Nov: roles and distances at the live price while the market is open (Trade: role by the LTP), else at the
+    # last close; the read timeframe's own areas first, then the higher timeframes' as labelled context
+    ref = extra["live_price"] if extra["live_price"] is not None else price
+    own, context = _zone_bands(zones, ref, tf)
+    for group in (own, context):
+        up: list[dict[str, Any]] = []
+        down: list[dict[str, Any]] = []
+        for b in group:
+            goes_above, item = _card_item(b, float(ref))
+            (up if goes_above else down).append(item)
+        above += sorted(up, key=lambda a: a["distance"])[:CARD_MAX_AREAS if group is own else 1]
+        below += sorted(down, key=lambda a: a["distance"])[:CARD_MAX_AREAS if group is own else 1]
     levels = [{"side": SWING_SIDE.get(str(lv.get("kind") or "").lower()), "price": lv["price"]} for lv in d.get("levels") or []
               if isinstance(lv.get("price"), (int, float))]
     asked = next((t for t in timeframes if t["tf"] == tf), None)
     watch = (None if not any(t["ready"] for t in timeframes) and not above and not below
              else WATCH_LINE.format(tf=TF_LABELS.get(tf, tf).lower()) if asked and asked["protected"] is not None else WATCH_NO_LEVEL)
     return {"symbol": symbol, "price": price if isinstance(price, (int, float)) else None, "timeframe": TF_LABELS.get(tf, tf),
-            "timeframes": timeframes, "areas_above": above[:CARD_MAX_AREAS], "areas_below": below[:CARD_MAX_AREAS],
+            **extra, "areas_as_of": (zones.data or {}).get("as_of") if zones.ok else None,
+            "timeframes": timeframes, "areas_above": above, "areas_below": below,
             "swing_levels": levels, "watch": watch}
 
 
@@ -961,8 +1045,10 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
     symbol, tf = symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf},
                       ("last_close", "official_close.close"))
-    price = (res.data or {}).get("last_close") if res.ok else None
-    zones = await _call(answer, run, "get_market_zones", f"{symbol} market zones", {"symbol": symbol, **({"price": price} if price else {})}, ("price",))
+    # owner 13 Nov: no reference price is passed - the zones tool reads the roles at the live price while the market is
+    # open (Trade: role by the LTP), else at the last close; and only the read timeframe's areas (+ higher as context)
+    zones = await _call(answer, run, "get_market_zones", f"{symbol} market zones ({TF_LABELS.get(tf, tf).lower()})",
+                        {"symbol": symbol, "timeframe": tf}, ("price",))
     answer.notes.append(CHART_NOTE)
     if res.ok:
         d = res.data
@@ -974,7 +1060,7 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         elif state.get("direction"):
             head += f" On the {TF_LABELS.get(tf, tf).lower()} chart the structure reads {state['direction']}"
             head += f", protected level {_f(state['protected'])}." if state.get("protected") is not None else "."
-        answer.summary = [head]
+        answer.summary = [head, *([note] if (note := timeframe_note(message)) else [])]
         answer.section("Structure per timeframe", _structure_lines(symbol, res))
         table = _structure_table(symbol, res)
         if table:
@@ -1002,8 +1088,9 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
             answer.section("Supply & Demand zones", lines)
         elif sd.ok:
             answer.unknowns.append(f"I don't see a fresh or tested supply / demand zone on the {TF_LABELS.get(tf, tf).lower()} {symbol} chart now.")
-    answer.headline = chart_headline(symbol, tf, res, zones)
-    answer.structure_card = structure_card(symbol, tf, res, zones)
+    live = zones_live(zones)
+    answer.headline = chart_headline(symbol, tf, res, zones, live)
+    answer.structure_card = structure_card(symbol, tf, res, zones, live)
     answer.section("What to watch", ["Whether the protected level holds or breaks on a closed bar.",
                                      "How the price behaves when it reaches one of the key areas above."] if res.ok else [])
 
@@ -1202,7 +1289,10 @@ def _role_side(role: Any) -> Optional[str]:
 
 
 def _band_text(b: Dict[str, Any]) -> str:
-    return f"{str(b.get('role') or 'zone').lower()} area {_f(b['low'])} - {_f(b['high'])} ({b.get('state')})"
+    role = str(b.get('role') or 'zone').lower()
+    if b.get("kind") == "line" or b.get("low") == b.get("high"):          # owner 13 Nov: a line level is one price
+        return f"{role} level {_f(b['low'])} ({b.get('state')})"
+    return f"{role} area {_f(b['low'])} - {_f(b['high'])} ({b.get('state')})"
 
 
 def _band_at(bands: Sequence[Dict[str, Any]], price: float) -> Optional[Dict[str, Any]]:
@@ -1345,17 +1435,33 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
     idea, symbol, tf = read_idea(message), symbol_in(message), timeframe_in(message)
     res = await _call(answer, run, "get_chart_structure", f"{symbol} structure per timeframe", {"symbol": symbol, "timeframe": tf}, ("last_close",))
     # Owner 13 Nov: "the price" of the idea is the live / last traded price with its time, never the last daily close
-    # passed off as current; with no quote the last close is said as such, with its date (DATA-FIX D1's rule: the
-    # reading stays on closed bars, where the price sits against an area is said from the live price).
+    # passed off as current; with no quote the last close is said as such, with its date.
     from app.ai.tools.copilot import INDEX_NAMES
     quote = await _call(answer, run, "get_quote", f"{symbol} live price", {"symbol": INDEX_NAMES.get(symbol, symbol), "exchange": exchange_of(symbol)},
                         ("ltp",))
     answer.worked[-1].args = {**answer.worked[-1].args, "symbol": symbol}     # one symbol read ("NIFTY"), not two spellings
     now_price = _quoted(answer, quote)
     close = _last_close(res)
-    price = idea.entry or (now_price[0] if now_price else close[0] if close else None)
-    zones = await _call(answer, run, "get_market_zones", f"{symbol} market zones", {"symbol": symbol, **({"price": price} if price else {})},
-                        ("price",))
+    # owner 13 Nov: the areas of the chosen timeframe (higher ones as context), roles at his entry when he states one,
+    # else at the live price while the market is open (Trade: role by the LTP), else at the last close
+    zones = await _call(answer, run, "get_market_zones", f"{symbol} market zones ({TF_LABELS.get(tf, tf).lower()})",
+                        {"symbol": symbol, "timeframe": tf, **({"price": idea.entry} if idea.entry else {})}, ("price",))
+    # The price the area is said from: his entry; else the zone tool's live price; else the quote (with its time); else
+    # the zone tool's price or the last close, said as the last close with its date.
+    zone_price = (zones.data or {}).get("price") if zones.ok else None
+    price: Optional[float]
+    if idea.entry:
+        price, price_words = idea.entry, f"Your entry {_f(idea.entry)}"
+    elif zone_price and zones_live(zones):
+        price, price_words = zone_price, f"The live price {_f(zone_price)}"
+    elif now_price:
+        price, price_words = now_price[0], f"The price {_f(now_price[0])} at {now_price[1]}"
+    elif zone_price or close:
+        price = zone_price if zone_price else close[0] if close else None
+        when = close[1] if close is not None and close[1] and float(price or 0) == close[0] else ""
+        price_words = f"The last close {_f(price)}" + (f" ({when})" if when else "")
+    else:
+        price, price_words = None, ""
     risk = await _call(answer, run, "get_risk_limits", "Your own risk settings", {}, ("capital", "risk_per_trade_pct", "lot_size", "min_risk_reward"))
     ctx = await _call(answer, run, "get_market_context", "This week's events", {})
     answer.notes.append(CHART_NOTE)
@@ -1385,8 +1491,7 @@ async def trade_check(answer: Answer, run: Runner, message: str) -> None:
     bands = (zones.data or {}).get("bands") or [] if zones.ok else []
     if zones.ok and price:
         at = _band_at(bands, float(price))
-        what = (f"Your entry {_f(idea.entry)}" if idea.entry else f"The price {_f(price)} at {now_price[1]}" if now_price
-                else f"The last close {_f(price)}" + (f" ({close[1]})" if close and close[1] else ""))
+        what = price_words
         if at:
             side = _role_side(at.get("role"))
             fit = "" if idea.side is None or side is None else (": an area on your side" if side == idea.side else ": an area against your side")

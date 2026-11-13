@@ -231,6 +231,13 @@ export function daysText(days: number | null | undefined): string {
   return days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
 }
 
+/** Owner bug 13 Nov: the server's days to expiry are TRADING days (B3), so ATP's own labels say so ("2 trading days");
+ * the Trade OI banner keeps Trade's own calendar-day sentence (M96, AS IS). */
+export function tradingDaysText(days: number | null | undefined): string {
+  if (typeof days !== "number" || !Number.isFinite(days) || days < 0) return EMPTY;
+  return days === 0 ? "Today" : days === 1 ? "1 trading day" : `${days} trading days`;
+}
+
 /** UX-5: the Symbol picker's rows - a deep-linked symbol outside the list first, then the indices, then the F&O stocks. */
 export function symbolOptions(extra: string | null): ComboOption[] {
   return [...(extra ? [{ value: extra, label: extra }] : []),

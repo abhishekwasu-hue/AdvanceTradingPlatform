@@ -140,7 +140,7 @@ describe("owner 8 Nov: a conversation already open", () => {
     // question and its typing dots), and brings the answer into view when it lands while he is at the latest.
     expect(chatSource).toMatch(/setTurns\(\(all\) => withTurn\(all, \{ id, question, answer: null, error: null, sentAt:/);
     expect(chatSource).toMatch(/const scroll = useChatScroll\(lastId\);/);
-    expect(chatSource).toContain("for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id);");
+    expect(chatSource).toContain("useLayoutEffect(() => { for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id); }, [turns, scroll]);");
   });
 });
 

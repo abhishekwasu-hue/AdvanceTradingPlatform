@@ -8,6 +8,7 @@ import { vixBand } from "../../dashboard/model";
 import type { MarketStrip, StripIndex } from "../../dashboard/types";
 import type { Loadable } from "../../dashboard/useDashboardData";
 import { Skeleton } from "../../components/primitives/Feedback";
+import { ConnectLiveButton } from "../../ui/ConnectLive";
 import { useCopilotT } from "../i18n";
 import { NUMBERS_INDICES } from "./model";
 
@@ -61,8 +62,10 @@ function readFolded(): boolean {
   try { return localStorage.getItem(STORE) === "1"; } catch { return false; }
 }
 
-export function MarketLineV2({ strip, fii, fiiAsOf, nowMs, startFolded }: {
+export function MarketLineV2({ strip, fii, fiiAsOf, nowMs, startFolded, connect = false }: {
   strip: Loadable<MarketStrip>; fii: number | null; fiiAsOf?: string | null; nowMs: number;
+  /** M86 D3: no broker stored - the prices are the last close; one in-place "connect for live prices" button here. */
+  connect?: boolean;
   /** A focused chat starts folded (the item comes first); the general chat as the person left it. */
   startFolded?: boolean;
 }) {
@@ -105,6 +108,7 @@ export function MarketLineV2({ strip, fii, fiiAsOf, nowMs, startFolded }: {
         )}
       </div>
       {!folded && strip.status === "error" && <p className="mt-space-1 text-t13 text-fg-muted">{t("chat.numbersError")}</p>}
+      {!folded && connect && <div className="mt-space-2"><ConnectLiveButton /></div>}
     </section>
   );
 }

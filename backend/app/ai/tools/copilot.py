@@ -50,13 +50,26 @@ class _NoArgs(BaseModel):
 class _ChartArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = SYMBOL
-    timeframe: Literal["15m", "1h", "1d"] = Field(default="1d", description="The chart timeframe the levels are read on")
+    # owner 13 Nov ("timeframe nivadlya nusar analysis"): omitted = the timeframe of the chart the user has open, else daily
+    timeframe: Literal["15m", "1h", "1d"] | None = Field(
+        default=None, description="The chart timeframe the levels are read on; omit for the chart the user has open")
 
 
 class _ZoneArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = SYMBOL
-    price: Optional[float] = Field(default=None, gt=0, description="The reference price; omit for the snapshot's last close")
+    price: Optional[float] = Field(default=None, gt=0,
+                                   description="The reference price; omit for the live price (market open), else the last close")
+    timeframe: Literal["15m", "1h", "1d"] | None = Field(
+        default=None, description="The chart timeframe whose areas are read (higher ones come as context); omit for the chart "
+                                  "the user has open")
+
+
+def read_timeframe(asked: str | None) -> str:
+    """The timeframe a chart read uses (owner 13 Nov): the one asked, else the chart the user has open, else daily (the
+    answer then says so - `copilot_chat.timeframe_note`)."""
+    from app.ai.copilot_chat import CONTEXT_TIMEFRAME
+    return asked or CONTEXT_TIMEFRAME.get() or "1d"
 
 
 class _ChainArgs(BaseModel):
@@ -158,16 +171,21 @@ async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
     """ATP's price-action layer on shared lake bars (and the reader's own stored history): the structure per timeframe
     (weekly, daily, 1-hour, 15-minute) with the protected level and the last break of structure, the nearest unbroken
     swing levels above and below, and the official last close with its date and source."""
+    from app.ai.copilot_chat import CONTEXT_TIMEFRAME
     from app.charts import price_action_layer as pal
     from app.context_panel.service import short_history
     from app.market_lake import own_bars
     key = lake_key(args.symbol)
     try:
-        layer = await pal.price_action_layer(instrument=key, tf=args.timeframe, at=None, start=None, degree=pal.DEFAULT_DEGREE, debug=False,
+        tf = read_timeframe(args.timeframe)
+        layer = await pal.price_action_layer(instrument=key, tf=tf, at=None, start=None, degree=pal.DEFAULT_DEGREE, debug=False,
                                              mtf=True, user=ctx.user, session=ctx.session)
     except HTTPException as exc:
         return _refused("price_action_layer", exc)
     data = summarise_structure(layer)
+    data["timeframe"] = tf                            # owner 13 Nov: the timeframe this read used (asked / open chart / daily)
+    if args.timeframe is None and tf == "1d" and not CONTEXT_TIMEFRAME.get():
+        data["timeframe_note"] = "Read on the daily chart: no timeframe was selected."      # never silently daily
     # DH6: the last close the Copilot states is the session's official close from the stored Daily bars, labelled -
     # never a strike, a chain's spot or a placeholder.
     data["official_close"] = await own_bars.official_close(ctx.session, key, await own_bars.scope_for(ctx.session, ctx.user, key))
@@ -178,25 +196,47 @@ async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
                       {"last_bar": data["as_of"]})
 
 
+def _band(b: dict[str, Any], context: bool = False) -> dict[str, Any]:
+    # `kind` "line": an S/R level (one price, low = high - Trade stores SUPPORT / RESISTANCE / DYNAMIC_SR the same way)
+    return {"role": b.get("role"), "zone_type": b.get("zone_type"), "family": b.get("family"), "kind": b.get("kind"), "low": b.get("low"),
+            "high": b.get("high"), "state": b.get("state"), "touches": b.get("touches"), "distance_pct": b.get("distance_pct"),
+            "timeframe": b.get("timeframe"), **({"context": True} if context else {})}
+
+
 def summarise_zones(layer: Dict[str, Any]) -> Dict[str, Any]:
-    bands = [{"role": b.get("role"), "zone_type": b.get("zone_type"), "family": b.get("family"), "low": b.get("low"), "high": b.get("high"),
-              "state": b.get("state"), "touches": b.get("touches"), "distance_pct": b.get("distance_pct"), "timeframe": b.get("timeframe")}
-             for b in (layer.get("bands") or [])[:MAX_BANDS]]
-    return {"instrument": layer.get("instrument"), "as_of": layer.get("as_of"), "price": layer.get("price"), "live_count": layer.get("live_count"),
-            "fallback": layer.get("fallback"), "reason": layer.get("reason"), "bands": bands}
+    bands = [_band(b) for b in (layer.get("bands") or [])[:MAX_BANDS]]
+    out = {"instrument": layer.get("instrument"), "as_of": layer.get("as_of"), "price": layer.get("price"), "price_source": layer.get("price_source"),
+           "live_count": layer.get("live_count"), "fallback": layer.get("fallback"), "reason": layer.get("reason"), "bands": bands}
+    if layer.get("timeframe"):
+        # owner 13 Nov (M98 T1): the bands are the read timeframe's own; higher timeframes only as labelled context
+        out.update(timeframe=layer["timeframe"], context_bands=[_band(b, True) for b in layer.get("context_bands") or []])
+    return out
 
 
 async def get_market_zones(ctx: ToolContext, args: _ZoneArgs) -> ToolResult:
-    """ATP's stored market zones (demand / supply, order blocks, S/R, gaps) nearest the price, with their state and touches."""
+    """ATP's stored market zones (demand / supply, order blocks, S/R, gaps) of one chart timeframe nearest the price (the
+    live price while the market is open), with their state and touches; the nearest higher-timeframe zones come as
+    labelled context (`context_bands`). Each zone's role (demand below the price, supply above) is read at that price."""
+    from app.ai import chart_answer
+    from app.ai.copilot_chat import exchange_of
     from app.charts import zones_layer as zl
     from app.price_action.zones import chart
     key = lake_key(args.symbol)
     try:
-        layer = await zl.market_zones_layer(instrument=key, at=None, price=args.price, family="all", max_bands=chart.MAX_BANDS,
-                                            user=ctx.user, session=ctx.session)
+        tf = read_timeframe(args.timeframe)
+        price, live = args.price, None
+        if price is None:
+            # owner 13 Nov (Trade market_zones.compute_current_role reads the role against the CURRENT LTP): while the
+            # market is open the roles and distances are measured from the live price, else from the last close
+            live = await chart_answer.live_price(ctx, args.symbol.upper(), exchange_of(args.symbol.upper()))
+            price = live["price"] if live else None
+        layer = await zl.market_zones_layer(instrument=key, at=None, price=price, family="all", max_bands=chart.MAX_BANDS,
+                                            timeframe=tf, user=ctx.user, session=ctx.session)
     except HTTPException as exc:
         return _refused("market_zones", exc)
     data = summarise_zones(layer)
+    if live is not None:
+        data.update(price_source="live", price_at=live.get("at"))
     if layer.get("as_of") is None:
         return ToolResult(False, None, None, "market_zones", error=layer.get("reason") or "no zones for this instrument")
     return ToolResult(True, {"symbol": args.symbol.upper(), **data}, data["as_of"], "market_zones", {"snapshot": data["as_of"]})
@@ -301,4 +341,4 @@ for _tool in (
 
 __all__ = ["get_market_context", "get_chart_structure", "get_market_zones", "get_sd_zones", "get_option_chain_analyses", "lake_key",
            "summarise_sd", "sd_overlay_on", "SD_OFF",
-           "summarise_context", "summarise_structure", "summarise_zones", "summarise_analyses"]
+           "summarise_context", "summarise_structure", "summarise_zones", "summarise_analyses", "read_timeframe"]

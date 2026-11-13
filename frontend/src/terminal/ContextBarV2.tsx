@@ -3,17 +3,17 @@ import { useId, useMemo, type ReactNode } from "react";
 import { usePolled, dataOf } from "../dashboard/useDashboardData";
 import { vixBand } from "../dashboard/model";
 import { api } from "../api/client";
-import { INDEX_SYMBOLS, STOCK_SYMBOLS, daysText, expiryComboOptions, formatStrike, symbolOptions } from "../optionChain/model";
+import { INDEX_SYMBOLS, STOCK_SYMBOLS, tradingDaysText, expiryComboOptions, formatStrike, symbolOptions } from "../optionChain/model";
 import { prevCloseOf, spotChange } from "../optionChain/spotChange";
 import type { OptionChainData } from "../optionChain/useOptionChain";
 import { Combobox } from "../ui/Combobox";
-import { formatNumber, formatPrice } from "../ui/format";
+import { formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { LevelChip } from "../ui/LevelChip";
 import { Signed } from "../ui/numbersFirst";
 import { cx } from "../components/primitives/cx";
-import type { TerminalSpot } from "./spot";
+import { spotAsOf, type TerminalSpot } from "./spot";
 
 /**
  * TERM-2 step 1 (owner 30 Oct, docs/design/TERM2.md): the Terminal's context bar - ONE active symbol + expiry for every
@@ -32,11 +32,16 @@ const STRIP_MS = 60_000;
 export const LINK_COLOUR = "rgb(var(--chart-ov-1))";
 
 /** The figures the bar shows, from the chain, the spot on screen and the Today strip. Pure. */
-export function contextFigures(chain: OptionChainData, spot: TerminalSpot | null, prevClose: number | null, vix: number | null) {
+export function contextFigures(chain: OptionChainData, spot: TerminalSpot | null, prevClose: number | null, vix: number | null, now: number = Date.now()) {
   const s = chain.live?.summary ?? null;
-  const ltp = spot && spot.source !== "chain" ? spot.ltp : s?.spot ?? null;
+  // Owner bug 13 Nov: the page's ONE spot (the newest of tick / LTP / chain - terminal/spot.ts), the chain's spot card shows
+  // the same; "as of <time>" once it is not current, so an old number never reads as live.
+  const ltp = spot ? spot.ltp : s?.spot ?? null;
+  const asOf = spotAsOf(spot ?? (s?.spot ? { ltp: s.spot, at: chain.live?.data_as_of ?? chain.live?.fetched_at ?? null, source: "chain" } : null),
+    chain.live?.market_open, now);
   return {
     spot: ltp,
+    spotAsOf: asOf,
     moved: spotChange(ltp, prevClose),
     pcr: s?.pcr_oi_atm ?? null,                    // M96: Trade's PCR over ATM ± 6 (the chain banner's, one definition)
     dte: s?.days_to_expiry ?? null,
@@ -97,13 +102,14 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
         <Figure name="spot" label="Spot">
           <span className="text-t16 font-semibold text-fg">{formatPrice(f.spot)}</span>
           {f.moved && <span className="ml-space-1"><Signed value={f.moved.pct} kind="pct" /></span>}
+          {f.spotAsOf && <span className="ml-space-1 text-t12 font-normal text-fg-muted" data-spot-as-of>as of {formatTimeIST(f.spotAsOf)}</span>}
         </Figure>
         <Figure name="vix" label="India VIX" term="india-vix">
           {f.vix ? <span className="inline-flex items-center gap-space-1"><span className="font-semibold text-fg">{formatNumber(f.vixValue, 2)}</span><LevelChip scale="vix" level={f.vix.level} /></span> : "–"}
         </Figure>
         <Figure name="pcr" label="PCR" term="pcr">{formatNumber(f.pcr, 2)}</Figure>
         <Figure name="atm" label="ATM" term="atm">{formatStrike(f.atm)}</Figure>
-        <Figure name="dte" label="Expiry in">{daysText(f.dte)}</Figure>
+        <Figure name="dte" label="Expiry in">{tradingDaysText(f.dte)}</Figure>
       </dl>
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
         className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-3 text-t12 font-bold tracking-wide",

@@ -3,12 +3,13 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { orderGroup, orderRowWords, statusWords, terminalApi, type TerminalStatus } from "./api";
 import {
-  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, changed, closePanel,
+  CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_PRESET, EMPTY_PREFS, MAX_LAYOUTS, HIDDEN_PANELS, PANELS, PANEL_IDS, PHONE_TABS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns, changed, closePanel,
+  isPreset,
   firstFree, forSave, layoutFor, layoutProblem, liftedY, movePanel, nameProblem, openPanel, presetLayout, readPrefs, readingOrder, remove, rename,
   resetToPreset, resizePanel, saveAs, saveOver, switchTo, type Layout, type TerminalPrefs,
 } from "./layoutModel";
 import { BasketPanelBodyV2, BotsViewV2, ChainPanelV2, OrdersPanelV2, PAYOFF_NEEDS_SPOT, PayoffViewV2, chainProblem, exitAllConfirmText, exitAllConsequence, exitAllPlan, legFigures } from "./PanelsV2";
-import { chartLiveOf, pickSpot } from "./spot";
+import { SPOT_AS_OF_AFTER_MS, TICK_FRESH_MS, chartLiveOf, freshTick, pickSpot, spotAsOf } from "./spot";
 import { SpreadBuilderV2, placementOrder, unhedgedSells } from "./SpreadBuilderV2";
 import embeddedSource from "../chart/EmbeddedChartV2.tsx?raw";
 import { TicketBody } from "../fno/OrderTicketV2";
@@ -31,6 +32,8 @@ import type { SignalFeedItem } from "../signals/feed";
 import type { PosLeg } from "../fno/positionInsights";
 import { heldSide, payoffScope } from "./payoffModel";
 import type { OptionChainData } from "../optionChain/useOptionChain";
+import { summaryCards } from "../optionChain/SummaryStripV2";
+import { foldLive } from "../chart/timeframes";
 import { strategyDisplayName } from "../ui/strategyName";
 import { formatPrice, formatTimeIST } from "../ui/format";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
@@ -55,9 +58,31 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, 
 const DEV = /\b(undefined|null|NaN|error:|exception|id=|T[1-9]\b|PAPER_|ui_v2|terminal_)\b/;
 const T = new Date("2026-10-24T10:00:00Z");
 
+describe("owner 13 Nov: the Option buyer ready layout", () => {
+  it("chart, the chain at 5 columns (IV and OI change on screen), positions & orders and a wider basket; Reset and Save as mine keep it", () => {
+    const l = presetLayout("option_buyer");
+    expect(l).toMatchObject({ name: "Option buyer", preset: "option_buyer", underlying: null });
+    const at = (id: string) => l.panels.find((p) => p.id === id);
+    expect(at("chain")).toMatchObject({ x: 7, y: 0, w: 5, open: true });
+    expect(chainHiddenColumns(at("chain")!.w)).toEqual([]);
+    expect(at("chart-1")).toMatchObject({ open: true });
+    expect(at("positions")).toMatchObject({ x: 0, w: 8, open: true });
+    expect(at("basket")).toMatchObject({ x: 8, w: 4, open: true });
+    expect(at("basket")!.w).toBeGreaterThan(PRESETS.option_seller.panels.find((p) => p.id === "basket")!.w);
+    expect(isPreset("option_buyer")).toBe(true);
+    const moved = { ...l, underlying: "BANKNIFTY", panels: l.panels.map((p) => (p.id === "basket" ? { ...p, open: false } : p)) };
+    expect(resetToPreset(moved)).toMatchObject({ preset: "option_buyer", underlying: "BANKNIFTY", panels: presetLayout("option_buyer").panels });
+    const mine = saveAs(EMPTY_PREFS, moved, "My buyer desk", "buy00001", T);
+    if ("error" in mine) throw new Error(mine.error);
+    expect(mine.prefs.layouts.buy00001).toMatchObject({ name: "My buyer desk", preset: "option_buyer" });
+    expect(readPrefs(mine.prefs).layouts.buy00001.preset).toBe("option_buyer");
+    expect(switchTo(EMPTY_PREFS, "option_buyer").active).toBe("option_buyer");
+  });
+});
+
 describe("layout model: presets", () => {
-  it("three presets, each valid on the 12-column grid; Option seller is the default (T-D1)", () => {
-    expect(PRESET_IDS).toEqual(["option_seller", "quick_trade", "multi_chart"]);
+  it("four presets, each valid on the 12-column grid; Option seller is the default (T-D1)", () => {
+    expect(PRESET_IDS).toEqual(["option_seller", "option_buyer", "quick_trade", "multi_chart"]);
     expect(DEFAULT_PRESET).toBe("option_seller");
     expect(activeKey(EMPTY_PREFS)).toBe("option_seller");
     for (const id of PRESET_IDS) {
@@ -69,6 +94,7 @@ describe("layout model: presets", () => {
     // TERM-2 step 3: chart | chain | basket, and chain | order - each above the one bottom panel (positions & orders).
     // UX-3 (PR 8): the watchlist docked left and open in every preset.
     expect(open("option_seller")).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
+    expect(open("option_buyer")).toEqual(["watchlist", "chart-1", "chain", "positions", "basket"]);
     expect(open("quick_trade")).toEqual(["watchlist", "chain", "order", "positions"]);
     expect(open("multi_chart")).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "positions"]);
     for (const id of PRESET_IDS) expect(presetLayout(id).panels.find((p) => p.id === "watchlist"), id).toMatchObject({ x: 0, y: 0, open: true });
@@ -516,7 +542,8 @@ describe("owner fixes T1-2 .. T1-7", () => {
     const html = renderToStaticMarkup(<MemoryRouter><ChainPanelV2 underlying="NIFTY" read={{ status: "ok", value: CHAIN }} trading={TRADING} spot={spot} /></MemoryRouter>);
     expect(html).toMatch(/<details data-details="terminal.chain"[\s\S]*Tap a price to buy, sell or add it to your basket\.[\s\S]*<\/details>/);
     expect(pageSource).toMatch(/useTerminalSpot\(/);
-    expect(pageSource).toMatch(/chartLiveOf\(spot\)/);
+    expect(pageSource).toMatch(/chartLiveOf\(spot, live\?\.market_open === true\)/);
+    expect(pageSource).toContain("areaMarks={areaMarks.size ? areaMarks : undefined} spot={spot}");         // the chain view shows the page's ONE spot
   });
 
   it("T1-4: the spread builder places the hedge (buy) first, then the sell; flags a sell with no hedge", () => {
@@ -607,6 +634,69 @@ describe("M63 I-5: Bots & signals and Payoff are built, so they are offered (R6:
     const read = readPrefs(stored);
     const panels = read.layouts.mine.panels;
     expect(panels.filter((x) => x.open).map((x) => x.id)).toEqual(["chart-1", "bots", "payoff"]);
+  });
+});
+
+describe("owner bug 13 Nov: one spot for the context bar, the chain and the chart", () => {
+  const at = (hhmmss: string) => `2026-11-13T${hhmmss}+05:30`;
+  const chainAt = (spot: number, when: string, open = true): LiveChain => ({ ...CHAIN, market_open: open, data_as_of: at(when), fetched_at: at(when),
+    summary: { ...CHAIN.summary, spot } });
+
+  it("a tick or quote older than the chain's newer spot never holds the spot (the screenshot: 25,168.70 vs 25,131.80)", () => {
+    const oldTick = { symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") };
+    const oldLtp = { ltp: 25168.7, timestamp: at("11:52:00"), fetched_at: at("12:05:10") };
+    const chain = chainAt(25131.8, "12:05:00");
+    expect(pickSpot(oldTick, null, chain)).toEqual({ ltp: 25131.8, at: at("12:05:00"), source: "chain" });
+    expect(pickSpot(undefined, oldLtp, chain)?.ltp).toBe(25131.8);
+    // a newer tick still wins over the chain (it is the newest read)
+    expect(pickSpot({ ...oldTick, ltp: 25130.5, ts: at("12:05:20") }, null, chain)).toMatchObject({ ltp: 25130.5, source: "tick" });
+    // an LTP the server flags stale is never used
+    expect(pickSpot(undefined, { ...oldLtp, timestamp: at("12:05:30"), stale: true }, chain)?.source).toBe("chain");
+  });
+
+  it("a tick this tab stopped hearing goes out (the LTP read comes back)", () => {
+    const tick = { symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") };
+    const now = Date.parse(at("12:05:00"));
+    expect(freshTick(tick, now - 5_000, now)).toBe(tick);
+    expect(freshTick(tick, now - TICK_FRESH_MS - 1, now)).toBeUndefined();
+    expect(freshTick(tick, undefined, now)).toBeUndefined();
+  });
+
+  it("the context bar and the chain's spot card show the SAME spot from one source", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const spot = pickSpot({ symbol: "NIFTY 50", exchange: "NSE", ltp: 25168.7, ts: at("11:52:00") }, null, chain);
+    const data = { expiries: null, expiry: "2026-10-27", setExpiry: () => undefined, loading: false, problem: null, live: chain } as unknown as OptionChainData;
+    const f = contextFigures(data, spot, 25299.35, 16.17, Date.parse(at("12:05:20")));
+    const card = summaryCards(chain.summary, chain.expiry, spot, 25299.35).find((c) => c.key === "spot");
+    expect(f.spot).toBe(25131.8);
+    expect(card?.num).toBe(25131.8);
+    expect(f.moved?.change).toBeCloseTo(-167.55);                          // the chain banner's own change
+    expect(f.spotAsOf).toBeNull();                                         // current: no "as of"
+  });
+
+  it("a spot that is not current says \"as of <time>\"; the closed market's spot too", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const data = { expiries: null, expiry: "2026-10-27", setExpiry: () => undefined, loading: false, problem: null, live: chain } as unknown as OptionChainData;
+    const spot = pickSpot(undefined, null, chain);
+    const later = Date.parse(at("12:05:00")) + SPOT_AS_OF_AFTER_MS + 1_000;
+    expect(contextFigures(data, spot, null, null, later).spotAsOf).toBe(at("12:05:00"));
+    expect(spotAsOf(spot, false, Date.parse(at("12:05:01")))).toBe(at("12:05:00"));
+    const html = renderToStaticMarkup(<MemoryRouter><ContextBarV2 symbol="NIFTY" onSymbol={() => undefined} chain={data} spot={spot} prevClose={null}
+      vix={null} mode={{ label: "Paper", title: "Practice" }} /></MemoryRouter>);
+    expect(html).toContain("data-spot-as-of");                             // the fixture's time is long past: labelled, never "live"
+  });
+
+  it("the chart's forming bar takes the one spot on EVERY timeframe while open; a closed chain's last close never moves it", () => {
+    const chain = chainAt(25131.8, "12:05:00");
+    const spot = pickSpot(undefined, null, chain);
+    const live = chartLiveOf(spot, true);
+    expect(live).toEqual({ ltp: 25131.8, timestamp: at("12:05:00"), fetched_at: at("12:05:00") });
+    expect(chartLiveOf(spot, false)).toBeNull();
+    const bar = (start: string, close: number) => ({ timestamp: at(start), open: close, high: close, low: close, close, volume: 0 });
+    for (const [tf, start] of [["1min", "12:05:00"], ["15min", "12:00:00"], ["60min", "11:15:00"]] as const) {
+      const out = foldLive([bar(start, 25146.7)], live?.ltp, live?.timestamp, tf);
+      expect(out[out.length - 1].close).toBe(25131.8);
+    }
   });
 });
 

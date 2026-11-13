@@ -206,7 +206,7 @@ describe("OC1 summary strip", () => {
     const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} />);
     const words = text(html);
     for (const part of ["Spot 24,480.00", "Futures 24,530.50 Expires 24 Nov", "ATM strike 24,500", "PCR (OI) 0.88",
-      "Max pain 24,500", "ATM IV 12.5%", "Days to expiry 7 days 3 Nov 2026"]) expect(words).toContain(part);
+      "Max pain 24,500", "ATM IV 12.5%", "Days to expiry 7 trading days 3 Nov 2026"]) expect(words).toContain(part);
     for (const term of ["PCR", "Max pain", "IV", "ATM", "Expiry"]) expect(html).toContain(`aria-label="What is ${term}?"`);
   });
 

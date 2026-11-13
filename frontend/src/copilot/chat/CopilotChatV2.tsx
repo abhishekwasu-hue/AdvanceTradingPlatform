@@ -11,7 +11,7 @@ import { Skeleton } from "../../components/primitives/Feedback";
 import { LevelChip } from "../../ui/LevelChip";
 import { Signed } from "../../ui/numbersFirst";
 import { EMPTY, formatPrice, formatTimeIST } from "../../ui/format";
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { useInPanel } from "../../inplace/inPanel";
 import { useAuth } from "../../auth/AuthContext";
@@ -329,7 +329,10 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
   const lastId = turns.length ? turns[turns.length - 1].id : null;
   const scroll = useChatScroll(lastId);
   const settledIds = useRef(new Set<number>());
-  useEffect(() => { for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id); }, [turns, scroll]);
+  // A layout effect: it runs before the browser paints the answer, so the "at the latest" reading it uses is the one
+  // from before the answer grew the conversation (an observer reading taken after the paint would say "not at the
+  // latest" and leave the answer out of view - a race the screen must not depend on).
+  useLayoutEffect(() => { for (const id of newlySettled(turns, settledIds.current)) scroll.reveal(id); }, [turns, scroll]);
   const docked = placement === "bottom" && !compact;
   const composer = <Composer draft={draft} busy={busy} placement={placement} onDraft={onDraft} onAsk={onAsk} onAttach={onAttach} docked
     placeholder={focus ? t("chat.focusPlaceholder") : placement === "bottom" || compact ? t("chat.placeholderShort") : home?.top_line} />;
@@ -391,9 +394,8 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
       {/* Owner 13 Nov: the market numbers as one compact, foldable line; a focused chat starts with it folded. */}
       {!compact && (
         <MarketLineV2 strip={strip} fii={home?.market_line.fii_net_crore ?? null} fiiAsOf={home?.market_line.fii_as_of ?? null} nowMs={Date.now()}
-          startFolded={focus ? true : undefined} />
+          startFolded={focus ? true : undefined} connect={noBroker} />
       )}
-      {!compact && !focus && noBroker && <ConnectLiveButton />}
 
       {/* CU2: every job and the older Copilot pages fold under one closed "Advanced" (nothing removed; each still opens). */}
       {!compact && !focus && <div data-tour="copilot-more"><Details id="copilot.chat.advanced" label="Advanced">
@@ -462,7 +464,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
           // -bottom-4 + its own bottom padding: a panel's scroll area keeps 1rem of padding under the sticky box, where
           // the conversation would otherwise show through below the input.
           : "sticky -bottom-4 z-10 -mx-space-1 space-y-space-2 border-t border-subtle bg-surface-1 px-space-1 pb-space-4 pt-space-2"}>
-        {showJump(scroll.atLatest, turns.length) && (
+        {showJump(scroll.atLatest, turns.length, scroll.scrolledByHim) && (
           <div className="pointer-events-none absolute inset-x-0 -top-space-12 flex justify-center">
             <button type="button" onClick={() => scroll.jump("smooth")} data-jump-latest
               className="pointer-events-auto inline-flex min-h-11 items-center md:min-h-9 gap-space-1 rounded-pill border border-border bg-surface-1 px-space-3 text-t13 font-medium text-fg shadow-raised hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

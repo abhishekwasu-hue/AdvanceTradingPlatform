@@ -39,7 +39,7 @@ def test_check_my_trade_reads_the_live_price_with_its_time_not_the_last_close():
     names = [c["tool"] for c in calls]
     assert names[:3] == ["get_chart_structure", "get_quote", "get_market_zones"]
     assert calls[1]["args"] == {"symbol": "NIFTY 50", "exchange": "NSE"}
-    assert calls[2]["args"]["price"] == 24560.25                         # the areas are measured from the live price
+    assert "price" not in calls[2]["args"]                                # #1051: the zone tool reads its own live price
     shown = _sections(out)
     assert shown["Price"] == [f"Price: 24,560.25 at {hhmm}"]
     assert shown["Area"][0].startswith(f"The price 24,560.25 at {hhmm} is inside the demand area")

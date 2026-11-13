@@ -8,6 +8,7 @@ import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
+import { strategiesFor } from "../fno/basketModel";
 import type { Side } from "../fno/api";
 import type { TicketTarget } from "../fno/ticketModel";
 import { readColumns, writeColumns, type ColumnPrefs } from "../optionChain/model";
@@ -233,14 +234,14 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         // breakevens and own spot stops; the extra charts of a saved multi-chart layout keep their own symbol.
         const main = id === "chart-1";
         return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
-          live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined}
+          live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot, live?.market_open === true) : undefined}
           levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined} />;
       }
       // Owner 9 Nov: the Terminal's chain IS the Option chain page (summary, futures / IV / expiry / OI walls, Chain · Charts ·
       // OI, analysis, Ask AI) on the Terminal's one symbol and its chain - the page itself, not a copy.
       case "chain": return <div data-terminal-chain data-symbol={underlying} data-expiry={live?.expiry ?? chain.expiry ?? ""}><OptionChainView symbol={underlying} onSymbol={setUnderlying} chain={chain}
         marketOpen={market.status?.sessions?.NSE?.is_open ?? null} prefs={columns} onPrefs={(next) => { setColumns(next); writeColumns(next); }}
-        onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} areaMarks={areaMarks.size ? areaMarks : undefined}
+        onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} areaMarks={areaMarks.size ? areaMarks : undefined} spot={spot}
         hide={place && !narrow ? chainHiddenColumns(place.w) : undefined}
         // M96 L1: the panel's title is the heading and the pickers fit it; on a phone the context bar above already shows
         // the spot, ATM, PCR and days to expiry, so the chain's banner does not repeat them.
@@ -257,7 +258,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       // TERM-2 step 2: the one basket (legs, payoff, max profit / loss, breakevens, PoP, margin with the hedge, his own
       // exits, one Place) - the server's one calculation, rendered once; the spread builder's own figures are gone.
       case "basket": return <BasketPanelV2 embedded open onClose={() => undefined} onPlaced={() => { afterOrder(); writePending(null); }} onNumbers={(n) => setBreakevens(n?.breakevens ?? null)}
-        chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
+        strategies={strategiesFor(working.preset)} chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       // UX-3: the Charts watchlist panel as it is; a row with options becomes the active symbol (on a phone: the Chart tab).
       case "watchlist": return <TerminalWatchlistV2 underlying={underlying} spotSymbol={spotSymbol} touch={narrow} liveTicks={features.on("data_hub")}
         onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} />;

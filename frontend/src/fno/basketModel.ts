@@ -30,8 +30,18 @@ export function legLabel(leg: Pick<BasketLeg, "underlying" | "expiry" | "strike"
 
 // --- one-tap ready strategies --------------------------------------------------------------------------------------
 
-export const STRATEGIES = ["Bull put spread", "Bear call spread", "Iron condor", "Straddle", "Strangle", "Calendar"] as const;
-export type StrategyName = (typeof STRATEGIES)[number];
+/** Every ready strategy the basket can build (payoff structures he picks; strikes and lots come from his choice). */
+export const READY_STRATEGIES = ["Bull put spread", "Bear call spread", "Iron condor", "Straddle", "Strangle", "Calendar",
+  "Long call", "Long put", "Bull call spread", "Bear put spread"] as const;
+export type StrategyName = (typeof READY_STRATEGIES)[number];
+
+/** The list shown in every layout but "Option buyer" (unchanged). */
+export const STRATEGIES: readonly StrategyName[] = ["Bull put spread", "Bear call spread", "Iron condor", "Straddle", "Strangle", "Calendar"];
+/** Owner 13 Nov: the "Option buyer" layout shows the option-buying (debit) structures only. */
+export const BUYER_STRATEGIES: readonly StrategyName[] = ["Long call", "Long put", "Bull call spread", "Bear put spread", "Straddle", "Strangle"];
+
+/** The ready strategies the basket offers in a Terminal layout (by its ready layout); anything else: the usual list. */
+export const strategiesFor = (preset: string | null | undefined): readonly StrategyName[] => (preset === "option_buyer" ? BUYER_STRATEGIES : STRATEGIES);
 
 export const STRATEGY_TEXT: Record<StrategyName, string> = {
   "Bull put spread": "Sell a put at the strike, buy a put lower",
@@ -40,6 +50,10 @@ export const STRATEGY_TEXT: Record<StrategyName, string> = {
   Straddle: "Buy a call and a put at the strike",
   Strangle: "Buy a call above and a put below",
   Calendar: "Sell this expiry's call, buy the next expiry's",
+  "Long call": "Buy a call at the strike",
+  "Long put": "Buy a put at the strike",
+  "Bull call spread": "Buy a call at the strike, sell a call higher",
+  "Bear put spread": "Buy a put at the strike, sell a put lower",
 };
 
 /** The strike step of a chain: the smallest gap between neighbouring strikes (null with fewer than two). */
@@ -83,6 +97,11 @@ const SHAPES: Record<StrategyName, Shape[]> = {
   Straddle: [{ side: "BUY", right: "CE", offset: 0 }, { side: "BUY", right: "PE", offset: 0 }],
   Strangle: [{ side: "BUY", right: "CE", offset: 1 }, { side: "BUY", right: "PE", offset: -1 }],
   Calendar: [{ side: "BUY", right: "CE", offset: 0, next: true }, { side: "SELL", right: "CE", offset: 0 }],
+  // The bought leg first (the hedge-first order, as options_builder/templates.py), the width from his own setting.
+  "Long call": [{ side: "BUY", right: "CE", offset: 0 }],
+  "Long put": [{ side: "BUY", right: "PE", offset: 0 }],
+  "Bull call spread": [{ side: "BUY", right: "CE", offset: 0 }, { side: "SELL", right: "CE", offset: 1 }],
+  "Bear put spread": [{ side: "BUY", right: "PE", offset: 0 }, { side: "SELL", right: "PE", offset: -1 }],
 };
 
 /** The legs of a ready strategy around `around`, `width_steps` strikes apart, with the chain's prices and IVs and the

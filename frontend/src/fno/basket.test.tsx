@@ -8,8 +8,8 @@ import { kiteFnoBasketLink, KITE_BASKET_URL } from "../proposals/brokerLinks";
 import type { BasketNumbers, BasketPreview, BasketResult } from "./api";
 import { BasketStore, MAX_LEGS, type BasketLeg, type NewLeg } from "./basket";
 import {
-  aboutMoney, basketAsk, basketProblems, builderHandoff, contractLabel, legsOf, payoffSentence, readyStrategy, remainingLegs, resultHeadline,
-  saveBaskets, savedOf, stopFor, strikeStep, type StrategyInputs,
+  aboutMoney, basketAsk, basketProblems, BUYER_STRATEGIES, builderHandoff, contractLabel, legsOf, payoffSentence, readyStrategy, remainingLegs, resultHeadline,
+  saveBaskets, savedOf, STRATEGIES, strategiesFor, stopFor, strikeStep, type StrategyInputs,
 } from "./basketModel";
 import { BasketBody, ConfirmView, ResultView, type BodyHandlers } from "./BasketPanelV2";
 import panelSource from "./BasketPanelV2.tsx?raw";
@@ -164,6 +164,39 @@ describe("FNO-2 basket: ready strategies from the chain on screen", () => {
     expect(readyStrategy("Calendar", inputs()).problem).toContain("next expiry");
     const cal = readyStrategy("Calendar", inputs({ next: { expiry: "2026-11-10", rows: chainRows() } }));
     expect(cal.legs.map((l) => [l.side, l.expiry, l.strike, l.right])).toEqual([["BUY", "2026-11-10", 24500, "CE"], ["SELL", EXPIRY, 24500, "CE"]]);
+  });
+
+  it("owner 13 Nov: the Option buyer layout lists the option-buying structures; every other layout keeps the usual list", () => {
+    expect(strategiesFor("option_buyer")).toEqual(["Long call", "Long put", "Bull call spread", "Bear put spread", "Straddle", "Strangle"]);
+    for (const preset of ["option_seller", "quick_trade", "multi_chart", null, undefined]) expect(strategiesFor(preset)).toBe(STRATEGIES);
+    expect(STRATEGIES).toEqual(["Bull put spread", "Bear call spread", "Iron condor", "Straddle", "Strangle", "Calendar"]);
+    // Each buyer structure pays a net debit: its bought leg first, at the picked strike; a spread's sold leg his width away.
+    const s = inputs({ settings: { width_steps: 2, lots: 3, stop_pct: 50 } });
+    expect(shape(readyStrategy("Long call", s).legs)).toEqual([["BUY", 24500, "CE", 250, null, 3]]);
+    expect(shape(readyStrategy("Long put", s).legs)).toEqual([["BUY", 24500, "PE", 200, null, 3]]);
+    expect(shape(readyStrategy("Bull call spread", s).legs).map((l) => [...l.slice(0, 3), l[5]])).toEqual([["BUY", 24500, "CE", 3], ["SELL", 24700, "CE", 3]]);
+    expect(shape(readyStrategy("Bear put spread", s).legs).map((l) => [...l.slice(0, 3), l[5]])).toEqual([["BUY", 24500, "PE", 3], ["SELL", 24300, "PE", 3]]);
+    for (const name of BUYER_STRATEGIES) {
+      const legs = readyStrategy(name, s).legs;
+      expect(legs[0].side, name).toBe("BUY");
+      const net = legs.reduce((a, l) => a + (l.side === "BUY" ? -1 : 1) * (l.price ?? 0), 0);
+      expect(net, name).toBeLessThan(0);
+    }
+    // No width of his own: a debit spread asks for it; a single option needs none. No lots of his own: the legs ask.
+    const none = inputs({ settings: { width_steps: null, lots: null, stop_pct: null } });
+    expect(readyStrategy("Bull call spread", none).problem).toContain("Spread width");
+    expect(readyStrategy("Long call", none)).toMatchObject({ problem: null, legs: [{ side: "BUY", strike: 24500, lots: null }] });
+  });
+
+  it("the basket shows the list it is given (the Option buyer layout's) as one-tap chips", () => {
+    const own = body([], { strategies: strategiesFor("option_buyer"),
+      settings: { source: "mine", width_steps: 1, lots: 1, stop_pct: null, note: "From your settings." } });
+    const chips = own.els.filter((e) => e.props["data-strategy"]).map((e) => e.props["data-strategy"]);
+    expect(chips).toEqual([...BUYER_STRATEGIES]);
+    by(own.els, "data-strategy", "Bull call spread").onClick!();
+    expect(own.on.onReady).toHaveBeenCalledWith("Bull call spread");
+    expect(body([]).els.filter((e) => e.props["data-strategy"]).map((e) => e.props["data-strategy"])).toEqual([...STRATEGIES]);
+    expect(ADVICE.test(text(own.html).replace(/Ready strategies/g, ""))).toBe(false);
   });
 
   it("the stop of a sold leg is on the tick and above the price", () => {

@@ -188,7 +188,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
         const p = place ?? working.panels.find((x) => x.id === id) ?? { id, x: 0, y: 0, w: 6, h: 10, open: true };
         const sym = chartSymbol(p);
         return <ChartPanelV2 symbol={sym} onSymbol={narrow ? undefined : (s) => setChartSymbol(id, s)}
-          live={sym.toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot) : undefined} />;
+          live={sym.toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot, live?.market_open === true) : undefined} />;
       }
       case "chain": return <ChainPanelV2 underlying={underlying} read={asRead(chainL)} trading={trading} rows={narrow ? 5 : 6} spot={spot} compact={narrow} />;
       case "order": return <OrderPanelV2 ticket={ticket} state={ticketState} onClear={() => setTicket(null)} />;

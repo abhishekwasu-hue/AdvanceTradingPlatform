@@ -112,8 +112,9 @@ for (const size of SIZES) {
         const box = page.locator("#copilot-question");
         await expect(box).toBeVisible({ timeout: 15_000 });
         await box.fill("Check my trade idea");
+        const before = await page.locator("[data-turn] [data-answer]").count();     // the kept turn may be on screen already
         await box.press("Enter");
-        await expect(page.locator("[data-turn] [data-answer]").last()).toBeVisible();
+        await expect(page.locator("[data-turn] [data-answer]")).toHaveCount(before + 1);
         expect(asked.at(-1)?.message).toBe("Check my trade idea");
         if (!BEFORE) {
           const area = await page.locator("[data-conversation]").boundingBox();

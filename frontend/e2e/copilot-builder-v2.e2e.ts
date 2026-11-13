@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectChoice } from "./combobox";
 import { readFileSync } from "node:fs";
@@ -106,6 +107,10 @@ async function pressTest(page: Page) {
 }
 
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
+/** Owner 13 Nov chat redesign: an answer card taller than a phone screen runs under the chat's pinned dock (chips, box,
+ * disclaimer) and the bottom bar, which are not part of the card; they are hidden while the card is photographed, so
+ * the picture is the card alone wherever the page happens to be scrolled. */
+const CARD_SHOT = { ...SHOT, stylePath: fileURLToPath(new URL("./cardShot.css", import.meta.url)) };
 
 /**
  * M75 NAV-3: the draft card sits in the Trading bot panel, whose body scrolls; the card is taller than that body at every
@@ -144,7 +149,7 @@ for (const size of SIZES) {
       test(`the answer and the review card look the same (${theme})`, async ({ page }) => {
         await open(page, theme);
         const answer = await askIdea(page);
-        await expect(answer).toHaveScreenshot(`copilot-builder-v2-answer-${size.name}-${theme}.png`, SHOT);
+        await expect(answer).toHaveScreenshot(`copilot-builder-v2-answer-${size.name}-${theme}.png`, CARD_SHOT);
         const card = await toPaperBot(page);
         await draftShots(page, card, `copilot-builder-v2-draft-${size.name}-${theme}`);
       });
@@ -154,9 +159,9 @@ for (const size of SIZES) {
       test(`CP6-2: the offer and the test on past data look the same (${theme})`, async ({ page }) => {
         await open(page, theme);
         const offer = await askComplete(page);
-        await expect(offer).toHaveScreenshot(`copilot-builder-v2-offer-${size.name}-${theme}.png`, SHOT);
+        await expect(offer).toHaveScreenshot(`copilot-builder-v2-offer-${size.name}-${theme}.png`, CARD_SHOT);
         const tested = await pressTest(page);
-        await expect(tested).toHaveScreenshot(`copilot-builder-v2-test-${size.name}-${theme}.png`, SHOT);
+        await expect(tested).toHaveScreenshot(`copilot-builder-v2-test-${size.name}-${theme}.png`, CARD_SHOT);
       });
     }
 

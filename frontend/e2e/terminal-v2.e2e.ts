@@ -360,7 +360,9 @@ test.describe("v2 terminal 1440", () => {
     await open(page, "light");
     const chain = page.locator("[data-panel='chain']");
     // TERM-2 step 2: the chain page's own chain and summary strip (one spot card; Greeks from the columns menu).
-    for (const col of ["call-oi", "call-oi_change", "call-iv", "call-ltp", "put-oi", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    // Owner 13 Nov: the chain at 4 of the 12 columns (the chart widest) - IV goes first, OI and OI change stay (T4-5).
+    for (const col of ["call-oi", "call-oi_change", "call-ltp", "put-oi"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();
+    for (const col of ["call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`)).toHaveCount(0);
     await expect(chain.locator("[data-summary='spot']")).toContainText(/[\d,.]+/);
     await expect(chain.locator("[data-summary]")).not.toHaveCount(0);
     await expect(chain.locator("[data-strike-range]")).toBeVisible();
@@ -1008,13 +1010,12 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await settle(page);
       await page.locator("[data-terminal='panels'] summary").click();
       const width = page.locator("[data-size='chart-1:w']");
-      await expect(width).toHaveText("7");
+      await expect(width).toHaveText("8");                                              // owner 13 Nov: Chart 8 · Chain 4 (no watchlist)
       await expect(page.locator("[data-size-min='chart-1:w']")).toContainText("min 3");
       await page.locator("[data-size-step='chart-1:w:+1']").click();
-      await expect(width).toHaveText("8");
-      await expect(page.locator("[data-size='chain:w']")).toHaveText("4");             // the neighbour gave a column
+      await expect(width).toHaveText("9");
+      await expect(page.locator("[data-size='chain:w']")).toHaveText("3");             // the neighbour gave a column: its smallest
       await shotView(page, `m58-${size.width}-dialog`);
-      await page.locator("[data-size-step='chain:w:-1']").click();                       // 3: its smallest
       await expect(page.locator("[data-size-step='chain:w:-1']")).toBeDisabled();
       await page.locator("[data-terminal='equal-widths']").click();
       // UX-3 + TA-4: two rows - Chart | Option chain, and Positions & orders | Basket - each shares the 12 columns.
@@ -1117,7 +1118,11 @@ test.describe("v2 terminal 1440: the watchlist panel (UX-3 + TA-4)", () => {
       expect(boxes.positions.y).toBeGreaterThan(boxes.chain.y + boxes.chain.height - 1);
       expect(boxes.basket.x).toBeGreaterThan(boxes.positions.x + boxes.positions.width - 1);
       const chain = page.locator("[data-panel='chain']");
-      for (const col of ["call-oi_change", "call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`).first()).toBeVisible();   // T1-3
+      // Owner 13 Nov: the chart is the widest (Watchlist 3 · Chart 5 · Chain 4); at 4 columns IV goes first, OI change stays.
+      expect(boxes["chart-1"].width).toBeGreaterThan(boxes.chain.width);
+      expect(boxes.chain.width).toBeGreaterThan(boxes.watchlist.width);
+      await expect(chain.locator("[data-col='call-oi_change']").first()).toBeVisible();
+      for (const col of ["call-iv", "put-iv"]) await expect(chain.locator(`[data-col='${col}']`)).toHaveCount(0);
       await expect(page.locator("[data-panel='watchlist'] [data-row]")).toHaveCount(3);
       // OWNER_RULES D.3: no cut-off text in the narrow panel - each name whole on its own line, the list chooser in full.
       const names = page.locator("[data-panel='watchlist'] [data-row] [data-row-name]");
@@ -1252,26 +1257,27 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     const col = (chain0.x + chain0.width - chart0.x + 8) / 12;
     const v = page.locator("[data-gutter-ids='chart-1|chain']");
     await expect(v).toHaveAttribute("role", "separator");
-    await expect(v).toHaveAttribute("aria-valuetext", "Chart 7 columns wide, Option chain 5 columns wide.");
-    // The grab area is 16 px: 4 px into the chart's own edge still takes the line.
+    await expect(v).toHaveAttribute("aria-valuetext", "Chart 8 columns wide, Option chain 4 columns wide.");
+    // The grab area is 16 px: 4 px into the chart's own edge still takes the line. Owner 13 Nov: the chart starts widest,
+    // so the drag goes left (the chain wider).
     const g = (await v.boundingBox())!;
     await page.mouse.move(g.x - 3, g.y + g.height / 2);
     await expect(v).toHaveCSS("cursor", "col-resize");
     await page.mouse.down();
-    await page.mouse.move(g.x - 3 + 20, g.y + g.height / 2, { steps: 4 });                // under half a column: the guide moves at once
+    await page.mouse.move(g.x - 3 - 20, g.y + g.height / 2, { steps: 4 });                // under half a column: the guide moves at once
     const guide = page.locator("[data-terminal-guide='x']");
     await expect(guide).toBeVisible();
-    expect((await guide.boundingBox())!.x).toBeGreaterThan(g.x + 10);
-    await page.mouse.move(g.x - 3 + col, g.y + g.height / 2, { steps: 8 });
+    expect((await guide.boundingBox())!.x).toBeLessThan(g.x - 10);
+    await page.mouse.move(g.x - 3 - col, g.y + g.height / 2, { steps: 8 });
     await page.mouse.up();
     await expect(guide).toHaveCount(0);
     const chart1 = await box(page, "chart-1"), chain1 = await box(page, "chain");
-    expect(chart1.width).toBeGreaterThan(chart0.width + col / 2);
-    expect(chain1.width).toBeLessThan(chain0.width - col / 2);
-    await expect(v).toHaveAttribute("aria-valuetext", "Chart 8 columns wide, Option chain 4 columns wide.");
+    expect(chart1.width).toBeLessThan(chart0.width - col / 2);
+    expect(chain1.width).toBeGreaterThan(chain0.width + col / 2);
+    await expect(v).toHaveAttribute("aria-valuetext", "Chart 7 columns wide, Option chain 5 columns wide.");
     // The chart re-fits: its canvas follows the panel's new width.
     await expect.poll(async () => page.evaluate(() => Math.max(...Array.from(document.querySelectorAll("[data-panel='chart-1'] canvas")).map((c) => c.getBoundingClientRect().width))))
-      .toBeGreaterThan(chart0.width * 0.8 + col / 2);
+      .toBeLessThan(chart0.width - col / 2);
     await view(page, "resize-1440-dark-size-a");
     // The line under the top row: Positions & orders and the Basket get taller (keyboard too: the arrow keys move it).
     const h = page.locator("[data-gutter-ids='chart-1|chain|positions|basket']");
@@ -1286,7 +1292,7 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     await page.locator("[data-terminal='ask-ok']").click();
     await expect(page.locator("[data-note='terminal-layout'], [data-testid='terminal-layout']").first()).toContainText("Saved as");
     const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { panels: { id: string; w: number; h: number }[] }>; active: string };
-    expect(saved.layouts[saved.active].panels.find((q) => q.id === "chart-1")).toMatchObject({ w: 8, h: 10 });
+    expect(saved.layouts[saved.active].panels.find((q) => q.id === "chart-1")).toMatchObject({ w: 7, h: 10 });
     const before = { chart: await box(page, "chart-1"), positions: await box(page, "positions") };
     await page.reload();
     await settle(page);
@@ -1317,11 +1323,12 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     expect(chart1.height).toBeGreaterThan(chart0.height + 80);
     expect(pos1.y).toBeGreaterThan(pos0.y + 80);
     await view(page, "resize-1440-dark-size-b");
-    // The minimum holds and says why.
+    // The minimum holds and says why (the taller chart's corner can sit below the window: bring it into view first).
+    await page.locator("[data-panel-resize='chart-1']").scrollIntoViewIfNeeded();
     const c2 = (await page.locator("[data-panel-resize='chart-1']").boundingBox())!;
     await page.mouse.move(c2.x + 10, c2.y + 10);
     await page.mouse.down();
-    await page.mouse.move(c2.x + 10 + col * 6, c2.y + 10, { steps: 10 });
+    await page.mouse.move(c2.x + 10 + col * 5, c2.y + 10, { steps: 10 });          // the chain (6 wide) stops at 3
     await expect(page.locator("[data-terminal-limit]")).toContainText("Option chain cannot be narrower than 3 columns.");
     await page.mouse.up();
   });
@@ -1339,4 +1346,144 @@ test.describe("v2 terminal 390: panels stay stacked (owner bug 13 Nov)", () => {
     await expectPhoneLayout(page);
     await shot(page, "resize-390-dark");
   });
+});
+
+// Owner 13 Nov ("make the default panel setting like this; in the OI table no 'L' - say it once above: OI in lakhs; the
+// entries should display properly"): the Net Diff table in the Terminal's chain panel at the default layout (1440), a
+// narrow panel (1024) and the phone (390). Every cell on one line, no text wider than its cell, the unit said once above,
+// and a table wider than its box scrolls inside it with the Strike column sticky. Proof pictures with CHAIN_TABLE_SHOTS.
+const CHAIN_SHOTS = process.env.CHAIN_TABLE_SHOTS;
+/** The live chain with the server's Net Diff block (ATM ± 6 of 50), OI scaled to index-sized figures (made up). */
+const netDiffRoutes = async (page: Page) => {
+  await listRoutes(page);
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/live/, (route) => {
+    type Leg = { oi: number | null; oi_change: number | null; ltp: number | null; volume?: number | null };
+    const scale = (l: Leg, k: number): Leg => ({ ...l, oi: (l.oi ?? 0) * 60 + k * 1_234, oi_change: (l.oi_change ?? 0) * 120 - k * 4_321, volume: (l.volume ?? 0) * 40 });
+    const rows = (DATA.live.rows as { strike: number; call: Leg; put: Leg }[]).map((r, i) => ({ ...r, call: scale(r.call, i), put: scale(r.put, 21 - i) }));
+    const summary = DATA.live.summary as Record<string, unknown>;
+    const atm = Math.round(Number(summary.spot) / 50) * 50;
+    const shown = rows.filter((r) => r.strike >= atm - 300 && r.strike <= atm + 300).map((r) => {
+      const ce = r.call.oi_change ?? 0;
+      const pe = r.put.oi_change ?? 0;
+      return { strike: r.strike, ce_chg: ce, ce_oi: r.call.oi ?? 0, ce_ltp: r.call.ltp, pe_ltp: r.put.ltp, pe_oi: r.put.oi ?? 0, pe_chg: pe,
+        diff: pe - ce, dominance: pe - ce > 0 ? "Bulls" : pe - ce < 0 ? "Bears" : "Neutral" };
+    });
+    return route.fulfill({ json: { ...DATA.live, rows, market_open: true, summary: { ...summary, pcr_oi_atm: 0.91 },
+      net_diff: { status: "ready", since: "2026-10-27T04:02:00+00:00", step: 50, atm, window: 6, pcr: 0.91, rows: shown } } });
+  });
+};
+
+/** Each visible cell of the table: every text line inside its cell, on one line (a header: one line per part). */
+async function tableProblems(page: Page, scope: string) {
+  return page.locator(`${scope} [data-block='oi-diff'] table`).evaluate((table) => {
+    const problems: string[] = [];
+    for (const cell of Array.from(table.querySelectorAll("td, th"))) {
+      const c = cell.getBoundingClientRect();
+      if (c.width === 0 || c.height === 0) continue;                               // a column the phone leaves out
+      const tops = new Set<number>();
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!(n.textContent ?? "").trim() || n.parentElement?.closest(".sr-only")) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+        if (rects.length > 1) problems.push(`wraps: ${n.textContent}`);
+        for (const r of rects) {
+          if (r.left < c.left - 0.5 || r.right > c.right + 0.5) problems.push(`wider than its cell: ${n.textContent}`);
+          tops.add(Math.round(r.top));
+        }
+      }
+      if (cell.tagName === "TD" && tops.size > 1) problems.push(`two lines: ${cell.textContent}`);
+    }
+    return problems;
+  });
+}
+
+async function scrollsWithStickyStrike(page: Page, scope: string) {
+  const box = page.locator(`${scope} [data-oi-diff-scroll]`);
+  const m = await box.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, ox: getComputedStyle(el).overflowX }));
+  if (m.sw <= m.cw + 1) return false;                                                // it fits: nothing to scroll
+  expect(["auto", "scroll"]).toContain(m.ox);
+  await box.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const b = (await box.boundingBox())!;
+  for (const sel of ["thead th:has-text('Strike')", "[data-oi-diff-atm] th", "[data-oi-diff-total] th"]) {
+    const s = (await box.locator(sel).first().boundingBox())!;
+    expect(s.x, sel).toBeGreaterThanOrEqual(b.x - 1);                                  // the Strike column stays in sight
+    expect(s.x + s.width, sel).toBeLessThanOrEqual(b.x + b.width + 1);
+  }
+  await box.evaluate((el) => { el.scrollLeft = 0; });
+  return true;
+}
+
+async function noLakhSuffix(page: Page, scope: string) {
+  const cells = await page.locator(`${scope} [data-block='oi-diff'] td, ${scope} [data-chain-scroll] td`).allInnerTexts();
+  expect(cells.filter((t) => /\d\s*L\b/.test(t))).toEqual([]);
+}
+
+for (const size of [{ width: 1440, height: 900 }, { width: 1024, height: 900 }]) {
+  test.describe(`v2 terminal ${size.width}: the default layout and the Net Diff table (owner 13 Nov)`, () => {
+    test.use({ viewport: size });
+    for (const theme of THEMES) {
+      test(`Watchlist · Chart (widest) · Chain over Positions & orders · Basket; the OI table clean (${theme})`, async ({ page }) => {
+        await open(page, theme, { features: WL_ON, routes: netDiffRoutes });
+        const ids = ["watchlist", "chart-1", "chain", "positions", "basket"] as const;
+        const b = Object.fromEntries(await Promise.all(ids.map(async (id) => [id, (await page.locator(`[data-panel='${id}']`).boundingBox())!] as const)));
+        expect(b["chart-1"].width).toBeGreaterThan(b.chain.width);
+        expect(b.chain.width).toBeGreaterThan(b.watchlist.width);
+        expect(b.positions.width).toBeGreaterThan(b.basket.width * 2);
+        const scope = "[data-panel='chain']";
+        const diff = page.locator(`${scope} [data-block='oi-diff']`);
+        await expect(diff.locator("[data-oi-diff-row]")).toHaveCount(7);   // ATM ± 6 steps of 50; the fixture lists every 100
+        await expect(diff.locator("h2 [data-oi-unit]")).toHaveText("OI in lakhs");
+        await expect(page.locator(`${scope} [data-chain-scroll]`).locator("xpath=../preceding-sibling::p[@data-oi-unit]")).toHaveText("(OI and volume in lakhs)");
+        await noLakhSuffix(page, scope);
+        await expect(diff.locator("[data-dominance]").first()).toHaveText(/^(Bulls|Bears|Neutral)$/);
+        // all nine of Trade's columns in a desktop panel
+        await expect(diff.locator("thead th")).toHaveCount(9);
+        expect(await tableProblems(page, scope)).toEqual([]);
+        const scrolls = await scrollsWithStickyStrike(page, scope);
+        if (size.width === 1024) expect(scrolls).toBe(true);                              // the narrow panel: it scrolls, never clips
+        await noSidewaysScroll(page);
+        if (CHAIN_SHOTS) {
+          await page.screenshot({ path: `${CHAIN_SHOTS}/terminal-${size.width}-${theme}.png`, animations: "disabled" });
+          await diff.scrollIntoViewIfNeeded();
+          await page.locator(scope).screenshot({ path: `${CHAIN_SHOTS}/chain-panel-${size.width}-${theme}.png`, animations: "disabled" });
+        }
+      });
+    }
+
+    test("the Contracts choice: the unit line says contracts, the cells stay bare", async ({ page }) => {
+      test.skip(size.width !== 1440, "once");
+      await page.addInitScript(() => { try { localStorage.setItem("atp_option_chain_columns", JSON.stringify({ units: "contracts" })); } catch { /* none */ } });
+      await open(page, "light", { features: WL_ON, routes: netDiffRoutes });
+      const scope = "[data-panel='chain']";
+      await expect(page.locator(`${scope} [data-block='oi-diff'] h2 [data-oi-unit]`)).toHaveText("OI in contracts");
+      await noLakhSuffix(page, scope);
+      expect(await tableProblems(page, scope)).toEqual([]);
+    });
+  });
+}
+
+test.describe("v2 terminal 390: the Net Diff table on the Chain tab (owner 13 Nov)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  for (const theme of THEMES) {
+    test(`readable: one line per cell, the unit once above, sideways scroll inside the table with Strike sticky (${theme})`, async ({ page }) => {
+      await open(page, theme, { features: WL_ON, routes: netDiffRoutes });
+      await page.locator("[data-tab='chain']").tap();
+      const scope = "[data-phone-panel='chain']";
+      const diff = page.locator(`${scope} [data-block='oi-diff']`);
+      await expect(diff.locator("[data-oi-diff-row]")).toHaveCount(7);   // ATM ± 6 steps of 50; the fixture lists every 100
+      await expect(diff.locator("h2 [data-oi-unit]")).toHaveText("OI in lakhs");
+      await expect(diff.locator("[data-dominance]").first()).toBeVisible();
+      await noLakhSuffix(page, scope);
+      expect(await tableProblems(page, scope)).toEqual([]);
+      await scrollsWithStickyStrike(page, scope);
+      await expectPhoneLayout(page);
+      await noSidewaysScroll(page);
+      if (CHAIN_SHOTS) {
+        await diff.scrollIntoViewIfNeeded();
+        await diff.screenshot({ path: `${CHAIN_SHOTS}/oi-table-390-${theme}.png`, animations: "disabled" });
+      }
+    });
+  }
 });

@@ -138,6 +138,8 @@ function RangeCard({ underlying, day, expiry }: { underlying: string; day: Cover
               {AROUND.map((a) => <button key={a} type="button" aria-pressed={around === a} className={chip(around === a)} onClick={() => setAround(a)}>{a ? `±${a}` : "All"}</button>)}
             </span>
           </div>
+          {/* Owner 13 Nov: the unit once above the table; the cells carry the bare figures. */}
+          <p className="text-right text-t12 text-fg-muted" data-oi-unit>(OI in lakhs)</p>
           <div className="overflow-x-auto rounded-panel border border-subtle">
             <table className="w-full min-w-[22rem] border-collapse text-t13" data-oi-range-table>
               <thead>
@@ -154,11 +156,11 @@ function RangeCard({ underlying, day, expiry }: { underlying: string; day: Cover
                 {rows.map((r) => (
                   <tr key={r.strike} data-oi-range-strike={r.strike} className={cx("border-b border-subtle last:border-b-0", r.strike === reply.atm && "bg-surface-2")}>
                     <td className={cx(STICKY, "font-medium text-fg", r.strike === reply.atm ? "bg-surface-2" : "bg-surface-1")}>{strikeText(r.strike)}</td>
-                    <td className={cx(cell, tone(r.ce_change))}>{formatLakhsChange(r.ce_change)}</td>
-                    <td className={cx(cell, tone(r.pe_change))}>{formatLakhsChange(r.pe_change)}</td>
-                    <td className={cx(cell, tone(r.diff))}>{formatLakhsChange(r.diff)}</td>
-                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.ce_to)}</td>
-                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.pe_to)}</td>
+                    <td className={cx(cell, tone(r.ce_change))}>{formatLakhsChange(r.ce_change, false)}</td>
+                    <td className={cx(cell, tone(r.pe_change))}>{formatLakhsChange(r.pe_change, false)}</td>
+                    <td className={cx(cell, tone(r.diff))}>{formatLakhsChange(r.diff, false)}</td>
+                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.ce_to, { unit: false })}</td>
+                    <td className={cx(cell, "text-fg-muted")}>{formatLakhs(r.pe_to, { unit: false })}</td>
                   </tr>
                 ))}
               </tbody>
@@ -224,6 +226,7 @@ function ReplayCard({ underlying, day, expiry }: { underlying: string; day: stri
           <input type="range" min={0} max={Math.max(0, count - 1)} step={1} value={clampFrame(index, count)} aria-label="Reading time"
             className="w-full" onChange={(e) => { setPlaying(false); setIndex(clampFrame(Number(e.target.value), count)); }} data-oi-replay-slider />
           <div className="flex justify-between text-t12 text-fg-muted"><span>{hhmm(reply.frames[0].captured_at)}</span><span>{hhmm(reply.frames[count - 1].captured_at)}</span></div>
+          <p className="text-right text-t12 text-fg-muted" data-oi-unit>(OI in lakhs)</p>
           <div className="overflow-x-auto rounded-panel border border-subtle">
             <table className="w-full min-w-[22rem] border-collapse text-t13" data-oi-replay-table>
               <thead>
@@ -240,9 +243,9 @@ function ReplayCard({ underlying, day, expiry }: { underlying: string; day: stri
                   <tr key={r.strike} className="border-b border-subtle last:border-b-0" data-oi-replay-strike={r.strike}>
                     <td className={cx(STICKY, "bg-surface-1 font-medium text-fg")}>{strikeText(r.strike)}</td>
                     <BarCell value={r.ce} width={bar(r.ce)} fill="bg-oi-call" />
-                    <td className={cx(cell, tone(r.ceChange))}>{formatLakhsChange(r.ceChange)}</td>
+                    <td className={cx(cell, tone(r.ceChange))}>{formatLakhsChange(r.ceChange, false)}</td>
                     <BarCell value={r.pe} width={bar(r.pe)} fill="bg-oi-put" />
-                    <td className={cx(cell, tone(r.peChange))}>{formatLakhsChange(r.peChange)}</td>
+                    <td className={cx(cell, tone(r.peChange))}>{formatLakhsChange(r.peChange, false)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -260,7 +263,7 @@ function ReplayCard({ underlying, day, expiry }: { underlying: string; day: stri
 function BarCell({ value, width, fill }: { value: number | null; width: string; fill: string }) {
   return (
     <td className="min-w-[5.5rem] px-space-2 py-space-1 text-right font-tabular text-fg">
-      <span className="block">{formatLakhs(value)}</span>
+      <span className="block">{formatLakhs(value, { unit: false })}</span>
       <span aria-hidden className="mt-0.5 block h-1 w-full rounded bg-surface-2">
         <span className={cx("ml-auto block h-1 rounded", fill)} style={{ width }} />
       </span>

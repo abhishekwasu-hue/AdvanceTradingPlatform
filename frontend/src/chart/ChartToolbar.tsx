@@ -63,7 +63,7 @@ export interface ChartToolbarProps {
   timeframe: TimeframePickerProps & { wrapperClassName?: string; tour?: string };
   chartType?: ChartTypeControl;
   indicators?: IndicatorsControl;
-  /** The drawing tools (full mode): the phone's Draw menu and undo / redo. */
+  /** The drawing tools: full mode - the phone's Draw menu and undo / redo; compact mode - the phone's Draw menu only. */
   drawing?: DrawingToolsProps;
   settings?: SettingsControl;
   /** Before everything (a Multi-chart cell's link-group button). */
@@ -246,7 +246,7 @@ function useWidth(ref: RefObject<HTMLElement | null>): number | null {
 }
 
 /** Compact mode: an embedded chart or a Multi-chart cell - one short row, no More. */
-function CompactBar({ label, symbol, timeframe, chartType, indicators, settings, leading, actions = [], endActions = [], className }: ChartToolbarProps) {
+function CompactBar({ label, symbol, timeframe, chartType, indicators, drawing, settings, leading, actions = [], endActions = [], className }: ChartToolbarProps) {
   const { wrapperClassName, maxFavourites: given } = timeframe;
   // A narrow host (a Terminal panel, a phone) keeps the bar on one line: while the bar wraps, one starred timeframe
   // fewer beside the list (the list itself is never cut off); a wider bar tries them all again. A host's own
@@ -277,6 +277,8 @@ function CompactBar({ label, symbol, timeframe, chartType, indicators, settings,
           options={CHART_TYPES_V2.map((t) => ({ value: t, label: CHART_TYPE_LABELS_V2[t] }))} className={chartType.className} />
       )}
       {indicators && <IndicatorsMenu state={indicators.state} on={indicators.on} onToggle={indicators.onToggle} groups={indicators.groups} iconOnly spread />}
+      {/* Owner report 13 Nov: an embedded chart with drawing tools - on a phone, the one Draw menu (the rail beside the chart from 768 px) */}
+      {drawing && <DrawingMenu {...drawing} sheet />}
       {actions.map((a) => <IconAction key={a.id} a={a} />)}
       {settings && <ChartSettingsPopover prefs={settings.prefs} onChange={settings.onChange} error={settings.error} />}
       {endActions.map((a) => <IconAction key={a.id} a={a} />)}

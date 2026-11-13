@@ -7,7 +7,7 @@ import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import {
   CALL_COLUMNS, PUT_COLUMNS, atmIndex, barPercent, centreScrollTop, columnShown, formatGreek,
-  formatIv, formatOi, formatOiChangePct, formatStrike, isItm, maxOi, type ColumnDef, type ColumnKey, type ColumnPrefs, type OiUnits,
+  formatIv, formatOi, formatOiChangePct, formatStrike, isItm, maxOi, oiUnitCaption, type ColumnDef, type ColumnKey, type ColumnPrefs, type OiUnits,
 } from "./model";
 import type { ChainLeg, ChainRow, LiveChain } from "./types";
 
@@ -34,6 +34,7 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  *   (`ITM_SHADE`, both sides, as with the flag off); the OI bars are red for calls and green for puts (a soft fill under
  *   the number and a solid edge, 3 : 1); the ATM row is a brand-blue tint. Text stays the plain text colours (AA,
  *   tokens.test.ts). Colour-blind mode the same, with orange call bars and blue put bars.
+ * - Owner 13 Nov: the unit is said once above the table ("(OI and volume in lakhs)"); the cells carry the bare figures.
  * - M96 (owner, audit issues 7): OI, OI change and volume in lakhs ("0.50 L") or, by the Columns menu, as the broker's
  *   whole number; a table wider than its box opens with the strike column in the middle, the strike column stays at
  *   the edge it reaches when scrolled (it never sits over cells that have not scrolled past), a chevron marks the side
@@ -48,9 +49,10 @@ const OI_BAR = {
 
 function cellText(key: ColumnDef["key"], leg: ChainLeg, pct = false, units?: OiUnits): string {
   switch (key) {
-    case "oi": return formatOi(leg.oi, units);
-    case "oi_change": return pct ? formatOiChangePct(leg.oi, leg.oi_change) : formatOi(leg.oi_change, units, true);
-    case "volume": return formatOi(leg.volume, units);
+    // Owner 13 Nov: the bare figures; the unit is said once above the table (oiUnitCaption).
+    case "oi": return formatOi(leg.oi, units, false, false);
+    case "oi_change": return pct ? formatOiChangePct(leg.oi, leg.oi_change) : formatOi(leg.oi_change, units, true, false);
+    case "volume": return formatOi(leg.volume, units, false, false);
     case "iv": return formatIv(leg.iv);
     case "ltp": case "bid": case "ask": return formatPrice(leg[key]);
     default: return formatGreek(key, leg[key]);
@@ -177,6 +179,8 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
   }, [calls.length, puts.length, edges]);
   const strikeSticky = cx(wide && "sticky left-0 right-0 z-[1]", "w-[4.5rem] min-w-[4.5rem] text-center md:w-[5.5rem] md:min-w-[5.5rem]");
   return (
+    <div className="space-y-space-1">
+    <p className="text-right text-t12 text-fg-muted" data-oi-unit>({oiUnitCaption(prefs.units, "OI and volume")})</p>
     <div className="relative">
     <div ref={box} data-chain-scroll data-wide={wide || undefined} onScroll={edges}
       className="max-h-[60vh] overflow-auto rounded-panel border border-subtle bg-surface-1 md:max-h-[min(70vh,44rem)]">
@@ -228,6 +232,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
     {/* M96: a chevron on the header row of each side with more columns (a phone sees the put OI is there). */}
     {more.left && <span aria-hidden data-scroll-hint="left" className={cx(HINT, "left-space-1")}><ChevronLeft size={14} /></span>}
     {more.right && <span aria-hidden data-scroll-hint="right" className={cx(HINT, "right-space-1")}><ChevronRight size={14} /></span>}
+    </div>
     </div>
   );
 }

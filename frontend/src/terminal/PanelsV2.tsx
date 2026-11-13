@@ -103,7 +103,7 @@ export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe }: {
         </form>
       )}
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
-        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} />
+        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} drawing />
       </div>
     </div>
   );

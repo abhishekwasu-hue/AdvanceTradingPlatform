@@ -22,6 +22,10 @@ import { usePageVisible } from "../utils/usePageVisible";
 import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import type { SymbolUniverse } from "../ui/symbolUniverse";
 import type { LightweightEngine } from "../charting/lightweight";
+import type { useDrawingTools } from "../charting/DrawingToolbar";
+import { CollapsibleDrawingRail } from "./DrawingRail";
+
+type DrawingTools = ReturnType<typeof useDrawingTools>;
 
 /**
  * UI2-4e (Charts page plan §3, CHP-10): the v2 chart inside another v2 page (the Signals detail today), the same
@@ -77,11 +81,15 @@ export interface EmbeddedChartV2Props {
   onOverlays?: (overlays: OverlayId[]) => void;
   /** CEPE-1: the candles shown, handed to the host (its header's last price and change; no read of its own). */
   onCandles?: (candles: readonly OHLCVBar[]) => void;
+  /** Owner report 13 Nov: the drawing tools on this chart (the Terminal's chart panel) - the Charts page's own rail
+   * (foldable) from 768 px and its Draw menu on a phone, on the same drawings (saved per user and symbol), so a line
+   * drawn here shows on the Charts page and back. Off (default): no drawings, as before. */
+  drawing?: boolean;
 }
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null, toolbar = true, overlays: hostOverlays, onOverlays, onCandles,
+  onEngine, emptyNote, screenId = null, drawing = false, toolbar = true, overlays: hostOverlays, onOverlays, onCandles,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [ownOverlays, setOwnOverlays] = useState<OverlayId[]>([]);
@@ -130,6 +138,9 @@ export default function EmbeddedChartV2({
   const [screenShown, setScreenShown] = useState(true);
   const screen = useScreenOverlay(engine, { screenId, symbol: sym, exchange, timeframe, candles: data.candles, on: screenShown && screenId != null });
   const allLevels = useMemo(() => (screenId != null && screen.levels.length ? [...(levels ?? []), ...screen.levels] : levels), [levels, screen.levels, screenId]);
+  const [tools, setTools] = useState<DrawingTools | null>(null);
+  const [drawingsHidden, setDrawingsHidden] = useState(false);
+  const drawingProps = drawing ? { tools, symbol: sym, hidden: drawingsHidden, onHidden: setDrawingsHidden } : undefined;
   const emptyText = data.loading ? "Loading prices…" : data.error ? "" : data.empty ?? emptyNote ?? `No prices for ${sym} on this timeframe yet.`;
 
   return (
@@ -139,6 +150,7 @@ export default function EmbeddedChartV2({
         timeframe={{ offered: TIMEFRAMES, value: timeframe, onChange: setTimeframe,
           favourites: prefs.prefs.timeframe_favourites, onFavourites: (next) => prefs.update({ timeframe_favourites: next }) }}
         indicators={{ state: indicatorState, on: () => false, onToggle: onIndicator, groups: EMBEDDED_GROUPS }}
+        drawing={drawingProps}
         settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
         endActions={[
           ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
@@ -147,11 +159,13 @@ export default function EmbeddedChartV2({
           ...(openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []),
         ]} />}
       {/* a column that fills a flex host (the Terminal's panel), so a host's `flex-1` on the chart still works */}
+      <div className="flex min-h-0 flex-1">
+      {drawingProps && <CollapsibleDrawingRail {...drawingProps} />}
       <div ref={box} data-chart-active={activation.active ? "on" : "off"} {...activation.handlers}
-           className="relative flex min-h-0 flex-1 flex-col">
+           className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-          levels={allLevels} areas={areas} markers={screenId != null ? screen.markers : undefined} onLoadOlder={data.loadOlder} drawingTools={false}
-          emptyText={emptyText} onEngine={takeEngine}
+          levels={allLevels} areas={areas} markers={screenId != null ? screen.markers : undefined} onLoadOlder={data.loadOlder} drawingTools={drawing && !drawingsHidden}
+          onTools={drawing ? setTools : undefined} emptyText={emptyText} onEngine={takeEngine}
           captureTouch={activation.active} className={className} />
         {/* the outline over the canvases (an inset ring on this box would sit under the chart's own background) */}
         {activation.active && <span data-chart-outline aria-hidden className="pointer-events-none absolute inset-0 z-20 ring-2 ring-inset ring-brand" />}
@@ -160,6 +174,7 @@ export default function EmbeddedChartV2({
             <span className="rounded-pill bg-surface-3 px-space-3 py-space-1 text-t12 font-semibold text-fg shadow-raised">{EMBED_HINT_TEXT}</span>
           </p>
         )}
+      </div>
       </div>
       {screenId != null && screenShown && <ScreenLegend state={screen} onShowTf={setTimeframe} />}
       {data.error && (

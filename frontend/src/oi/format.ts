@@ -55,6 +55,7 @@ export function alertStateWords(alertType: string, state: string | null | undefi
   if (alertType === "PCR_BAND") return pcrBandWords(state);
   if (alertType === "STRIKE_OI_CHANGE") return strikeOiWords(state);
   if (alertType === "PCR_CROSS") return pcrCrossWords(state);
+  if (alertType === "OPPOSITE_OI") return oppositeWords(state);
   return state;
 }
 
@@ -67,6 +68,13 @@ function strikeOiWords(state: string): string {
   if (m) return `${m[1].toUpperCase() === "CE" ? "Call" : "Put"} ${strikeWords(Number(m[2]))} OI change reached ${lakhs(Number(m[3]))}`;
   const n = Number(state);
   return Number.isFinite(n) ? `OI change ${lakhs(n)}` : state;
+}
+
+/** Owner 13 Nov: "CE +1240000 PE -810000 5m" -> "Call OI +12.40 L, Put OI −8.10 L in 5 min". */
+export function oppositeWords(state: string): string {
+  const m = /^CE ([+-]?\d+(?:\.\d+)?) PE ([+-]?\d+(?:\.\d+)?) (\d+)m$/.exec(state);
+  if (!m) return state;
+  return `Call OI ${formatLakhs(Number(m[1]), { signed: true })}, Put OI ${formatLakhs(Number(m[2]), { signed: true })} in ${m[3]} min`;
 }
 
 /** M96 N1: "above 1.2" -> "PCR above 1.2"; the old state "1.05" -> "PCR 1.05". */

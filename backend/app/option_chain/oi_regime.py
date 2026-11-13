@@ -79,7 +79,9 @@ class PcrBands(BaseModel):
 BANNER_ALERT_TYPES = ("DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND", "MAX_PAIN_MOVE", "OI_WALL", "DTE", "COLLECTOR_STALE")
 # M96 N1: the user's own threshold alerts - an OI change at one strike reaching his level, the PCR crossing his level.
 # Not in the default `types`: each is OFF until he ticks it, and it has no threshold until he types one.
-THRESHOLD_ALERT_TYPES = ("STRIKE_OI_CHANGE", "PCR_CROSS")
+# Owner 13 Nov: OPPOSITE_OI - total call OI and total put OI moving in opposite directions within one window (Trade's
+# is_genuine_rotation applied to window closes; app/option_chain/oi_opposite.py). OFF until he turns it on per symbol.
+THRESHOLD_ALERT_TYPES = ("STRIKE_OI_CHANGE", "PCR_CROSS", "OPPOSITE_OI")
 ALERT_TYPES = BANNER_ALERT_TYPES + THRESHOLD_ALERT_TYPES
 
 
@@ -103,6 +105,14 @@ class OIAlertSettings(BaseModel):
     quiet_start: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")   # IST, e.g. "12:00"
     quiet_end: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
     digest_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")    # IST; the day's banner timeline
+    # Owner 13 Nov (OPPOSITE_OI, app/option_chain/oi_opposite.py; owner answers 13 Nov: ATM +- atm_range totals only,
+    # "sudden" relative to the recent windows, no absolute lakh level). Every number is the user's own; the defaults are
+    # references to edit before use: the window and the % are Trade's (5-minute slots; rotation_min_change_pct 2.0, which
+    # also keeps the open's tiny moves out), k = 2 and M = 6 (twice the average of the last half hour at 5 minutes).
+    opposite_window_minutes: Literal[5, 10, 15] = 5
+    opposite_min_change_pct: float = Field(default=2.0, ge=0, le=100)   # Trade: each side's change, % of the window-start OI
+    opposite_relative_k: float = Field(default=2.0, gt=0, le=100)       # |change| >= k x the average |change| of ...
+    opposite_relative_windows: int = Field(default=6, ge=1, le=50)     # ... the last M windows (each side its own)
 
     @model_validator(mode="after")
     def _known(self) -> "OIAlertSettings":

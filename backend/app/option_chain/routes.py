@@ -41,7 +41,7 @@ from app.db.session import get_session
 from app.market_data.calendar import family_holidays, market_session_status
 from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
 from app.market_lake import chain_store
-from app.option_chain import as_of, chain_view, net_diff, oi_regime, own_snapshots, snapshots
+from app.option_chain import as_of, chain_view, net_diff, oi_opposite, oi_regime, own_snapshots, snapshots
 from app.option_chain.snapshots import IST
 from app.platform.controls import flag_enabled
 
@@ -155,7 +155,14 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
     marks = snapshots.session_marks(slots, await family_holidays(session, exchange), exchange)
     # Owner 13 Nov (M96 Trade AS IS): `bucket` is Trade's History "Time" - the bucket's start (Trade
     # aggregate_oi_history: floor to the interval, the bucket's last reading); `slot` stays that reading's own slot.
-    rows = [{**snapshots.entry_json(e), **marks.get(e.slot_start, {}), "bucket": floor.isoformat()}
+    # Owner 13 Nov: with his opposite-OI alert on, the rows whose window closed with an opposite call / put OI move (his
+    # own levels, this table's interval; app/option_chain/oi_opposite.py) carry `opposite` - the numbers the alert states.
+    opposite: dict[datetime, dict[str, Any]] = {}
+    if oi_opposite.ALERT_TYPE in settings.alerts.types and oi_opposite.bell_on((await snapshots.settings_rows(session, user.tenant_id, underlying))[1]):
+        opposite = oi_opposite.history_marks(oi_opposite.points_of(timeline), settings.alerts,
+                                             oi_opposite.collector_slot_minutes(), interval)
+    rows = [{**snapshots.entry_json(e), **marks.get(e.slot_start, {}), "bucket": floor.isoformat(),
+             **({"opposite": opposite[e.slot_start]} if e.slot_start in opposite else {})}
             for floor, e in oi_regime.aggregate_history(timeline, interval, lambda e: e.slot_start.astimezone(IST))]
     return {"underlying": underlying, "date": day.isoformat(), "interval": interval, "rows": rows, **flags}
 

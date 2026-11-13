@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, type ReactNode, type Ref } from "react";
 import { cx } from "../components/primitives/cx";
 import { useColourV2 } from "../ui/colourV2";
 import { formatPrice, formatTimeIST } from "../ui/format";
-import { centreScrollTop, formatOi, formatStrike, type OiUnits } from "./model";
+import { centreScrollTop, formatOi, formatStrike, oiUnitCaption, type OiUnits } from "./model";
 import { netDiffRows, netDiffStatus, netDiffTotal, type Dominance, type NetDiffShown } from "./oiDiff";
 import type { ChainRow, LiveChain } from "./types";
 
@@ -14,8 +14,15 @@ import type { ChainRow, LiveChain } from "./types";
  *   exchange's previous-day change); "Building" while this is the day's first reading;
  * - Net Diff = PE Chg OI − CE Chg OI; Dominance by its sign ("Bulls" / "Bears" / "Neutral"); a TOTAL row;
  * - the changes and Net Diff green when above 0 and red below (Trade's colours); OI in the user's unit (lakhs unless he
- *   picked Contracts, M96 Q3). A phone shows CE Chg OI | Strike | PE Chg OI | Net Diff (with Dominance under it); from
- *   md every Trade column (CE Chg OI, CE Total OI, CE LTP, Strike, PE LTP, PE Total OI, PE Chg OI, Net Diff, Dominance).
+ *   picked Contracts, M96 Q3). A phone shows CE Chg OI | Strike | PE Chg OI | Net Diff | Dominance; from md every Trade
+ *   column (CE Chg OI, CE Total OI, CE LTP, Strike, PE LTP, PE Total OI, PE Chg OI, Net Diff, Dominance).
+ * - Owner 13 Nov ("no 'L' in the OI table; say it once above: OI in lakhs; the entries should display properly"): the
+ *   unit is said once above the table ("OI in lakhs" / "OI in contracts"), the cells carry the bare figures; every cell
+ *   is one line (whitespace-nowrap, tabular figures, numbers right-aligned), the headers are two short deliberate lines
+ *   ("CE" over "Chg OI"), and a table wider than its box (a narrow Terminal panel, a phone) scrolls sideways inside its
+ *   own box with the Strike column sticky - it never clips or overlaps. The cause of the overlap before: a fixed
+ *   table layout (equal column widths) with the `md` columns chosen by the SCREEN width, so a 5-column Terminal panel
+ *   on a wide screen squeezed nine columns into ~65 px each and the figures ran into each other.
  * - O1: with chain trading on (`onPickLeg`), a tap on a CE or PE change opens THAT contract's actions - the same action
  *   sheet, ticket and basket as the chain table (src/fno/ChainTradingV2.tsx); nothing else is filled in (M68).
  * - The ATM row is tinted and scrolled to the middle once per `centreKey`.
@@ -23,7 +30,6 @@ import type { ChainRow, LiveChain } from "./types";
 const TONE = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-fg");
 const DOMINANCE_TONE: Record<Dominance, string> = { Bulls: "text-up", Bears: "text-down", Neutral: "text-fg-muted" };
 const WIDE = "hidden md:table-cell";
-const WIDE_COL = "hidden md:table-column";
 
 export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
   live: LiveChain;
@@ -44,7 +50,8 @@ export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
   }, [centreKey, status]);
   return (
     <section aria-label="OI difference" data-block="oi-diff" className="space-y-space-2">
-      <h2 className="text-t14 font-semibold text-fg">OI difference by strike <span className="font-normal text-fg-muted">(ATM ± 6)</span></h2>
+      <h2 className="text-t14 font-semibold text-fg">OI difference by strike{" "}
+        <span className="font-normal text-fg-muted">(ATM ± 6 · <span className="whitespace-nowrap" data-oi-unit>{oiUnitCaption(units)}</span>)</span></h2>
       {status === "none" || !nd ? (
         <p className="text-t13 text-fg-muted" data-oi-diff-state="none">The OI difference shows once the spot price of the chain is known.</p>
       ) : (
@@ -87,26 +94,26 @@ export function NetDiffTableBody({ rows, atm, chainRows, units, onPickLeg, atmRo
   const colour = useColourV2();
   const total = netDiffTotal(rows);
   const byStrike = new Map(chainRows.map((r) => [r.strike, r]));
-  const head = "border-b border-subtle bg-surface-1 px-space-1 py-space-2 font-medium md:px-space-2";
-  const cell = "px-space-1 py-space-1 md:px-space-2 font-tabular";
+  const head = "border-b border-subtle bg-surface-1 px-space-2 py-space-1 align-bottom font-medium leading-tight";
+  const cell = "px-space-2 py-space-1 font-tabular";
+  // The Strike column stays at the edge it reaches when the table scrolls sideways (an opaque fill, so it only covers
+  // cells that are leaving the box).
+  const sticky = "sticky left-0 right-0 z-[1]";
+  const atmFill = colour ? "bg-brand-tint" : "bg-surface-3";
   return (
-    <table className="w-full table-fixed border-separate border-spacing-0 text-t13" aria-label={`OI difference by strike${underlying ? ` for ${underlying}` : ""}`}>
-      {/* A phone: the two changes a quarter each, the strike its own width, Net Diff the rest; from md nine columns. */}
-      <colgroup>
-        <col className="w-1/4 md:w-auto" /><col className={WIDE_COL} /><col className={WIDE_COL} /><col className="w-[4.5rem]" />
-        <col className={WIDE_COL} /><col className={WIDE_COL} /><col className="w-1/4 md:w-auto" /><col /><col className={WIDE_COL} />
-      </colgroup>
+    <table className="w-full whitespace-nowrap border-separate border-spacing-0 text-t13"
+      aria-label={`OI difference by strike${underlying ? ` for ${underlying}` : ""}, ${oiUnitCaption(units)}`}>
       <thead className="sticky top-0 z-[2] bg-surface-1">
         <tr className="text-t12 text-fg-muted">
-          <th scope="col" className={cx(head, "text-right")}>CE Chg OI</th>
-          <th scope="col" className={cx(head, WIDE, "text-right")}>CE Total OI</th>
-          <th scope="col" className={cx(head, WIDE, "text-right")}>CE LTP</th>
-          <th scope="col" className={cx(head, "bg-surface-2 text-center font-semibold text-fg")}>Strike</th>
-          <th scope="col" className={cx(head, WIDE, "text-left")}>PE LTP</th>
-          <th scope="col" className={cx(head, WIDE, "text-left")}>PE Total OI</th>
-          <th scope="col" className={cx(head, "text-left")}>PE Chg OI</th>
-          <th scope="col" className={cx(head, "text-right")}>Net Diff</th>
-          <th scope="col" className={cx(head, WIDE, "text-left")}>Dominance</th>
+          <th scope="col" className={cx(head, "text-right")}><Two top="CE" bottom="Chg OI" /></th>
+          <th scope="col" className={cx(head, WIDE, "text-right")}><Two top="CE" bottom="Total OI" /></th>
+          <th scope="col" className={cx(head, WIDE, "text-right")}><Two top="CE" bottom="LTP" /></th>
+          <th scope="col" className={cx(head, sticky, "bg-surface-2 text-center font-semibold text-fg")}>Strike</th>
+          <th scope="col" className={cx(head, WIDE, "text-right")}><Two top="PE" bottom="LTP" /></th>
+          <th scope="col" className={cx(head, WIDE, "text-right")}><Two top="PE" bottom="Total OI" /></th>
+          <th scope="col" className={cx(head, "text-right")}><Two top="PE" bottom="Chg OI" /></th>
+          <th scope="col" className={cx(head, "text-right")}><Two top="Net" bottom="Diff" /></th>
+          <th scope="col" className={cx(head, "text-left")}>Dominance</th>
         </tr>
       </thead>
       <tbody>
@@ -117,20 +124,17 @@ export function NetDiffTableBody({ rows, atm, chainRows, units, onPickLeg, atmRo
             <tr key={d.strike} ref={isAtm ? atmRow : undefined} data-oi-diff-row={d.strike} data-oi-diff-atm={isAtm || undefined}
               className={cx("[&>*]:border-b [&>*]:border-subtle", isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
               <ChgCell side="call" d={d} row={row} units={units} onPickLeg={onPickLeg} />
-              <td className={cx(cell, WIDE, "text-right text-fg")}>{formatOi(d.ceOi, units)}</td>
+              <td className={cx(cell, WIDE, "text-right text-fg")}>{formatOi(d.ceOi, units, false, false)}</td>
               <td className={cx(cell, WIDE, "text-right text-fg")}>{formatPrice(d.ceLtp)}</td>
-              <th scope="row" className={cx(cell, "text-center font-semibold text-fg", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-2")}>
+              <th scope="row" className={cx(cell, sticky, "text-center font-semibold text-fg", isAtm ? atmFill : "bg-surface-2")}>
                 {formatStrike(d.strike)}
-                {isAtm && <span className="block text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
+                {isAtm && <span className="ml-space-1 text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
               </th>
-              <td className={cx(cell, WIDE, "text-left text-fg")}>{formatPrice(d.peLtp)}</td>
-              <td className={cx(cell, WIDE, "text-left text-fg")}>{formatOi(d.peOi, units)}</td>
+              <td className={cx(cell, WIDE, "text-right text-fg")}>{formatPrice(d.peLtp)}</td>
+              <td className={cx(cell, WIDE, "text-right text-fg")}>{formatOi(d.peOi, units, false, false)}</td>
               <ChgCell side="put" d={d} row={row} units={units} onPickLeg={onPickLeg} />
-              <td className={cx(cell, "text-right")} data-oi-diff="diff">
-                <span className={cx("block font-semibold", TONE(d.diff))}>{formatOi(d.diff, units, true)}</span>
-                <span className={cx("block text-t12 md:hidden", DOMINANCE_TONE[d.dominance])} data-dominance={d.dominance}>{d.dominance}</span>
-              </td>
-              <td className={cx(cell, WIDE, "text-left font-semibold", DOMINANCE_TONE[d.dominance])} data-dominance-wide={d.dominance}>{d.dominance}</td>
+              <td className={cx(cell, "text-right font-semibold", TONE(d.diff))} data-oi-diff="diff">{formatOi(d.diff, units, true, false)}</td>
+              <td className={cx(cell, "text-left font-semibold", DOMINANCE_TONE[d.dominance])} data-dominance={d.dominance}>{d.dominance}</td>
             </tr>
           );
         })}
@@ -138,41 +142,45 @@ export function NetDiffTableBody({ rows, atm, chainRows, units, onPickLeg, atmRo
           <Num v={total.ceChg} units={units} signed tone />
           <Num v={total.ceOi} units={units} wide />
           <td className={cx(cell, WIDE)} />
-          <th scope="row" className={cx(cell, "text-center")}>TOTAL</th>
+          <th scope="row" className={cx(cell, sticky, "bg-surface-2 text-center")}>TOTAL</th>
           <td className={cx(cell, WIDE)} />
-          <Num v={total.peOi} units={units} wide left />
-          <Num v={total.peChg} units={units} signed tone left />
+          <Num v={total.peOi} units={units} wide />
+          <Num v={total.peChg} units={units} signed tone />
           <Num v={total.diff} units={units} signed tone />
-          <td className={cx(cell, WIDE)} />
+          <td className={cell} />
         </tr>
       </tbody>
     </table>
   );
 }
 
-function Num({ v, units, signed = false, tone = false, wide = false, left = false }: {
-  v: number; units?: OiUnits; signed?: boolean; tone?: boolean; wide?: boolean; left?: boolean;
+/** A deliberate two-line header: the side ("CE") over the figure ("Chg OI"), each line on one line. */
+function Two({ top, bottom }: { top: string; bottom: string }) {
+  return <><span className="block">{top}</span><span className="block">{bottom}</span></>;
+}
+
+function Num({ v, units, signed = false, tone = false, wide = false }: {
+  v: number; units?: OiUnits; signed?: boolean; tone?: boolean; wide?: boolean;
 }) {
-  return <td className={cx("px-space-1 py-space-1 md:px-space-2 font-tabular", wide && WIDE, left ? "text-left" : "text-right", tone ? TONE(v) : "text-fg")}>
-    {formatOi(v, units, signed)}</td>;
+  return <td className={cx("px-space-2 py-space-1 text-right font-tabular", wide && WIDE, tone ? TONE(v) : "text-fg")}>
+    {formatOi(v, units, signed, false)}</td>;
 }
 
 export function ChgCell({ side, d, row, units, onPickLeg }: {
   side: "call" | "put"; d: NetDiffShown; row: ChainRow | undefined; units?: OiUnits; onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
 }) {
   const v = side === "call" ? d.ceChg : d.peChg;
-  const value = formatOi(v, units, true);
+  const value = formatOi(v, units, true, false);
   const right = side === "call" ? "CE" : "PE";
-  const align = side === "call" ? "text-right" : "text-left";
   const inner: ReactNode = <span className={cx("block font-tabular", TONE(v))}>{value}</span>;
   if (!onPickLeg || !row) {
-    return <td className={cx("px-space-1 py-space-1 md:px-space-2", align)} data-oi-diff={side}>{inner}</td>;
+    return <td className="px-space-2 py-space-1 text-right" data-oi-diff={side}>{inner}</td>;
   }
   return (
-    <td className={cx("p-0", align)} data-oi-diff={side}>
+    <td className="p-0 text-right" data-oi-diff={side}>
       <button type="button" data-oi-diff-cell={`${d.strike}|${right}`} onClick={() => onPickLeg(row, side)}
-        aria-label={`${formatStrike(d.strike)} ${right}: change in OI ${value}. Open its actions`}
-        className={cx("block min-h-11 w-full px-space-1 py-space-1 md:px-space-2 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand", align)}>
+        aria-label={`${formatStrike(d.strike)} ${right}: change in OI ${formatOi(v, units, true)}. Open its actions`}
+        className="block min-h-11 w-full px-space-2 py-space-1 text-right hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand">
         {inner}
       </button>
     </td>

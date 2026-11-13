@@ -317,8 +317,9 @@ test.describe("Option chain v2 at 390", () => {
       els.filter((e) => { const h = e as HTMLElement; return h.children.length === 0 && (h.textContent ?? "").trim() && h.scrollWidth > h.clientWidth + 1; })
         .map((e) => e.textContent));
     expect(cut).toEqual([]);
-    // OI in lakhs, two decimals
-    await expect(page.locator("[data-chain-scroll] tbody td[data-col='call-oi']").first()).toHaveText(/^\d[\d,]*\.\d{2} L/);
+    // OI in lakhs, two decimals; owner 13 Nov: the unit once above the table, no "L" in the cells
+    await expect(page.locator("[data-chain-scroll] tbody td[data-col='call-oi']").first()).toHaveText(/^\d[\d,]*\.\d{2}$/);
+    await expect(page.locator("[data-block='oi-diff'] h2 [data-oi-unit]")).toHaveText("OI in lakhs");
   });
 });
 

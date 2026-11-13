@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { formatContracts, formatCount, formatLakhs } from "../ui/format";
 import { leg, liveChain, rows } from "./chain.fixture";
-import { DEFAULT_COLUMNS, tradingDaysText, formatOi, readColumns, COLUMNS_KEY } from "./model";
+import { DEFAULT_COLUMNS, tradingDaysText, formatOi, oiUnitCaption, readColumns, COLUMNS_KEY } from "./model";
 import {
   PCR_ZONE_LABEL, bannerTone, calendarDte, classText, dominanceOf, expiryLine, inTradeWindow, netDiffRows, netDiffStatus, netDiffTotal,
   pcrZone, signalTone, todayIst,
@@ -81,11 +81,21 @@ describe("M96 L1: Trade's Net Diff table", () => {
     const html = renderToStaticMarkup(<NetDiffTableBody rows={netDiffRows(netDiff().rows)} atm={24500} chainRows={chainRowsFor(STRIKES)} />);
     expect(html.match(/data-oi-diff-row="/g)).toHaveLength(13);
     expect(text(html)).toContain("CE Chg OI CE Total OI CE LTP Strike PE LTP PE Total OI PE Chg OI Net Diff Dominance");
-    expect(html).toMatch(/data-oi-diff-row="24200"[\s\S]*?text-down[^>]*>−0.06 L[\s\S]*?24,200[\s\S]*?text-up[^>]*>\+0.12 L[\s\S]*?\+0.18 L[\s\S]*?Bulls/);
+    expect(html).toMatch(/data-oi-diff-row="24200"[\s\S]*?text-down[^>]*>−0.06<[\s\S]*?24,200[\s\S]*?text-up[^>]*>\+0.12<[\s\S]*?\+0.18<[\s\S]*?Bulls/);
+    // owner 13 Nov: no "L" in any cell (the TOTAL row too); the unit is said once (aria-label here, the heading above)
+    expect(text(html)).not.toMatch(/\d L\b/);
+    expect(html).toContain('aria-label="OI difference by strike, OI in lakhs"');
+    // every cell one line: no fixed layout, nowrap; Strike sticky for the sideways scroll; numbers right-aligned
+    expect(html).toMatch(/<table class="[^"]*whitespace-nowrap/);
+    expect(html).not.toContain("table-fixed");
+    expect(html).toMatch(/<th scope="col" class="[^"]*sticky left-0 right-0[^"]*">Strike<\/th>/);
+    expect(html).toMatch(/<th scope="row" class="[^"]*sticky left-0 right-0[^"]*">TOTAL<\/th>/);
+    expect(html).not.toMatch(/<td[^>]*text-left[^>]*>[^<]*\d/);
     expect(html).toMatch(/data-oi-diff-row="24500" data-oi-diff-atm="true"/);
     expect(html).toMatch(/data-oi-diff-total[\s\S]*?TOTAL/);
     const contracts = renderToStaticMarkup(<NetDiffTableBody rows={netDiffRows(netDiff().rows)} atm={24500} chainRows={[]} units="contracts" />);
     expect(contracts).toContain("+18,000");
+    expect(contracts).toContain('aria-label="OI difference by strike, OI in contracts"');
     expect(text(html)).not.toMatch(/\b(buy|sell|should|recommend\w*|advice|target)\b/i);
     expect(text(html)).not.toMatch(/added more|cut more|buildup|unwinding/i);           // no ATP-invented words or tags
     expect(diffSource).toContain('<details className="text-t12 text-fg-muted" data-oi-diff-help>');
@@ -183,7 +193,8 @@ describe("M96 L1: Trade's banner", () => {
     expect(first).toContain("The first reading of the day shows &quot;Not enough data&quot;: the reading needs history");
     expect(first).toContain("No OI reading is stored for today yet.");
     expect(t).toContain("Time Total Call OI Total Put OI Diff Δ Diff Signal");
-    expect(t).toContain("10:25 90.00 L 102.50 L +12.50 L −0.40 L BULLISH (Strong)");
+    expect(t).toContain("(OI in lakhs)");                                               // owner 13 Nov: the unit once above
+    expect(t).toContain("10:25 90.00 102.50 +12.50 −0.40 BULLISH (Strong)");            // no "L" per cell
     expect(html).toMatch(/class="[^"]*text-up" data-history-signal="true">BULLISH \(Strong\)/);
     expect(html).toMatch(/class="[^"]*text-up" data-history-signal="true">BEARISH \(Weakening\)/);   // weakening: the other colour
     expect(t).not.toMatch(/short call|short put|don't|cautious|\bbuy\b|\bsell\b/i);
@@ -238,8 +249,8 @@ describe("M96 L1: Trade's banner", () => {
       stale_after_minutes: 15, rows: [{ ...row(), bucket: "2026-11-11T10:20:00+05:30" }] };
     const tenHtml = text(renderToStaticMarkup(<TradeOiBannerView symbol="NIFTY" live={live()} state={{ banner: banner(), history: ten, loaded: true }}
       interval={10} onInterval={noop} now={NOW} />));
-    expect(tenHtml).toContain("10:20 90.00 L");
-    expect(tenHtml).not.toContain("10:25 90.00 L");
+    expect(tenHtml).toContain("10:20 90.00 ");
+    expect(tenHtml).not.toContain("10:25 90.00 ");
   });
 
   it("owner 13 Nov: the Net Diff table keeps Trade's own column words (Dominance: Bulls / Bears / Neutral, TOTAL)", () => {
@@ -247,6 +258,11 @@ describe("M96 L1: Trade's banner", () => {
     const t = text(html);
     for (const h of ["CE Chg OI", "CE Total OI", "CE LTP", "Strike", "PE LTP", "PE Total OI", "PE Chg OI", "Net Diff", "Dominance"]) expect(t).toContain(h);
     expect(t).toContain("TOTAL");
+    // owner 13 Nov: the unit once in the heading, by the Lakhs / Contracts choice (M96 Q3)
+    expect(html).toMatch(/\(ATM ± 6 · <span class="whitespace-nowrap" data-oi-unit="true">OI in lakhs<\/span>\)/);
+    const inContracts = renderToStaticMarkup(<OiDiffTableV2 live={live()} units="contracts" centreKey="k" />);
+    expect(inContracts).toContain('data-oi-unit="true">OI in contracts</span>');
+    expect(text(inContracts)).not.toMatch(/\d L\b/);
   });
 });
 
@@ -304,6 +320,8 @@ describe("M96 Q3: OI, OI change and volume in lakhs (two decimals), with a Contr
     expect(formatLakhs(-4_500, { signed: true })).toBe("−0.05 L");
     expect(formatLakhs(400, { signed: true })).toBe("0.00 L");
     expect(formatLakhs(0)).toBe("0.00 L");
+    expect(formatLakhs(-4_500, { signed: true, unit: false })).toBe("−0.05");        // owner 13 Nov: the bare cell figure
+    expect(formatLakhs(0, { unit: false })).toBe("0.00");
     expect(formatLakhs(null)).toBe("–");
     expect(formatLakhs(Number.NaN)).toBe("–");
     expect(formatContracts(50_000)).toBe("50,000");
@@ -312,17 +330,22 @@ describe("M96 Q3: OI, OI change and volume in lakhs (two decimals), with a Contr
     expect(formatContracts(0, { signed: true })).toBe("0");
     expect(formatOi(50_000, undefined)).toBe("0.50 L");
     expect(formatOi(50_000, "contracts")).toBe("50,000");
+    expect(formatOi(50_000, undefined, true, false)).toBe("+0.50");
+    expect([oiUnitCaption(undefined), oiUnitCaption("lakhs"), oiUnitCaption("contracts")]).toEqual(["OI in lakhs", "OI in lakhs", "OI in contracts"]);
     expect(formatCount(50_000)).toBe("50,000");                         // other callers keep formatCount as it was
   });
 
   it("the chain table shows OI, OI change and volume in the chosen unit", () => {
     const html = renderToStaticMarkup(<ChainTableV2 live={liveChain()} prefs={DEFAULT_COLUMNS} centreKey="k" onPick={noop} />);
-    expect(html).toMatch(/data-col="call-oi"[\s\S]*?1.00 L/);
-    expect(html).toContain("+0.15 L");
-    expect(html).toContain("0.20 L");                                   // volume 20,000
+    expect(html).toMatch(/data-col="call-oi"[\s\S]*?>1.00</);
+    expect(html).toContain(">+0.15<");
+    expect(html).toContain(">0.20<");                                   // volume 20,000
+    expect(html).toContain("(OI and volume in lakhs)");                 // owner 13 Nov: the unit once, above the table
+    expect(text(html)).not.toMatch(/\d L\b/);
     const contracts = renderToStaticMarkup(<ChainTableV2 live={liveChain()} prefs={{ ...DEFAULT_COLUMNS, units: "contracts" }} centreKey="k" onPick={noop} />);
     expect(contracts).toContain("1,00,000");
     expect(contracts).toContain("+15,000");
+    expect(contracts).toContain("(OI and volume in contracts)");
   });
 
   it("the unit is kept in the columns prefs (lakhs unless Contracts was picked)", () => {

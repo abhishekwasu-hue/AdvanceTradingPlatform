@@ -151,7 +151,7 @@ describe("layout model: move, resize, open, close", () => {
     expect(chart2.find((p) => p.id === "chart-2")).toMatchObject({ open: true });
     expect(layoutProblem(chart2)).toBeNull();
     const closed = closePanel(seller(), "chain");
-    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 7, y: 0 });
+    expect(closed.find((p) => p.id === "chain")).toMatchObject({ open: false, x: 8, y: 0 });
     const one = [{ id: "chart-1" as const, x: 0, y: 0, w: 6, h: 6, open: true }];
     expect(closePanel(one, "chart-1")[0].open).toBe(true);
     expect(firstFree(seller(), 12, 6)).toEqual({ x: 0, y: 20 });

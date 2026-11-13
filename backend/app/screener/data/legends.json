@@ -152,7 +152,7 @@
    "style": {"text": "Short-term volatility breakouts: a move away from the day's open by part of the previous day's range.", "cite": ["williams_1999"]},
    "looks_for": {"text": "The day's high reaching the open plus a fraction (default 0.5) of the previous day's high-low range.", "cite": ["williams_1999"]},
    "timeframe": {"text": "Daily bars; very short-term trades of one to a few days.", "cite": ["williams_1999"]},
-   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures (editable here).",
+   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures. It fires often: at k 0.5 about 4 in 10 stock-days match; a larger k fires less.",
    "screen": {
     "source": "high >= open + $k * (high[1] - low[1])",
     "base_tf": "1d",
@@ -235,14 +235,15 @@
    "review": "verified",
    "who": {"text": "Trader and author of a 1990 statistical study of short-term price patterns and the opening-range breakout.", "cite": ["crabel_1990"]},
    "style": {"text": "Short-term patterns studied statistically, such as range contraction and breakouts from the opening range.", "cite": ["crabel_1990"]},
-   "looks_for": {"text": "An intraday close crossing above the high of the session's opening range, the range of its first 30 minutes.", "cite": ["crabel_1990"]},
+   "looks_for": {"text": "An intraday close crossing above the high of the session's opening range (its first 30 minutes); by default only the session's first such cross.", "cite": ["crabel_1990"]},
    "timeframe": {"text": "Intraday 5-minute bars; the move is studied within the same session.", "cite": ["crabel_1990"]},
    "approximation": "The level here is the high of the first 30 minutes; the book's own breakout levels, measured from the open, and the downside break are not part of it.",
    "screen": {
-    "source": "close > ORHigh($or_minutes) AND close[1] <= ORHigh($or_minutes)[1]",
+    "source": "close > ORHigh($or_minutes) AND close[1] <= ORHigh($or_minutes)[1] AND ($first_break_only < 1 OR FirstInSession(close > ORHigh($or_minutes) AND close[1] <= ORHigh($or_minutes)[1]))",
     "base_tf": "5m",
     "params": [
-     {"name": "or_minutes", "default": 30, "min": 5, "max": 120, "doc": "Minutes from the session open that make up the opening range."}
+     {"name": "or_minutes", "default": 30, "min": 5, "max": 120, "doc": "Minutes from the session open that make up the opening range."},
+     {"name": "first_break_only", "default": 1, "min": 0, "max": 1, "doc": "1 = only the session's first close above the range high; 0 = every new cross above it in the session."}
     ]
    }
   },
@@ -278,7 +279,7 @@
    "style": {"text": "Value investing with a margin of safety: buying a business for well under a conservative estimate of its worth.", "cite": ["graham_1949"]},
    "looks_for": {"text": "A price at or below two-thirds of net current asset value per share: current assets minus all liabilities, per share.", "cite": ["graham_dodd_1934", "graham_1949"]},
    "timeframe": {"text": "Daily prices against the latest reported balance sheet; holdings kept for months to years.", "cite": ["graham_1949"]},
-   "approximation": "Uses the balance sheet known on each day (point in time, never a later restatement); the books also ask for a diversified group of such issues and for some earnings, which the screen does not check.",
+   "approximation": "Uses the balance sheet known on each day (point in time); preference share capital is not subtracted, as the stored figures do not show it; the books also ask for a diversified group and some earnings, not checked.",
    "screen": {
     "source": "NCAVPerShare() > 0 AND close <= $ncav_frac * NCAVPerShare()",
     "base_tf": "1d",

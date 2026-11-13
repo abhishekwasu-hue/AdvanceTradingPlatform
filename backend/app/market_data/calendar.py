@@ -202,14 +202,54 @@ def intraday_cutoffs(exchange: Optional[str]) -> tuple[Optional[time], Optional[
     return spec.no_new_entries_after, spec.square_off_at
 
 
+# SCR-FIX round 2 (re-audit S1h): the holiday lists this process last read in full, per holiday calendar, so the pure,
+# synchronous screener clock (`app.screener.runtime._session_end`) closes a week / month at its last trading session. Kept
+# fresh by every full read below (the worker reads them each cycle), by `warm_known_holidays` at start-up and by the
+# holiday admin routes after a change. Empty (never read) = weekends only, the earlier behaviour: later, never early.
+_KNOWN_HOLIDAYS: dict[str, frozenset[date]] = {}
+
+
+def known_holidays(exchange: str | None = "NSE") -> frozenset[date]:
+    """The closed days of `exchange`'s family as last read in full by this process (its own calendar plus the ones it is
+    `also_closed_on`); empty when none was read."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
+    days: set[date] = set(_KNOWN_HOLIDAYS.get(spec.holiday_calendar, frozenset()))
+    for calendar in spec.also_closed_on:
+        days |= _KNOWN_HOLIDAYS.get(calendar, frozenset())
+    return frozenset(days)
+
+
+def remember_holidays(calendar: str, days: Iterable[date]) -> None:
+    _KNOWN_HOLIDAYS[calendar.upper()] = frozenset(days)
+
+
+def forget_known_holidays() -> None:
+    """Tests: each test starts with no holiday list read."""
+    _KNOWN_HOLIDAYS.clear()
+
+
 async def load_holidays(session: AsyncSession, exchange: str = "NSE", year: Optional[int] = None) -> Set[date]:
     query = select(MarketHolidayRecord.holiday_date).where(MarketHolidayRecord.exchange == exchange)
     if year is not None:
         query = query.where(
             MarketHolidayRecord.holiday_date >= date(year, 1, 1), MarketHolidayRecord.holiday_date <= date(year, 12, 31)
         )
-    rows = await session.scalars(query)
-    return set(rows)
+    rows = set(await session.scalars(query))
+    if year is None:
+        remember_holidays(exchange, rows)
+    return rows
+
+
+async def warm_known_holidays(session: AsyncSession) -> None:
+    """Start-up (API and workers) and after a holiday change: read every holiday calendar in full. Never stops the caller
+    (no table yet: the screener keeps weekends only)."""
+    calendars = {spec.holiday_calendar for spec in EXCHANGE_SESSIONS.values()} | {c for spec in EXCHANGE_SESSIONS.values() for c in spec.also_closed_on}
+    for calendar in sorted(calendars):
+        try:
+            await load_holidays(session, calendar)
+        except Exception:  # noqa: BLE001 - no calendar rows / table: weekends only
+            await session.rollback()
+            return
 
 
 async def family_holidays(session: AsyncSession, exchange: str = "NSE", year: Optional[int] = None) -> Set[date]:

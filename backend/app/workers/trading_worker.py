@@ -3230,6 +3230,9 @@ async def main() -> None:
     from app.market_data import shared_candles
     shared_candles.never_wait_on_other_processes()   # LD-10 review: never wait on an API process's candle fill (ADR-0004)
 
+    from app.market_data.calendar import warm_known_holidays
+    async with _session_factory() as session:
+        await warm_known_holidays(session)   # SCR-FIX round 2: the screener's week / month close reads the holiday list
     worker = TradingWorker(_session_factory)
     from app.core.config import WORKER_METRICS_PORT
     if WORKER_METRICS_PORT > 0:

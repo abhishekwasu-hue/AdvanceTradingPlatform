@@ -584,6 +584,8 @@ def test_m94_session_functions():
     assert _ev("SessionLow()", d).tolist()[2:] == [101.0, 101.0, 101.0]
     assert _ev("SessionVolume()", d).tolist()[2:] == [1000.0, 3000.0, 4500.0]
     assert _ev("SessionCount(close > close[1])", d).tolist()[2:] == [1.0, 2.0, 2.0]
+    # SCR-FIX round 2: the first bar of the session (its trading date) where the condition holds (tests/test_scr_fix_round2.py)
+    assert _ev("FirstInSession(close > 101.5)", d).astype(bool).tolist() == [False, False, True, False, False]
     assert (_ev("PreOpenHigh()", d).tolist()[2:], _ev("PreOpenLow()", d).tolist()[2:]) == ([102.0] * 3, [99.0] * 3)
     # M99 P2: LevelGrade on the session's own high (tier 3; the full fixtures: tests/test_m99_p2_intraday.py) - one visit so
     # far on each regular bar, the high made on this bar or one bar ago; missing on the pre-open bars

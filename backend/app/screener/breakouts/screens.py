@@ -608,8 +608,17 @@ def _b14(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> No
 
 _RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14, **intraday.RULES, **vcp.RULES, **indicator_breaks.RULES,
           **lines.RULES, **gaps.RULES, **retest.RULES}
-# Screens whose raw condition is already one signal per event (U6 BK4: B8 one per session, B9 one per breakout)
+# Screens whose raw condition is already one signal per event (U6 BK4: B8 one per session, B9 one per breakout).
+# SCR-FIX round 2: B8's "one per session" is one per event only intraday, where a session holds many bars; on Daily each
+# session IS one bar, so a run of gap days was one signal per day - Daily B8 takes the one-per-leg rule (`one_per_event`).
 _ONE_PER_EVENT = ("B8", "B9")
+
+
+def one_per_event(screen: str, b: Bars) -> bool:
+    """True when the screen's raw condition is already one signal per event on these bars."""
+    if screen == "B8":
+        return not gaps.is_daily(b)
+    return screen in _ONE_PER_EVENT
 
 
 def is_state(screen: str, p: Dict[str, Any]) -> bool:
@@ -665,7 +674,7 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
         s = b.side(1 if side == "up" else -1)
         out = _empty(b.n)
         _RULES[screen](b, s, p, out)
-        if is_state(screen, p) or screen in _ONE_PER_EVENT:
+        if is_state(screen, p) or one_per_event(screen, b):
             out["signal"] = out["raw"].copy()
         elif screen in intraday.FIXED_LEVEL:
             out["signal"] = intraday.session_cap(out["raw"], b.sessions(), int(p["intraday_max_per_session"]))

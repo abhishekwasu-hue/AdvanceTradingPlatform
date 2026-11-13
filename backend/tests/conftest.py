@@ -67,6 +67,8 @@ def _closed_circuit_breakers():
     forget_status()                     # LD-7: the public status is cached for a few seconds per process; each test reads afresh
     from app.market_data import shared_candles
     shared_candles.reset()              # LD-10: candles one test fetched are never another test's shared copy
+    from app.market_data.calendar import forget_known_holidays
+    forget_known_holidays()             # SCR-FIX round 2: no holiday list one test read reaches another test's screener clock
     yield
 
 

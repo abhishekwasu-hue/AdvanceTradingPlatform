@@ -142,18 +142,43 @@ def _session_end(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
     """M93-Q1 (owner 9 Nov, "Default ho"): a day / week / month on the NSE-family clock closes at its LAST REGULAR
     SESSION's close (15:30 IST): the day's own, the week's Friday, the month's last weekday - not at the next calendar
     boundary (a week closing at the next Monday 00:00 read the week before on the week's last session and all weekend).
-    No holiday calendar here: a holiday Friday or month end still waits for the calendar day (later, never early); a
-    session on a weekend (Budget, Muhurat) is covered by `session_closes`, which never puts a bar's close before its
-    own last source bar's close."""
+    SCR-FIX round 2 (re-audit S1h): the exchange's holiday list (`market_holidays`, as this process last read it -
+    `calendar.known_holidays`) moves a week's / month's close back over its closing holidays to its last trading day (a
+    holiday Friday: Thursday 15:30), never before the bar's own start; with no list read, weekends only (later, never
+    early). A session on a weekend (Budget, Muhurat) is covered by `session_closes`, which never puts a bar's close before
+    its own last source bar's close."""
     tz = getattr(index, "tz", None)
-    local = (index.tz_localize("UTC") if tz is None else index).tz_convert(EXCHANGE_TZ).normalize()
+    start = (index.tz_localize("UTC") if tz is None else index).tz_convert(EXCHANGE_TZ).normalize()
+    local = start
     if tf == "1w":
         local = local + pd.to_timedelta(np.maximum(0, 4 - local.weekday), unit="D")
     elif tf == "1M":
         last = local + pd.offsets.MonthEnd(0)
         local = last - pd.to_timedelta(np.maximum(0, last.weekday - 4), unit="D")
+    if tf in ("1w", "1M"):
+        local = _back_over_holidays(local, start)
     end = local + _SESSION_CLOSE_IST
     return end.tz_convert("UTC").tz_localize(None) if tz is None else end.tz_convert(tz)
+
+
+def _back_over_holidays(day: pd.DatetimeIndex, floor: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Each (exchange-time, midnight) day moved back over weekends and the NSE family's known holidays, never before
+    `floor` (the bar's own start)."""
+    from app.market_data.calendar import known_holidays
+    closed = known_holidays("NSE")
+    if not closed or not len(day):
+        return day
+    moved: dict[tuple[pd.Timestamp, pd.Timestamp], pd.Timestamp] = {}
+    out = []
+    for d, lo in zip(day, floor):
+        key = (d, lo)
+        if key not in moved:
+            x = d
+            while x > lo and (x.weekday() >= 5 or x.date() in closed):
+                x -= pd.Timedelta(days=1)
+            moved[key] = x
+        out.append(moved[key])
+    return pd.DatetimeIndex(out, tz=day.tz)
 
 
 def bar_close(index: pd.DatetimeIndex, tf: str, exchange: Optional[str] = None) -> pd.DatetimeIndex:
@@ -571,6 +596,7 @@ class _Eval:
             "PDC": lambda: _operand(f, "PDC"),
             "ORHigh": lambda: _operand(f, "OR_HIGH", win(0)),
             "ORLow": lambda: _operand(f, "OR_LOW", win(0)),
+            "FirstInSession": lambda: _first_in_session(_as_bool(self.ev(args[0], tf), f.index), f),
             "Trend": lambda: _structure(f, win(0, 3))[0],
             "StructureEvent": lambda: _structure(f, win(0, 3))[1],
             "PatternBullish": lambda: _pattern(f, "BULLISH", _text(0, "any")),
@@ -820,6 +846,15 @@ def _operand(f: pd.DataFrame, indicator: str, period: int = 14, mult: float = 3.
     """The Strategy Builder's own indicator code (S1c parity with the scanner and the strategies)."""
     from app.strategy_engine.declarative import Operand
     return Operand(type="indicator", indicator=indicator, period=max(1, period), multiplier=mult).series(f).astype(float)  # type: ignore[arg-type]
+
+
+def _first_in_session(cond: pd.Series, f: pd.DataFrame) -> pd.Series:
+    """SCR-FIX round 2: True on the first bar of each session (the IST trading date, as ORHigh / DayOpen / PDH group the
+    bars - `declarative._sessions`) where `cond` holds. A bar reads only its own session's bars up to itself (causal)."""
+    from app.strategy_engine.declarative import _sessions
+    held = cond.astype(bool)
+    earlier = held.astype(int).groupby(_sessions(f)).cumsum() - held.astype(int)
+    return held & (earlier == 0)
 
 
 def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:

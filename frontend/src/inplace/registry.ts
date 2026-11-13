@@ -32,6 +32,8 @@ export interface PanelEntry {
   keys: readonly string[];
   title: (params: PanelParams) => string;
   presentation: Presentation;
+  /** Owner 13 Nov (Copilot chat): on a phone the bottom sheet takes the whole screen. */
+  phoneFull?: boolean;
   /** The parameters when this panel answers for a full route (pathname and search), null otherwise. */
   match: (url: { pathname: string; search: URLSearchParams; hash: string }) => PanelParams | null;
   /** The full route that shows the same facility as a page: the link's real address and the fallback navigation. */
@@ -42,7 +44,7 @@ export interface PanelEntry {
   /** NAV-6a: the panel is a whole page (its full route's page). On that page's own path an address for it is the page
    * changing its own view (a list, a period, a filter), never the same page in a panel over itself. */
   page?: boolean;
-  /** CEPE-1: the panel's body fills its height (a chart); on a phone the sheet is full screen. */
+  /** CEPE-1: the panel's body fills its height (a chart; with `phoneFull` the whole phone screen). */
   fill?: boolean;
 }
 

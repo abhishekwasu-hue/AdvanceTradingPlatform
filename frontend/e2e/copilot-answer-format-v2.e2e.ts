@@ -71,7 +71,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 // M72 PR-3 (CP-3): "Ask AI about this" - the context in the address rides on the question as ids and words only.
 test.describe("Copilot context", () => {
   test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
-  test("the About chip shows the context, the question carries it, and it can be dropped", async ({ page }) => {
+  // Owner 13 Nov: an item's context opens the focused chat - its header names the item (the About chip's job) and the
+  // question starts a new conversation about it; leaving the item drops the context.
+  test("the focused chat names the item, the question carries it, and it can be dropped", async ({ page }) => {
     const bodies: unknown[] = [];
     await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     await mockApi(page, { features: { ui_v2: true, ai_copilot: true, copilot_agent: true }, brokers: [] });
@@ -85,16 +87,17 @@ test.describe("Copilot context", () => {
       return route.fulfill({ json: PLANNED });
     });
     await page.goto("/copilot?symbol=DDDSTOCK&ctx=trade:7&from=orders");
-    await expect(page.locator("[data-ask-context='trade']")).toContainText("Your trade · DDDSTOCK");
+    await expect(page.locator("[data-focus-header='order'] [data-focus-title]")).toHaveText("Order · DDDSTOCK");
+    await expect(page.locator("[data-suggestion]").first()).toHaveText("What is the status of this order?");
     await page.locator("#copilot-question").fill("How did this go?");
     await page.locator("#copilot-question").press("Enter");
     await expect(page.locator("[data-answer='agent']")).toBeVisible({ timeout: 15_000 });
-    expect(bodies[0]).toEqual({ message: "How did this go?", context: { symbol: "DDDSTOCK", object: { kind: "trade", id: 7 }, page: "orders" } });
-    await page.locator("[data-ask-context-clear]").click();
-    await expect(page.locator("[data-ask-context]")).toHaveCount(0);
+    expect(bodies[0]).toEqual({ message: "How did this go?", context: { symbol: "DDDSTOCK", object: { kind: "trade", id: 7 }, page: "orders" }, new_chat: true });
+    await page.locator("[data-focus-leave]").click();
+    await expect(page.locator("[data-focus-header]")).toHaveCount(0);
     await page.locator("#copilot-question").fill("And now?");
     await page.locator("#copilot-question").press("Enter");
     await expect(page.locator("[data-answer='agent']")).toHaveCount(2);
-    expect(bodies[1]).toEqual({ message: "And now?" });
+    expect(bodies[1]).not.toHaveProperty("context");
   });
 });

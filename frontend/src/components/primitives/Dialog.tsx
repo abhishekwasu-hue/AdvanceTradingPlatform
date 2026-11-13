@@ -7,15 +7,17 @@ interface Base {
   open: boolean; onOpenChange: (open: boolean) => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean;
   /** M75 NAV-1: where focus goes on close (the in-place host puts it back on the button that opened the panel). */
   onCloseAutoFocus?: (e: Event) => void;
-  /** CEPE-1: the body fills the panel's height (a chart workspace); a phone's bottom sheet is then full screen. */
+  /** Owner 13 Nov (Copilot chat): a bottom sheet that takes the whole phone screen (a chat with its input pinned). */
+  tall?: boolean;
+  /** CEPE-1: the body is a column that fills the panel's height (a chart workspace); with `tall` it fills the phone screen. */
   fill?: boolean;
 }
 
-function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false, onCloseAutoFocus, fill = false }: Base & { side?: "right" | "bottom" }) {
+function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false, onCloseAutoFocus, tall = false, fill = false }: Base & { side?: "right" | "bottom" }) {
   const panel = side === "right"
     ? `inset-y-0 right-0 h-full w-full ${wide ? "max-w-3xl" : "max-w-md"} border-l`   // wide: a workspace side panel (M75 NAV-1)
     : side === "bottom"
-      ? fill ? "inset-0 h-[100dvh] w-full border-t" : "inset-x-0 bottom-0 max-h-[85vh] w-full rounded-t-xl border-t"
+      ? (tall ? "inset-x-0 bottom-0 h-dvh max-h-dvh w-full border-t" : "inset-x-0 bottom-0 max-h-[85vh] w-full rounded-t-xl border-t")
       : wide   // a workspace sheet (U9 gallery): most of the screen, scrolling inside
         ? "left-1/2 top-1/2 max-h-[90vh] w-[calc(100vw-2rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 rounded-xl border"
         : "left-1/2 top-1/2 max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border";   // a tall form scrolls inside; the footer stays on screen

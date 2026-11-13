@@ -158,7 +158,7 @@ export default function ChatBubbleV2({ on, signedIn, section }: { on: (flag: str
         className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-space-4 z-30 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-on-brand shadow-lg transition-[opacity,transform] duration-base ease-standard hover:opacity-90 data-[scrolling]:pointer-events-none data-[scrolling]:translate-y-space-4 data-[scrolling]:opacity-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 md:bottom-space-6 md:right-space-6">
         <MessageCircle size={22} aria-hidden />
       </button>
-      <Sheet side={phone ? "bottom" : "right"} open={open} onOpenChange={setOpen} title={symbol ? `Copilot · ${symbol}` : "Copilot"}>
+      <Sheet side={phone ? "bottom" : "right"} tall={phone} open={open} onOpenChange={setOpen} title={symbol ? `Copilot · ${symbol}` : "Copilot"}>
         <div data-chat-sheet className="min-h-0">
           {open && (
             <Suspense fallback={<Skeleton className="h-40" panel label="Loading" />}>

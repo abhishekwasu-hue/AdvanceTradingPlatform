@@ -52,7 +52,7 @@ function SectionLine({ line }: { line: string }) {
   return row ? (
     <li className="flex flex-wrap items-baseline justify-between gap-x-space-3 text-t14" data-answer-row>
       <span className="shrink-0 text-fg-muted">{row.label}:</span>
-      <span className={cx("shrink-0 font-tabular font-semibold", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
+      <span className={cx("min-w-0 break-words text-right font-tabular font-semibold", row.dir === "up" ? "text-up" : row.dir === "down" ? "text-down" : "text-fg")}
         data-signed={row.dir ?? undefined}>
         {row.dir && <span aria-hidden className="text-t12">{row.dir === "up" ? "▲" : "▼"}</span>}{row.value}
       </span>

@@ -727,6 +727,8 @@ describe("TERM-2 step 1: the context bar", () => {
       chain={chainData({ spot: 24400, pcr_oi: 0.5, pcr_oi_atm: 0.91, days_to_expiry: 7, atm_strike: 24500 })} spot={null} prevClose={null} vix={null}
       mode={{ label: "Paper", title: "Practice" }} /></MemoryRouter>);
     expect(html).toContain('data-expiry="2026-11-03"');
+    // main red 13 Nov: the unit small and muted, so the bar keeps one row at 1440 (the PAPER badge never wraps)
+    expect(html).toContain('7<span class="text-t12 font-normal text-fg-muted"> trading days</span>');
     expect(html).toContain('data-symbol="NIFTY"');
     expect(html.match(/>PAPER</g)?.length).toBe(1);
     expect(html).not.toMatch(/\bPractice\b(?![^<]*")/);

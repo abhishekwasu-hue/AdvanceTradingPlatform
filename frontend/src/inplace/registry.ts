@@ -42,6 +42,8 @@ export interface PanelEntry {
   /** NAV-6a: the panel is a whole page (its full route's page). On that page's own path an address for it is the page
    * changing its own view (a list, a period, a filter), never the same page in a panel over itself. */
   page?: boolean;
+  /** CEPE-1: the panel's body fills its height (a chart); on a phone the sheet is full screen. */
+  fill?: boolean;
 }
 
 export interface PanelRegistry {

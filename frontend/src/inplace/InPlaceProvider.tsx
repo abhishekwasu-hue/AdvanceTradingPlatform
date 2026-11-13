@@ -111,7 +111,8 @@ function PanelLayer({ entry, params, phone, top, level, openers, handed, close, 
     if (el?.isConnected) el.focus({ preventScroll: true });
   };
   const body = (
-    <div data-inplace-panel={entry.kind} data-inplace-shape={shape.shell === "dialog" ? "modal" : shape.side}>
+    <div data-inplace-panel={entry.kind} data-inplace-shape={shape.shell === "dialog" ? "modal" : shape.side}
+         className={entry.fill ? "flex min-h-0 flex-1 flex-col" : undefined}>
       <InPanelContext.Provider value={true}>
         <PanelRouter path={entry.href(params)} state={handed} onLeave={leave}>
           <Suspense fallback={<SkeletonRows rows={4} label={`Loading ${entry.title(params)}`} />}>
@@ -121,6 +122,6 @@ function PanelLayer({ entry, params, phone, top, level, openers, handed, close, 
       </InPanelContext.Provider>
     </div>
   );
-  const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide };
+  const common = { open: true, onOpenChange, title: entry.title(params), onCloseAutoFocus, wide: shape.wide, fill: !!entry.fill };
   return shape.shell === "dialog" ? <Dialog {...common}>{body}</Dialog> : <Sheet side={shape.side} {...common}>{body}</Sheet>;
 }

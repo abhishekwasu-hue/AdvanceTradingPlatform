@@ -54,6 +54,7 @@ export const CHART_PANEL: PanelEntry = {
   keys: ["symbol", "tf", "exchange", "wscreen"],
   title: (p) => p.symbol ?? "Chart",
   presentation: "side-wide",
+  fill: true,   // CEPE-1: the chart fills the panel (was a fixed 384 px with the rest of the panel blank)
   match: ({ pathname, search }) => {
     const fromPath = chartsSymbolFromPath(pathname);
     const symbol = fromPath ?? search.get("chart")?.trim().toUpperCase() ?? null;

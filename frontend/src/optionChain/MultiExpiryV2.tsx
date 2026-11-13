@@ -75,10 +75,10 @@ export default function MultiExpiryV2({ underlying }: { underlying: string }) {
 /** The table for columns already in hand (pure) - tests render it directly. */
 export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
   const rows: { key: string; label: string; cell: (c: ExpiryColumn) => { text: string; className?: string } }[] = [
-    { key: "call_oi", label: "Call OI", cell: (c) => ({ text: formatLakhs(c.totalCall) }) },
-    { key: "put_oi", label: "Put OI", cell: (c) => ({ text: formatLakhs(c.totalPut) }) },
-    { key: "call_chg", label: "Call OI chg", cell: (c) => ({ text: formatLakhsChange(c.callChange), className: tone(c.callChange) }) },
-    { key: "put_chg", label: "Put OI chg", cell: (c) => ({ text: formatLakhsChange(c.putChange), className: tone(c.putChange) }) },
+    { key: "call_oi", label: "Call OI", cell: (c) => ({ text: formatLakhs(c.totalCall, { unit: false }) }) },
+    { key: "put_oi", label: "Put OI", cell: (c) => ({ text: formatLakhs(c.totalPut, { unit: false }) }) },
+    { key: "call_chg", label: "Call OI chg", cell: (c) => ({ text: formatLakhsChange(c.callChange, false), className: tone(c.callChange) }) },
+    { key: "put_chg", label: "Put OI chg", cell: (c) => ({ text: formatLakhsChange(c.putChange, false), className: tone(c.putChange) }) },
     { key: "pcr", label: "PCR (OI)", cell: (c) => ({ text: c.pcr === null ? EMPTY : formatNumber(c.pcr, 2) }) },
     { key: "max_pain", label: "Max pain", cell: (c) => ({ text: c.maxPain === null ? EMPTY : strikeText(c.maxPain) }) },
     { key: "atm_iv", label: "ATM IV", cell: (c) => ({ text: c.atmIv === null ? EMPTY : `${formatNumber(c.atmIv, 1)}%` }) },
@@ -87,6 +87,8 @@ export function ExpiryTable({ cols }: { cols: readonly ExpiryColumn[] }) {
   const cell = "whitespace-nowrap px-space-2 py-space-1 text-right font-tabular";
   return (
     <div className="space-y-space-1">
+      {/* Owner 13 Nov: the unit once above the table; the OI cells carry the bare figures. */}
+      <p className="text-right text-t12 text-fg-muted" data-oi-unit>(OI in lakhs)</p>
       <div className="overflow-x-auto rounded-panel border border-subtle">
         <table className="w-full min-w-[20rem] border-collapse text-t13" data-multi-expiry-table>
           <thead>

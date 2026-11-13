@@ -201,8 +201,14 @@ export { formatCount, formatCountChange } from "../ui/format";
 
 /** M96 Q3: one OI / OI change / volume figure on the chain in the user's unit (lakhs unless he picked Contracts);
  *  `signed` for a change. */
-export function formatOi(v: number | null | undefined, units: OiUnits | undefined, signed = false): string {
-  return units === "contracts" ? formatContracts(v, { signed }) : formatLakhs(v, { signed });
+export function formatOi(v: number | null | undefined, units: OiUnits | undefined, signed = false, unit = true): string {
+  return units === "contracts" ? formatContracts(v, { signed }) : formatLakhs(v, { signed, unit });
+}
+
+/** Owner 13 Nov: a table of OI figures says its unit once, above the table ("OI in lakhs" / "OI in contracts"), and its
+ *  cells carry the bare figures (formatOi(..., unit = false)). */
+export function oiUnitCaption(units: OiUnits | undefined, what = "OI"): string {
+  return `${what} in ${units === "contracts" ? "contracts" : "lakhs"}`;
 }
 
 /** FNO-1: an OI change in percent of the OI before it ("+12.5%", "−4.0%"); "–" when the earlier OI is not known or 0. */

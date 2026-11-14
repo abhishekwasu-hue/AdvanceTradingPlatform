@@ -323,6 +323,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | M99 | merged: B0 #1012, B1 #1013-#1016, P2 #1024, P3 #1018, P4 #1019, P6 #1021, P5 + P7 + P2 F&O + P1 via #1036; flags OFF per pack; waits for deploy + owner flags + ✅ | all built as draft PRs: B0 #1012, B1 #1013 (merged) #1014 #1015 #1016, P1 #1017, P3 #1018, P4 #1019, P5 #1020, P6 #1021, P7 #1023, P2 #1024; flags OFF per pack; waits for green CI, merges, deploy and the owner's flag decisions + ✅ | INBOX 11 Nov (M99, M100, M101) |
 | PHONE-1 | merged (#1027); waits for deploy + ✅ | the phone layout guard misses sideways scroll inside <main>; fix the 20 pages it finds (Test a strategy, positions, settings, alerts, dashboard, front-page card) and extend the guard in one PR | M99 proof page finding |
 | LIVE-2 | merged (#1032); waits for deploy + ✅ | basket + Reverse LIVE on the one switch (same code path as the ticket) | DECISIONS 11 Nov (LIVE-1) |
+| B1 (LIVE-1 amended) | draft PR (claude/live-owner-only); waits for CI + deploy + ✅ | server LIVE only for the owner's organisation; others PAPER + broker-app link (B2) | DECISIONS 14 Nov |
 | ORD-1 | merged (#1030); waits for deploy + ✅ | Orders tab = today only; PAPER expiry settlement | INBOX 12 Nov |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | BIZ-1 | audit (14 Nov) | docs/design/ROUTE3_AUDIT.md done; BIZ1-Q1 (per-user LIVE gate) needs the owner's ✅ before B1 | claude/route3-audit |

@@ -374,6 +374,11 @@ def owner_switched_live_on(monkeypatch):
         return registry.get_plan(tenant.plan).live_trading
 
     monkeypatch.setattr(limits, "_live_granted", plan_grants)
+    # B1 (owner 14 Nov): LIVE through ATP's server is for the owner's organisation only. In this posture every test
+    # organisation counts as the owner's, so the LIVE code path stays under test; the rule itself (owner's organisation
+    # only, resolved from LIVE_OWNER_USER_ID) is pinned in tests/test_b1_live_owner_only.py.
+    from app.platform import phase0_lock
+    monkeypatch.setattr(phase0_lock, "is_owner_org", lambda tenant_id: tenant_id is not None)
     user = UserRole.USER.value
     monkeypatch.setitem(scopes.ROLE_SCOPES, user, scopes.ROLE_SCOPES[user] | {"trading:live"})
     yield

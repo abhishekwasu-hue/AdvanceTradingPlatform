@@ -152,17 +152,19 @@ async def _kill_switch(session: AsyncSession, user: User) -> Dict[str, Any]:
 
 # LIVE-2: the words of the mode line by the one switch (never "LIVE unavailable" while it is ON).
 PAPER_ONLY_MESSAGE = "Paper only - live trading is switched off by the admin."
+# B1 (owner 14 Nov): the switch is ON but LIVE through ATP's server is for the owner's organisation only.
+NOT_OWNER_MESSAGE = "Paper here. Live orders from ATP are for the platform owner only. Use Trade in your broker app."
 LIVE_ON_MESSAGE = "Live trading is on: each order and bot uses the mode you pick on it (Paper unless you pick Live)."
 
 
 async def _mode(session: AsyncSession, user: User) -> Dict[str, Any]:
     """The Terminal's mode line. LIVE-2: it follows the one live switch - OFF: paper only, said so; ON: each order (the
     ticket, the basket, Reverse) and bot uses the mode the user picks on it, PAPER by default. Shown, never changed."""
-    # LIVE-1: `live_allowed` = the one live switch (live_trading ON) - live_owner.org_live_open reads only that now.
-    from app.platform import live_owner
+    # LIVE-1 / B1: `live_allowed` = the one live switch ON and the owner's organisation (live_owner.org_live_open).
+    from app.platform import live_owner, phase0_lock
     allowed = await live_owner.org_live_open(session, user.tenant_id)
-    return {"mode": "PAPER", "live_allowed": allowed,
-            "message": (LIVE_ON_MESSAGE if allowed else PAPER_ONLY_MESSAGE)}
+    message = LIVE_ON_MESSAGE if allowed else (PAPER_ONLY_MESSAGE if phase0_lock.switch_locked() else NOT_OWNER_MESSAGE)
+    return {"mode": "PAPER", "live_allowed": allowed, "message": message}
 
 
 async def funds_of(session: AsyncSession, user: User, trades: Sequence[TradeRecord] | None = None) -> dict[str, Any]:

@@ -72,10 +72,11 @@ async def entry_blocks(session: AsyncSession, *, user: Optional[User], mode: str
         reasons.append("Platform maintenance: no new entries" + (f" - {current['maintenance_message']}" if current["maintenance_message"] else ""))
     if mode == "LIVE":
         # Z10-c / LIVE-1: the PAPER-only lock, derived from the one live switch (live_trading OFF = locked). Entries only -
-        # exits never come here.
+        # exits never come here. B1 (owner 14 Nov): the lock also holds for every organisation that is not the owner's.
         from app.platform import phase0_lock
-        if await phase0_lock.is_on(session, user.tenant_id if user is not None else None):
-            reasons.append(phase0_lock.ENTRY_REASON)
+        tenant_id = user.tenant_id if user is not None else None
+        if await phase0_lock.is_on(session, tenant_id):
+            reasons.append(phase0_lock.reason(tenant_id))
     if mode == "LIVE" and broker_name and broker_name.lower() in current["disabled_brokers"]:
         reasons.append(f"Broker {broker_name} is disabled by the platform operator - LIVE entries refused")
     if user is not None and user.trading_disabled_reason:
@@ -93,7 +94,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "marketplace": "Strategy marketplace listings and subscriptions",
     "public_api": "Public REST API keys and /api/public/v1",
     "backtest_optimizer": "Parameter optimisation grid runs",
-    "live_trading": "The one live switch: ON = PAPER and LIVE on every order path, each user picks his own mode; OFF = PAPER only (exits always work)",
+    "live_trading": "The one live switch. Live through ATP: your own organisation only (every other organisation: PAPER, and Trade in your broker app); OFF = PAPER only (exits always work)",
     # Z10-c (Phase 0): the PAPER-only lock (app/platform/phase0_lock.py). OFF by default. The one exception is the explicit
     # Phase 0 deployment mode (ATP_DEPLOYMENT_PHASE=phase0, app/platform/deployment_phase.py, owner decision 2026-10-12):
     # it seeds this flag ON and `live_trading` OFF where no entry is stored - the restrictive direction only.
@@ -877,7 +878,12 @@ async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -
     flags = await feature_flags(session)
     answer = {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
     from app.platform import live_switch
-    answer[live_switch.FLAG] = live_switch.live_on(flags)   # LIVE-1: the one switch - its global `on` only, no allow-list
+    # LIVE-1 / B1 (owner 14 Nov): the one switch, and LIVE through ATP's server only for the owner's organisation - every
+    # other organisation is answered `live_trading` off / `phase0_paper_only` on, so its Live choice shows as unavailable.
+    org_open = live_switch.live_on(flags) and await live_switch.live_allowed(session, tenant_id)
+    answer[live_switch.FLAG] = org_open
+    if PAPER_ONLY_FLAG in answer:
+        answer[PAPER_ONLY_FLAG] = not org_open
     for name in engine_missing_flags():                     # item 7: no engine, no feature for users
         if name in answer:
             answer[name] = False

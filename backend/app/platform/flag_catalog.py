@@ -53,7 +53,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "marketplace": FlagInfo("Strategies other users publish", "platform", "Marketplace page", (), "", "decision"),
     "public_api": FlagInfo("API keys for developers", "platform", "Settings › Advanced › Personal API keys", (), "", "ready"),
     "backtest_optimizer": FlagInfo("Try many settings of a strategy at once", "trading", "Optimise button in Backtest", (), "", "ready"),
-    "live_trading": FlagInfo("Live trading (real money): ON = Paper and Live on every order path, each user picks his own; OFF = Paper only",
+    "live_trading": FlagInfo("Live trading (real money). Live through ATP: your own organisation only (other users: Paper and their broker app); OFF = Paper only",
                              "trading", "Paper / Live choice on tickets, baskets and bots", (), "go-live checklist, two-factor", "decision"),
     "phase0_paper_only": FlagInfo("Paper only - follows Live trading (not a switch of its own)", "trading", "nothing visible", (), "", "behind_the_scenes"),
     "self_signup": FlagInfo("Anyone can create an account", "platform", "Register link", (), "", "decision"),

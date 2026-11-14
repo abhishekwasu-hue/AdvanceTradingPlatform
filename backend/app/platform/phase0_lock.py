@@ -7,6 +7,12 @@ default) = locked, no new LIVE entry is sent anywhere; `live_trading` ON = unloc
 The shared decision is app/platform/live_switch.py (`live_allowed`); this module keeps the layers that enforce it.
 Before LIVE-1 the lock was the flag `phase0_paper_only` (M55 S1: ON by default, the owner alone could turn it off).
 
+B1 (owner decision 14 Nov, LIVE-1 amended): LIVE orders through ATP's server are for the owner's organisation only - the
+organisation of the owner account (`LIVE_OWNER_USER_ID`, resolved as `live_owner.is_owner` does). So the lock holds for an
+organisation when `live_trading` is OFF (for everyone, as before) OR the organisation is not the owner's (also while the
+switch is ON). Other organisations trade PAPER here and use "Trade in your broker app". The switch stays ONE switch.
+No organisation known, or no owner account resolved, = locked (refusing an entry is always safe). Exits never come here.
+
 While it is on (live_trading OFF), no new LIVE entry is sent anywhere. Two layers:
 1. `platform.controls.entry_blocks` refuses every new LIVE entry (single-leg and multi-leg pipelines alike) before any
    sizing or routing, with a reason on the order trail;
@@ -32,11 +38,14 @@ FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
 # LIVE-1: one plain sentence (the switch, not a flag name) - the same words as live_switch.LIVE_OFF.
 ENTRY_REASON = "Live trading is switched off by the admin: new LIVE entries are refused - exits still run"
+# B1 (owner 14 Nov): the plain sentence when the switch is ON but the organisation is not the owner's.
+NOT_OWNER_REASON = "Live orders from ATP are for the platform owner only. Use Trade in your broker app."
 # What a LIVE deployment says while the lock is on: the trading worker does not evaluate it (no LIVE entry path is started).
 WORKER_NOT_EVALUATED = ENTRY_REASON + " (LIVE deployment not evaluated)"
+WORKER_NOT_OWNER = NOT_OWNER_REASON + " (LIVE deployment not evaluated)"
 
-# Last read of the flag in this process: the global switch and the tenant allow-list.
-_state: Dict[str, object] = {"on": False, "tenants": frozenset()}
+# Last read of the flag in this process: the global switch, the tenant allow-list and (B1) the owner's organisation.
+_state: Dict[str, object] = {"on": False, "tenants": frozenset(), "owner_tenant": None}
 
 
 def remember(on: bool, tenants) -> None:
@@ -44,28 +53,65 @@ def remember(on: bool, tenants) -> None:
     _state["tenants"] = frozenset(int(t) for t in tenants or ())
 
 
+def remember_owner(tenant_id: Optional[int]) -> None:
+    """B1: the owner's organisation from the last read (None = not resolved: every organisation locked)."""
+    _state["owner_tenant"] = int(tenant_id) if tenant_id is not None else None
+
+
 def reset_cache() -> None:
     remember(False, ())
+    remember_owner(None)
+
+
+async def owner_tenant_id(session: AsyncSession) -> Optional[int]:
+    """B1: the organisation of the owner account (`live_owner.owner_user_id`), only while that account is the owner as
+    `live_owner.is_owner` defines it (active platform administrator). None otherwise."""
+    from app.db.models import User
+    from app.platform import live_owner
+    user = await session.get(User, live_owner.owner_user_id())
+    if not live_owner.is_owner(user) or user is None or user.tenant_id is None:
+        return None
+    return int(user.tenant_id)
 
 
 async def is_on(session: AsyncSession, tenant_id: Optional[int]) -> bool:
-    """Reads the flag fresh (and refreshes the process state the broker chokepoint reads)."""
+    """Reads the flag and the owner's organisation fresh (and refreshes the process state the broker chokepoint reads)."""
     from app.platform.controls import feature_flags
     entry = (await feature_flags(session)).get(FLAG) or {}
     remember(bool(entry.get("on")), entry.get("tenants") or ())
+    remember_owner(await owner_tenant_id(session))
     return locked(tenant_id)
 
 
+def is_owner_org(tenant_id: Optional[int]) -> bool:
+    """B1: True when `tenant_id` is the owner's organisation, from the last read (`is_on`). None / unresolved = False."""
+    owner = _state["owner_tenant"]
+    return tenant_id is not None and owner is not None and int(tenant_id) == owner
+
+
+def switch_locked() -> bool:
+    """From the last read: the global lock alone (`live_trading` OFF) - for logs and the platform status, not for an
+    organisation's entry (that is `locked`)."""
+    return bool(_state["on"])
+
+
 def locked(tenant_id: Optional[int]) -> bool:
-    """From the last read: on for everyone, or for this tenant through the allow-list. With no tenant known the lock
-    holds when it is on for anyone (refusing an entry is always safe; exits never come here)."""
+    """From the last read: on for everyone (`live_trading` OFF), or (B1) for every organisation that is not the owner's,
+    or for this tenant through the allow-list. With no tenant known, or no owner resolved, the lock holds (refusing an
+    entry is always safe; exits never come here)."""
     if _state["on"]:
+        return True
+    if tenant_id is None or not is_owner_org(tenant_id):
         return True
     tenants = _state["tenants"]
     assert isinstance(tenants, frozenset)
-    if tenant_id is None:
-        return bool(tenants)
     return int(tenant_id) in tenants
+
+
+def reason(tenant_id: Optional[int]) -> str:
+    """The plain sentence for a refused LIVE entry, from the last read: the switch is off (`ENTRY_REASON`), else the
+    organisation is not the owner's (`NOT_OWNER_REASON`)."""
+    return ENTRY_REASON if _state["on"] else NOT_OWNER_REASON
 
 
 def is_entry_order(order: BrokerOrderRequest) -> bool:
@@ -76,8 +122,8 @@ def is_entry_order(order: BrokerOrderRequest) -> bool:
     return order.intent == ORDER_INTENT_ENTRY
 
 
-def refused_response() -> BrokerOrderResponse:
-    return BrokerOrderResponse(order_id="", status="REJECTED", message=f"{REFUSAL}: {ENTRY_REASON} - order not sent")
+def refused_response(tenant_id: Optional[int] = None) -> BrokerOrderResponse:
+    return BrokerOrderResponse(order_id="", status="REJECTED", message=f"{REFUSAL}: {reason(tenant_id)} - order not sent")
 
 
 class LiveOrderRefused(RuntimeError):
@@ -92,5 +138,5 @@ def assert_paper(mode: str, tenant_id: Optional[int]) -> str:
     exits of an existing position are never refused (ADR-0004). Returns the mode it allowed."""
     value = str(mode or "").upper()
     if value != "PAPER" and locked(tenant_id):
-        raise LiveOrderRefused(f"{REFUSAL}: {ENTRY_REASON} - nothing was placed")
+        raise LiveOrderRefused(f"{REFUSAL}: {reason(tenant_id)} - nothing was placed")
     return value

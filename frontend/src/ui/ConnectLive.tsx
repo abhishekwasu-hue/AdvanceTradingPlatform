@@ -10,13 +10,17 @@ import { CONNECT_LIVE } from "./lastClose";
  * (the same drawer as the sign-in prompt's Connect, M75 NAV-6b) - the page underneath stays as it was, so closing the
  * sheet returns to the same state. One per card, never on each row.
  */
-export function ConnectLiveButton({ className }: { className?: string }) {
+export function ConnectLiveButton({ className, compact = false }: { className?: string;
+  /** Owner 14 Nov (the Terminal's watchlist header): a small chip in a narrow column - smaller words that wrap inside the
+   * chip when the column is too narrow for one line, so the words are never cut. */
+  compact?: boolean }) {
   const inPlace = useInPlace();
   return (
-    <button type="button" data-connect-live onClick={() => inPlace.open(BROKER_PATH)}
-      className={cx("inline-flex min-h-11 shrink-0 items-center gap-space-1 rounded-control border border-subtle bg-surface-2 px-space-3 text-t13 font-semibold text-brand hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9", className)}>
-      <Plug size={14} aria-hidden />
-      {CONNECT_LIVE}
+    <button type="button" data-connect-live onClick={() => inPlace.open(BROKER_PATH)} title={compact ? CONNECT_LIVE : undefined}
+      className={cx("inline-flex min-h-11 items-center gap-space-1 rounded-control border border-subtle bg-surface-2 font-semibold text-brand hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9",
+        compact ? "min-w-0 max-w-full px-space-2 text-left text-t12 leading-tight" : "shrink-0 px-space-3 text-t13", className)}>
+      <Plug size={compact ? 12 : 14} aria-hidden className={compact ? "shrink-0" : undefined} />
+      {compact ? <span className="min-w-0 break-words">{CONNECT_LIVE}</span> : CONNECT_LIVE}
     </button>
   );
 }

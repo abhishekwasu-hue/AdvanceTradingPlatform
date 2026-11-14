@@ -84,6 +84,22 @@ class BrokerFeed:
 PriceSource = float | Callable[[], float]
 
 
+class FakeQuotes:
+    """S4b: the fake feed's prices as the quote source the derivative pipeline reads a contract's premium from (PAPER
+    only: it has no order methods, and the runner never hands it to a LIVE path - `FakeFeed.broker` stays None)."""
+
+    name = "test_feed"
+
+    def __init__(self, feed: FakeFeed) -> None:
+        self._feed = feed
+
+    async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
+        return await self._feed.ltp(symbol, exchange)
+
+    async def get_ltp(self, symbols: list[str]) -> dict[str, float]:
+        return {s: await self._feed.ltp(s, "") for s in symbols}
+
+
 class FakeFeed:
     """Fixed frames and prices (tests, dry runs). PAPER only: no broker, so nothing can be sent anywhere."""
 
@@ -93,6 +109,7 @@ class FakeFeed:
     def __init__(self) -> None:
         self._frames: dict[str, dict[str, pd.DataFrame]] = {}
         self._prices: dict[str, PriceSource] = {}
+        self.quotes = FakeQuotes(self)
 
     def set_frames(self, symbol: str, frames: dict[str, pd.DataFrame]) -> None:
         self._frames[symbol.upper()] = frames
@@ -113,4 +130,4 @@ class FakeFeed:
         return float(source() if callable(source) else source)
 
 
-__all__ = ["BarFeed", "BrokerFeed", "FakeFeed", "bars_to_frame", "protected"]
+__all__ = ["BarFeed", "BrokerFeed", "FakeFeed", "FakeQuotes", "bars_to_frame", "protected"]

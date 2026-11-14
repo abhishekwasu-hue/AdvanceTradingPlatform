@@ -139,6 +139,27 @@ def holding_of_product(product: str | None) -> str | None:
     return "SWING" if product.upper() == "NRML" else "INTRADAY"
 
 
+async def bot_holding(session: AsyncSession, dep: Any, user: User) -> tuple[str | None, str]:
+    """M68 PR-1: the bot's own holding, else the user's Trade settings (Order defaults > Holding). A "Carry forward"
+    setting fits a bot that reads daily candles or holds a defined-risk spread for days (Phase AS / M55 T1 - the
+    checks a bot's own SWING passes when it is created); any other bot needs its own holding. Returns (holding or
+    None, the plain-words reason when None). Runner S4b: moved unchanged from the trading worker (`_bot_holding`, which
+    now calls it) so the user's runner reads the same holding as the server."""
+    from app.instruments.spreads import can_hold_for_days
+    own = getattr(dep, "holding", None)
+    if own:
+        return own, ""
+    mine = (await load(session, user)).holding
+    if mine is None:
+        return None, needs_setting("holding")
+    from app.risk_engine import own_risk
+    written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
+    if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
+        return None, (f"{needs_setting('holding')}: your Carry forward setting does not fit this bot "
+                      f"(it reads {dep.timeframe} candles) - set this bot's own holding")
+    return mine, ""
+
+
 @contextmanager
 def stop_band(pct: float | None) -> Iterator[None]:
     """The user's own stop-limit gap for the protective stops placed inside this block (None: his gap is not saved)."""
@@ -149,5 +170,5 @@ def stop_band(pct: float | None) -> Iterator[None]:
         STOP_BAND.reset(token)
 
 
-__all__ = ["OrderDefaults", "load", "needs_setting", "NEEDS_PREFIX", "label", "holding_of_product", "stop_band", "STOP_BAND", "WHERE",
+__all__ = ["OrderDefaults", "load", "bot_holding", "needs_setting", "NEEDS_PREFIX", "label", "holding_of_product", "stop_band", "STOP_BAND", "WHERE",
            "EXIT_CLOSE_BAND_PCT", "EXIT_STOP_LIMIT_BAND_PCT", "HOLDINGS", "PRODUCTS", "TICKET_ORDER_TYPES", "BOT_ORDER_STYLES"]

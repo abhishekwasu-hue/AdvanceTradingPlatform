@@ -351,3 +351,51 @@ Runner side (`backend/app/runner/link.py`, `sync.py`, `broker_session.py`; tests
 - Migration: yes - `d2f4b6c8e0a1` (table `runner_commands`, column `runner_devices.broker_login`).
 - Not yet: derivative deployments on the runner still skip in plain words (the contracts are stored; the contract
   resolver on the runner comes with the S8 parity work); start / pause / square-off commands (only the kill switch).
+
+## S4b results (branch `claude/runner-s4b-fno`, stacked on S4)
+
+Options / futures single-leg and multi-leg deployments now run on the runner (`backend/app/runner/loop.py`,
+`derivatives.py`; tests `backend/tests/test_runner_s4b_fno.py` + the loop job `runner_s4b_fno_job.py`). Nothing new decides
+a trade - the server's own code does, on the runner's local store:
+- Contract / structure: `instruments.contracts.resolve_contract` / `instruments.spreads.resolve_structure` from the
+  deployment's OWN settings (expiry rule, strike rule and offset, side, width, custom legs, strike filters against his
+  broker's chain), against the contracts ATP sent (S4 `apply_reference`, ATP's instrument master spelling), off the latest
+  CLOSED underlying bar. A rule that cannot be met is recorded on the deployment ("Contract not resolved: ..." /
+  "Structure not built: ..."), never traded around.
+- Execution: `execute_signal_for_user(contract=..., rules=...)` (lots = his own `max_lots`, premium levels, the F&O ban
+  list for the entry) and `multileg.execute_structure` (one position, hedge legs before sold legs on the smart-execution
+  engine and on the LIVE path, the incomplete-structure state). Holding: the worker's `_bot_holding` moved unchanged to
+  `execution/order_defaults.bot_holding` (the worker calls it), so both read the same holding rule.
+- Exits (never gated - ADR-0004): the square-off at his own time and the position monitor as before; added as in the
+  worker: `incomplete_structures.run_exits` and the PAPER expiry settlement (`paper/expiry_settlement.settle_expired`,
+  every 10 minutes, whatever the session). The settlement's close source is now a parameter (`close_of`; the server's
+  call is unchanged): on the runner the expiry day's close comes from his own broker's Daily bar of that day, only once
+  that bar has closed (no look-ahead); until then the position waits, as on the server.
+- Angel One instrument tokens: ATP's master names a contract in Upstox's spelling; Angel One orders and quotes by its own
+  symboltoken. `ContractBinder` finds the same contract in Angel One's scrip master (`get_instruments("NFO")`) by
+  underlying + expiry + strike + right, refuses it when the lot sizes differ or it is missing / listed twice, and registers
+  ATP's name as an alias on the adapter (`AngelOneBroker.alias_symbol`, new). Trades keep ATP's name (mirror, settlement
+  and journal read it). Open positions are bound again before each exit pass (the daily login builds a new adapter).
+- LIVE: still the deployment's own LIVE choice + ATP's Phase 0 lock + his local `LIVE` file + a real broker feed, plus
+  ATP's LIVE state for his organisation (owner organisation only). Checked: neither the heartbeat answer nor the rules
+  sync carries that state today, so every LIVE entry on the runner is refused with `LIVE_NO_ATP_STATE` ("LIVE is not
+  open for your organisation on this runner ... nothing was placed; exits continue"). A server-side field is needed first.
+- Boundary: 8 modules added (contracts, spreads, multileg, incomplete_structures, expiry_settlement, fno_contracts,
+  instruments.master, runner.derivatives); no new forbidden edge; the loop job loads no runtime-forbidden module.
+
+Test (fake NFO feed, PAPER): index CE single leg entered on his 1 lot, closed on his own 30% premium stop; bull put spread
+(two legs) with the bought 24400 PE placed before the sold 24500 PE, both squared off at his 15:15; a banned stock: new
+entry refused ("in the F&O ban period - new F&O entries refused; exits allowed"), the open position's stop exit ran; a
+SWING CE past expiry settled at 24700 - strike (the expiry day's Daily close; the forming next-day bar 25000 not read),
+exit time 15:30 IST of the expiry day; an index future entered and squared off.
+
+Open points (not decided here):
+- Feature flags are not synced to the runner: the local store reads every flag at its default (smart execution OFF ->
+  the legacy multi-leg path; PAPER fills at the quoted premiums; LIVE still places the long wings first), and the
+  F&O ban check follows the runner process's own `FO_BAN_CHECK_ENABLED` (default off, as the server's config).
+- "Complete the rest" of an incomplete structure is answered in ATP; the runner gets no such command yet (only the kill
+  switch), so a runner's incomplete group follows his own "if I do not answer" rule.
+- The trigger engine's armed exits (`execution/trigger_engine`) are not on the runner's exit pass yet.
+- Server finding: the worker sends an Upstox-spelled contract name to a non-Upstox adapter (`contract_ltp` / the leg
+  orders use `tradingsymbol`); Angel One's adapter does not know that name. The runner binds it (above); the server path
+  is unchanged.

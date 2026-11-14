@@ -21,9 +21,16 @@ when due, the adapter from the keystore), then runs the exits, then ticks the li
 saved rules, the mirror) and only then the entries. While ATP has not answered for longer than his grace setting, new
 entries pause (a plain line in link.log); exits never wait for the link.
 
-Not in S2 (each says so in the deployment's own words): options / futures and multi-leg deployments (they resolve a
-contract from the instrument list, which reaches the runner with the link, S4) and strategy templates (they need the
-reader port, S1 note). Approval-only entries are refused by the pipeline's own gate (proposals are answered in ATP: S4).
+S4b (`derivatives.py`): options / futures single-leg and multi-leg deployments run as on the server - the contract or the
+structure from the deployment's OWN settings (`resolve_contract` / `resolve_structure`, against the contracts ATP sent,
+S4), executed by the server's own pipelines (`execute_signal_for_user` with the contract; `multileg.execute_structure`:
+hedge legs first, incomplete structures, the F&O ban list for entries only). The exits add the PAPER expiry settlement
+(`paper/expiry_settlement.py`, the expiry-day close from his broker's Daily bar) and the incomplete-structure exits
+(`execution/incomplete_structures.run_exits`), as the worker runs them. A LIVE entry also needs ATP's LIVE state for his
+organisation; the link carries none yet, so every LIVE entry is refused in plain words (`LIVE_NO_ATP_STATE`).
+
+Not yet (each says so in the deployment's own words): strategy templates (they need the reader port, S1 note).
+Approval-only entries are refused by the pipeline's own gate (proposals are answered in ATP: S4).
 """
 from __future__ import annotations
 
@@ -37,16 +44,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.execution.exit_settings as exit_settings
+import app.execution.incomplete_structures as incomplete_structures
 import app.execution.order_defaults as order_defaults
+import app.paper.expiry_settlement as expiry_settlement
 import app.platform.phase0_lock as phase0_lock
-from app.core.enums import DeploymentStatus, ExecutionMode, SignalDirection
+from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, OptionStrategy, SignalDirection
 from app.custom_strategies.resolver import TEMPLATE_PREFIX, normalize_strategy_id, resolve_strategy
 from app.db.models import StrategyDeploymentRecord, TradeRecord, User
 from app.db.session import _session_factory
+from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
+from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
+from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.market_data.calendar import IST, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness, closed_frames
 from app.runner.audit import AuditLog
+from app.runner.derivatives import ContractBinder, chain_provider, daily_close, facts_of
 from app.runner.feed import BarFeed
 from app.runner.lock import RunnerLock
 from app.runner.settings import RunnerSettings
@@ -57,8 +70,8 @@ logger = logging.getLogger("app.runner")
 
 LIVE_SWITCH_OFF = "LIVE is off on this runner - your own LIVE switch is not on (nothing was placed)"
 LIVE_NEEDS_BROKER = "LIVE needs your own broker session on this runner - it is running on a test feed (nothing was placed)"
-NOT_YET_DERIVATIVES = ("Options / futures deployments run on the runner once ATP sends it the instrument list "
-                       "(a later runner step) - nothing was placed")
+LIVE_NO_ATP_STATE = ("LIVE is not open for your organisation on this runner: ATP's link does not tell the runner the LIVE "
+                     "state yet - nothing was placed; exits continue")
 NOT_YET_TEMPLATES = "Strategy templates run on the runner in a later step - nothing was placed"
 NO_USER = "No user for this deployment on the runner - nothing was placed"
 
@@ -90,6 +103,8 @@ class Runner:
         self.sessions = sessions or _session_factory        # the runner's local store (tests: their own file)
         self.link = link                                    # S4: None = not paired (dry runs, tests): no link gate
         self.broker_session = broker_session                # S4: S5's login + keystore adapter (None: the given feed)
+        self.binder = ContractBinder()                      # S4b: ATP's contract names on his broker's instruments
+        self._last_expiry_sweep: datetime | None = None
 
     # --- one cycle ------------------------------------------------------------------------------------------------
     async def run_cycle(self, now: datetime | None = None) -> CycleSummary:
@@ -112,6 +127,7 @@ class Runner:
                 except Exception as exc:  # noqa: BLE001 - unknown state: the last read (or the safe default) stands
                     logger.warning("Runner: PAPER-only lock not read (%s)", exc)
                     await session.rollback()
+                await self._settle_expired(session, now, summary)
                 for tenant_id in await self._tenants(session):
                     summary.tenants += 1
                     await self._exits(session, tenant_id, now, summary)
@@ -135,12 +151,35 @@ class Runner:
         return sorted(deps | held)
 
     # --- 1. exits (never blocked) -----------------------------------------------------------------------------------
+    async def _settle_expired(self, session: AsyncSession, now: datetime, summary: CycleSummary) -> None:
+        """S4b: the worker's PAPER expiry settlement (every SWEEP_SECONDS, whatever the session): an open PAPER index
+        option / future past its expiry close, settled in cash at the expiry-day close - here his broker's Daily bar of
+        that day. An exit: never gated; LIVE rows are never read (the broker settles them)."""
+        if self._last_expiry_sweep is not None and (now - self._last_expiry_sweep).total_seconds() < expiry_settlement.SWEEP_SECONDS:
+            return
+        try:
+            report = await expiry_settlement.settle_expired(session, now, close_of=daily_close(self.feed.frames, now))
+            self._last_expiry_sweep = now
+        except Exception as exc:  # noqa: BLE001 - tried again next pass
+            await session.rollback()
+            summary.errors.append(f"expiry settlement: {exc}")
+            logger.exception("Runner: PAPER expiry settlement failed")
+            return
+        for trade_id in report.settled:
+            trade = await session.get(TradeRecord, trade_id)
+            summary.exits_closed += 1
+            self.audit.write("exit_result", trade_id=trade_id, deployment_id=getattr(trade, "deployment_id", None),
+                             symbol=getattr(trade, "symbol", None), mode="PAPER", reason=expiry_settlement.SETTLED_REASON,
+                             exit_price=getattr(trade, "exit_price", None), pnl=getattr(trade, "pnl", None))
+
     async def _exits(self, session: AsyncSession, tenant_id: int, now: datetime, summary: CycleSummary) -> None:
         try:
             open_trades = list(await session.scalars(select(TradeRecord).where(
                 TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))))
             if not open_trades:
                 return
+            for problem in await self.binder.bind_open(session, self.feed.broker, open_trades):
+                self.audit.write("exit_problem", warnings=[problem])     # priced again next cycle; never blocks the others
             venues = await trade_venues(session, open_trades)
             families = {session_family(v) for v in venues.values()}
             open_families = {f for f in families if (await market_session_status(session, now, f)).is_open}
@@ -173,6 +212,14 @@ class Runner:
             await session.rollback()
             summary.errors.append(f"position monitor: {exc}")
             logger.exception("Runner: position monitor failed for tenant %s", tenant_id)
+        try:
+            # SE-7: an incomplete multi-leg order - his "if I do not answer" rule at the deadline, and the filled legs he
+            # (or his rule) chose to close. An exit, as in the worker: never gated (ADR-0004).
+            await incomplete_structures.run_exits(session, tenant_id, self.feed.ltp, broker=broker, user_id=user_id, now=now)
+        except Exception as exc:  # noqa: BLE001 - one bad group never ends the exits; retried next cycle
+            await session.rollback()
+            summary.errors.append(f"incomplete multi-leg orders: {exc}")
+            logger.exception("Runner: incomplete multi-leg exits failed for tenant %s", tenant_id)
         closed = list(await session.scalars(select(TradeRecord).where(
             TradeRecord.id.in_(before), TradeRecord.exit_time.is_not(None))))
         for trade in closed:
@@ -225,6 +272,12 @@ class Runner:
             return LIVE_SWITCH_OFF
         return None
 
+    def _atp_live_refusal(self) -> str | None:
+        """ATP's LIVE state for his organisation, as the link reports it (owner organisation only). The heartbeat answer
+        and the rules sync carry no such state yet, so it is unknown and LIVE is refused (`LIVE_NO_ATP_STATE`)."""
+        state = getattr(self.link, "live_allowed", None) if self.link is not None else None
+        return None if state is True else LIVE_NO_ATP_STATE
+
     async def _skip(self, session: AsyncSession, dep: StrategyDeploymentRecord, now: datetime, reason: str | None) -> bool:
         dep.last_evaluated_at = now
         dep.last_error = reason[:500] if reason else None
@@ -240,10 +293,9 @@ class Runner:
         live = dep.mode == ExecutionMode.LIVE.value
         if live and phase0_lock.locked(dep.tenant_id):
             return await self._skip(session, dep, now, phase0_lock.WORKER_NOT_EVALUATED)   # as the worker: not evaluated
-        if live and (refusal := self._live_refusal()):
+        if live and (refusal := self._atp_live_refusal() or self._live_refusal()):
             return await self._skip(session, dep, now, refusal)
-        if (dep.instrument_kind or "UNDERLYING") != "UNDERLYING" or (dep.option_strategy or "SINGLE") != "SINGLE":
-            return await self._skip(session, dep, now, NOT_YET_DERIVATIVES)
+        derivative = (dep.instrument_kind or "UNDERLYING") != "UNDERLYING"
         if normalize_strategy_id(dep.strategy_id).startswith(TEMPLATE_PREFIX):
             return await self._skip(session, dep, now, NOT_YET_TEMPLATES)
 
@@ -280,8 +332,11 @@ class Runner:
             TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id == dep.id).limit(1))
         if open_trade is not None:
             return await self._skip(session, dep, now, None)      # one position per deployment
-        holding = dep.holding or (await order_defaults.load(session, user)).holding
-        if holding == "SWING" and signal.direction == SignalDirection.SHORT:
+        holding, holding_problem = await order_defaults.bot_holding(session, dep, user)   # the worker's rule (M68 PR-1)
+        if holding is None:
+            dep.last_signal_at = signal_ts                        # as the worker: nothing placed, the card says which setting
+            return await self._skip(session, dep, now, f"Signal at {signal_ts.isoformat()} skipped. {holding_problem}")
+        if holding == "SWING" and not derivative and signal.direction == SignalDirection.SHORT:
             dep.last_signal_at = signal_ts                        # Phase AS, as the worker: cash equity is not held short
             return await self._skip(session, dep, now, f"Swing SHORT signal at {signal_ts.isoformat()} skipped: cash equity "
                                                        "cannot be held short overnight")
@@ -290,26 +345,70 @@ class Runner:
         intent: dict[str, Any] = dict(deployment_id=dep.id, strategy_id=dep.strategy_id, symbol=dep.symbol, exchange=dep.exchange,
                                       mode=dep.mode, direction=signal.direction.value, signal_bar=signal_ts.isoformat(),
                                       idempotency_key=key)
+        rules = ContractRules.from_deployment(dep)
+        structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
+        quotes = self.feed.broker or getattr(self.feed, "quotes", None)   # his session (PAPER fills are priced from it)
+        contract = structure = None
+        if rules.derived:
+            # Phase F3 / H2 as in the worker: the contract (or the structure) from his own settings, off the latest closed
+            # underlying close; a rule that cannot be satisfied is recorded, never traded around.
+            base = frames.get(dep.timeframe)
+            if base is None:
+                base = next(iter(frames.values()))
+            spot = float(base["close"].iloc[-1]) if len(base) else None
+            today = now.astimezone(IST).date()
+            multi = rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE
+            try:
+                if multi:
+                    structure = await resolve_structure(
+                        session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width, spot=spot,
+                        today=today, chain_provider=chain_provider(quotes), custom_legs=parse_custom_legs(dep.custom_legs))
+                    await self.binder.bind(self.feed.broker, [facts_of(leg.contract) for leg in structure.legs])
+                else:
+                    contract = await resolve_contract(session, dep.symbol, rules, signal.direction, spot=spot, today=today,
+                                                      chain_provider=chain_provider(quotes))
+                    await self.binder.bind(self.feed.broker, [facts_of(contract)])
+            except (ContractResolutionError, ValueError) as exc:
+                if multi and "not entered on" in str(exc):
+                    dep.last_signal_at = signal_ts
+                why = f"{'Structure not built' if multi else 'Contract not resolved'}: {exc}"
+                self.audit.write("entry_intent", **intent)
+                self.audit.write("entry_result", **intent, executed=False, reasons=[why])
+                return await self._skip(session, dep, now, why)
+            intent["contracts"] = ([leg.contract.tradingsymbol for leg in structure.legs] if structure is not None
+                                   else [contract.tradingsymbol] if contract is not None else [])
         self.audit.write("entry_intent", **intent)
-        if live and (refusal := self._live_refusal()):         # read again right before the order (his switch)
+        if live and (refusal := self._atp_live_refusal() or self._live_refusal()):   # read again right before the order
             self.audit.write("entry_result", **intent, executed=False, reasons=[refusal])
             return await self._skip(session, dep, now, refusal)
-        result, order = await execute_signal_for_user(
-            session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, idempotency_key=key,
-            broker=self.feed.broker if live else None, deployment_id=dep.id, quote_broker=self.feed.broker,
-            exit_rules=dep.exit_rules, holding=dep.holding, order_style=dep.order_style,
-            market_protection_pct=dep.market_protection_pct, exchange=dep.exchange)
-        reasons = list(result.reasons)
-        self.audit.write("entry_result", **intent, executed=bool(result.executed), order_id=order.id, status=order.status,
-                         order_mode=order.mode, reasons=reasons[:10])
+        if structure is not None:
+            outcome = await execute_structure(
+                session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, structure=structure, rules=rules,
+                target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
+                underlying_exit=bool(dep.underlying_breach_exit), idempotency_key=key,
+                broker=self.feed.broker if live else None, quote_broker=quotes, deployment_id=dep.id, holding=holding)
+            executed, reasons = bool(outcome.executed), list(outcome.reasons)
+            self.audit.write("entry_result", **intent, executed=executed, order_ids=[o.id for o in outcome.orders],
+                             statuses=[o.status for o in outcome.orders], order_mode=dep.mode, reasons=reasons[:10])
+        else:
+            result, order = await execute_signal_for_user(
+                session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, idempotency_key=key,
+                broker=self.feed.broker if live else None, deployment_id=dep.id,
+                contract=contract, rules=rules if contract is not None else None,
+                quote_broker=quotes if contract is not None else self.feed.broker,
+                exit_rules=dep.exit_rules, holding=holding, order_style=dep.order_style,
+                market_protection_pct=dep.market_protection_pct, exchange=dep.exchange)
+            executed, reasons = bool(result.executed), list(result.reasons)
+            self.audit.write("entry_result", **intent, executed=executed, order_id=order.id, status=order.status,
+                             order_mode=order.mode, reasons=reasons[:10])
         dep.last_signal_at = signal_ts
         dep.last_evaluated_at = now
-        dep.last_error = None if result.executed else "; ".join(reasons)[:500]
+        dep.last_error = None if executed else "; ".join(reasons)[:500]
         dep.consecutive_failures = 0
         await session.commit()
-        if result.executed:
+        if executed:
             summary.entries_placed += 1
-        return bool(result.executed)
+        return executed
 
     # --- the scheduler ----------------------------------------------------------------------------------------------
     def next_wake(self, now: datetime) -> datetime:
@@ -338,4 +437,4 @@ class Runner:
             self.lock.release()
 
 
-__all__ = ["Runner", "CycleSummary", "LIVE_SWITCH_OFF", "LIVE_NEEDS_BROKER", "NOT_YET_DERIVATIVES", "NOT_YET_TEMPLATES"]
+__all__ = ["Runner", "CycleSummary", "LIVE_SWITCH_OFF", "LIVE_NEEDS_BROKER", "LIVE_NO_ATP_STATE", "NOT_YET_TEMPLATES"]

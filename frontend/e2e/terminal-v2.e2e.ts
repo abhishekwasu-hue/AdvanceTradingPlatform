@@ -1238,6 +1238,122 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
   });
 });
 
+// Owner 14 Nov: "the actual watchlist has gone far down; there is free space at the top of the panel - adjust it". A
+// read-only system list without a broker (the last close), the Screen flag on: the header is compact (the list chooser
+// with its actions on one row; one small line with the last close, read-only and Copy; the one connect link; search,
+// sort and Screen on one row), so the first symbol starts near the panel's top. Nothing is cut at any width.
+// TERMINAL_SHOTS=<dir>: the owner's before / after proof (`wl-compact-<size>-<theme>.png`).
+const FMCG_ITEMS = ["BRITANNIA", "COLPAL", "DABUR", "EMAMILTD", "GODREJCP", "HINDUNILVR", "ITC", "MARICO", "NESTLEIND", "PGHH", "RADICO",
+  "TATACONSUM", "UBL", "UNITDSPR", "VBL"].map((symbol, i) => ({ symbol, exchange: "NSE", name: `Made-up FMCG ${i + 1}` }));
+const FMCG_SUMMARY = { key: "index-niftyfmcg", group: "INDEX_STOCKS", group_label: "Index stocks", name: "NIFTY FMCG stocks (15)", count: 15,
+  read_only: true, refreshed_at: "2026-10-27T03:00:00Z" };
+const WL_SCREEN = { id: 4, name: "My trend screen", base_tf: "1d", usable: true };
+const compactRoutes = (own: unknown[] = []) => async (page: Page) => {
+  await page.route(/\/api(?:\/v1)?\/watchlists$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: own }) : r.fallback()));
+  await page.route(/\/api(?:\/v1)?\/watchlists\/system(\/[a-z0-9-]+)?$/, (r) => {
+    const key = new URL(r.request().url()).pathname.split("/system")[1]?.replace("/", "") ?? "";
+    if (!key) return r.fulfill({ json: { groups: [{ group: "INDEX_STOCKS", label: "Index stocks", lists: [FMCG_SUMMARY] }], refreshed_at: FMCG_SUMMARY.refreshed_at } });
+    return r.fulfill({ json: { ...FMCG_SUMMARY, items: FMCG_ITEMS } });
+  });
+  // No broker of his own: the quote read answers 409 and the rows carry the last end-of-day close (made-up figures).
+  await page.route(/\/api(?:\/v1)?\/market-data\/quotes$/, (r) => r.fulfill({ status: 409, json: { detail: "Connect your broker for live prices." } }));
+  await page.route(/\/api(?:\/v1)?\/market-data\/eod\/closes/, (r) => {
+    const symbols = (new URL(r.request().url()).searchParams.get("symbols") ?? "").split(",").filter(Boolean);
+    return r.fulfill({ json: { as_of: "2026-10-26", source: "eod", items: symbols.map((symbol, i) => ({ symbol, exchange: "NSE", close: 1000 + i * 37.5,
+      prev_close: 1000 + i * 37.5 - (i % 2 ? 6 : -4), change: i % 2 ? 6 : -4, change_pct: i % 2 ? 0.6 : -0.4, date: "2026-10-26", missing: false })) } });
+  });
+  await page.route(/\/api(?:\/v1)?\/screener\/watchlist-screen\/screens$/, (r) => r.fulfill({ json: { screens: [WL_SCREEN] } }));
+  await page.route(/\/api(?:\/v1)?\/screener\/watchlist-screen\/settings(\/.*)?$/, (r) =>
+    r.fulfill({ json: r.request().method() === "PUT" ? { list_key: "s:index-niftyfmcg", choice: r.request().postDataJSON() } : { lists: {} } }));
+};
+const COMPACT_ON = { ...WL_ON, watchlist_screen: true, screener_v2: true };
+
+/** The first symbol row's top, from the watchlist's own top (px), and anything cut or sticking out of the panel. */
+async function headerFacts(page: Page, scope: string) {
+  return page.locator(`${scope} [data-watchlist]`).evaluate((panel) => {
+    const top = panel.getBoundingClientRect().top;
+    const right = panel.getBoundingClientRect().right;
+    const row = panel.querySelector("[data-row]");
+    const cut = [...panel.querySelectorAll("button, select, input, p, span, a")].filter((e) => {
+      if (e.closest("[data-row], .sr-only")) return false;
+      const b = e.getBoundingClientRect();
+      if (!b.width) return false;
+      const s = getComputedStyle(e);
+      const clipped = e.scrollWidth > e.clientWidth + 1 && s.textOverflow !== "ellipsis" && !(e instanceof HTMLInputElement) && !(e instanceof HTMLSelectElement);
+      return b.right > right + 1 || clipped;
+    }).map((e) => `${e.tagName}:${(e.textContent ?? "").trim().slice(0, 30)}`);
+    return { first: row ? Math.round(row.getBoundingClientRect().top - top) : -1, cut };
+  });
+}
+
+test.describe("v2 terminal: the watchlist panel's compact header (owner 14 Nov)", () => {
+  for (const size of [{ name: "1440", width: 1440, height: 900, phone: false }, { name: "1024", width: 1024, height: 768, phone: false },
+    { name: "390", width: 390, height: 844, phone: true }, { name: "360", width: 360, height: 780, phone: true }]) {
+    test.describe(`${size.name}`, () => {
+      test.use({ viewport: { width: size.width, height: size.height }, ...(size.phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : {}) });
+      for (const theme of size.name === "1440" || size.name === "390" ? THEMES : (["dark"] as const)) {
+        test(`a read-only list without a broker: every control on top, the first symbol near the top, nothing cut (${theme})`, async ({ page }) => {
+          await open(page, theme, { features: COMPACT_ON, routes: compactRoutes() });
+          const scope = size.phone ? "[data-phone-panel='watchlist']" : "[data-panel='watchlist']";
+          if (size.phone) await page.locator("[data-tab='watchlist']").tap();
+          const panel = page.locator(`${scope} [data-watchlist]`);
+          await expect(panel.locator("[data-row]")).toHaveCount(15);
+          // Every control is still there.
+          await expect(panel.getByRole("button", { name: /^Choose a list\. Shown: NIFTY FMCG stocks \(15\)/ })).toBeVisible();
+          await expect(panel.getByRole("button", { name: "New list" })).toBeVisible();
+          await expect(panel.getByRole("button", { name: "Copy to my list" })).toBeVisible();
+          await expect(panel.locator("[data-connect-live]")).toBeVisible();
+          await expect(panel.getByText(/^Last close · 26 Oct/)).toBeVisible();
+          await expect(panel.getByText(/Read-only/)).toBeVisible();
+          await expect(panel.getByRole("searchbox", { name: "Search in NIFTY FMCG stocks (15)" })).toBeVisible();
+          await expect(panel.getByRole("combobox", { name: "Sort the list" })).toBeVisible();
+          const screenToggle = panel.locator("[data-screen-toggle]");
+          await expect(screenToggle).toBeVisible();
+          // The list chooser, "New list" and the Screen button share one row; the search and the sort share the next.
+          const pick = (await panel.getByRole("button", { name: /^Choose a list/ }).boundingBox())!;
+          const plus = (await panel.getByRole("button", { name: "New list" }).boundingBox())!;
+          // (1024: the panel is about 150 px wide - the chooser takes the row and its buttons wrap below it, nothing cut.)
+          if (size.name !== "1024") expect(Math.abs(pick.y + pick.height / 2 - (plus.y + plus.height / 2))).toBeLessThan(2);
+          const toggle = (await screenToggle.boundingBox())!;
+          if (size.name !== "1024") expect(Math.abs(toggle.y - plus.y)).toBeLessThan(2);
+          const facts = await headerFacts(page, scope);
+          expect(facts.cut, "nothing in the header is cut or sticks out").toEqual([]);
+          // Screen opens below the search row and closes again; None stays the choice.
+          await screenToggle.click();
+          await expect(screenToggle).toHaveAttribute("aria-expanded", "true");
+          await expect(panel.getByTestId("watch-screen-pick")).toBeVisible();
+          await screenToggle.click();
+          await expect(panel.getByTestId("watch-screen-pick")).toHaveCount(0);
+          await noSidewaysScroll(page);
+          if (size.phone) await expectPhoneLayout(page);
+          await shot(page, `wl-compact-${size.name}-${theme}`);
+          console.log(`WL-FIRST-ROW ${size.name} ${theme}: ${facts.first}px`);
+          if (size.name === "1440") expect(facts.first, "the first symbol near the panel's top").toBeLessThanOrEqual(180);
+          if (size.phone) expect(facts.first).toBeLessThanOrEqual(230);
+        });
+      }
+    });
+  }
+
+  test("his own list: the chooser, New, Rename and Delete on one row; Add a symbol with Screen beside it (1440)", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, "dark", { features: COMPACT_ON, routes: compactRoutes([{ id: 7, name: "Swing ideas", version: 1, items: FMCG_ITEMS.slice(0, 5).map(({ symbol, exchange }) => ({ symbol, exchange })) }]) });
+    const panel = page.locator("[data-panel='watchlist'] [data-watchlist]");
+    await expect(panel.locator("[data-row]")).toHaveCount(5);
+    const ys = await Promise.all(["Choose a list. Shown: Swing ideas", "New list", "Rename list", "Delete list"].map(async (n) => {
+      const b = (await panel.getByRole("button", { name: n, exact: n !== "Choose a list. Shown: Swing ideas" }).first().boundingBox())!;
+      return Math.round(b.y + b.height / 2);
+    }));
+    expect(new Set(ys).size, "one row").toBe(1);
+    await expect(panel.getByRole("button", { name: "Copy to my list" })).toHaveCount(0);
+    await expect(panel.locator("[data-screen-toggle]")).toBeVisible();
+    const facts = await headerFacts(page, "[data-panel='watchlist']");
+    expect(facts.cut).toEqual([]);
+    expect(facts.first).toBeLessThanOrEqual(180);
+    console.log(`WL-FIRST-ROW own 1440: ${facts.first}px`);
+  });
+});
+
 // Owner bug 13 Nov: "chart and the other panels do not become small or big by dragging". The corner pushed nothing (a
 // neighbour in the way refused the whole step); a line drag snapped with no feedback until half a column. Now: a guide
 // follows the pointer on a line, the corner moves the shared line, and the sizes stay after "Save as mine" and a reload.

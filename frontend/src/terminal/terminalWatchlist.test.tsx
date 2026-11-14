@@ -11,7 +11,11 @@ import panelSource from "./TerminalWatchlistV2.tsx?raw";
 import sharedSource from "../chart/WatchlistPanel.tsx?raw";
 import chartsSource from "../chart/ChartsPageV2.tsx?raw";
 import pageWatchSource from "../watchlist/WatchlistPageV2.tsx?raw";
-import { RowName } from "../chart/WatchlistPanel";
+import { RowName, SystemListView, SystemRowTools } from "../chart/WatchlistPanel";
+import { MemoryRouter } from "react-router";
+import { ConnectLiveButton } from "../ui/ConnectLive";
+import { CONNECT_LIVE } from "../ui/lastClose";
+import type { SystemList } from "../chart/systemLists";
 
 /** UX-3 + TA-4 (UX2 plan PR 8): the watchlist as a Terminal panel, docked left in every preset. */
 const open = (panels: readonly PanelPlace[]) => panels.filter((p) => p.open);
@@ -134,9 +138,72 @@ describe("UX-3: the narrow panel never cuts a name (OWNER_RULES D.3)", () => {
 
   it("the Terminal asks for the narrow layout on the desktop grid only (the phone tab keeps the full-width rows)", () => {
     expect(panelSource).toMatch(/touch=\{touch\} narrow=\{!touch\}/);
-    expect(sharedSource).toMatch(/narrow && "basis-full"/);                         // the list chooser takes the full width
+    expect(sharedSource).toMatch(/narrow && "basis-full"/);                         // the list chooser takes the full width (not compact)
     expect(sharedSource).toMatch(/narrow \? "break-words" : "truncate"/);
     expect(chartsSource).not.toMatch(/narrow=/);                                    // Charts lays the panel out as before
     expect(pageWatchSource).not.toMatch(/narrow=/);
+  });
+});
+
+describe("Owner 14 Nov: the Terminal's watchlist header is compact, every control kept", () => {
+  const list: SystemList = { key: "index-niftyfmcg", group: "INDEX_STOCKS", group_label: "Index stocks", name: "NIFTY FMCG stocks (15)", count: 2, read_only: true,
+    items: [{ symbol: "BRITANNIA", exchange: "NSE", name: "Made-up FMCG A" }, { symbol: "COLPAL", exchange: "NSE", name: "Made-up FMCG B" }] };
+  const view = (compact: boolean) => renderToStaticMarkup(
+    <SystemListView summary={{ ...list, refreshed_at: "2026-11-14T03:00:00Z" }} list={list} rows={list.items} total={2} matching={2} query="" onQuery={() => {}}
+      sort="list" onSort={() => {}} quotes={new Map()} quotesFailed={false} current={() => false} onOpen={() => {}} onCopy={() => {}} copying={false}
+      onRetry={() => {}} touch={false} field="" textBtn="" narrow compact={compact} />);
+
+  it("the Terminal (desktop grid and phone tab) asks for the compact header; Charts and the Watchlist page do not", () => {
+    expect(panelSource).toMatch(/narrow=\{!touch\} compact /);
+    expect(chartsSource).not.toMatch(/\bcompact\b/);
+    expect(pageWatchSource).not.toMatch(/\bcompact\b/);
+  });
+
+  it("compact: the list view leaves read-only, Copy, the search and the sort to the panel's header; the rows stay", () => {
+    const compact = view(true);
+    expect(compact).not.toContain("Read-only list");
+    expect(compact).not.toContain("Copy to my list");
+    expect(compact).not.toContain("watchlist-row-search");
+    expect(compact).toContain('aria-label="Symbols in NIFTY FMCG stocks (15)"');
+    expect(compact).toContain("BRITANNIA");
+    const before = view(false);                                                        // Charts / Watchlist page: as before
+    expect(before).toContain("Read-only list · updated 14 Nov 2026");
+    expect(before).toContain("Copy to my list");
+    expect(before).toContain('placeholder="Search symbol or company"');
+  });
+
+  it("the search and the sort: short and wrapping in the compact header, unchanged elsewhere", () => {
+    const tools = (compact: boolean) => renderToStaticMarkup(
+      <SystemRowTools name="NIFTY FMCG stocks (15)" query="" onQuery={() => {}} sort="list" onSort={() => {}} field="f" compact={compact} />);
+    const c = tools(true);
+    expect(c).toContain('placeholder="Search"');
+    expect(c).toContain('title="Search symbol or company"');
+    expect(c).toContain("flex-wrap");
+    expect(c).toContain(">Search in NIFTY FMCG stocks (15)</label>");                 // still labelled
+    expect(c).toContain(">Sort the list</label>");
+    const wide = tools(false);
+    expect(wide).toContain('placeholder="Search symbol or company"');
+    expect(wide).toContain("w-32");
+  });
+
+  it("the connect chip: the full words, wrapping inside the chip, never cut; the usual button unchanged", () => {
+    const chip = renderToStaticMarkup(<MemoryRouter><ConnectLiveButton compact /></MemoryRouter>);
+    expect(chip).toContain(CONNECT_LIVE);
+    expect(chip).toContain(`title="${CONNECT_LIVE}"`);
+    expect(chip).toContain("break-words");
+    expect(chip).not.toContain("truncate");
+    expect(chip).toContain("min-h-11");                                                 // 44 px on a phone
+    const button = renderToStaticMarkup(<MemoryRouter><ConnectLiveButton /></MemoryRouter>);
+    expect(button).not.toContain("title=");
+    expect(button).toContain("px-space-3 text-t13");
+  });
+
+  it("the header keeps every control: New / Rename / Delete beside the chooser, Copy, the connect chip, Screen as a button", () => {
+    expect(sharedSource).toMatch(/\{sysShown && screenToggle\}/);                       // a read-only list: New and Screen beside the chooser
+    expect(sharedSource).toMatch(/aria-label=\{copying \? "Copying to my list" : "Copy to my list"\}/);
+    expect(sharedSource).toMatch(/eodShown && connectButton && <ConnectLiveButton compact \/>/);
+    expect(sharedSource).toMatch(/data-screen-toggle aria-expanded=\{screenOpen\}/);
+    expect(sharedSource).toMatch(/\(!compact \|\| screenOpen\)/);                        // the Screen row opens on demand
+    expect(sharedSource).toMatch(/setScreenOpen\(choice\.screen_id != null\)/);        // by itself for a list with a screen chosen
   });
 });

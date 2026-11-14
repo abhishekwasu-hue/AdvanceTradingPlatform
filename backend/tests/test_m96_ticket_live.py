@@ -24,6 +24,7 @@ from app.db.models import BrokerCredentialRecord, OrderRecord, TradeRecord
 from app.paper import fno_ticket
 from app.platform import phase0_lock
 from app.trading import position_monitor
+from tests.live_switch_helpers import make_owner_org
 from tests.test_auth_api import _session_factory, client
 from tests.test_fno1_chain_ticket import LOT, _body, _contract, _expiry, _org_tenant, _place, _preview, _price
 from tests.test_m55_s1_owner_live import _set_stored
@@ -73,7 +74,7 @@ def setup(monkeypatch):
         return spy
     monkeypatch.setattr(token_lifecycle, "build_adapter", build)
     monkeypatch.setattr(position_monitor, "build_adapter", build)
-    phase0_lock.reset_cache()
+    make_owner_org(monkeypatch, t["tenant_id"])      # B1: server LIVE is the owner's organisation's only
     yield t, expiry, strike, symbol, spy
     _set_stored(None)
     phase0_lock.reset_cache()

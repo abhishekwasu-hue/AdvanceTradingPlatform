@@ -9,6 +9,9 @@ import { Signed } from "../ui/Signed";
 import { useFeatures } from "../ui/useFeatures";
 import type { OrderMode } from "./api";
 import { ConfirmModeLine, OrderModeChoice, liveIsOff, useLiveStatus } from "./OrderModeV2";
+import { BrokerAppAction, useBrokerApp } from "../proposals/BrokerAppAction";
+import { reverseFacts } from "../proposals/brokerFacts";
+import { kiteEntryLink } from "../proposals/brokerLinks";
 import {
   FIELD_LABEL, clampLots, exitPartCopy, exitPartPieces, modifyChanges, modifyFields, modifyStart, newRef, openLots, positionActionsApi, reverseCopy,
   reverseNeedsStop, reverseStopLabel, runAction, waitingLine, waitingQuantity, type ModifyAsk, type PositionActionsApi, type WaitingOrder,
@@ -51,6 +54,7 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
   const modeOn = useFeatures().on("ui_v2") && ask?.kind === "reverse";
   const [mode, setMode] = useState<OrderMode>("PAPER");
   const live = useLiveStatus(modeOn && mode === "LIVE", api.liveStatus);
+  const brokerApp = useBrokerApp();                 // Route 3 (BIZ-1 B2): null while ui_v2 / broker_app_links is off
   useEffect(() => { setLots(asked); setStop(""); setRef(newRef()); setWarning(null); setProblem(null); setMode("PAPER"); }, [position?.id, ask?.kind, asked]);
   if (!ask || !position) return null;
   const newMode: OrderMode = modeOn ? mode : "PAPER";
@@ -97,7 +101,9 @@ export function PositionActionSheetV2({ ask, onClose, onDone, api = positionActi
         {modeOn && (
           <>
             <ConfirmModeLine mode={newMode} what="new position" testId="reverse" />
-            <OrderModeChoice mode={mode} onMode={(m) => { setMode(m); setWarning(null); setRef(newRef()); }} live={live} testId="reverse-mode" />
+            <OrderModeChoice mode={mode} onMode={(m) => { setMode(m); setWarning(null); setRef(newRef()); }} live={live} testId="reverse-mode"
+              brokerApp={<BrokerAppAction info={brokerApp} testId="reverse" facts={reverseFacts(position, null)}
+                prefill={() => kiteEntryLink(reverseFacts(position, null), brokerApp?.publisher_api_key)} />} />
           </>
         )}
         {ask.kind === "part" && (

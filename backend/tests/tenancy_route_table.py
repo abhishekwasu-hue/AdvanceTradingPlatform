@@ -831,6 +831,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/paper/experience"): "member",
     ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
     ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
+    ("GET", "/api/paper/fno/broker-app"): "member: whether Trade in your broker app is on, the organisation's broker name and Kite's public key; reads only",
     ("GET", "/api/paper/fno/live-status"): "member: whether the caller's own LIVE ticket order can go (the owner's switches, his own broker session)",
     ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
     ("GET", "/api/paper/fno/resting"): "member: the caller's own waiting orders and armed exits only (tenant and user, TM-2)",

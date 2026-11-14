@@ -7,8 +7,11 @@ import pytest
 from app.brokers.circuit_breaker import CircuitBreaker, CircuitState, all_breakers, breaker_for, is_health_failure, reset_all
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerOrderRejected
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
+from app.platform import phase0_lock
 from app.risk_engine.risk_manager import TradingDayState
 from tests.test_live_execution import _LiveBroker, _router, _signal
+
+OWNER_TENANT = 7   # B1: the owner's organisation in these tests (phase0_lock.remember_owner)
 
 
 class _Clock:
@@ -94,7 +97,10 @@ class _FlakyBroker(_LiveBroker):
 
 def test_rate_limited_wrapper_feeds_the_breaker_and_the_router_refuses_entries_while_open():
     inner = _FlakyBroker(failures=5)
-    wrapped = RateLimitedBroker(inner, RateBudget(RateLimits(per_second=1000, burst=1000, per_minute=100000)))
+    # B1: LIVE entries open only for the owner's organisation - these orders are that organisation's.
+    phase0_lock.remember_owner(OWNER_TENANT)
+    wrapped = RateLimitedBroker(inner, RateBudget(RateLimits(per_second=1000, burst=1000, per_minute=100000)),
+                                tenant_id=OWNER_TENANT)
     breaker = breaker_for("flaky")
     breaker.min_calls = 5
     for _ in range(5):

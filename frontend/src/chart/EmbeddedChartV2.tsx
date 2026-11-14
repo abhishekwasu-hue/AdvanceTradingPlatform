@@ -23,7 +23,7 @@ import { recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import type { SymbolUniverse } from "../ui/symbolUniverse";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
-import { CollapsibleDrawingRail } from "./DrawingRail";
+import { CollapsibleDrawingRail, DrawingMenu } from "./DrawingRail";
 
 type DrawingTools = ReturnType<typeof useDrawingTools>;
 
@@ -86,13 +86,16 @@ export interface EmbeddedChartV2Props {
   onCandles?: (candles: readonly OHLCVBar[]) => void;
   /** Owner report 13 Nov: the drawing tools on this chart (the Terminal's chart panel) - the Charts page's own rail
    * (foldable) from 768 px and its Draw menu on a phone, on the same drawings (saved per user and symbol), so a line
-   * drawn here shows on the Charts page and back. Off (default): no drawings, as before. */
+   * drawn here shows on the Charts page and back. Owner 14 Nov ("it must be on every chart window"): on by default, so
+   * every chart window has them (the chart sheet in all its modes, Signals, the Copilot workspace); false only for a
+   * chart that is not a window of its own (a chat answer's preview, a reading figure). Without the control bar
+   * (`toolbar={false}`, the lower chart of a CE / PE pair) the phone's Draw menu sits over this chart itself. */
   drawing?: boolean;
 }
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null, drawing = false, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead,
+  onEngine, emptyNote, screenId = null, drawing = true, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [ownOverlays, setOwnOverlays] = useState<OverlayId[]>([]);
@@ -165,6 +168,11 @@ export default function EmbeddedChartV2({
             icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
           ...(openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []),
         ]} />}
+      {!toolbar && drawingProps && (
+        <div className="flex justify-end border-b border-subtle px-space-2 py-space-1 md:hidden" data-drawing-menu-own>
+          <DrawingMenu {...drawingProps} sheet />
+        </div>
+      )}
       {/* a column that fills a flex host (the Terminal's panel), so a host's `flex-1` on the chart still works */}
       <div className="flex min-h-0 flex-1">
       {drawingProps && <CollapsibleDrawingRail {...drawingProps} />}

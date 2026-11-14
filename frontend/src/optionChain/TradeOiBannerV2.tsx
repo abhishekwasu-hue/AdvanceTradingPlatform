@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { useMarketStatus } from "../chart/useMarketStatus";
@@ -9,6 +10,7 @@ import {
   PCR_ZONE_LABEL, PCR_ZONE_TONE, bannerTone, calendarDte, classText, expiryLine, pcrZone, signalTone, todayIst, type BannerTone,
 } from "./oiDiff";
 import OppositeOiAlertV2 from "./OppositeOiAlertV2";
+import { useShownBlock } from "./panelBlocks";
 import type { LiveChain } from "./types";
 
 /**
@@ -35,6 +37,9 @@ import type { LiveChain } from "./types";
  *   opens the table. The Net Diff table's per-strike Dominance column is Trade's own and stays as it is.
  * Owner order 13 Nov: the "Alert me on opposite OI moves" bell beside the View interval (./OppositeOiAlertV2.tsx); with it
  * on, a History row whose window closed with an opposite call / put OI move says so under its Signal.
+ * Owner 14 Nov (the Terminal's chain panel, `collapsible`): the banner starts as ONE line - Trade's signal (else its
+ * message) and its PCR line, as they are - with Show / Hide; the choice is remembered on this browser. Shown, the
+ * banner is exactly as above.
  */
 export type Interval = 5 | 10 | 15;
 
@@ -70,11 +75,19 @@ export function useTradeBanner(underlying: string, interval: Interval): TradeBan
   return state;
 }
 
-export default function TradeOiBannerV2({ symbol, live }: { symbol: string; live: LiveChain | null }) {
+export default function TradeOiBannerV2({ symbol, live, collapsible = false }: { symbol: string; live: LiveChain | null;
+  /** Owner 14 Nov (the Terminal's chain panel): one summary line until opened; the choice is remembered on this browser. */
+  collapsible?: boolean }) {
   const [interval, setMinutes] = useState<Interval>(5);
   const state = useTradeBanner(symbol, interval);
+  const [shown, setShown] = useShownBlock("oi-banner", false);
   return <TradeOiBannerView symbol={symbol} live={live} state={state} interval={interval} onInterval={setMinutes}
-    bell={<OppositeOiAlertV2 symbol={symbol} />} />;
+    bell={<OppositeOiAlertV2 symbol={symbol} />} collapse={collapsible ? { shown, onShown: setShown } : undefined} />;
+}
+
+/** Owner 14 Nov: the collapsed banner's one line - Trade's own signal (else its message) and its PCR line, as they are. */
+export function bannerSummary(l: BannerLines): string {
+  return `${l.signal ? `Signal: ${l.signal}` : l.message} · ${l.pcr}`;
 }
 
 const BORDER: Record<BannerTone, string> = { up: "border-l-up", down: "border-l-down", warn: "border-l-warn", neutral: "border-l-border" };
@@ -141,16 +154,38 @@ export function IntervalPicker({ id, interval, onPick }: { id: string; interval:
 }
 
 /** The banner for data already in hand (pure: no reads, no timers) - tests and screenshots render it directly. */
-export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now(), bell }: {
+export function TradeOiBannerView({ symbol, live, state, interval, onInterval, now = Date.now(), bell, collapse }: {
   symbol: string; live: LiveChain | null; state: TradeBannerState; interval: Interval; onInterval: (i: Interval) => void; now?: number;
   bell?: ReactNode;
+  /** Owner 14 Nov: with it, a one-line summary toggles the banner (its content unchanged when shown). */
+  collapse?: { shown: boolean; onShown: (shown: boolean) => void };
 }) {
   const l = bannerLines(symbol, state.banner, live, todayIst(now));
   const rows = state.history?.rows ?? [];
   const [open, setOpen] = useState(false);
   const intervalId = useId();
+  const toggle = collapse && (
+    <button type="button" aria-expanded={collapse.shown} onClick={() => collapse.onShown(!collapse.shown)} data-banner-toggle
+      data-banner-tone={collapse.shown ? undefined : l.tone}
+      className={cx("flex min-h-11 w-full items-center justify-between gap-space-2 rounded-panel border border-l-4 border-subtle px-space-2 text-left text-t12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8",
+        BORDER[l.tone], collapse.shown ? "bg-surface-1" : TINT[l.tone])}>
+      {collapse.shown
+        ? <span className="font-medium text-fg-muted">OI banner and history</span>
+        : <span className="min-w-0 truncate font-semibold text-fg" data-banner-summary title={bannerSummary(l)}>
+            {l.signal ? <>Signal: <span className={TEXT[l.signalTone]}>{l.signal}</span></> : l.message} · {l.pcr}
+          </span>}
+      <span className="inline-flex shrink-0 items-center gap-space-1 font-medium text-brand">
+        {collapse.shown ? "Hide" : "Show"}
+        <ChevronDown size={14} aria-hidden className={cx("transition-transform duration-fast", collapse.shown && "rotate-180")} />
+      </span>
+    </button>
+  );
+  if (collapse && !collapse.shown) {
+    return <section aria-label="OI banner" data-block="oi-banner" data-collapsed className="space-y-space-2">{toggle}</section>;
+  }
   return (
     <section aria-label="OI banner" data-block="oi-banner" className="space-y-space-2">
+      {toggle}
       <div data-banner-tone={l.tone} className={cx("rounded-panel border border-l-4 border-subtle px-space-3 py-space-3 md:px-space-4", BORDER[l.tone], TINT[l.tone])}>
         <div className="text-t16 font-semibold text-fg" data-banner-message>{l.message}</div>
         {l.signal && <div className="mt-space-1 text-t14 font-semibold text-fg" data-banner-signal>

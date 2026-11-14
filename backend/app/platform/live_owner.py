@@ -93,9 +93,11 @@ async def _ensure_owner(session: AsyncSession, user: User, what: str, *, session
 
 
 # --- M55 S1b (owner decision with #744): the per-organisation LIVE grant ------------------------------------------------
-# LIVE-1 (owner order: ONE live switch): the grant no longer decides anything - `live_trading` ON is LIVE for every user,
-# OFF is PAPER only. The organisation list of the flag is kept as stored (the owner-only, audited set_org_grant below
-# still writes it, nothing is deleted), but `org_live_open` reads only the switch (app/platform/live_switch.py).
+# LIVE-1 (owner order: ONE live switch): the grant no longer decides anything. B1 (owner 14 Nov): `live_trading` ON is
+# LIVE through ATP's server for the OWNER'S organisation only; OFF is PAPER only for everyone. The organisation list of
+# the flag is kept as stored (the owner-only, audited set_org_grant below still writes it, nothing is deleted), but it
+# does NOT open server LIVE for any other organisation: `org_live_open` reads only the switch and the owner's
+# organisation (app/platform/live_switch.py).
 GRANTED_EVENT = "live_org_granted"
 REVOKED_EVENT = "live_org_revoked"
 NOT_OWNER_GRANT = "Only the owner can grant or revoke LIVE for an organisation."
@@ -110,8 +112,9 @@ async def granted_orgs(session: AsyncSession) -> list[int]:
 
 
 async def org_live_open(session: AsyncSession, tenant_id: int | None) -> bool:
-    """LIVE-1: True when the one live switch (`live_trading`) is ON - `live_switch.live_allowed`, read fresh (it also
-    refreshes the lock state the broker chokepoint reads). The name stays for its callers (the F&O ticket, the plan check)."""
+    """LIVE-1 / B1: True when the one live switch (`live_trading`) is ON and `tenant_id` is the owner's organisation -
+    `live_switch.live_allowed`, read fresh (it also refreshes the lock state the broker chokepoint reads). The grant list
+    is not read. The name stays for its callers (the F&O ticket, the plan check)."""
     if tenant_id is None:
         return False
     from app.platform import live_switch
@@ -122,7 +125,8 @@ async def set_org_grant(session: AsyncSession, user: User, tenant_id: int, *, gr
                         confirm: str | None) -> list[int]:
     """Grant (or revoke) LIVE for one organisation - the owner only, two-factor checked, typed confirmation; audited
     either way. Raises LiveOwnerRefused (or the step-up refusal), or ValueError for an unknown organisation. Returns the
-    granted list. Only the list changes: the global switch keeps its stored (or default) value."""
+    granted list. Only the list changes: the global switch keeps its stored (or default) value. B1: the list is stored and
+    shown only - it does not open LIVE through ATP's server for the organisation (only the owner's organisation has it)."""
     from app.db.models import Tenant
     from app.platform import controls
     tid = int(tenant_id)

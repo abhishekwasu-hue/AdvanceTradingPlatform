@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cx } from "../components/primitives/cx";
 import { useColourV2 } from "../ui/colourV2";
 import { formatPrice } from "../ui/format";
+import { LegTradeButton, TradeHint } from "./panelBlocks";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import {
@@ -177,9 +178,12 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
     if (table) ro.observe(table);
     return () => ro.disconnect();
   }, [calls.length, puts.length, edges]);
-  const strikeSticky = cx(wide && "sticky left-0 right-0 z-[1]", "w-[4.5rem] min-w-[4.5rem] text-center md:w-[5.5rem] md:min-w-[5.5rem]");
+  // Owner 14 Nov: with chain trading on, the strike cell also holds the CE / PE "B/S" buttons (one line, never wrapped).
+  const strikeSticky = cx(wide && "sticky left-0 right-0 z-[1]", "text-center",
+    onPickLeg ? "whitespace-nowrap" : "w-[4.5rem] min-w-[4.5rem] md:w-[5.5rem] md:min-w-[5.5rem]");
   return (
     <div className="space-y-space-1">
+    {onPickLeg && <TradeHint />}
     <p className="text-right text-t12 text-fg-muted" data-oi-unit>({oiUnitCaption(prefs.units, "OI and volume")})</p>
     <div className="relative">
     <div ref={box} data-chain-scroll data-wide={wide || undefined} onScroll={edges}
@@ -215,9 +219,11 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick, onPickLeg
                   isAtm && (colour ? "bg-brand-tint" : "bg-brand/10"))}>
                 {legCells("call", calls, row, isAtm)}
                 <th scope="row" className={cx(strikeSticky, "px-space-1 py-space-2 font-tabular font-semibold text-fg border-b border-subtle md:px-space-2", isAtm ? (colour ? "bg-brand-tint" : "bg-surface-3") : "bg-surface-1")}>
+                  {onPickLeg && <LegTradeButton underlying={live.underlying} strike={row.strike} side="call" onPick={() => onPickLeg(row, "call")} />}
                   {held?.has(`${row.strike}|CE`) && <HeldMark side="call" />}
                   {formatStrike(row.strike)}
                   {held?.has(`${row.strike}|PE`) && <HeldMark side="put" />}
+                  {onPickLeg && <LegTradeButton underlying={live.underlying} strike={row.strike} side="put" onPick={() => onPickLeg(row, "put")} />}
                   {isAtm && <span className="block text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
                   {setup && <SetupMark call={setup.get(`${row.strike}|CE`)} put={setup.get(`${row.strike}|PE`)} />}
                   {areaMarks && <AreaMark call={areaMarks.get(`${row.strike}|CE`)} put={areaMarks.get(`${row.strike}|PE`)} />}

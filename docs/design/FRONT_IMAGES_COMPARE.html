@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Front door images</title>
+<!-- Owner review 14 Nov ("the images and the explanation under them don't match"): the six "What you get" cards of the
+     sign-in front door, as the page shows them. Before = origin/main (#989, M95); after = claude/front-door-images-match.
+     Captured with Playwright (frontend/scripts/front-images/cards.e2e.ts) on the production build; the images themselves
+     are made by frontend/scripts/front-images/front-images.e2e.ts on made-up data. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+.table { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); } .good { color: rgb(var(--up)); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Front door: each image now shows what its card says</h1>
+<p>Each card's image is now made at the card's own 16:10 shape (720 x 450), so the whole picture shows; before, a 720 x 900 shot was cropped to its middle.</p>
+<div class="table">
+<table>
+  <thead><tr><th>Card</th><th>Before (what showed)</th><th>After (what shows)</th></tr></thead>
+  <tbody>
+    <tr><td>AI Copilot</td><td class="bad">a cut chart answer: half a sentence, the 5m / 15m / D bar, a few candles; no question, no chat</td><td class="good">his question in a bubble and the Copilot's plain-words answer under it</td></tr>
+    <tr><td>Option chain + OI in lakhs</td><td class="bad">the "Strikes All ±5" bar and an empty table: every OI figure and bar hidden</td><td class="good">"(OI and volume in lakhs)", Call OI | Strike | Put OI with figures and bars; strikes as ATM, ATM±n</td></tr>
+    <tr><td>Find setups</td><td class="bad">"Start a scan / Ready / Template / Own words", cut; nothing scanned</td><td class="good">a ready scan run: "Matched 9 of 50" and the list of matches</td></tr>
+    <tr><td>AI Trading Bot on paper</td><td class="bad">the middle of two bot rows, cut; names of real indices</td><td class="good">"Your bots · PAPER", one running bot: its strategy, what it trades, how long it holds, how it enters; Pause / Stop</td></tr>
+    <tr><td>Journal</td><td class="bad">the names of the discipline score's parts; no trade, no note</td><td class="good">one practice trade opened with the trader's own notes</td></tr>
+    <tr><td>Daily report on Telegram</td><td class="bad">the app's report sheet (not Telegram), a real index name</td><td class="good">the Telegram message the app sends (the backend's own text), in a Telegram-style chat</td></tr>
+  </tbody>
+</table>
+</div>
+<h2>Public surface rule (CLAUDE.md §3)</h2>
+<ul>
+  <li>Made-up data only; placeholder names ("Index A", "Stock A".."Stock I"); no real index or stock name.</li>
+  <li>No price: strikes shown by their place from the money (ATM, ATM+1, ATM−1), premiums, fills, amounts, P&amp;L and R hidden; the Telegram message has no close (the app leaves that line out when the close is unknown).</li>
+  <li>OI in lakhs is shown (made-up figures, not tied to a named instrument). No buy / sell / target / stop-loss words; the generator checks every shot's visible words.</li>
+</ul>
+<h2>1440, dark</h2>
+<figure><figcaption>Left: before. Right: after. The six cards as the sign-in page shows them.</figcaption>
+  <img src="front-images/cards-1440-dark.png" alt="The six front-door cards at 1440, dark: before and after" loading="lazy"></figure>
+<h2>390, light</h2>
+<figure><figcaption>Left: before. Right: after.</figcaption>
+  <img src="front-images/cards-390-light.png" alt="The six front-door cards at 390, light: before and after" loading="lazy"></figure>
+</main>
+</body>
+</html>

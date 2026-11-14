@@ -4,7 +4,7 @@
  * every order path looks and behaves the same. PAPER unless he picks LIVE; nothing here decides whether LIVE can go -
  * the server reads the switch and his own broker session again when he places.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import type { LiveStatus, OrderMode } from "./api";
 import { Segmented } from "./OrderTicketV2";
@@ -28,13 +28,17 @@ export function liveIsOff(mode: OrderMode, live: LiveStatus | null): boolean {
 }
 
 /** The mode choice with the ticket's markup; while LIVE is off, the one plain sentence under it. */
-export function OrderModeChoice({ mode, onMode, live, testId, className }: {
+export function OrderModeChoice({ mode, onMode, live, testId, className, brokerApp }: {
   mode: OrderMode; onMode: (m: OrderMode) => void; live: LiveStatus | null; testId: string; className?: string;
+  /** Route 3 (BIZ-1 B2): while LIVE is not open for him, "Trade in your broker app" replaces the dead choice (null: off). */
+  brokerApp?: ReactNode;
 }) {
+  const off = liveIsOff(mode, live);
   return (
     <div className={className} data-mode-choice={testId}>
       <Segmented label="Mode" testId={testId} value={mode} onChange={onMode} options={ORDER_MODES} />
-      {liveIsOff(mode, live) && <p className="mt-space-1 text-t13 text-warn" data-live-off={testId}>{live?.text ?? LIVE_OFF_TEXT}</p>}
+      {off && <p className="mt-space-1 text-t13 text-warn" data-live-off={testId}>{live?.text ?? LIVE_OFF_TEXT}</p>}
+      {off && brokerApp ? <div className="mt-space-2">{brokerApp}</div> : null}
     </div>
   );
 }

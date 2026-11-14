@@ -23,6 +23,7 @@ from app.db.models import Tenant, User
 from app.execution.tagging import LEG_EXIT
 from app.plans import limits
 from app.platform import controls, live_owner, live_switch, phase0_lock
+from tests.live_switch_helpers import make_owner_org
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _store_broker
 from tests.test_trading_worker import (
@@ -92,36 +93,48 @@ def _allowed(tenant_id: int | None) -> bool:
 
 # --- the one decision -------------------------------------------------------------------------------------------------
 
-def test_off_by_default_and_on_only_by_the_switch():
+def _owner_org(monkeypatch, email: str) -> int:
+    """B1 (owner 14 Nov): an organisation made the owner's (LIVE_OWNER_USER_ID names an administrator in it)."""
+    t = _tenant(email)
+    make_owner_org(monkeypatch, t["tenant_id"])
+    return int(t["tenant_id"])
+
+
+def test_off_by_default_and_on_only_by_the_switch(monkeypatch):
     assert "live_trading" in controls.DEFAULT_OFF_FLAGS                  # production default unchanged: OFF
-    assert _allowed(1) is False
+    owner = _owner_org(monkeypatch, "live1-owner-a@example.com")
+    assert _allowed(owner) is False
     _live(True)
-    assert _allowed(1) is True and _allowed(None) is True
+    assert _allowed(owner) is True
+    assert _allowed(None) is False                                       # B1: no organisation = not the owner's
     _live(False)
-    assert _allowed(1) is False
+    assert _allowed(owner) is False
 
 
-def test_the_former_extra_gates_decide_nothing():
+def test_the_former_extra_gates_decide_nothing(monkeypatch):
     """A stored phase0_paper_only (either way) and the organisation list (the former grant) never change the answer."""
-    _store({"live_trading": {"on": False, "tenants": [1, 2]}, "phase0_paper_only": {"on": False, "tenants": []}})
-    assert _allowed(1) is False
-    _store({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": [1]}})
-    assert _allowed(1) is True
+    owner = _owner_org(monkeypatch, "live1-owner-b@example.com")
+    _store({"live_trading": {"on": False, "tenants": [owner, 2]}, "phase0_paper_only": {"on": False, "tenants": []}})
+    assert _allowed(owner) is False
+    _store({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": [owner]}})
+    assert _allowed(owner) is True
 
     async def view():
         async with _session_factory() as session:
-            return await controls.features_for_tenant(session, 1)
+            return await controls.features_for_tenant(session, owner)
     features = _run(view())
     assert features["live_trading"] is True and features["phase0_paper_only"] is False
-    _store({"live_trading": {"on": False, "tenants": [1]}})
+    _store({"live_trading": {"on": False, "tenants": [owner]}})
     features = _run(view())
     assert features["live_trading"] is False and features["phase0_paper_only"] is True   # the list grants nothing
 
 
-def test_the_refusal_is_one_plain_sentence():
+def test_the_refusal_is_one_plain_sentence(monkeypatch):
+    owner = _owner_org(monkeypatch, "live1-owner-c@example.com")
+
     async def go():
         async with _session_factory() as session:
-            return await live_switch.live_refusal(session, 1)
+            return await live_switch.live_refusal(session, owner)
     assert _run(go()) == live_switch.LIVE_OFF
     assert "phase0" not in live_switch.LIVE_OFF and "flag" not in live_switch.LIVE_OFF
     _live(True)
@@ -135,8 +148,9 @@ def test_every_user_may_pick_live_the_switch_decides():
                          "trading:live")
 
 
-def test_the_plan_check_follows_the_switch():
+def test_the_plan_check_follows_the_switch(monkeypatch):
     t = _tenant("live1-plan@example.com")
+    make_owner_org(monkeypatch, t["tenant_id"])                           # B1: the owner's organisation
 
     async def go():
         async with _session_factory() as session:
@@ -153,12 +167,14 @@ def test_the_plan_check_follows_the_switch():
 
 # --- live_trading OFF: no LIVE entry reaches a broker from any path ------------------------------------------------------
 
-def test_off_the_broker_chokepoint_refuses_an_entry_and_passes_an_exit():
+def test_off_the_broker_chokepoint_refuses_an_entry_and_passes_an_exit(monkeypatch):
+    owner = _owner_org(monkeypatch, "live1-owner-d@example.com")
+
     async def go():
         async with _session_factory() as session:
-            await live_switch.live_allowed(session, 7)                  # the fresh read every entry path makes first
+            await live_switch.live_allowed(session, owner)              # the fresh read every entry path makes first
         inner = _Inner()
-        broker = RateLimitedBroker(inner, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=7)  # type: ignore[arg-type]
+        broker = RateLimitedBroker(inner, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=owner)  # type: ignore[arg-type]
         entry = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1,
                                    intent=ORDER_INTENT_ENTRY)
         exit_order = BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.SELL, quantity=1)
@@ -222,6 +238,7 @@ def test_on_a_live_bot_reaches_the_broker_once_with_his_values_and_exits_go_out(
     monkeypatch.setattr("app.trading.position_monitor.FILL_POLL_DELAY_SECONDS", 0)
     _live(True)
     t = _tenant("live1-worker-on@example.com")
+    make_owner_org(monkeypatch, t["tenant_id"])                           # B1: the owner's organisation
     _deploy(t, mode="LIVE")
     broker = _StopStandingBroker(ltp=101.0)
     worker = _worker(monkeypatch, broker)
@@ -253,9 +270,10 @@ def test_on_a_paper_bot_stays_paper(monkeypatch):
     assert len(trades) == 1 and trades[0].mode == "PAPER" and broker.placed == []
 
 
-def test_on_a_live_deployment_and_a_live_template_are_created_paper_stays_the_default():
+def test_on_a_live_deployment_and_a_live_template_are_created_paper_stays_the_default(monkeypatch):
     _live(True)
     t = _tenant("live1-route-on@example.com")
+    make_owner_org(monkeypatch, t["tenant_id"])                           # B1: the owner's organisation
     _store_broker(t["headers"], token_status="VALID")
     live = client.post("/api/deployments", headers=t["headers"],
                        json={"strategy_id": STRATEGY, "symbol": "reliance", "mode": "LIVE", "broker_name": "upstox"})

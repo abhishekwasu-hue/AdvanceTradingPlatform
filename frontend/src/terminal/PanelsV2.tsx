@@ -16,6 +16,8 @@ import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode 
 import { api } from "../api/client";
 import { BROKER_PATH } from "../broker/paths";
 import type { LevelLine } from "../chart/chartCore";
+import ChartTradeBar from "../chart/ChartTradeBar";
+import type { ChartTicket } from "../chart/chartTrade";
 import EmbeddedChartV2 from "../chart/EmbeddedChartV2";
 import { SkeletonRows } from "../components/primitives";
 import { cx } from "../components/primitives/cx";
@@ -77,8 +79,10 @@ export function EmptyText({ children, testId }: { children: ReactNode; testId?: 
 
 // --- Chart ---------------------------------------------------------------------------------------------------------------
 
-export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe }: {
+export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe, onTicket }: {
   symbol: string; onSymbol?: (symbol: string | null) => void;
+  /** CTB-1 (owner 14 Nov): the chart's Buy / Sell fill the order panel where it is open (the chain's same ticket state). */
+  onTicket?: (t: ChartTicket) => void;
   /** AN-1: the chart's timeframe as the trader changes it (the Terminal hands it to Ask AI's "Analyze this chart"). */
   onTimeframe?: (tf: TimeframeId) => void;
   /** TERM-2 step 2: his legs, breakevens and own spot stops drawn on the chart (terminal/chartLevels.ts). */
@@ -102,6 +106,8 @@ export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe }: {
             className="h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t13 uppercase text-fg focus:border-brand focus:outline-none lg:h-9" />
         </form>
       )}
+      {/* CTB-1: Buy / Sell / Exit when the chart shows an F&O contract (this panel charts on NSE: the index, a stock - none) */}
+      <ChartTradeBar symbol={symbol} exchange="NSE" ltp={live?.ltp ?? null} onTicket={onTicket} />
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
         <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} drawing />
       </div>
@@ -284,7 +290,7 @@ export function OrderPanelV2({ ticket, state: t, onClear, paperBadge = true }: {
         <p className="text-t13 font-tabular text-fg-muted">LTP {formatPrice(target.ltp)} · Bid {formatPrice(target.bid)} · Ask {formatPrice(target.ask)}</p>
       </div>
       <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
-        budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live} keysHint={false} stickyActions
+        budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live} brokerApp={t.brokerApp} keysHint={false} stickyActions
         onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClear} />
     </div>
   );

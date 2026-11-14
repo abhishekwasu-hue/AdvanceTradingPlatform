@@ -12,8 +12,9 @@ limit, keeping the algo id and the leg intact and shortening only the strategy p
 the broker actually received is stored on the order row (`orders.algo_tag`) so the platform's
 own order trail and the exchange's records can be reconciled. The algo id itself is tenant
 configuration (`tenants.algo_id`, set by an OWNER on the Team page after the broker registers
-the algo); without one, tags fall back to `<strategy>-<leg>` and - when
-`ALGO_ID_REQUIRED_FOR_LIVE` is on - LIVE orders are refused before they reach the broker.
+the algo); without one, tags fall back to `<strategy>-<leg>` (below the exchange's OPS threshold the broker sends the
+generic algo id itself) and - when `ALGO_ID_REQUIRED_FOR_LIVE` is on and the OPS throttle does not keep orders under
+that threshold - LIVE entries are refused before they reach the broker.
 
 M55 S4: a client order id per order. `client_order_id` makes a short id (letters and digits) that is stable for one
 order - derived from the order row (an entry: its `orders` row id; an exit: the position id and the time its exit was

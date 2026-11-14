@@ -69,7 +69,7 @@ def test_plan_registry_falls_back_to_free_for_unknown_ids():
 def test_tenant_endpoint_reports_plan_limits_and_usage():
     headers, _ = _owner("plan-info@example.com")
     body = client.get("/api/team/tenant", headers=headers).json()
-    assert body["plan"] == "free" and body["plan_name"] == "Free"
+    assert body["plan"] == "free" and body["plan_name"] == "Basic"
     assert body["limits"]["active_deployments"] == 2 and body["limits"]["live_trading"] is False
     assert body["usage"] == {"active_deployments": 0, "custom_strategies": 0, "members": 1, "alert_channels": 0}
 

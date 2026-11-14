@@ -12,6 +12,9 @@ from app.brokers import broker_limits as bl
 from app.brokers.exceptions import BrokerAPIError, BrokerBudgetUsed
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits, exit_reads
 from app.core import config
+from app.platform import phase0_lock
+
+OWNER_TENANT = 7   # B1: the owner's organisation in these tests (phase0_lock.remember_owner)
 
 SUPPORTED = ("upstox", "zerodha", "angel_one", "dhan", "fyers", "groww", "kotak_neo", "shoonya", "coindcx")
 
@@ -255,7 +258,9 @@ def fresh(monkeypatch):
 
 def _wrapped(inner, clock):
     budget = RateBudget(RateLimits(1000.0, 1000, 100000), clock=clock, sleep=clock.sleep)
-    return RateLimitedBroker(inner, budget), budget  # type: ignore[arg-type]
+    # B1: LIVE entries open only for the owner's organisation - these orders are that organisation's.
+    phase0_lock.remember_owner(OWNER_TENANT)
+    return RateLimitedBroker(inner, budget, tenant_id=OWNER_TENANT), budget  # type: ignore[arg-type]
 
 
 def test_the_wrapper_finds_the_credential_and_draws_the_right_pool(fresh):

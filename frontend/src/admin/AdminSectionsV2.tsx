@@ -161,14 +161,15 @@ function Stat({ icon: Icon, label, value, sub }: { icon: typeof Activity; label:
 export function Phase0Notice() {
   const { on, loaded } = useFeatures();
   if (!loaded) return null;
-  // LIVE-1 (owner order: ONE live switch): live_trading alone decides; the PAPER-only lock follows it.
+  // LIVE-1 (owner order: ONE live switch): live_trading alone decides; the PAPER-only lock follows it. B1 (owner 14 Nov):
+  // the server answers it per organisation - ON only for the owner's own organisation (LIVE through ATP is his alone).
   const live = on("live_trading");
   const paperOnly = !live;
   return (
     <section data-console-card="phase0" aria-label="Phase 0" className={`${CARD} flex items-start gap-space-3 p-space-4 md:p-space-5`}>
       <Lock size={18} aria-hidden className="mt-0.5 shrink-0 text-warn" />
       <div className="min-w-0">
-        <h2 className="text-t15 font-semibold text-fg">{paperOnly ? "Phase 0: PAPER only - LIVE is locked" : "Live trading is on: each user picks Paper or Live"}</h2>
+        <h2 className="text-t15 font-semibold text-fg">{paperOnly ? "Phase 0: PAPER only - LIVE is locked" : "Live trading is on. Live through ATP: your own organisation only"}</h2>
         <p className="mt-space-1 text-t12 text-fg-muted">
           Phase 0 paper only: <strong className="text-fg">{paperOnly ? "on" : "off"}</strong> · LIVE trading: <strong className="text-fg">{live ? "on" : "off"}</strong>.
         </p>

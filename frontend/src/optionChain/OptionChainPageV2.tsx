@@ -26,6 +26,7 @@ import RowDetailsV2 from "./RowDetailsV2";
 import { ChainLadderV2, Note } from "./ChainLadderV2";
 import OiDiffTableV2 from "./OiDiffTableV2";
 import TradeOiBannerV2 from "./TradeOiBannerV2";
+import { Hideable } from "./panelBlocks";
 import SummaryStripV2 from "./SummaryStripV2";
 import { usePrevClose } from "./spotChange";
 import type { ChainRow } from "./types";
@@ -69,6 +70,11 @@ import { useHasAskAiEntry, useRegisterAskAi } from "../shell/askAiEntry";
  *   banner's expiry line gives Trade's calendar days. In the Terminal (`embedded`) the
  *   panel title is the heading (no h1 of its own), the pickers row fits the panel, the banner is one compact block, and
  *   on a phone the banner leaves out what the context bar shows (`omitFacts`).
+ * - Owner 14 Nov (the Terminal's panel, `embedded`): the pickers without labels on one row, the market state as one
+ *   muted line, the figures as one compact strip ("More" for the rest; the Chain / Charts / OI toggle at its end),
+ *   Trade's banner as one remembered Show / Hide line (closed at first), the OI-difference table and the analyses each
+ *   with a remembered Show / Hide (./panelBlocks.tsx), and a visible "B/S" button beside every strike of both tables
+ *   (the same action sheet).
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 
@@ -76,19 +82,21 @@ export type ChainView = "chain" | "charts" | "oi";
 
 /** "Chain | Charts": which view sits under the summary. Two 44 px targets on a phone (no padding around them, so the
  * toggle fits the 44 px gap above the chain), 28 px from md. */
-export function ViewToggle({ view, onView, className }: { view: ChainView; onView: (v: ChainView) => void; className?: string }) {
+export function ViewToggle({ view, onView, className, bare = false }: { view: ChainView; onView: (v: ChainView) => void; className?: string;
+  /** Owner 14 Nov (the Terminal's compact strip): words only, no icons, no padding around the group. */
+  bare?: boolean }) {
   const items: { key: ChainView; label: string; Icon: typeof Table2 }[] = [
     { key: "chain", label: "Chain", Icon: Table2 },
     { key: "charts", label: "Charts", Icon: ChartColumn },
     { key: "oi", label: "OI", Icon: Activity },   // UI-28 U6.1
   ];
   return (
-    <div role="group" aria-label="View" data-view-toggle className={cx("inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-0 md:p-space-1", className)}>
+    <div role="group" aria-label="View" data-view-toggle className={cx("inline-flex items-center gap-space-1 rounded-panel bg-surface-2 p-0", !bare && "md:p-space-1", className)}>
       {items.map(({ key, label, Icon }) => (
         <button key={key} type="button" aria-pressed={view === key} onClick={() => onView(key)}
           className={cx("inline-flex h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-7",
             view === key ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
-          <Icon size={14} aria-hidden />{label}
+          {!bare && <Icon size={14} aria-hidden />}{label}
         </button>
       ))}
     </div>
@@ -210,28 +218,34 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     if (ready.length === 1) tradeSetup(ready[0]);
   }, [autoTrade, setupData, live, tradeSetup, symbol]);
 
+  // Owner 14 Nov: in the Terminal's panel the plain-word states are one small muted line (on a phone beside Columns).
+  const notesLine = embedded && notes.length > 0
+    ? <p role="status" className="min-w-0 text-t12 text-fg-muted" data-chain-notes data-compact>{notes.map((n) => n.text).join(" · ")}</p>
+    : null;
+
   return (
-    <div className="space-y-space-4" data-page="option-chain-v2">
+    <div className={embedded ? "space-y-space-2" : "space-y-space-4"} data-page="option-chain-v2">
       <PageIntro id="option-chain" lines={["Pick an index or stock: the strike nearest the price is in the middle. Tap a row to see all its figures."]} />
       <header className={embedded ? "block" : "flex flex-col gap-space-3 md:flex-row md:items-end md:justify-between"}>
         {/* M96 L1: inside the Terminal the panel's own title is the heading - no second "Option chain". */}
         {!embedded && <h1 className="sr-only md:not-sr-only md:text-t24 md:font-semibold md:text-fg">Option chain</h1>}
         {/* M96 L1: on a Terminal phone the context bar right above holds the symbol and expiry - only Columns stays here. */}
-        <div data-tour="oc-pickers" className={barPickers ? "flex justify-end" : cx("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2", !embedded && "md:flex md:gap-space-3")}>
+        <div data-tour="oc-pickers" className={barPickers ? "flex items-center justify-between gap-space-2" : cx("grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-space-2", !embedded && "md:flex md:gap-space-3")}>
           {!barPickers && <div className={cx("min-w-0", !embedded && "md:w-48")}>
-            <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
+            <label htmlFor={symbolId} className={embedded ? "sr-only" : "mb-space-1 block text-t12 font-medium text-fg-muted"}>Symbol</label>
             {/* CT-1 C6: the one symbol picker, over the symbols that have options. */}
             <SymbolPicker id={symbolId} label="Symbol" value={symbol} exchange={symbol === "SENSEX" ? "BSE" : "NSE"} universe="optionable"
               storageKey={recentKeyFor(auth?.user?.id)} onPick={(p) => { if (p.symbol !== symbol) { setPicked(null); onSymbol(p.symbol); } }} className="w-full min-w-0" />
           </div>}
           {!barPickers && <div className={cx("min-w-0", !embedded && "md:w-56")}>
-            <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
+            <label htmlFor={expiryId} className={embedded ? "sr-only" : "mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted"}>
               <CalendarDays size={12} aria-hidden /> Expiry
             </label>
             <Combobox id={expiryId} label="Expiry" value={chain.expiry ?? ""} disabled={expiryOptions.length === 0} className="w-full"
               placeholder={chain.loading ? "Loading…" : "Nearest"} onChange={(v) => { setPicked(null); chain.setExpiry(v); }}
               options={expiryComboOptions(expiryOptions)} />
           </div>}
+          {barPickers && notesLine}
           <ColumnsMenuV2 prefs={prefs} onChange={onPrefs} />
           {/* OC-2: "Ask AI about this chain" is the header's primary action - a side panel (phone: a bottom sheet). */}
           {!shellAsk && <button type="button" onClick={() => setAskOpen(true)} data-oc-ask-open
@@ -241,7 +255,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
         </div>
       </header>
 
-      {notes.length > 0 && (
+      {embedded && !barPickers && notesLine}
+      {!embedded && notes.length > 0 && (
         <div className="space-y-space-2" data-chain-notes>
           {notes.map((n) => <Note key={n.key} tone="neutral">{n.text}</Note>)}
         </div>
@@ -249,35 +264,36 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
 
       {/* OC-1 (owner, 25 Oct): header -> status -> summary cards -> the chain -> the compact reading -> the tables. */}
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} spot={spot} prevClose={prevClose}
-        asOf={live?.data_as_of ?? live?.fetched_at ?? null} dense={embedded && !omitFacts?.length} omit={omitFacts} drop={TRADE_BANNER_HAS} />
+        asOf={live?.data_as_of ?? live?.fetched_at ?? null} dense={embedded} omit={omitFacts} drop={TRADE_BANNER_HAS}
+        aside={embedded ? <ViewToggle view={view} onView={setView} bare /> : undefined} />
       {/* M96 L1: Trade's OI banner (direction colour, message, classes, PCR ATM ± 6 and its zone, expiry, History). */}
-      {view === "chain" && !noBroker && hasRows && <TradeOiBannerV2 symbol={symbol} live={live} />}
+      {view === "chain" && !noBroker && hasRows && <TradeOiBannerV2 symbol={symbol} live={live} collapsible={embedded} />}
 
       <SetupPanelV2 state={setupState} symbol={symbol} expiry={live?.expiry ?? chain.expiry} onExpiry={(e) => { setPicked(null); chain.setExpiry(e); }}
         onClear={() => onClearSignal?.()} tradeOf={tradeOf} onTrade={tradeSetup} />
 
       {view === "charts" && (
         <section aria-label="Charts" data-block="charts" className="space-y-space-3">
-          <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+          {!embedded && <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
           <ChainCharts symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
         </section>
       )}
 
       {view === "oi" && (
         <section aria-label="OI" data-block="oi" className="space-y-space-3">
-          <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+          {!embedded && <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
           <OiViewV2 underlying={symbol} />
         </section>
       )}
 
       {/* M86 D2: no broker stored - the last end-of-day chain from NSE's F&O file (read only), or one plain line. */}
       {view === "chain" && noBroker && <section aria-label="Chain" data-block="chain"><EodChainV2 symbol={symbol} /></section>}
-      {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className="space-y-space-3">
+      {view === "chain" && !noBroker && <section aria-label="Chain" data-block="chain" data-tour="oc-chain" className={embedded ? "space-y-space-2" : "space-y-space-3"}>
         {/* M96 L1: the view toggle, then Trade's Net Diff table (ATM ± 6), the key figures strip and the chain table -
             in the page's flow, so nothing sits over the chips or the rows. */}
-        <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>
+        {!embedded && <div className="flex justify-center"><ViewToggle view={view} onView={setView} /></div>}
         {hasRows && live && <OiDiffTableV2 live={live} units={prefs.units} onPickLeg={trading.onPickLeg}
-          centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} />}
+          centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} hideable={embedded ? "oi-diff" : undefined} />}
         {trading.strip}
         <div>
           <ChainLadderV2 symbol={symbol} live={live} loading={chain.loading} problem={chain.problem} problemReason={chain.problemReason} prefs={prefs} centreSuffix={trading.centreSuffix}
@@ -289,7 +305,9 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       {/* UI-28 U1.2 (owner, 28 Oct): the "What the chain shows" prose is no longer mounted; its numbers stay in the summary strip. */}
 
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
-      <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
+      <Hideable on={embedded} id="analysis" label="Analysis, Ask AI and my analyses">
+        <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />
+      </Hideable>
 
       {!shellAsk && <Sheet side={phone ? "bottom" : "right"} open={askOpen} onOpenChange={setAskOpen} title="Ask AI about this chain">
         <AskAi symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? undefined} />

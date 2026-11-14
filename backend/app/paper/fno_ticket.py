@@ -696,7 +696,8 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     try:
         mode = phase0_lock.assert_paper(ask.mode, user.tenant_id)
     except phase0_lock.LiveOrderRefused:
-        return {**view, "status": "REFUSED", "reasons": [LIVE_OFF], "order_id": None, "trade_id": None, "filled": None}
+        reason = LIVE_OFF if phase0_lock.switch_locked() else phase0_lock.NOT_OWNER_REASON     # B1: not the owner's organisation
+        return {**view, "status": "REFUSED", "reasons": [reason], "order_id": None, "trade_id": None, "filled": None}
     if mode == LIVE:
         # M96-Q1: read again right before sending - the owner's switches and his own broker session decide.
         live = await live_status(session, user)
@@ -796,9 +797,10 @@ def live_ask_errors(ask: OrderAsk) -> list[str]:
 async def _own_session(session: AsyncSession, user: User) -> tuple[LiveRoute, Any]:
     from app.brokers import token_lifecycle
     from app.market_data import entitlement
-    from app.platform import live_owner
+    from app.platform import live_owner, phase0_lock
     if not await live_owner.org_live_open(session, user.tenant_id):
-        return LiveRoute(refusals=[LIVE_OFF]), None
+        # B1 (owner 14 Nov): the switch is off, or the organisation is not the owner's - its own plain sentence.
+        return LiveRoute(refusals=[LIVE_OFF if phase0_lock.switch_locked() else phase0_lock.NOT_OWNER_REASON]), None
     usable = [r for r in await entitlement.own_records(session, user) if token_lifecycle.token_is_usable(r)]
     if not usable:
         return LiveRoute(refusals=[LIVE_NO_BROKER]), None

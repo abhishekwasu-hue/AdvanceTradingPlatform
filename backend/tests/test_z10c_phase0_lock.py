@@ -151,6 +151,7 @@ def test_chokepoint_refuses_entries_only_while_locked():
     async def go():
         broker, inner = _wrapped()
         phase0_lock.remember(False, ())
+        phase0_lock.remember_owner(7)                                                 # B1: tenant 7 is the owner's
         assert (await broker.place_order(_order(LEG_ENTRY))).status == "OPEN"        # off: unchanged
         phase0_lock.remember(True, ())
         refused = await broker.place_order(_order(LEG_ENTRY))
@@ -171,6 +172,7 @@ def test_chokepoint_refuses_entries_only_while_locked():
 def test_chokepoint_honours_the_tenant_allow_list():
     async def go():
         phase0_lock.remember(False, [7])
+        phase0_lock.remember_owner(8)                    # B1: tenant 8 is the owner's (7 is not, and is on the list)
         locked, _ = _wrapped(7)
         other, _ = _wrapped(8)
         unknown, _ = _wrapped(None)
@@ -181,8 +183,12 @@ def test_chokepoint_honours_the_tenant_allow_list():
         phase0_lock.reset_cache()
 
 
-def test_a_stored_lock_entry_is_ignored_the_lock_follows_live_trading():
+def test_a_stored_lock_entry_is_ignored_the_lock_follows_live_trading(monkeypatch):
     """LIVE-1: the lock is not a second switch - a stored phase0_paper_only entry (either way) changes nothing."""
+    async def owner_org(session):
+        return 5                                          # B1: tenant 5 is the owner's (the rule: test_b1_live_owner_only)
+    monkeypatch.setattr(phase0_lock, "owner_tenant_id", owner_org)
+
     async def go(lock_on: bool, live_on: bool):
         async with _session_factory() as session:
             flags = dict((await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {})

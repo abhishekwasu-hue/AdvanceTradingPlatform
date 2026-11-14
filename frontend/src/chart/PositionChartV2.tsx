@@ -11,6 +11,7 @@ import { DirectionChip } from "../ui/DirectionChip";
 import { formatPrice } from "../ui/format";
 import { SubTabs } from "../ui/SubTabs";
 import { useFeatures } from "../ui/useFeatures";
+import ChartTradeBar from "./ChartTradeBar";
 import EmbeddedChartV2 from "./EmbeddedChartV2";
 import {
   contractWord, fallsBack, hasUnderlying, noCandlesText, type CandleRead, positionChartAreas, positionChartLevels, positionChartTarget, type PositionChartView,
@@ -82,6 +83,8 @@ export default function PositionChartV2({ positionId, view, noCandles, symbol, e
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-space-2 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col" data-position-chart={positionId} data-view={target.view}>
       {p && <PositionChartStrip position={p} view={target.view} noCandles={noCandles} ltp={contractLive.ltp?.ltp ?? null} onPick={pick} />}
+      {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on the contract held (the strip above already shows its side and avg) */}
+      {contract && <ChartTradeBar symbol={contract.symbol} exchange={contract.exchange} ltp={contractLive.ltp?.ltp ?? null} heldChip={false} />}
       {position === null && <p className="text-t13 text-fg-muted" data-position-gone>This position is no longer open.</p>}
       <EmbeddedChartV2 key={key} symbol={target.symbol} exchange={target.exchange} timeframe={timeframe} onTimeframe={onTimeframe} openLink={false}
         levels={levels} areas={areas} live={p && target.view === "contract" ? contractLive.ltp : undefined}

@@ -11,6 +11,8 @@ import type { ChainExpiry, LiveChain } from "../optionChain/types";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import type { Leg as BuilderLeg } from "../optionsBuilder/model";
 import { kiteFnoBasketLink, openBrokerAppLink } from "../proposals/brokerLinks";
+import { BrokerAppAction, BrokerFactsSheet, useBrokerApp } from "../proposals/BrokerAppAction";
+import { basketFacts } from "../proposals/brokerFacts";
 import { activeLimits, useLiquidityLimits } from "../settings/liquidityLimits";
 import { ticketPrefill, useTradingDefaults } from "../settings/tradingDefaults";
 import { useFeatures } from "../ui/useFeatures";
@@ -151,6 +153,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   const sendMode = modeOn ? mode : "PAPER";
   const liveState = useLiveStatus(open && modeOn && mode === "LIVE", api.liveStatus);
   const modeAsk = sendMode === "LIVE" ? { mode: sendMode } : {};
+  // Route 3 (BIZ-1 B2): "Trade in your broker app" (flags ui_v2 + broker_app_links): pre-filled in Kite where verified,
+  // else his own legs to copy and his broker's own home - also where the LIVE choice is not open for him.
+  const brokerInfo = useBrokerApp();
+  const [factsOpen, setFactsOpen] = useState(false);
   // SX1: "Exits for this strategy" - empty, or from his own saved defaults until he types (then his own values).
   const exitDefaults = useExitDefaults(open && features.on("ui_v2"), fetcher);
   const [exitTyped, setExitTyped] = useState<StrategyExitForm | null>(null);
@@ -379,11 +385,18 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     openInPlace("/option-chain/plan");   // M75 NAV-4: beside the basket, in place (the basket stays as it was)
   }
 
+  const facts = basketFacts(legs.map((l) => ({ side: l.side, lots: l.lots, name: legLabel(l) })), product);
+
+  async function kiteLink() {
+    const link = await api.brokerLink(basketAsk(legs.map(strip), spot, product));
+    return { link, form: link.available ? kiteFnoBasketLink(link.orders, link.publisher_api_key) : null };
+  }
+
   async function brokerApp() {
     try {
       if (lotsProblems(legs).length) { setNote({ tone: "warn", text: lotsProblems(legs)[0] }); return; }
-      const link = await api.brokerLink(basketAsk(legs.map(strip), spot, product));
-      const form = link.available ? kiteFnoBasketLink(link.orders, link.publisher_api_key) : null;
+      const { link, form } = await kiteLink();
+      if (!form && brokerInfo) { setFactsOpen(true); return; }      // Route 3: his legs to copy, his broker's own home
       if (!form) { setNote({ tone: "warn", text: link.available ? "This basket cannot be pre-filled in your broker app." : link.why }); return; }
       openBrokerAppLink(form);
       setNote({ tone: "done", text: `Opened in ${form.brokerLabel}: ${form.summary}. Review and place it there; ATP placed nothing.` });
@@ -417,7 +430,10 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
           {step.kind === "edit" && (
             <BasketBody legs={legs} numbers={numbers} problems={problems} settings={settings} settingsFailed={settingsFailed} rows={rows} pick={pick} atm={atm} spot={spot}
               product={product} note={note} tool={tool} saved={saved} saveName={saveName} idPrefix={idPrefix} on={handlers} budget={budget} checks={checks} strategies={strategies}
-              mode={modeOn ? { node: <OrderModeChoice mode={mode} onMode={setMode} live={liveState} testId="basket-mode" />, blocked: liveIsOff(mode, liveState) } : undefined}
+              mode={modeOn ? { node: <OrderModeChoice mode={mode} onMode={setMode} live={liveState} testId="basket-mode"
+                brokerApp={legs.length > 0 && !lotsProblems(legs).length ? (
+                  <BrokerAppAction info={brokerInfo} testId="basket" facts={facts} prefill={async () => (await kiteLink()).form} />
+                ) : null} />, blocked: liveIsOff(mode, liveState) } : undefined}
               whatif={whatifOn ? { view: payoffView, onView: setPayoffView } : undefined}
               exits={(
                 <StrategyExitsV2 form={exitForm} legCount={legs.length} saveNote={exitNote} onSaveDefaults={() => { void saveExits(); }}
@@ -451,6 +467,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
     return (
       <div data-basket-panel data-embedded data-step={step.kind} className="flex min-h-0 flex-col">
         {confirmBox.dialog}
+        {factsOpen && <BrokerFactsSheet open={factsOpen} onOpenChange={setFactsOpen} facts={facts} broker={brokerInfo?.broker ?? null} />}
         {steps}
       </div>
     );
@@ -459,6 +476,7 @@ export default function BasketPanelV2({ open, onClose, chain, store = defaultBas
   return (
     <RD.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       {confirmBox.dialog}
+      {factsOpen && <BrokerFactsSheet open={factsOpen} onOpenChange={setFactsOpen} facts={facts} broker={brokerInfo?.broker ?? null} />}
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
         <RD.Content aria-describedby={undefined} data-basket-panel data-step={step.kind}

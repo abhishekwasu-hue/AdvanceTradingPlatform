@@ -5,7 +5,7 @@
   "ready": false,
   "summary": {
    "ok": 9,
-   "todo": 3,
+   "todo": 2,
    "warn": 1,
    "info": 1
   },
@@ -119,15 +119,6 @@
     "scope": "LIVE"
    },
    {
-    "key": "algo_id",
-    "title": "SEBI algo id set for order tagging",
-    "status": "todo",
-    "detail": "not set",
-    "fix": "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.",
-    "link": "team",
-    "scope": "LIVE"
-   },
-   {
     "key": "ai_provider",
     "title": "AI provider key (optional)",
     "status": "info",
@@ -147,7 +138,7 @@
    "ok": 9,
    "todo": 1,
    "warn": 1,
-   "info": 3
+   "info": 2
   },
   "items": [
    {
@@ -256,15 +247,6 @@
     "detail": "verified",
     "fix": "",
     "link": "account",
-    "scope": "LIVE"
-   },
-   {
-    "key": "algo_id",
-    "title": "SEBI algo id set for order tagging",
-    "status": "info",
-    "detail": "not set",
-    "fix": "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.",
-    "link": "team",
     "scope": "LIVE"
    },
    {

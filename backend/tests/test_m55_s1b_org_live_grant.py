@@ -15,6 +15,7 @@ from app.core import config
 from app.db.models import Tenant, User
 from app.plans import limits
 from app.platform import controls, deployment_phase, live_owner
+from tests.live_switch_helpers import make_owner_org
 from tests.test_admin_api import _admin
 from tests.test_auth_api import _session_factory, client
 from tests.test_m55_s1_owner_live import _audit, _resolved, _set_stored
@@ -78,10 +79,14 @@ def test_the_defaults_grant_no_organisation(monkeypatch):
     assert _run(go()) == []
 
 
-def test_live_one_switch_on_allows_every_organisation_without_a_grant(monkeypatch):
-    """LIVE-1 (was test_without_the_grant_live_is_refused_...): the switch ON is LIVE for everyone - no grant needed."""
+def test_live_one_switch_on_opens_only_the_owners_organisation_a_grant_opens_nothing(monkeypatch):
+    """LIVE-1 amended by B1 (owner 14 Nov): the switch ON is LIVE through ATP's server for the owner's organisation only -
+    another organisation stays refused, granted or not; the owner's needs no grant."""
     _, me = _admin("m55b-nogrant@example.com")
+    _switch_on_lock_off(granted=[me["tenant_id"]])
+    assert _allowed(me["tenant_id"]) is False and _deployment_refused(me["tenant_id"]) is True   # not the owner's
     _switch_on_lock_off()
+    make_owner_org(monkeypatch, me["tenant_id"])
     assert _allowed(me["tenant_id"]) is True
     assert _deployment_refused(me["tenant_id"]) is False
 
@@ -103,6 +108,7 @@ def test_live_one_switch_off_refuses_even_a_granted_organisation_and_a_stored_lo
                 return str(exc)
             return None
     assert live_switch.LIVE_OFF in (_run(refusal()) or "")
+    make_owner_org(monkeypatch, tid)                      # B1: ON opens LIVE for the owner's organisation only
     _set_stored({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": []}})
     assert _allowed(tid) is True
     _set_stored({"live_trading": {"on": True, "tenants": []}, "phase0_paper_only": {"on": False, "tenants": [tid]}})

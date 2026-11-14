@@ -5,6 +5,7 @@ import { formatPrice, formatTimeIST } from "../ui/format";
 import { centreScrollTop, formatOi, formatStrike, oiUnitCaption, type OiUnits } from "./model";
 import { netDiffRows, netDiffStatus, netDiffTotal, type Dominance, type NetDiffShown } from "./oiDiff";
 import type { ChainRow, LiveChain } from "./types";
+import { LegTradeButton, ShowHide, TradeHint, useShownBlock } from "./panelBlocks";
 
 /**
  * M96 L1 (owner, 11 Nov: "taken from the Trade repo AS IS"): the OI-difference table on top of the chain view = the
@@ -26,16 +27,36 @@ import type { ChainRow, LiveChain } from "./types";
  * - O1: with chain trading on (`onPickLeg`), a tap on a CE or PE change opens THAT contract's actions - the same action
  *   sheet, ticket and basket as the chain table (src/fno/ChainTradingV2.tsx); nothing else is filled in (M68).
  * - The ATM row is tinted and scrolled to the middle once per `centreKey`.
+ * - Owner 14 Nov ("on the OI table no button is visible on the strike - how will a user know where to click?"): with
+ *   chain trading on, the sticky Strike cell carries a visible "B/S" button for its CE (left) and PE (right) - always on
+ *   screen even when the table scrolls sideways - and one line above the table says so. They open the same action
+ *   sheet as a tap on a change (`onPickLeg`); the table's figures are unchanged.
  */
 const TONE = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-fg");
 const DOMINANCE_TONE: Record<Dominance, string> = { Bulls: "text-up", Bears: "text-down", Neutral: "text-fg-muted" };
 const WIDE = "hidden md:table-cell";
 
-export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
+export default function OiDiffTableV2({ live, units, centreKey, onPickLeg, hideable }: {
   live: LiveChain;
   units?: OiUnits;
   centreKey: string;
   onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
+  /** Owner 14 Nov (the Terminal's panel): a remembered Show / Hide beside the heading; hidden, only the heading stays. */
+  hideable?: string;
+}) {
+  return hideable ? <HideableDiff id={hideable} live={live} units={units} centreKey={centreKey} onPickLeg={onPickLeg} />
+    : <DiffSection live={live} units={units} centreKey={centreKey} onPickLeg={onPickLeg} />;
+}
+
+function HideableDiff({ id, ...rest }: { id: string; live: LiveChain; units?: OiUnits; centreKey: string;
+  onPickLeg?: (row: ChainRow, side: "call" | "put") => void }) {
+  const [shown, setShown] = useShownBlock(id, true);
+  return <DiffSection {...rest} toggle={<ShowHide shown={shown} onShown={setShown} id={id} />} collapsed={!shown} />;
+}
+
+function DiffSection({ live, units, centreKey, onPickLeg, toggle, collapsed = false }: {
+  live: LiveChain; units?: OiUnits; centreKey: string; onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
+  toggle?: ReactNode; collapsed?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const atmRow = useRef<HTMLTableRowElement>(null);
@@ -47,11 +68,15 @@ export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
     const head = box.current.querySelector("thead")?.getBoundingClientRect().height ?? 0;
     box.current.scrollTop = centreScrollTop(atmRow.current.offsetTop - head, atmRow.current.offsetHeight, box.current.clientHeight - head);
     centred.current = centreKey;
-  }, [centreKey, status]);
+  }, [centreKey, status, collapsed]);
   return (
-    <section aria-label="OI difference" data-block="oi-diff" className="space-y-space-2">
-      <h2 className="text-t14 font-semibold text-fg">OI difference by strike{" "}
-        <span className="font-normal text-fg-muted">(ATM ± 6 · <span className="whitespace-nowrap" data-oi-unit>{oiUnitCaption(units)}</span>)</span></h2>
+    <section aria-label="OI difference" data-block="oi-diff" data-collapsed={collapsed || undefined} className="space-y-space-2">
+      <div className="flex items-start justify-between gap-space-2">
+        <h2 className="text-t14 font-semibold text-fg">OI difference by strike{" "}
+          <span className="font-normal text-fg-muted">(ATM ± 6 · <span className="whitespace-nowrap" data-oi-unit>{oiUnitCaption(units)}</span>)</span></h2>
+        {toggle}
+      </div>
+      {collapsed ? null : <>
       {status === "none" || !nd ? (
         <p className="text-t13 text-fg-muted" data-oi-diff-state="none">The OI difference shows once the spot price of the chain is known.</p>
       ) : (
@@ -61,6 +86,7 @@ export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
               ? `Building: the day's first reading was taken at ${formatTimeIST(nd.since)}; the changes show from the next reading.`
               : `Change since the day's first reading at ${formatTimeIST(nd.since)}.`}
           </p>
+          {onPickLeg && <TradeHint />}
           <div ref={box} data-oi-diff-scroll className="max-h-[min(55vh,30rem)] overflow-auto rounded-panel border border-subtle bg-surface-1">
             <NetDiffTableBody rows={netDiffRows(nd.rows)} atm={nd.atm ?? null} chainRows={live.rows} units={units} onPickLeg={onPickLeg}
               atmRow={atmRow} underlying={live.underlying} />
@@ -77,6 +103,7 @@ export default function OiDiffTableV2({ live, units, centreKey, onPickLeg }: {
           <li>The History table's Diff is different: Total Put OI − Total Call OI (a level). Do not compare the two directly.</li>
         </ul>
       </details>
+      </>}
     </section>
   );
 }
@@ -127,8 +154,10 @@ export function NetDiffTableBody({ rows, atm, chainRows, units, onPickLeg, atmRo
               <td className={cx(cell, WIDE, "text-right text-fg")}>{formatOi(d.ceOi, units, false, false)}</td>
               <td className={cx(cell, WIDE, "text-right text-fg")}>{formatPrice(d.ceLtp)}</td>
               <th scope="row" className={cx(cell, sticky, "text-center font-semibold text-fg", isAtm ? atmFill : "bg-surface-2")}>
+                {onPickLeg && row && <LegTradeButton underlying={underlying} strike={d.strike} side="call" onPick={() => onPickLeg(row, "call")} />}
                 {formatStrike(d.strike)}
                 {isAtm && <span className="ml-space-1 text-t12 font-semibold text-fg">ATM<span className="sr-only">, at the money</span></span>}
+                {onPickLeg && row && <LegTradeButton underlying={underlying} strike={d.strike} side="put" onPick={() => onPickLeg(row, "put")} />}
               </th>
               <td className={cx(cell, WIDE, "text-right text-fg")}>{formatPrice(d.peLtp)}</td>
               <td className={cx(cell, WIDE, "text-right text-fg")}>{formatOi(d.peOi, units, false, false)}</td>

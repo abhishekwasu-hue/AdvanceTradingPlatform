@@ -6,7 +6,7 @@ alert channel, a deployment) are scattered across pages and runbooks. This modul
 two explicit checklists computed from the platform's own state:
 
 * the **tenant** checklist (`tenant_checklist`) - what this organisation still has to do before a
-  PAPER run, and the extra items a LIVE run needs (MFA, SEBI algo id, a verified email, ...);
+  PAPER run, and the extra items a LIVE run needs (MFA, a verified email, a registered server IP, ...);
 * the **platform** checklist (`platform_checklist`, SUPER_ADMIN) - what the operator still has to
   configure in the deployment: secrets, SMTP, push keys, payment gateway, worker, migrations, Redis,
   instrument master, holiday calendar, kill switch.
@@ -213,8 +213,12 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
                       "enabled" if user.mfa_enabled else "not enabled", "" if user.mfa_enabled else "Enable TOTP MFA on the Account page; LIVE deployments and broker credential changes require a step-up.", "account", scope="LIVE"))
     items.append(Item("email_verified", "Email verified", "ok" if user.email_verified_at else ("todo" if live else "info"),
                       "verified" if user.email_verified_at else "not verified", "" if user.email_verified_at else "Verify your email from the link in your inbox (needs platform SMTP; resend from the Account page) so resets and alerts reach you.", "account", scope="LIVE"))
-    items.append(Item("algo_id", "SEBI algo id set for order tagging", "ok" if tenant.algo_id else ("todo" if live else "info"),
-                      tenant.algo_id or "not set", "" if tenant.algo_id else "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.", "team", scope="LIVE"))
+    # Owner (14 Nov): the user builds his own algo, so the algo id is never asked of him - below the exchange's
+    # 10 orders a second (the OPS throttle) the broker sends its standard id itself. An id the organisation did set is
+    # only shown, under "optional"; none set shows nothing.
+    if tenant.algo_id:
+        items.append(Item("algo_id", "Own algo id (optional)", "info", tenant.algo_id,
+                          "Orders carry this id.", "team", scope="OPTIONAL"))
 
     # Part D4: the server's egress IP registered with each LIVE broker (SEBI retail-algo framework).
     from app.compliance import static_ip

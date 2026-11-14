@@ -18,6 +18,7 @@ import { Chip } from "../ui/Chip";
 import { Details } from "../ui/Details";
 import { DirectionChip } from "../ui/DirectionChip";
 import { useFeatures } from "../ui/useFeatures";
+import { EntryBrokerApp } from "../proposals/BrokerAppAction";
 import SimilarSetupsV2 from "../journal/SimilarSetupsV2";
 import {
   canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
@@ -366,7 +367,12 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
       {compact ? <ChartCandlestick size={18} aria-hidden /> : "Open chart"}
     </InPlaceLink>
   );
-  if (!decidable || id === null) return <div className="flex flex-wrap gap-space-2">{chart}</div>;
+  // Route 3 (BIZ-1 B3): "Trade in your broker app" on a live signal (not an ended one) - his own settings only.
+  const status = effectiveStatus(item, now);
+  const broker = (item.direction || item.legs?.length) && (status === "waiting" || status === "snoozed" || status === "info")
+    ? <EntryBrokerApp testId="signal" signal={{ symbol: item.symbol, exchange: item.exchange, direction: item.direction, legs: item.legs }} />
+    : null;
+  if (!decidable || id === null) return <div className="flex flex-wrap gap-space-2">{chart}{broker}</div>;
   if (!canTrade) {
     // A viewer reads the inbox; approving, skipping and snoozing need a trading role (the server's require_trader).
     return (
@@ -409,6 +415,7 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
         {compact && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} disabled={busy !== null} />}
       </div>
       {compact && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
+      {broker}
       {/* UI-28 U1.3: the mode is one chip; the sentence is its tooltip (never a paragraph under the buttons).
           REV-1 M2: shown on a phone too, so a phone decision always says PAPER / LIVE. */}
       <span data-signal-mode={live ? "live" : "paper"} className={compact ? "block" : undefined}

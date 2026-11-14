@@ -66,7 +66,11 @@ export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconn
         )}
         {c.broker === "upstox" && onOrderLogin && (
           <button type="button" onClick={onOrderLogin} disabled={!canChange} data-upstox-order-login-open
-            className={c.data_only ? BTN_PRIMARY : BTN_SECONDARY}>{c.data_only ? "Log in for orders" : "Upstox login"}</button>
+            title={!c.data_only && status === "connected" ? "Logged in to Upstox for today. Tap to log in again." : undefined}
+            className={c.data_only ? BTN_PRIMARY : BTN_SECONDARY}>
+            {/* Owner 14 Nov: while the login holds, the button says so ("Logged in"); it still opens the login again. */}
+            {c.data_only ? "Log in for orders" : status === "connected" ? "Logged in ✓" : "Upstox login"}
+          </button>
         )}
         {reconnect && (
           <button type="button" onClick={onReconnect} disabled={!canChange} className={canRenew(c) ? BTN_SECONDARY : BTN_PRIMARY}>Connect again</button>

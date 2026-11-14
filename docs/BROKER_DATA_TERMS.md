@@ -124,6 +124,28 @@ referenced here.
 - **Code.** `frontend/src/proposals/brokerLinks.ts` (pure; unit tests in `brokerLinks.test.ts`),
   `backend/app/ai/proposal_card.py` (the closing order's facts, sent only with the flag on).
 
+## Trade in your broker app: brokers (Route 3, BIZ-1 B4)
+
+Every user (Route 3) places a real order himself on his broker's own page through "Trade in your broker app" (ticket,
+basket, Reverse, signal cards, scan matches; flags `ui_v2` + `broker_app_links`). A broker with a **verified** pre-filled
+format opens pre-filled; every other broker opens its own official home and ATP shows the order facts to copy (symbol,
+side, quantity, order type, product, his own price) - BIZ1-Q3 default, a URL is never guessed. Code table:
+`BROKER_TABLE` in `frontend/src/proposals/brokerLinks.ts` (same rows).
+
+| Broker | ATP name | Opens (official domain) | Pre-filled format | Source / check |
+|---|---|---|---|---|
+| Zerodha | `zerodha` | https://kite.zerodha.com (Publisher basket POST) | **verified** (Kite Publisher, see above; Market orders only - price / product not used until re-checked) | kite.trade/docs/connect/v3/basket |
+| Angel One | `angel_one` | https://www.angelone.in | not verified | official domain (angelone.in pages in search results 14 Nov); SmartAPI publisher buttons not read |
+| Upstox | `upstox` | https://upstox.com | not verified | official domain; TradeButton doc not found (ROUTE3_AUDIT 1c) |
+| Fyers | `fyers` | https://fyers.in | not verified | official domain; API Connect JS buttons not fetched (ROUTE3_AUDIT 1c) |
+| Dhan | `dhan` | https://dhan.co | not verified (no public pre-fill link found) | official domain |
+| Groww | `groww` | https://groww.in | not verified (none found) | official domain |
+| Kotak Neo | `kotak_neo` | https://www.kotaksecurities.com | not verified (none found) | official domain (kotaksecurities.com support pages, search 14 Nov) |
+
+The session's network blocked every broker host (14 Nov), so the homes are the brokers' company domains only, not a
+deeper web-trading path; re-check each in a browser before turning `broker_app_links` on. A broker not in the table
+(e.g. Shoonya) shows every row's home. To verify a pre-filled format: record it under "Adding a broker's link" first.
+
 ## Adding a broker's link
 
 Record the broker's public documentation (title, section, date read) and the exact format here first, mark it

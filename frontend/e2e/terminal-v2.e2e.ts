@@ -209,6 +209,12 @@ async function open(page: Page, theme: "light" | "dark", opts: {
   return seen;
 }
 
+/** Owner 14 Nov: Panels, Save, Reset and the rest live in the layout's More (⋯) menu - open it (once) before an item. */
+async function layoutMenu(page: Page) {
+  const more = page.locator("[data-terminal='more']").first();
+  if (!(await more.evaluate((d) => (d as HTMLDetailsElement).open))) await more.locator(":scope > summary").click();
+}
+
 async function settle(page: Page) {
   await page.addStyleTag({ content: [
     "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }",
@@ -280,6 +286,7 @@ test.describe("v2 terminal 1440", () => {
     await pickOption(page, page.locator("[data-terminal=\'layout\']"), "option_seller");
     await page.locator("[data-panel-close='basket']").click();
     await expect(page.locator("[data-panel='basket']")).toHaveCount(0);
+    await layoutMenu(page);
     await page.locator("[data-terminal='save']").click();
     await page.locator("[data-terminal='name']").fill("Expiry desk");
     await page.locator("[data-terminal='ask-ok']").click();
@@ -290,6 +297,7 @@ test.describe("v2 terminal 1440", () => {
     expect(saved.layouts[id].panels.find((p) => p.id === "basket")?.open).toBe(false);
     await expect(page.locator("[data-terminal='count']")).toHaveText("1 of 10 saved");
     // Reset brings the preset's panels back (unsaved until Save).
+    await layoutMenu(page);
     await page.locator("[data-terminal='reset']").click();
     await expect(page.locator("[data-panel='basket']")).toBeVisible();
   });
@@ -327,6 +335,7 @@ test.describe("v2 terminal 1440", () => {
     const seen = await open(page, "light", { active: "option_buyer" });
     await expect(page.locator("[data-page='terminal-v2']")).toHaveAttribute("data-layout", "option_buyer");
     await page.locator("[data-panel-close='positions']").click();
+    await layoutMenu(page);
     await page.locator("[data-terminal='save']").click();
     await page.locator("[data-terminal='name']").fill("Buyer desk");
     await page.locator("[data-terminal='ask-ok']").click();
@@ -334,6 +343,7 @@ test.describe("v2 terminal 1440", () => {
     const saved = seen.puts.at(-1)?.body as { layouts: Record<string, { name: string; preset: string }>; active: string };
     expect(saved.layouts[saved.active]).toMatchObject({ name: "Buyer desk", preset: "option_buyer" });
     await expect(page.locator("[data-panel='basket'] [data-strategy]")).toHaveText(BUYER);   // his own layout keeps the list
+    await layoutMenu(page);
     await page.locator("[data-terminal='reset']").click();
     await expect(page.locator("[data-panel='positions']")).toBeVisible();
     await expect(page.locator("[data-terminal='reset']")).toHaveAttribute("title", "Back to the Option buyer layout");
@@ -873,8 +883,10 @@ test.describe("v2 terminal M63 I-5 panels 1440", () => {
   for (const theme of THEMES) {
     test(`Bots & signals and Payoff from the Panels menu: read only, his own (${theme})`, async ({ page }) => {
       await open(page, theme, { basket: BASKET, routes: m63Routes });
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
       for (const id of ["payoff", "bots"]) await page.locator(`[data-panel-toggle='${id}']`).check();
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
       await settle(page);
       const payoff = page.locator("[data-panel='payoff']");
@@ -940,6 +952,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await open(page, "light");
       await settle(page);
       await shot(page, `m58-${size.width}-default`);
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
       await shotView(page, `m58-${size.width}-panels`);
     });
@@ -1008,6 +1021,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
     test("the Panels dialog: width and height steppers, Fit to screen, Equal widths; saved with Save as mine", async ({ page }) => {
       const seen = await open(page, "light");
       await settle(page);
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
       const width = page.locator("[data-size='chart-1:w']");
       await expect(width).toHaveText("8");                                              // owner 13 Nov: Chart 8 · Chain 4 (no watchlist)
@@ -1026,7 +1040,9 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       await page.locator("[data-size-step='chart-1:w:+1']").click();
       await expect(width).toHaveText("7");
       const height = await page.locator("[data-size='chart-1:h']").textContent();
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
+      await layoutMenu(page);
       await page.locator("[data-terminal='save']").click();
       await page.locator("[data-terminal='name']").fill("Wide chart");
       await page.locator("[data-terminal='ask-ok']").click();
@@ -1035,6 +1051,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]
       expect(saved.layouts[saved.active].panels.find((p) => p.id === "chart-1")?.w).toBe(7);
       await page.reload();
       await settle(page);
+      await layoutMenu(page);
       await page.locator("[data-terminal='panels'] summary").click();
       await expect(page.locator("[data-size='chart-1:w']")).toHaveText("7");
       await expect(page.locator("[data-size='chart-1:h']")).toHaveText(height ?? "");
@@ -1165,6 +1182,7 @@ test.describe("v2 terminal 1440: the watchlist panel (UX-3 + TA-4)", () => {
     await expect(page.locator("[data-inplace-panel='chart']")).toHaveCount(0);
     await page.locator("[data-panel-close='watchlist']").click();
     await expect(page.locator("[data-panel='watchlist']")).toHaveCount(0);
+    await layoutMenu(page);
     await page.locator("[data-terminal='panels'] summary").click();
     await page.locator("[data-panel-toggle='watchlist']").check();
     await expect(page.locator("[data-panel='watchlist']")).toBeVisible();
@@ -1173,6 +1191,7 @@ test.describe("v2 terminal 1440: the watchlist panel (UX-3 + TA-4)", () => {
   test("with `watchlists` off: no watchlist panel, no menu entry, the chart takes its columns", async ({ page }) => {
     await open(page, "light");
     await expect(page.locator("[data-panel='watchlist']")).toHaveCount(0);
+    await layoutMenu(page);
     await page.locator("[data-terminal='panels'] summary").click();
     await expect(page.locator("[data-panel-toggle='watchlist']")).toHaveCount(0);
     const chart = (await page.locator("[data-panel='chart-1']").boundingBox())!;
@@ -1221,12 +1240,19 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
     await expect(bubble).toHaveAttribute("aria-label", /^Chat with the Copilot/);          // still named and in the tab order
     await expect(bubble).not.toHaveAttribute("tabindex", "-1");
     await expect.poll(resting).toBe(true);
-    // the list's bottom edge level with the bubble's bottom edge (the worst place), the list at its end
-    const gap = await page.evaluate(() => document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!.getBoundingClientRect().bottom
-      - document.querySelector("[data-chat-bubble]")!.getBoundingClientRect().bottom);
-    await page.evaluate((dy) => window.scrollBy(0, dy), gap);
-    await list.evaluate((e) => { e.scrollTop = e.scrollHeight; });
-    await expect.poll(resting).toBe(true);
+    // the list's bottom edge level with the bubble's bottom edge (the worst place), the list at its end; room above and below
+    // the page so the window can always scroll there (owner 14 Nov: with the compact top the list ends above that place at
+    // the page's top, and the window cannot scroll up past it)
+    await page.evaluate(() => { document.body.style.paddingTop = "50vh"; document.body.style.paddingBottom = "50vh"; });
+    // (a few passes: the list's height can follow the page's scroll, so one jump may land a few px short)
+    for (let pass = 0; pass < 4; pass++) {
+      const gap = await page.evaluate(() => document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!.getBoundingClientRect().bottom
+        - document.querySelector("[data-chat-bubble]")!.getBoundingClientRect().bottom);
+      if (Math.abs(gap) < 1) break;
+      await page.evaluate((dy) => window.scrollBy(0, dy), gap);
+      await list.evaluate((e) => { e.scrollTop = e.scrollHeight; });
+      await expect.poll(resting).toBe(true);
+    }
     const [last, box, room] = await page.evaluate(() => {
       const rect = (e: Element | null) => { const b = e!.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right }; };
       const ul = document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!;
@@ -1403,6 +1429,7 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     await expect.poll(async () => (await box(page, "positions")).y).toBeLessThan(pos0.y - 60);
     await expect(h).toHaveAttribute("aria-valuenow", "10");
     // Save as mine, reload: the sizes come back.
+    await layoutMenu(page);
     await page.locator("[data-terminal='save']").click();
     await page.locator("[data-terminal='name']").fill("Big chart");
     await page.locator("[data-terminal='ask-ok']").click();
@@ -1417,6 +1444,7 @@ test.describe("v2 terminal 1440: panels resize by dragging (owner bug 13 Nov)", 
     expect(Math.round((await box(page, "positions")).y - (await box(page, "chart-1")).y)).toBe(Math.round(before.positions.y - before.chart.y));
     await view(page, "resize-1440-dark-size-a-after-reload");
     // Reset: the ready sizes again.
+    await layoutMenu(page);
     await page.locator("[data-terminal='reset']").click();
     await expect.poll(async () => Math.round((await box(page, "chart-1")).width)).toBe(Math.round(chart0.width));
     expect(Math.round((await box(page, "positions")).y - (await box(page, "chart-1")).y)).toBe(Math.round(pos0.y - chart0.y));
@@ -1603,3 +1631,227 @@ test.describe("v2 terminal 390: the Net Diff table on the Chain tab (owner 13 No
     });
   }
 });
+
+// Owner 14 Nov ("space waste hot aahe, important panel khali dablet"): the Terminal's top is ONE compact strip - the symbol,
+// expiry, figures, the layout controls and PAPER - so the panels start as high as they can (before: 138 px below the page
+// top at 1440, 198 px at 390). TOPBAR_SHOTS=<dir>: the proof screenshots.
+test.describe("v2 terminal top: one compact strip (owner 14 Nov)", () => {
+  const TOP_SHOTS = process.env.TOPBAR_SHOTS;
+  const sizes = [
+    { width: 1440, height: 900, phone: false, most: 100 }, { width: 1280, height: 800, phone: false, most: 110 },
+    { width: 1024, height: 768, phone: false, most: 140 },
+    { width: 390, height: 844, phone: true, most: 175 }, { width: 360, height: 780, phone: true, most: 200 },
+  ] as const;
+  for (const s of sizes) {
+    test.describe(`${s.width}`, () => {
+      test.use({ viewport: { width: s.width, height: s.height }, ...(s.phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : {}) });
+      test(`the panels start right under the strip (${s.width})`, async ({ page }) => {
+        await open(page, "dark");
+        if (s.phone) await expect(page.locator("[data-terminal-tabs]")).toBeVisible();
+        const bar = page.locator("[data-block='terminal-context']");
+        const b = (await bar.boundingBox())!;
+        const top = (await page.locator(s.phone ? "[data-terminal-tabs]" : "[data-terminal-grid]").boundingBox())!.y;
+        const main = (await page.locator("[data-page='terminal-v2']").boundingBox())!.y;
+        console.log(`TOPBAR ${s.width}: bar ${Math.round(b.height)} px, panels at ${Math.round(top - main)} px below the page top`);
+        if (TOP_SHOTS) await page.screenshot({ path: `${TOP_SHOTS}/terminal-top-${s.width}-dark.png`, animations: "disabled" });
+        expect(top - main).toBeLessThanOrEqual(s.most);
+        // No stacked "Symbol" / "Expiry" labels: the pickers name themselves.
+        await expect(bar.locator("label[for]")).toHaveCount(0);
+        await expect(page.locator("[data-terminal='symbol']")).toHaveAttribute("aria-label", "Symbol");
+        await expect(bar.locator("[data-terminal='mode']")).toHaveText("PAPER");
+        if (!s.phone) {
+          // The layout controls live in the bar (no Layout row of their own). Owner 14 Nov ("menu mdhe halwa"): only the
+          // layout picker and the More (⋯) menu on screen; Panels, Save, Reset and the count inside the menu.
+          await expect(bar.locator("[data-block='terminal-toolbar']")).toHaveCount(1);
+          await expect(bar.locator("[data-terminal='layout']")).toBeVisible();
+          await expect(bar.locator("[data-terminal='more'] > summary")).toBeVisible();
+          for (const sel of ["save", "reset", "count"]) await expect(bar.locator(`[data-terminal='${sel}']`)).toBeHidden();
+          await expect(bar.locator("[data-terminal='panels'] > summary")).toBeHidden();
+          await layoutMenu(page);
+          await expect(bar.locator("[data-terminal='save']")).toHaveAttribute("aria-label", "Save as mine");
+          await expect(bar.locator("[data-terminal='panels'] > summary")).toHaveAttribute("title", "Panels");
+          await expect(bar.locator("[data-terminal='count']")).toHaveText("0 of 10 saved");
+          await expect(bar.locator("[data-terminal='reset']")).toBeVisible();
+          if (TOP_SHOTS && s.width === 1440) await page.screenshot({ path: `${TOP_SHOTS}/terminal-top-1440-menu-dark.png`, animations: "disabled" });
+          await bar.locator("[data-terminal='more'] > summary").click();
+          await expect(bar.locator("[data-terminal='save']")).toBeHidden();
+          if (s.width >= 1400) console.log(`TOPBAR ${s.width}: ${await oneRowSpare(page)} px spare in the one row`);
+          else await tidyTwoRows(page);
+        } else {
+          for (const sel of ["[data-terminal='symbol']", "[data-terminal='expiry']"]) expect((await page.locator(sel).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        }
+        await noSidewaysScroll(page);
+      });
+      if (s.width >= 1280) {
+        // A spot that is not current: its "as of <time>" is the Spot figure's tooltip and a small muted dot, never text that
+        // widens the strip - at 1440 the strip stays ONE row with room to spare (a wider font still fits); at 1280 (side
+        // menu open) two tidy rows: pickers, layout and PAPER, then every figure on one line.
+        test(`one row with a spot "as of" a past time (${s.width})`, async ({ page }) => {
+          await open(page, "light", { routes: async (p) => {
+            await p.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/live/, (route) => route.fulfill({ json: { ...DATA.live,
+              summary: { ...(DATA.live.summary as Record<string, unknown>), pcr_oi_atm: 0.91 }, market_open: false,
+              data_as_of: "2026-10-26T09:58:00+00:00", fetched_at: "2026-10-26T09:58:00+00:00" } }));
+          } });
+          const spot = page.locator("[data-block='terminal-context'] [data-figure='spot']");
+          await expect(spot.locator("[data-spot-as-of]")).toHaveCount(1);
+          await expect(spot).toHaveAttribute("title", /^Spot as of .+ IST$/);
+          await expect(spot).not.toContainText("as of");
+          await expect(page.locator("[data-block='terminal-context'] [data-figure='vix']")).toHaveAttribute("title", /^India VIX: /);
+          if (s.width >= 1400) {
+            const spare = await oneRowSpare(page);
+            console.log(`TOPBAR ${s.width} as-of: ${spare} px spare in the one row`);
+            expect(spare).toBeGreaterThanOrEqual(60);
+          } else console.log(`TOPBAR ${s.width} as-of: two rows, ${await tidyTwoRows(page)} px spare in the figures' row`);
+          await noSidewaysScroll(page);
+          if (TOP_SHOTS) await page.screenshot({ path: `${TOP_SHOTS}/terminal-top-${s.width}-as-of-light.png`, animations: "disabled" });
+        });
+      }
+    });
+  }
+});
+
+/** Below 1400 px: row 1 is the pickers, the layout group and PAPER; row 2 every figure on one line. Returns row 2's room. */
+async function tidyTwoRows(page: Page): Promise<number> {
+  const mid = async (sel: string) => { const r = (await page.locator(sel).first().boundingBox())!; return r.y + r.height / 2; };
+  const one = await mid("[data-terminal='symbol']");
+  for (const sel of ["[data-terminal='expiry']", "[data-terminal='layout']", "[data-terminal='more'] > summary", "[data-terminal='mode']"])
+    expect(Math.abs((await mid(sel)) - one), sel).toBeLessThan(4);
+  const two = await mid("[data-figure='spot']");
+  expect(two - one).toBeGreaterThan(20);
+  for (const sel of ["[data-figure='vix']", "[data-figure='pcr']", "[data-figure='atm']"]) expect(Math.abs((await mid(sel)) - two), sel).toBeLessThan(4);
+  return page.locator("[data-context-figures]").evaluate((dl) => {
+    const kids = [...dl.children] as HTMLElement[];
+    const gap = parseFloat(getComputedStyle(dl).columnGap) || 0;
+    return Math.floor(dl.getBoundingClientRect().width - kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) - gap * Math.max(0, kids.length - 1));
+  });
+}
+
+/** The strip is one row (the pickers, every figure, the layout group and PAPER level with the symbol picker); returns the
+ * room left in it - the figures' share of the row minus the figures themselves. */
+async function oneRowSpare(page: Page): Promise<number> {
+  const mid = async (sel: string) => { const r = (await page.locator(sel).first().boundingBox())!; return r.y + r.height / 2; };
+  const row = await mid("[data-terminal='symbol']");
+  for (const sel of ["[data-terminal='expiry']", "[data-figure='spot']", "[data-figure='atm']", "[data-terminal='layout']",
+    "[data-terminal='more'] > summary", "[data-terminal='mode']"]) expect(Math.abs((await mid(sel)) - row), sel).toBeLessThan(4);
+  return page.locator("[data-context-figures]").evaluate((dl) => {
+    const kids = [...dl.children] as HTMLElement[];
+    const gap = parseFloat(getComputedStyle(dl).columnGap) || 0;
+    const used = kids.reduce((n, k) => n + k.getBoundingClientRect().width, 0) + gap * Math.max(0, kids.length - 1);
+    return Math.floor(dl.getBoundingClientRect().width - used);
+  });
+}
+
+// Owner 14 Nov ("set the panel up neatly; the OI table has gone down - bring it up; cut unnecessary things or give an
+// on/off toggle to hide them; on the OI table no button is visible on the strike - how will a user know where to click to
+// open the order window?"): the chain panel's compact header, the hideable blocks and the visible B/S buttons. Measured:
+// the OI-difference table's first row from the panel's top (before: 863 px at 1440, 1,116 px at 390). Proof pictures
+// with CHAIN_COMPACT_SHOTS (docs/design/chain-compact/).
+const COMPACT_SHOTS = process.env.CHAIN_COMPACT_SHOTS;
+/** The Net Diff chain with the market closed and Trade's banner reading "BEARISH (Weakening)" (made up, as the owner's screen). */
+const closedBannerRoutes = async (page: Page) => {
+  await netDiffRoutes(page);
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/live/, (route) => {
+    type Leg = { oi: number | null; oi_change: number | null; ltp: number | null; volume?: number | null };
+    const scale = (l: Leg, k: number): Leg => ({ ...l, oi: (l.oi ?? 0) * 60 + k * 1_234, oi_change: (l.oi_change ?? 0) * 120 - k * 4_321, volume: (l.volume ?? 0) * 40 });
+    const rows = (DATA.live.rows as { strike: number; call: Leg; put: Leg }[]).map((r, i) => ({ ...r, call: scale(r.call, i), put: scale(r.put, 21 - i) }));
+    const summary = DATA.live.summary as Record<string, unknown>;
+    const atm = Math.round(Number(summary.spot) / 50) * 50;
+    const shown = rows.filter((r) => r.strike >= atm - 300 && r.strike <= atm + 300).map((r) => {
+      const ce = r.call.oi_change ?? 0;
+      const pe = r.put.oi_change ?? 0;
+      return { strike: r.strike, ce_chg: ce, ce_oi: r.call.oi ?? 0, ce_ltp: r.call.ltp, pe_ltp: r.put.ltp, pe_oi: r.put.oi ?? 0, pe_chg: pe,
+        diff: pe - ce, dominance: pe - ce > 0 ? "Bulls" : pe - ce < 0 ? "Bears" : "Neutral" };
+    });
+    return route.fulfill({ json: { ...DATA.live, rows, market_open: false, summary: { ...summary, pcr_oi_atm: 0.83 },
+      net_diff: { status: "ready", since: "2026-10-27T04:02:00+00:00", step: 50, atm, window: 6, pcr: 0.83, rows: shown } } });
+  });
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/banner/, (route) => route.fulfill({ json: { underlying: "NIFTY", market_open: false,
+    banner: { slot: "2026-10-27T09:57:00+00:00", data_as_of: "2026-10-27T09:57:00+00:00", direction: "bearish", message: "", put_class: "Short Covering",
+      call_class: "Long Buildup", signal: "BEARISH (Weakening)", diff: -1, delta_diff: -1, total_call_oi: 1, total_put_oi: 1, pcr: 0.83, pcr_band: null,
+      pcr_label: "", underlying_price: 24500, atm_strike: 24500, strike_step: 50, max_pain: 24500, expiry: null, dte: 3, first_of_day: false,
+      fact_message: "Calls added" } } }));
+};
+
+/** The OI-difference table's first row (and the chain table's) from the panel's top, in px. */
+async function rowOffsets(page: Page, scope: string) {
+  return page.evaluate((s) => {
+    const panel = document.querySelector(s)!.getBoundingClientRect().top;
+    const at = (sel: string) => Math.round(document.querySelector(`${s} ${sel}`)!.getBoundingClientRect().top - panel);
+    return { oiDiff: at("[data-oi-diff-row]"), chain: at("[data-chain-scroll] tr[data-strike]") };
+  }, scope);
+}
+
+async function compactChecks(page: Page, scope: string) {
+  const panel = page.locator(scope);
+  // the market state: one muted line (no box); the strip: spot, ATM, PCR, ATM IV, the rest behind More
+  await expect(panel.locator("[data-chain-notes][data-compact]")).toContainText("Market closed");
+  await expect(panel.locator("[data-block='chain-summary'] [data-summary='max-pain']")).toHaveCount(0);
+  // Trade's banner: one line until opened
+  const banner = panel.locator("[data-block='oi-banner']");
+  await expect(banner.locator("[data-banner-summary]")).toHaveText("Signal: BEARISH (Weakening) · PCR (ATM ± 6): 0.83");
+  await expect(banner.locator("[data-banner-message]")).toHaveCount(0);
+  // a visible B/S for the CE and the PE beside every strike of the OI table
+  const rows = panel.locator("[data-oi-diff-row]");
+  await expect(rows).toHaveCount(7);
+  await expect(panel.locator("[data-trade-hint]").first()).toBeVisible();
+  const atm = panel.locator("[data-oi-diff-atm] th");
+  await expect(atm.locator("[data-leg-trade]")).toHaveCount(2);
+  await expect(atm.locator("[data-leg-trade$='|CE']")).toHaveAccessibleName("Buy or sell NIFTY 24,500 CE");
+  await expect(atm.locator("[data-leg-trade$='|PE']")).toBeVisible();
+}
+
+test.describe("v2 terminal 1440: the compact chain panel (owner 14 Nov)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test("the OI table near the top; banner one line; B/S beside each strike opens the action sheet; choices remembered", async ({ page }) => {
+    await open(page, "dark", { features: WL_ON, routes: closedBannerRoutes });
+    const scope = "[data-panel='chain']";
+    await expect(page.locator(`${scope} [data-oi-diff-row]`).first()).toBeVisible();
+    await settle(page);
+    await compactChecks(page, scope);
+    const at = await rowOffsets(page, scope);
+    expect(at.oiDiff).toBeLessThanOrEqual(431);                                     // before: 863 px
+    expect(await tableProblems(page, scope)).toEqual([]);
+    await scrollsWithStickyStrike(page, scope);
+    await noSidewaysScroll(page);
+    if (COMPACT_SHOTS) await page.locator(scope).screenshot({ path: `${COMPACT_SHOTS}/after-chain-panel-1440-dark.png`, animations: "disabled" });
+    // B/S on the PE side: that contract's actions (the existing sheet: Buy / Sell, basket, chart...)
+    await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|PE']`).click();
+    await expect(page.locator("[data-chain-actions]")).toBeVisible();
+    await expect(page.locator("[data-chain-actions] [data-action='buy']")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // the banner opens as before; the OI table hides; both remembered after a reload
+    await page.locator(`${scope} [data-banner-toggle]`).click();
+    await expect(page.locator(`${scope} [data-banner-message]`)).toHaveText("Market closed");
+    await page.locator(`${scope} [data-hideable-toggle='oi-diff']`).click();
+    await expect(page.locator(`${scope} [data-oi-diff-row]`)).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator(`${scope} [data-banner-message]`)).toHaveText("Market closed");
+    await expect(page.locator(`${scope} [data-block='oi-diff'][data-collapsed]`)).toBeVisible();
+    await expect(page.locator(`${scope} [data-oi-diff-row]`)).toHaveCount(0);
+  });
+});
+
+for (const width of [390, 360]) {
+  test.describe(`v2 terminal ${width}: the compact chain panel (owner 14 Nov)`, () => {
+    test.use({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    test("the OI table near the top, B/S visible and 44 px, a tap opens the action sheet; no sideways scroll", async ({ page }) => {
+      await open(page, "dark", { features: WL_ON, routes: closedBannerRoutes });
+      await page.locator("[data-tab='chain']").tap();
+      const scope = "[data-phone-panel='chain']";
+      await expect(page.locator(`${scope} [data-oi-diff-row]`).first()).toBeVisible();
+      await settle(page);
+      await compactChecks(page, scope);
+      const at = await rowOffsets(page, scope);
+      expect(at.oiDiff).toBeLessThanOrEqual(558);                                   // before: 1,116 px (390), 1,140 px (360)
+      await expectPhoneLayout(page);
+      const bs = (await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|CE']`).boundingBox())!;
+      expect(Math.min(bs.width, bs.height)).toBeGreaterThanOrEqual(44);
+      if (COMPACT_SHOTS && width === 390) {
+        await page.evaluate(() => { const el = document.querySelector("[data-phone-panel='chain']")!; window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); });
+        await page.screenshot({ path: `${COMPACT_SHOTS}/after-chain-390-dark.png`, animations: "disabled" });
+      }
+      await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|CE']`).tap();
+      await expect(page.locator("[data-chain-actions] [data-action='sell']")).toBeVisible();
+    });
+  });
+}

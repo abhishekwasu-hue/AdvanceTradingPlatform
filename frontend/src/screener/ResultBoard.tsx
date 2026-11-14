@@ -7,6 +7,7 @@
  */
 import { ArrowDown, ArrowUp, ChartCandlestick, Download } from "lucide-react";
 import { AskAiAbout } from "../copilot/AskAiAbout";
+import { EntryBrokerApp } from "../proposals/BrokerAppAction";
 import { useMemo, useState } from "react";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
@@ -125,6 +126,8 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
                           <span className="inline-flex items-center gap-1.5 text-signal"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal" />Matched</span>
                           {/* M72 PR-3: the Copilot beside the page, about this symbol */}
                           <AskAiAbout ctx={{ symbol: r.symbol, page: "screener" }} />
+                          {/* Route 3 (BIZ-1 B3): a match has no side - the sheet leaves it to him; the rest from his settings */}
+                          <EntryBrokerApp compact testId="scan" signal={{ symbol: r.symbol, exchange: "NSE", direction: null }} />
                           {onShowEvidence && r.evidence_id != null && (
                             <button type="button" onClick={() => onShowEvidence(r)} aria-label={`Show ${r.symbol} on chart`} data-testid="show-on-chart"
                                     className="inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 text-t12 text-brand hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

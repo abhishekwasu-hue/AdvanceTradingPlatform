@@ -100,3 +100,28 @@ def open_in_app_row(notification) -> Optional[list]:
     """One inline-keyboard row with the "Open in app" link, or None without an absolute app address."""
     url = app_url(notification)
     return [{"text": "Open in app", "url": url}] if url else None
+
+
+# --- Route 3 (BIZ-1 B5): one line that points to "Trade in your broker app" on the signal in ATP ---------------------
+
+BROKER_APP_FLAG = "broker_app_links"
+BROKER_APP_TEXT = "Trade in your broker app: open this signal in ATP."
+
+
+def signal_path(notification) -> str:
+    """The signal's own item on the Signals page (the button lives there); the Signals page without an action id."""
+    action_id = getattr(notification, "ai_action_id", None)
+    return "/signals?" + urlencode({"proposal": action_id}) if action_id else "/signals"
+
+
+def broker_app_line(notification, html_link: bool = False) -> str:
+    """The one line an entry-signal alert adds (flag broker_app_links): the button's name and the signal in ATP - no
+    price, side or level beyond what the alert already says. With `html_link` (Telegram) the line links to the signal
+    when the app's absolute address is known; a push opens the signal itself, so its line carries no address."""
+    if not html_link:
+        return BROKER_APP_TEXT
+    base = app_base_url()
+    if not base:
+        return BROKER_APP_TEXT
+    from html import escape
+    return f'<a href="{escape(base + signal_path(notification), quote=True)}">{escape(BROKER_APP_TEXT)}</a>'

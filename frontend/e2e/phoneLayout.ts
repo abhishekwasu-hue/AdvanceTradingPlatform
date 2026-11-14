@@ -81,7 +81,14 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
     const main = document.querySelector("main")!;
     const folded = (e: Element) => { const d = e.closest("details:not([open])"); return !!d && !e.closest("summary"); };
     const last = [...main.querySelectorAll("button, a, input, select, textarea")].filter((e) => e.getBoundingClientRect().height > 0 && !folded(e)).pop();
-    return last ? last.getBoundingClientRect().bottom <= nav.top + 1 : true;
+    if (!last) return true;
+    // A control inside a box that scrolls on its own (a table's rows) is seen up to that box's bottom edge.
+    let bottom = last.getBoundingClientRect().bottom;
+    for (let p = last.parentElement; p && p !== main; p = p.parentElement) {
+      const oy = getComputedStyle(p).overflowY;
+      if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight) bottom = Math.min(bottom, p.getBoundingClientRect().bottom);
+    }
+    return bottom <= nav.top + 1;
   });
   expect(clear, "the last control on the page sits under the bottom navigation").toBe(true);
 

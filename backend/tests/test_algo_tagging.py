@@ -129,17 +129,25 @@ def test_live_execution_uses_tenant_algo_id_and_records_tag(monkeypatch):
     assert broker.placed[1].tag == f"NSE9001-em-{client_order_id('S', order.id)}-SL"
 
 
-def test_live_refused_without_algo_id_when_required(monkeypatch):
+def test_live_refused_without_algo_id_only_above_the_ops_threshold(monkeypatch):
+    """Owner 14 Nov: the user's own algo below the exchange's OPS threshold needs no algo id (the broker sends the generic
+    one). Only when the OPS throttle does not keep orders under the threshold is an entry without a registered id refused."""
     from app.execution.router import OrderRouter
     monkeypatch.setattr(OrderRouter, "fill_poll_delay_seconds", 0)
     monkeypatch.setattr(config, "ALGO_ID_REQUIRED_FOR_LIVE", True)
+    monkeypatch.setattr(config, "OPS_THROTTLE_ENABLED", False)          # nothing caps the rate: above the threshold
     user = _user("algo-required@example.com")
     broker = _LiveBroker()
     result, order, trade, notes = _execute(user, broker)
     assert not result.executed
     assert order.status == "REJECTED"
-    assert any("algo id" in r.lower() for r in result.reasons)
+    assert any("algo id" in r.lower() and "OPS threshold" in r for r in result.reasons)
     assert broker.placed == []
+
+    monkeypatch.setattr(config, "OPS_THROTTLE_ENABLED", True)           # the throttle caps at the rule-set's 10 a second
+    monkeypatch.setattr(config, "OPS_PER_SECOND", None)
+    result, order, trade, _ = _execute(user, broker)
+    assert result.executed and broker.placed and not any("algo" in r.lower() for r in result.reasons)
 
     _set_algo_id(user.tenant_id, "NSE1")
     result, order, trade, _ = _execute(user, broker)

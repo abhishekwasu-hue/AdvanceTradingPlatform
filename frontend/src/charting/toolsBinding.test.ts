@@ -32,7 +32,9 @@ class Store implements DrawingsStore {
   async remove(stored: StoredDrawing) { this.rows.delete(stored.id); return { deleted: stored.id }; }
 }
 
-function harness(pricePaneHeight: number | null = null) {
+type Hub = Map<string, ((e: never) => void)[]>;
+
+function harness(pricePaneHeight: number | null = null, keyHub?: Hub) {
   const drawn = new Map<string, DrawingV1>();
   const panning: boolean[] = [];
   const engine: ToolEngine = {
@@ -55,7 +57,11 @@ function harness(pricePaneHeight: number | null = null) {
     setPointerCapture: (id) => { captured.push(id); },
     releasePointerCapture: (id) => { captured.splice(captured.indexOf(id), 1); },
   };
-  const keys = { addEventListener: add, removeEventListener: remove } as unknown as Parameters<typeof bindTools>[3];
+  const hub: Hub = keyHub ?? listeners;
+  const keys = (keyHub ? Object.assign(keyHub, {
+    addEventListener: (type: string, fn: (e: never) => void) => hub.set(type, [...(hub.get(type) ?? []), fn]),
+    removeEventListener: (type: string, fn: (e: never) => void) => hub.set(type, (hub.get(type) ?? []).filter((f) => f !== fn)),
+  }) : { addEventListener: add, removeEventListener: remove }) as unknown as Parameters<typeof bindTools>[3];
   let stopped = 0;
   const fire = (type: string, paneX: number, y: number, extra: Partial<PointerLike> = {}) => {
     const e: PointerLike = { clientX: paneX + 140, clientY: y + 50, button: 0, pointerId: 1, preventDefault() {}, stopPropagation() { stopped++; }, ...extra };
@@ -63,7 +69,7 @@ function harness(pricePaneHeight: number | null = null) {
   };
   const key = (k: string, extra: Partial<KeyLike> = {}) => {
     const e: KeyLike = { key: k, preventDefault() {}, ...extra };
-    for (const fn of listeners.get("keydown") ?? []) (fn as (e: KeyLike) => void)(e);
+    for (const fn of hub.get("keydown") ?? []) (fn as (e: KeyLike) => void)(e);
   };
   const store = new Store();
   const ctl = new DrawingController(store, "TCS");
@@ -144,6 +150,26 @@ describe("bindTools", () => {
     h.key("Escape");
     expect(h.ctl.view().tool).toBeNull();
     expect(h.drawn.has(PREVIEW_ID)).toBe(false);
+  });
+
+  it("owner 14 Nov: two charts on one page - a key goes to the chart last pressed on or whose tool was picked", async () => {
+    const hub: Hub = new Map();
+    const ce = harness(null, hub);
+    const pe = harness(null, hub);
+    for (const h of [ce, pe]) { h.ctl.setTool("hline"); h.fire("pointerdown", 100, 490); }
+    await ce.settle();
+    expect([ce.store.rows.size, pe.store.rows.size]).toEqual([1, 1]);
+    ce.fire("pointerdown", 300, 100);                                   // a press on the CE chart (empty area)
+    ce.key("z", { ctrlKey: true });                                     // undo: the CE chart only
+    await ce.settle();
+    expect([ce.store.rows.size, pe.store.rows.size]).toEqual([0, 1]);
+    pe.ctl.setTool("trendline");                                        // a tool picked on the PE chart's rail
+    ce.key("Escape");
+    expect(pe.ctl.view().tool).toBeNull();
+    pe.unbind();                                                        // the PE chart closes: keys reach the CE chart again
+    ce.key("Z", { ctrlKey: true, shiftKey: true });
+    await ce.settle();
+    expect(ce.store.rows.size).toBe(1);
   });
 
   it("unbind removes every listener and every drawing it drew", async () => {

@@ -1,6 +1,7 @@
 """Part D1 (rules IN-SEBI.algo_id.*): which algo id an order carries, in which format, and the audit row for it.
 
-- Registered vs generic: below the exchange's OPS threshold a client may trade under the broker's *generic* algo id;
+- Registered vs generic: below the exchange's OPS threshold a client may trade under the broker's *generic* algo id,
+  which the broker itself puts on the exchange message - so no organisation algo id is needed there (owner, 14 Nov);
   above it the exchange-registered id (`tenants.algo_id`) is required. The platform only counts as "below" when its own
   OPS throttle (D2) is on and capped at or under `ops_threshold` - otherwise nothing guarantees the rate, so only the
   registered id will do. The registered id always wins when it is set. Generic ids are per broker, in the rule-set
@@ -58,13 +59,15 @@ def order_algo_id(registered: Optional[str], broker_name: Optional[str]) -> Opti
 
 
 def live_problem(registered: Optional[str], broker_name: Optional[str]) -> Optional[str]:
-    """Why a LIVE entry to this broker has no usable algo id (None = fine). Only consulted with ALGO_ID_REQUIRED_FOR_LIVE."""
-    if order_algo_id(registered, broker_name):
+    """Why a LIVE entry to this broker has no usable algo id (None = fine). Only consulted with ALGO_ID_REQUIRED_FOR_LIVE.
+
+    Owner (14 Nov): the user builds his own algo, so below the exchange's OPS threshold no algo id is ever asked of him -
+    the broker sends the exchange's generic id itself (SEBI retail-algo framework, docs/design/FN6_SEBI_ALGO_NOTE.md R2).
+    Only above the threshold (the OPS throttle off, or capped higher) does the client's own algo need its registered id."""
+    if registered or ops_within_threshold():
         return None
-    if generic_id(broker_name) and not ops_within_threshold():
-        return ("Exchange algo id not set for this organisation - the broker's generic id is allowed only below the "
-                "OPS threshold, which the OPS throttle is not enforcing - LIVE orders refused (SEBI algo tagging)")
-    return "Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)"
+    return ("No exchange-registered algo id for this organisation, and the OPS throttle is not keeping orders under the "
+            "exchange's OPS threshold - above it the algo must be registered - LIVE entries refused (SEBI algo tagging)")
 
 
 async def audit_order(session: AsyncSession, tenant_id: Optional[int], user_id: Optional[int], *, leg: str, broker_name: str,

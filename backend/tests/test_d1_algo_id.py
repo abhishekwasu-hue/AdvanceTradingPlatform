@@ -4,8 +4,9 @@
   without one keeps today's tag exactly;
 - the registered id (`tenants.algo_id`) always wins; the broker's generic id (`generic_ids`) is used only while the D2 OPS
   throttle is on and capped at or below `ops_threshold` - above it, or with the throttle off, only the registered id will do;
-- with ALGO_ID_REQUIRED_FOR_LIVE a LIVE entry without a usable id is refused before any broker call, and one with the
-  generic id goes through carrying it;
+- with ALGO_ID_REQUIRED_FOR_LIVE a LIVE entry without a registered id is refused before any broker call only above the
+  OPS threshold; below it (the throttle on and capped) it goes through, carrying the generic id when the rule-set names
+  one (owner 14 Nov: the user's own algo below the threshold needs no algo id);
 - every LIVE entry and exit writes an `algo_order` audit row with the tag the broker received.
 """
 import asyncio
@@ -73,6 +74,25 @@ def test_registered_id_wins_generic_only_under_an_enforced_threshold(monkeypatch
     assert ids.order_algo_id(None, "fakelive") is None
     assert "OPS threshold" in ids.live_problem(None, "fakelive")
     assert ids.live_problem("REG9", "fakelive") is None
+
+
+def test_below_the_threshold_no_organisation_algo_id_is_needed(monkeypatch, ruleset):
+    """Owner 14 Nov: no generic id in the rule-set and no organisation id - below the threshold the entry still goes
+    (the broker puts its generic id on the exchange message); above it, it is refused."""
+    from app.execution.router import OrderRouter
+    monkeypatch.setattr(OrderRouter, "fill_poll_delay_seconds", 0)
+    monkeypatch.setattr(config, "ALGO_ID_REQUIRED_FOR_LIVE", True)
+    ruleset(ids.RULE_REGISTERED, "generic_ids", {})
+    threshold = ids.rules.load().param(ids.RULE_REGISTERED, "ops_threshold")
+    _throttle(monkeypatch, True, threshold)
+    assert ids.live_problem(None, "fakelive") is None and ids.order_algo_id(None, "fakelive") is None
+    user = _user("d1-no-id@example.com")
+    broker = _LiveBroker()
+    result, order, _, _ = _execute(user, broker)
+    assert result.executed and broker.placed and not order.algo_tag.startswith("GEN")
+    _throttle(monkeypatch, True, threshold + 1)
+    result, order, _, _ = _execute(user, broker)
+    assert not result.executed and any("OPS threshold" in r for r in result.reasons)
 
 
 def test_live_refused_without_a_usable_id_and_generic_id_goes_through(monkeypatch, ruleset):

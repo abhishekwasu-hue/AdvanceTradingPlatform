@@ -15,7 +15,7 @@ import { formatPrice } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
-import { fnoApi, runOnOptions, type FnoApi, type LiveStatus, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
+import { basketApi, fnoApi, runOnOptions, type FnoApi, type LiveStatus, type MultiExitResult, type MultiResult, type OrderPreview, type OrderResult, type PracticeAccount, type Side } from "./api";
 import {
   ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
@@ -35,6 +35,9 @@ import { useCheckCard, type TicketCard } from "./useCheckCard";
 import { openChart, type OpenChart } from "../chart/openChart";
 import { Combobox } from "../ui/Combobox";
 import { prefillChips, type TicketPrefill } from "../copilot/ticket/intent";
+import { BrokerAppAction, useBrokerApp, type BrokerAppInfo } from "../proposals/BrokerAppAction";
+import { ticketFacts } from "../proposals/brokerFacts";
+import { kiteFnoBasketLink, type BrokerAppLink } from "../proposals/brokerLinks";
 
 /**
  * FNO-1 (owner order section 6): the ONE order ticket - used by the option chain now, built to be opened the same way
@@ -136,6 +139,8 @@ export interface OrderTicketState {
   card?: TicketCard;
   /** M96-Q1: whether his LIVE choice can be placed now (null: not read yet / could not be read - the server decides). */
   live?: LiveStatus | null;
+  /** Route 3 (BIZ-1 B2): "Trade in your broker app" facts (null: ui_v2 / broker_app_links off). */
+  brokerApp?: BrokerAppInfo | null;
 }
 
 /** M96-Q1: the mode chip of a ticket header - PAPER, or LIVE once he picked it. */
@@ -193,6 +198,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
   const [runOn, setRunOn] = useState("ONE");
   // M96-Q1: whether his LIVE choice can go now (the owner's switches, his own broker) - read when the ticket opens.
   const [live, setLive] = useState<LiveStatus | null>(null);
+  const brokerApp = useBrokerApp();          // Route 3 (BIZ-1 B2): null while ui_v2 / broker_app_links is off
   useEffect(() => {
     if (!open || !api.liveStatus) return;
     let on = true;
@@ -360,7 +366,7 @@ export function useOrderTicket({ open, target, side, onPlaced, api = fnoApi, cha
     onAccept: (line) => { checks.acceptHere(line); if (askFirst(lines, new Set([...checks.acceptedHere, factKey(line)])).length === 0) void place(line); },
   } : undefined;
   return {
-    card, live,
+    card, live, brokerApp,
     draft, step, busy, problem, idPrefix, defaults, budget, events, liquidity, review, place: () => place(), saveDefaults: features.on("ui_v2"),
     multi: options.length ? { options, runOn, setRunOn, exitAll } : undefined,
     onDraft: (patch) => { setDraft((d) => ({ ...d, ...patch })); setProblem(null); },
@@ -402,7 +408,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
             </RD.Close>
           </div>
           <TicketBody target={target} draft={t.draft} step={t.step} busy={t.busy} problem={t.problem} idPrefix={t.idPrefix} defaults={t.defaults} saveDefaults={t.saveDefaults}
-            budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live}
+            budget={t.budget} events={t.events} liquidity={t.liquidity} card={t.card} live={t.live} brokerApp={t.brokerApp}
             onDraft={t.onDraft} onReview={() => void t.review()} onPlace={() => void t.place()} onReviewWith={(patch) => void t.review(patch)} onBack={t.back} onClose={onClose} multi={t.multi} />
         </RD.Content>
       </RD.Portal>
@@ -446,8 +452,17 @@ export function ExitEveryAccount({ busy, accounts, onExit }: { busy: boolean; ac
   );
 }
 
+/** Route 3 (BIZ-1 B2): the Kite pre-filled order for his ticket - only a Market order (the verified Kite format carries no
+ * price), with Kite's own contract symbol from the server (`/basket/broker-link`, one leg); null = the copy sheet. */
+async function ticketKiteLink(target: TicketTarget, draft: Draft, info: BrokerAppInfo | null): Promise<BrokerAppLink | null> {
+  if (!info || info.broker !== "zerodha" || !info.publisher_api_key || draft.orderType !== "MARKET" || !draft.lots) return null;
+  const link = await basketApi.brokerLink({ legs: [{ underlying: target.underlying, expiry: target.expiry, strike: target.right === "FUT" ? null : target.strike,
+    right: target.right, side: draft.side, lots: draft.lots }], ...(draft.product ? { product: draft.product } : {}) });
+  return link.available ? kiteFnoBasketLink(link.orders, link.publisher_api_key) : null;
+}
+
 /** The ticket's fields, the confirm step and the buttons (no state, no hooks). */
-export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false, card, live = null }: {
+export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDraft, onReview, onReviewWith, onPlace, onBack, onClose, defaults, budget, events, liquidity, keysHint = true, stickyActions = false, multi, saveDefaults = false, card, live = null, brokerApp = null }: {
   target: TicketTarget; draft: Draft; step: Step; busy: boolean; problem: string | null; idPrefix: string;
   /** M68 TS-3: "Save as my default" next to the order type and the product once he picks one (not when it came from it). */
   saveDefaults?: boolean;
@@ -472,6 +487,8 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
   card?: TicketCard;
   /** M96-Q1: whether his LIVE choice can go now (null: not known - the server decides at Review). */
   live?: LiveStatus | null;
+  /** Route 3 (BIZ-1 B2): "Trade in your broker app" while LIVE is not open for him (null: the feature is off). */
+  brokerApp?: BrokerAppInfo | null;
 }) {
   const n = needs(draft.orderType);
   const asking = step.kind === "edit" ? firstMissing(draft) : null;
@@ -490,6 +507,10 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             <div>
               <Segmented label="Mode" testId="mode" value={draft.mode} onChange={(v) => onDraft({ mode: v })} options={ORDER_MODES} />
               {liveOff && <p className="mt-space-1 text-t13 text-warn" data-ticket="live-off">{live?.text ?? LIVE_OFF_TEXT}</p>}
+              {liveOff && (
+                <BrokerAppAction info={brokerApp} testId="ticket" className="mt-space-2" facts={ticketFacts(target, draft)}
+                  prefill={() => ticketKiteLink(target, draft, brokerApp)} />
+              )}
             </div>
             <Segmented label="Side" testId="side" value={draft.side} onChange={(v) => onDraft({ side: v })}
               options={[{ value: "BUY", label: "Buy" }, { value: "SELL", label: "Sell" }]} />

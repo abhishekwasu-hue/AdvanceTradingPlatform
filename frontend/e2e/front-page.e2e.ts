@@ -287,7 +287,7 @@ test.describe("Settings → Advanced: the Go-live checklist", () => {
       test(`looks the same (${s.name})`, async ({ page }) => {
         await open(page, { path: "/settings#go-live", theme: s.theme });
         const block = page.locator("[data-block='go-live']");
-        await expect(block.locator("[data-headline]")).toHaveText("3 blockers and 1 warning");
+        await expect(block.locator("[data-headline]")).toHaveText("2 blockers and 1 warning");
         await expect(block).not.toHaveAttribute("aria-busy", "true");
         await expect(block).toHaveScreenshot(`go-live-${s.name}.png`, SHOT);
       });
@@ -304,8 +304,9 @@ test.describe("Settings → Advanced: the Go-live checklist", () => {
       await expect(page).toHaveURL(/\/settings#go-live$/);
       const block = page.locator("[data-block='go-live']");
       await expect(block).toBeInViewport({ timeout: 5_000 });
-      await expect(block.locator("[data-row]")).toHaveCount(4);
-      await expect(block.locator("[data-row][data-status='todo']")).toHaveCount(3);
+      await expect(block.locator("[data-row]")).toHaveCount(3);
+      await expect(block.locator("[data-row][data-status='todo']")).toHaveCount(2);
+      await expect(block).not.toContainText(/algo/i);                     // owner 14 Nov: the user's own algo needs no algo id
       await expect(block.locator("[data-row][data-status='warn']")).toHaveCount(1);
       for (const row of await block.locator("[data-row]").all()) await expect(row.locator("a, button")).toHaveCount(1);
       await expect(block.locator("[data-row='broker_session']").getByRole("link", { name: "Log in to your broker" })).toHaveAttribute("href", BROKER_HREF);
@@ -327,7 +328,7 @@ test.describe("Settings → Advanced: the Go-live checklist", () => {
       const block = page.locator("[data-block='go-live']");
       await block.getByRole("button", { name: "Paper" }).click();
       await expect(block.locator("[data-headline]")).toHaveText("1 blocker and 1 warning");
-      await expect(block.locator("[data-fold='optional'] summary")).toHaveText("3 optional");
+      await expect(block.locator("[data-fold='optional'] summary")).toHaveText("2 optional");
     });
   });
 });

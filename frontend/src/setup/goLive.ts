@@ -46,7 +46,6 @@ function plain(key: string, brokerPath: string): Plain | null {
     case "broker_uncertain": return { sentence: "Your broker's positions do not match ours yet, so new live entries wait.", label: "Open Positions", to: "/positions" };
     case "mfa": return { sentence: "Turn on two-step sign-in for your account.", label: "Open Account", to: "/account" };
     case "email_verified": return { sentence: "Verify your email address from the link we sent you.", label: "Open Account", to: "/account" };
-    case "algo_id": return { sentence: "Add your exchange-registered algo ID to your organisation.", label: "Open Team", to: "/team" };
     case "static_ip": return { sentence: "Register this server's IP address with your broker.", label: "Open the Broker page", to: connectBrokerPath() };
     default: return null;
   }
@@ -58,7 +57,7 @@ const TITLES: Record<string, string> = {
   worker: "Automatic trading is running", holidays: "Exchange holidays loaded", deployment: "A bot is running",
   deployment_errors: "Bots running without problems", risk: "Risk limits set", alerts: "Alerts reach your phone",
   kill_switch: "No kill switch on", broker_uncertain: "Broker positions match", mfa: "Two-step sign-in on",
-  email_verified: "Email verified", algo_id: "Algo ID set", static_ip: "Server IP registered with your broker",
+  email_verified: "Email verified", algo_id: "Own algo ID", static_ip: "Server IP registered with your broker",
   ai_provider: "AI provider key",
 };
 const titleOf = (item: ReadinessItem): string => TITLES[item.key] ?? item.title;

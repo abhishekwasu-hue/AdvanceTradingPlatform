@@ -337,7 +337,11 @@ def test_stop_type_survives_the_symbol_and_rate_limit_wrappers(monkeypatch):
     from app.brokers.contract_symbols import ContractSymbolBroker
     from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
     inner = _BookBroker(fills=500, status="COMPLETE", capabilities=BrokerCapabilities(stop_market_on_options=False))
-    stacked = RateLimitedBroker(ContractSymbolBroker(inner), RateBudget(RateLimits(per_second=100, per_minute=6000, burst=100)))
+    from app.platform import phase0_lock
+    # B1: LIVE entries open only for the owner's organisation - these orders are that organisation's.
+    phase0_lock.remember_owner(7)
+    stacked = RateLimitedBroker(ContractSymbolBroker(inner), RateBudget(RateLimits(per_second=100, per_minute=6000, burst=100)),
+                                tenant_id=7)
     assert stacked.capabilities.stop_market_on_options is False
     assert stacked.stop_order_params("NIFTY26OCT26000CE", OrderSide.SELL, 120.0) == ("SL", 118.8)
     result = _run(_router(stacked, is_option=True).execute(_signal(), TradingDayState()))

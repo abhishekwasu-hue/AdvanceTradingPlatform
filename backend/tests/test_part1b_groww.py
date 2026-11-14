@@ -33,6 +33,7 @@ from app.execution.paper_charges import PaperCharges
 from app.execution.router import DEFAULT_MARKET_PROTECTION_PCT
 from app.market_data import groww_feed as gf
 from app.market_data.stream import stream_for
+from app.platform import phase0_lock
 from tests.broker_fakes import GROWW_API_KEY, GROWW_API_SECRET, TOTP_SECRET
 
 run = asyncio.run
@@ -380,7 +381,9 @@ class _Counting:
 def test_the_rate_limited_wrapper_refuses_before_sending_and_never_refuses_an_exit():
     inner = _Counting()
     daily = rb.DailyBudget("Groww", {"orders": 2, "live_data": 1}, share=1.0, exit_reserve=0.5, read_reserve=0.0)
-    wrapped = rb.RateLimitedBroker(inner, rb.RateBudget(rb.limits_for("groww"), daily=daily))
+    # B1: LIVE entries open only for the owner's organisation - these orders are that organisation's.
+    phase0_lock.remember_owner(7)
+    wrapped = rb.RateLimitedBroker(inner, rb.RateBudget(rb.limits_for("groww"), daily=daily), tenant_id=7)
     run(wrapped.get_ltp(["NSE:RELIANCE"]))
     with pytest.raises(rb.DailyCapReached):
         run(wrapped.get_ltp(["NSE:RELIANCE"]))

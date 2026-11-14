@@ -27,7 +27,7 @@ import { LEARN_IDEAS_ADDRESS, LEARN_WORDS_ADDRESS, visiblePinned, visibleSection
 import { WIDE_QUERY, isSidebarShortcut, useSidebarMode } from "./sidebarPrefs";
 import PageTabsV2 from "./PageTabsV2";
 import { PAGE_COMPONENTS_V2, brokerGateFor } from "./pagesV2";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
+import { MARKETS_ADDRESS, RUNNER_ADDRESS, SETUP_ADDRESS, TERMINAL_ADDRESS, TRADING_DEFAULTS_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
 import { SETTINGS_SECTIONS } from "../settings/paths";
@@ -174,6 +174,8 @@ export default function AppShellV2() {
   const TerminalPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.terminal ?? NotFound;
   // P1-8 (2): the Watchlist page (v2 only), the same way.
   const WatchlistPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.watchlist ?? NotFound;
+  // Runner S7: My runner (v2 only), the same way.
+  const RunnerPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.runner ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -197,6 +199,7 @@ export default function AppShellV2() {
           <Route path={LEARN_ADDRESS} caseSensitive element={<LearnPage onNavigate={go} />} />
           <Route path={TERMINAL_ADDRESS} caseSensitive element={<TerminalPage onNavigate={go} />} />
           <Route path={WATCHLIST_ADDRESS} caseSensitive element={<WatchlistPage onNavigate={go} />} />
+          <Route path={RUNNER_ADDRESS} caseSensitive element={<RunnerPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;

@@ -13,6 +13,10 @@ RUN npm run build && rm -rf dist/.vite
 FROM nginx:alpine
 RUN apk upgrade --no-cache
 COPY --from=build /app/dist /usr/share/nginx/html
+# The build copies public/ with the checkout's own file modes: a server checkout made under umask 077 gave
+# public/front/*.png mode 600 (root only), so nginx's worker (user nginx) answered 403 and the front page showed
+# placeholders. Every served file is world-readable, every directory traversable, whatever the checkout's umask.
+RUN chmod -R a+rX /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 

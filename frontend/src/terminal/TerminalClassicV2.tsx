@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
-import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
@@ -27,7 +26,7 @@ import {
   ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
-import { ICON_BUTTON, LayoutToolsV2 } from "./LayoutToolsV2";
+import { LayoutToolsV2, MENU_SUMMARY } from "./LayoutToolsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import { SpreadBuilderV2 } from "./SpreadBuilderV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
@@ -327,10 +326,10 @@ function PanelsMenu({ panels, onToggle }: { panels: readonly PanelPlace[]; onTog
   const open = new Set(panels.filter((x) => x.open).map((x) => x.id));
   return (
     <details className="relative" data-terminal="panels">
-      <summary className={cx(ICON_BUTTON, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")} aria-label="Panels" title="Panels">
-        <LayoutPanelTop size={16} aria-hidden />
+      <summary className={MENU_SUMMARY} title="Panels">
+        <LayoutPanelTop size={16} aria-hidden />Panels
       </summary>
-      <fieldset className="absolute left-0 z-20 mt-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
+      <fieldset className="absolute left-full top-0 z-20 ml-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <legend className="sr-only">Show panels</legend>
         {CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist").map((id) => (
           <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">

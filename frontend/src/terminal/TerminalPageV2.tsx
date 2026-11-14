@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
-import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
@@ -27,7 +26,7 @@ import { useOptionChain } from "../optionChain/useOptionChain";
 import { OptionChainView } from "../optionChain/OptionChainPageV2";
 import TerminalClassicV2 from "./TerminalClassicV2";
 import { ContextBarV2, useStripFigures } from "./ContextBarV2";
-import { ICON_BUTTON, LayoutToolsV2 } from "./LayoutToolsV2";
+import { LayoutToolsV2, MENU_SUMMARY } from "./LayoutToolsV2";
 import { modeChip } from "./statusModel";
 import { liveAvailableFrom } from "../settings/useLiveAvailable";
 import { defaultTerminalApi, type TerminalApi } from "./api";
@@ -414,10 +413,10 @@ function PanelsMenu({ panels, onToggle, onPanels, ids = CHOOSER_PANEL_IDS }: {
   const sized = readingOrder(panels).filter((q) => ids.includes(q.id));
   return (
     <details className="relative" data-terminal="panels">
-      <summary className={cx(ICON_BUTTON, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")} aria-label="Panels" title="Panels">
-        <LayoutPanelTop size={16} aria-hidden />
+      <summary className={MENU_SUMMARY} title="Panels">
+        <LayoutPanelTop size={16} aria-hidden />Panels
       </summary>
-      <div className="absolute right-0 z-20 mt-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
+      <div className="absolute right-full top-0 z-20 mr-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <fieldset className="w-52 shrink-0 space-y-px">
           <legend className="sr-only">Show panels</legend>
           {ids.map((id) => (

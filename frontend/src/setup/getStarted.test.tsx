@@ -248,6 +248,15 @@ describe("P3 Go-live checklist", () => {
     expect(known.open[0]).toMatchObject({ sentence: "Open the page and fix it.", action: { label: "Open Team", to: "/team" } });
   });
 
+  it("owner 14 Nov: the algo id is never a blocker - an id the organisation set shows only under optional", () => {
+    const v = goLiveView(checklist([item("worker", "ok"), item("algo_id", "info", { scope: "OPTIONAL", detail: "NSE9001" })]));
+    expect(v.headline).toBe("Ready for LIVE");
+    expect(v.open).toEqual([]);
+    expect(v.optional).toEqual(["Own algo ID"]);
+    const out = html(<GoLiveListV2 view={v} onRecheck={() => undefined} />).replace(/<[^>]+>/g, " ");
+    expect(out).not.toMatch(/exchange-registered|Open Team|NSE9001/);
+  });
+
   it("all passing: ready, nothing open", () => {
     const v = goLiveView(checklist([item("worker", "ok"), item("alerts", "warn")], "PAPER"));
     expect(v.headline).toBe("Ready for paper trading, 1 warning to look at");

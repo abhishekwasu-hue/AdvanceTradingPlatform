@@ -10,6 +10,7 @@ import { tradingDaysText, formatIv, formatStrike } from "./model";
 import type { ChainSummary } from "./types";
 import { Skeleton } from "../components/primitives";
 import { spotChange } from "./spotChange";
+import { useShownBlock } from "./panelBlocks";
 
 /**
  * OC1: the summary cards above the chain - spot (live), futures, ATM strike, PCR (OI), max pain, ATM IV and days to
@@ -24,6 +25,8 @@ import { spotChange } from "./spotChange";
  * (the OI-difference table's window and the banner's PCR - one definition), the max pain over the whole chain. From md
  * the cards fill the width they get (as many columns as fit, never a fixed four), and no label, value or caption is cut:
  * a long one wraps. `omit` (the Terminal on a phone) leaves out the figures its context bar already shows.
+ * Owner 14 Nov: the compact strip (`dense`, the Terminal's chain panel) shows spot, ATM, PCR and ATM IV on one line as
+ * label-value pairs; futures, max pain, OI walls and the data time are behind "More" (remembered on this browser).
  */
 /** From md the cards keep the server's order (literal classes, so the stylesheet has them). */
 const DESKTOP_ORDER = ["md:order-1", "md:order-2", "md:order-3", "md:order-4", "md:order-5", "md:order-6", "md:order-7", "md:order-8", "md:order-9"] as const;
@@ -100,6 +103,34 @@ export function summaryCards(s: ChainSummary | null, expiry: string | null, spot
   ];
 }
 
+/** Owner 14 Nov (the Terminal's chain panel): the figures a trader reads first in the compact strip; the rest behind "More". */
+export const DENSE_FIRST: ReadonlySet<string> = new Set(["spot", "atm", "pcr", "atm-iv"]);
+
+/** TERM-2 / owner 14 Nov: the compact strip (one line of label-value pairs); the less-used figures behind a remembered "More". */
+function DenseStrip({ all, loading, aside }: { all: Card[]; loading: boolean; aside?: ReactNode }) {
+  const [more, setMore] = useShownBlock("summary-more", false);
+  const rest = all.filter((c) => !DENSE_FIRST.has(c.key));
+  const shown = more ? all : all.filter((c) => DENSE_FIRST.has(c.key));
+  return (
+    <section aria-label="Summary" data-block="chain-summary" data-dense className="flex flex-wrap items-baseline gap-x-space-3 gap-y-space-1 text-t12">
+      {shown.map((c) => (
+        <div key={c.key} data-summary={c.key} className="inline-flex min-w-0 items-baseline gap-space-1">
+          <span className="text-fg-muted">{c.label}</span>
+          <span className="font-tabular text-t14 font-semibold text-fg">
+            {loading ? <Skeleton className="inline-block h-4 w-12" /> : c.value}
+            {!loading && c.key === "spot" && c.extra ? <span className="ml-space-1 font-normal">{c.extra}</span> : null}
+          </span>
+        </div>
+      ))}
+      {rest.length > 0 && <button type="button" onClick={() => setMore(!more)} aria-expanded={more} data-summary-more
+        className="inline-flex min-h-11 items-center rounded-control font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-6">
+        {more ? "Less" : "More"}
+      </button>}
+      {aside && <div className="ml-auto">{aside}</div>}
+    </section>
+  );
+}
+
 function Value({ loading, num, children }: { loading: boolean; num?: number | null; children: ReactNode }) {
   // UX-7: the spot card's number shows a short up / down tint when the price changes.
   const flash = useTickFlash(loading ? null : num);
@@ -107,7 +138,7 @@ function Value({ loading, num, children }: { loading: boolean; num?: number | nu
   return <div data-flash={flash ?? undefined} className={`-mx-space-1 mt-space-1 break-words rounded-control px-space-1 font-tabular text-t18 font-semibold text-fg transition-colors duration-base ${flashClass(flash)}`}>{children}</div>;
 }
 
-export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit, drop }: {
+export default function SummaryStripV2({ summary, expiry, loading, spot = null, prevClose = null, dense = false, asOf, omit, drop, aside }: {
   summary: ChainSummary | null; expiry: string | null; loading: boolean;
   /** TERM-2: the same figures as one compact row (the Terminal's chain panel), so the chain stays in view. */
   dense?: boolean;
@@ -121,27 +152,15 @@ export default function SummaryStripV2({ summary, expiry, loading, spot = null, 
   omit?: readonly string[];
   /** M96 L1: cards a block right below already shows (the Trade banner's expiry line), left out with no other change. */
   drop?: readonly string[];
+  /** Owner 14 Nov (the compact strip only): a control at the strip's end (the Terminal panel's Chain | Charts | OI). */
+  aside?: ReactNode;
 }) {
   const all = summaryCards(summary, expiry, spot, prevClose, asOf).filter((c) => !omit?.includes(c.key) && !drop?.includes(c.key));
   const [more, setMore] = useState(false);
   // Phone order: the four first cards, then the rest; from md the server's order. With `omit` every card left shows.
   const first = (key: string) => PHONE_FIRST.has(key) || !!omit?.length;
   const cards = [...all.filter((c) => first(c.key)), ...all.filter((c) => !first(c.key))];
-  if (dense) {
-    return (
-      <section aria-label="Summary" data-block="chain-summary" data-dense className="flex flex-wrap items-end gap-x-space-4 gap-y-space-2 text-t12">
-        {all.map((c) => (
-          <div key={c.key} data-summary={c.key} className="min-w-0">
-            <div className="text-fg-muted">{c.label}</div>
-            <div className="font-tabular text-t14 font-semibold text-fg">
-              {loading ? <Skeleton className="h-4 w-12" /> : c.value}
-              {!loading && c.key === "spot" && c.extra ? <span className="ml-space-1 font-normal">{c.extra}</span> : null}
-            </div>
-          </div>
-        ))}
-      </section>
-    );
-  }
+  if (dense) return <DenseStrip all={all} loading={loading} aside={aside} />;
   return (
     <section aria-label="Summary" data-block="chain-summary" data-tour="oc-summary"
       className="grid grid-cols-2 gap-space-2 md:grid-cols-[repeat(auto-fill,minmax(9rem,1fr))]">

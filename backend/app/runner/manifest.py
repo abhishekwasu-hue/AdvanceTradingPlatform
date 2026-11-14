@@ -110,6 +110,16 @@ RUNTIME_FORBIDDEN: tuple[str, ...] = (
 )
 
 
+# Runner S5: the local keystore, the daily broker login and their CLI, plus what the login reads (the NSE calendar's
+# open / close and trading days). Their closure is walked like the rest; de-duplicated so a later step may list the same.
+RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
+    "app.market_data.calendar",
+    "app.runner.keystore",
+    "app.runner.broker_login",
+    "app.runner.keys",
+)))
+
+
 def is_forbidden(module: str, prefixes: tuple[str, ...] = FORBIDDEN_PREFIXES) -> bool:
     """True when `module` is one of `prefixes` or inside one of them."""
     return any(module == p or module.startswith(p + ".") for p in prefixes)

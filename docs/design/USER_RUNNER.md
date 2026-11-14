@@ -241,3 +241,44 @@ Spike (`backend/tests/runner_s1_spike_job.py`, run as a separate process by the 
   runner loop needs its in-process lock; the template engine (`strategy_templates`, H-templates) imports
   `screener.runtime` and `price_action` (public code), so shipping those templates needs `price_action` moved from the
   forbidden list to the allowed set (owner-visible change of section 2) - S1 ships the DSL + inbuilt templates only.
+
+## S5 results (branch `claude/runner-s5-keystore`, stacked on S1)
+
+Keystore (`backend/app/runner/keystore.py`, CLI `backend/app/runner/keys.py`, tests `backend/tests/test_runner_s5_keystore.py`):
+- One file `<home>/keystore.enc`: AES-256-GCM (the `cryptography` package already in requirements), the header
+  (format, version, KDF) authenticated as associated data, a fresh nonce per write, atomic writes, files mode 600 and the
+  folder 700; a file any group / other may read is refused. A POSIX lock serialises the CLI and the running runner.
+- Key, chosen at `keys init`: `keyfile` (default) = 32 random bytes in `<home>/keystore.key` (600), so an unattended VPS
+  runner (`restart: always`) logs in before the open with nobody typing; or `scrypt` = from a passphrase (n=2^15, r=8,
+  p=1), asked at each start, for a machine the user starts himself. `rekey` switches / renews the key.
+- Commands: `python -m app.runner.keys init | add angel_one | rotate angel_one [--field pin] | remove angel_one | list |
+  rekey | login angel_one | status angel_one` (`--home`, default `~/.atp-runner`). API key, PIN and TOTP secret are asked
+  without echo; `list` shows field names only. Once S2's `python -m app.runner` is merged it dispatches `keys` here, and
+  S2's interim `broker.json` gives way to `broker_login.build_adapter` (today's session from the keystore).
+- Never sent to ATP, never printed or logged: tests capture every log record, the status file, the log file and the CLI
+  output and find no key, PIN, TOTP secret, passphrase or token, nor the broker's own error text.
+
+Daily login (`backend/app/runner/broker_login.py`):
+- The existing adapter's login (`AngelOneBroker.authenticate`: `loginByPassword` with client code + PIN + the TOTP code
+  of the moment, `app/brokers/totp.py`), as ATP's server-side automatic login (`brokers/auto_login.py`) runs it.
+- Window and retries as the server's rule IN-SEBI.login.daily (rule-set params: 45 minutes before the open, 1 retry,
+  10 minutes), overridable in the runner's `runner.json` (`broker_login_minutes_before_open`, `broker_login_retries`,
+  `broker_login_retry_minutes`; operational settings, not trading rules); retries back off by doubling. Trading days:
+  weekends skipped; NSE holidays once S4 syncs the list (until then a holiday login is harmless).
+- `run_due()` is meant for every loop cycle (S2 / S4 wire it): idempotent while today's session is stored. Failure:
+  one line in `<home>/broker_login.log` and `<home>/broker_status.json`; `status_line()` is the heartbeat's line
+  ("broker session valid" / "login failed: <plain reason>"). A failed login never blocks exits (ADR-0004).
+- Egress: the adapter's client is built with `trust_env=False` (no proxy variable can reroute it); the adapter knows
+  only Angel One's hosts (`apiconnect.angelone.in`, the scrip master on `margincalculator.angelbroking.com`; a test
+  checks it), so login, orders and market data leave from this machine's IP. Nothing goes via ATP.
+
+To verify in the pilot (a real Angel One account on the pilot VPS):
+- the login with client code + PIN + TOTP from the VPS, and that the session lasts until midnight as documented;
+- that orders are accepted from the registered static IP (and refused from another), and whether SmartAPI checks the
+  `X-ClientPublicIP` header (the keystore's optional `public_ip`) against the registered IP;
+- Angel One's error codes for a wrong PIN / TOTP: the adapter's `AUTH_ERROR_CODES` map them to "refused the login";
+  a refusal with another code reads "did not answer as expected" until listed;
+- whether repeated wrong logins lock the account (the default is 2 attempts a day; keep retries low);
+- the TOTP code at a 30-second boundary (one retry covers it);
+- no redirect step: Angel One's TOTP login has none, so the localhost / sealed-relay redirect of section 5 is for the
+  OAuth brokers (Upstox, Zerodha) in a later step.

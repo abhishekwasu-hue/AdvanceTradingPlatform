@@ -35,7 +35,7 @@ import httpx
 import pyotp
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ci_posture import POSTURE  # noqa: E402
+from ci_posture import DERIVED_FLAGS, POSTURE  # noqa: E402
 
 BASE = os.environ.get("ATP_CI_BASE_URL", "https://atp.staging.internal")
 CADDY_CA = os.environ.get("ATP_CI_CADDY_CA", "/state/caddy-root.crt")
@@ -192,6 +192,8 @@ def admin_setup(flow: Flow) -> str:
 def set_posture(flow: Flow) -> str:
     admin: Api = flow.ctx["admin"]
     for name, on in POSTURE.items():
+        if name in DERIVED_FLAGS:
+            continue  # LIVE-1 (#1006): derived from live_trading, refused if set on its own; checked below like the rest
         ok(admin.put(f"/api/admin/controls/flags/{name}", {"on": on, "tenants": []}))
     flags = ok(admin.get("/api/admin/controls/flags"))
     wrong = {n: flags[n]["on"] for n, on in POSTURE.items() if flags[n]["on"] != on}

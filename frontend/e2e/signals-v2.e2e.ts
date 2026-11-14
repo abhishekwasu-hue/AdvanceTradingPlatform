@@ -498,3 +498,40 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
     });
   });
 }
+
+// Route 3 (BIZ-1 B3, owner 14 Nov): "Trade in your broker app" on a signal card - the symbol and his signal's own
+// direction, the rest only from his own settings (none saved here: "Your choice"); the card's own words stay structure
+// words. R3_PROOF: before / after screenshots.
+test.describe("Route 3 signal card broker app at 360", () => {
+  test.use({ viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("before: no button while the flag is off", async ({ page }) => {
+    await open(page, "/signals", "light");
+    const card = page.locator("[data-signal-card='action:901']");
+    await expect(card.getByRole("button", { name: "Approve" })).toBeVisible();
+    await expect(page.getByTestId("signal-broker-app")).toHaveCount(0);
+    if (process.env.R3_PROOF) await card.screenshot({ path: `${process.env.R3_PROOF}/before-signal-360.png`, animations: "disabled" });
+  });
+
+  test("after: the button and his order facts to copy", async ({ page }) => {
+    const proof = process.env.R3_PROOF;
+    await open(page, "/signals", "light", { ...V2, features: { ...V2.features, broker_app_links: true } });
+    await page.route(/\/api(?:\/v1)?\/paper\/fno\/broker-app$/, (r) => r.fulfill({ json: { on: true, broker: "zerodha", publisher_api_key: "k" } }));
+    await page.reload();
+    const card = page.locator("[data-signal-card='action:901']");
+    const button = card.getByTestId("signal-broker-app");
+    await expect(button).toHaveText("Trade in your broker app");
+    await expectPhoneLayout(page);
+    if (proof) await card.screenshot({ path: `${proof}/after-signal-360.png`, animations: "disabled" });
+    await button.tap();
+    const sheet = page.getByRole("dialog", { name: "Trade in your broker app" });
+    await expect(sheet.locator("[data-fact='Symbol']")).toContainText("NIFTY 50");
+    await expect(sheet.locator("[data-fact='Quantity']")).toContainText("Your choice");      // an index has no cash order
+    await expect(sheet.locator("[data-broker-home='zerodha']")).toHaveAttribute("href", "https://kite.zerodha.com");
+    // owner 14 Nov: the stop-loss reminder; no stop saved here, so nothing more (never an ATP-chosen stop)
+    await expect(sheet.locator("[data-sl-reminder]")).toContainText("Place your stop-loss (SL / GTT) in your broker app too - ATP cannot exit this order for you.");
+    await expect(sheet.locator("[data-sl-own]")).toHaveCount(0);
+    await expectPhoneLayout(page);
+    if (proof) await page.screenshot({ path: `${proof}/after-signal-sheet-360.png`, animations: "disabled" });
+  });
+});

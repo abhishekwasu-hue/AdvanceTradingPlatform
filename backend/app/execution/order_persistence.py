@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.billing.service import meter
+from app.core import runtime_mode
 from app.core.enums import OrderStatus
 from app.core.models import Signal
 from app.db.models import OrderEventRecord, OrderRecord, User
@@ -94,8 +94,11 @@ async def create_order(
         return existing, False
 
     session.add(OrderEventRecord(order_id=order.id, from_status=None, to_status=OrderStatus.CREATED.value, detail=""))
-    # Phase K1: every order attempt is one metered unit (usage dashboards, plan analytics).
-    await meter(session, tenant_id, "order", 1, source=mode.lower(), metadata={"strategy_id": strategy_id}, commit=False)
+    # Phase K1: every order attempt is one metered unit (usage dashboards, plan analytics). Runner S2: billing is a server
+    # feature - the user's runner meters nothing (its orders reach ATP as read-only copies, step S4).
+    if not runtime_mode.is_runner():
+        from app.billing.service import meter
+        await meter(session, tenant_id, "order", 1, source=mode.lower(), metadata={"strategy_id": strategy_id}, commit=False)
     await session.commit()
     await session.refresh(order)
     return order, True

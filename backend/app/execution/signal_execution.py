@@ -227,7 +227,7 @@ async def execute_signal_for_user(
         fo_notes: list = []
         if contract is not None:
             # D7: a derivative on an underlying in the exchange's F&O ban period is not a new trade the market allows.
-            ban, ban_note = await fo_limits.entry_refusal(session, underlying_signal.symbol, underlying_signal.timestamp)
+            ban, ban_note = await fo_limits.entry_refusal(session, underlying_signal.symbol, underlying_signal.timestamp, mode=mode)
             if ban:
                 kill_switch_reasons.append(ban)
             elif ban_note:
@@ -243,7 +243,7 @@ async def execute_signal_for_user(
             kill_switch_reasons.extend(await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
             if manual_contract_meta and manual_contract_meta.get("underlying_symbol"):
                 # FNO-1: a manual order on a contract - the F&O ban period applies as to a resolved one (D7).
-                ban, ban_note = await fo_limits.entry_refusal(session, str(manual_contract_meta["underlying_symbol"]), signal.timestamp)
+                ban, ban_note = await fo_limits.entry_refusal(session, str(manual_contract_meta["underlying_symbol"]), signal.timestamp, mode=mode)
                 if ban:
                     kill_switch_reasons.append(ban)
                 elif ban_note:

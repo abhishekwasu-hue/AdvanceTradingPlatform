@@ -149,7 +149,7 @@ async def execute_structure(
                                             user_id=user.id)
     if gate:
         refusals.insert(0, gate)
-    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
+    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp, mode=mode)   # D7: F&O ban on the underlying
     if ban:
         refusals.append(ban)
     # N2-2 (flag experience_levels): an unhedged short side or a futures leg needs the level, or the day's opt-out.

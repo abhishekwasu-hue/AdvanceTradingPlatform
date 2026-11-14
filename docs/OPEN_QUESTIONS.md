@@ -601,3 +601,11 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | SPOT-1 | Days left: the chain's OI banner counts calendar days (Trade compute_dte, M96 "AS IS"); the context bar and the "Days to expiry" card count trading days (B3, DECISIONS 24 Oct). | The banner stays Trade's, unchanged (coordinator, M96 binding); ATP's own labels name their unit: "Expiry in 2 trading days", card "2 trading days". | `optionChain/model.ts` `tradingDaysText` | open (default stated) |
 | SPOT-2 | When a live tick stops counting, and when the spot says "as of". | A tick this tab has not heard for 30 s goes out (the LTP read returns); the bar's spot says "as of <time>" once older than 60 s or while the market is closed. | `terminal/spot.ts` `TICK_FRESH_MS`, `SPOT_AS_OF_AFTER_MS` | open (default stated) |
 | SPOT-3 | The chart's last-price tag vs the spot. | No separate "last candle" label: every timeframe's forming bar now takes the one spot whenever it is newer than the bar's start, so the tag is the spot; only a 1-minute candle newer than the spot shows its own close. | `chart/timeframes.ts` `foldLive` (unchanged) | open (default stated) |
+
+## BIZ-1: Route 3 audit (owner order 14 Nov, docs/design/ROUTE3_AUDIT.md; PR `claude/route3-audit`)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BIZ1-Q1 | LIVE-1 (11 Nov): `live_trading` ON = every user may go LIVE through ATP's server; Route 3 (14 Nov): no other user's LIVE through the server. | Route 3 narrows LIVE-1: with the switch ON, server LIVE only for the owner identity; every other user PAPER + "Trade in your broker app". Order-path change - not built before the owner's ✅. | ROUTE3_AUDIT §2, step B1 | open |
+| BIZ1-Q2 | "Free or Basic plan". | One free plan shown as "Basic"; the stored id `free` stays (no data change). | ROUTE3_AUDIT §3, step B6 | open |
+| BIZ1-Q3 | Brokers with no verified pre-filled order link (all but Zerodha today). | The button opens the broker's own site / app with the order facts shown in ATP to copy; a URL is never guessed. | ROUTE3_AUDIT §1c, steps B2-B4 | open |

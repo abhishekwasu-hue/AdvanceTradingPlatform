@@ -1,8 +1,8 @@
-import { ArrowDown, ArrowUp, ChevronDown, Copy, GripVertical, Lock, PanelRightClose, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Copy, Filter, GripVertical, Lock, PanelRightClose, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives/cx";
 import { EMPTY, formatDateIST, formatPct, formatPrice } from "../ui/format";
-import { NoBrokerLine } from "../ui/ConnectLive";
+import { ConnectLiveButton, NoBrokerLine } from "../ui/ConnectLive";
 import { lastCloseText } from "../ui/lastClose";
 import { type EodQuotesReply, withEodFallback } from "./eodQuotes";
 import { SymbolPicker } from "../ui/SymbolPicker";
@@ -49,6 +49,13 @@ import {
  * screens, remembered per list. With a screen chosen the matching rows move to the top, marked; the rest stay below,
  * dimmed; "Matches only" and the "n of m match" count. Checked while the list shows and again on the next bar close of
  * the screen's timeframe. While a screen orders the rows, dragging is off (None gives the list's own order back).
+ *
+ * Owner 14 Nov ("the actual watchlist has gone far down; there is free space at the top of the panel - adjust it"): with
+ * `compact` (the Terminal) the header is short, every control kept - the list chooser with New / Rename / Delete on one
+ * row (a read-only list: New and the Screen button); one small muted line with "Read-only" (its date on hover), the last
+ * close, a small "Copy" and the connect chip; then the search and the sort (his own list: Add a symbol and the Screen
+ * button) on one row. The Screen row opens below on demand (by itself when the list has a screen chosen). So the first
+ * symbol starts near the panel's top.
  */
 export interface WatchlistPanelProps {
   /** The symbol on the chart (its row is marked). */
@@ -77,6 +84,9 @@ export interface WatchlistPanelProps {
   className?: string;
   /** M86 D3: false where the page already has its one "Connect your broker for live prices" button (Charts). */
   connectButton?: boolean;
+  /** Owner 14 Nov (the Terminal's panel and phone tab): the short header (see above). Charts and the Watchlist page leave
+   * it off (their layout is unchanged). */
+  compact?: boolean;
 }
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
@@ -246,7 +256,7 @@ function Price({ q, inline = false }: { q: QuoteRow | undefined; inline?: boolea
   );
 }
 
-export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false, narrow = false, connectButton = true }: WatchlistPanelProps) {
+export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, systemKey = null, onSystemKey, storageKey, onClose, touch = false, className, liveTicks = false, narrow = false, connectButton = true, compact = false }: WatchlistPanelProps) {
   const store = useMemo(() => new WatchlistsStore(), []);
   const state = useSyncExternalStore(store.subscribe, store.getState);
   useEffect(() => { void store.load(); }, [store]);
@@ -285,6 +295,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set([MY_LISTS]));
   const [notice, setNotice] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
+  const [screenOpen, setScreenOpen] = useState(false);          // compact: the Screen row shown under the search row
   const rowsRef = useRef<HTMLUListElement>(null);
   const refKey = ref ? (ref.kind === "system" ? `s:${ref.key}` : `o:${ref.id}`) : "";
   useEffect(() => { setAsking(false); setNaming(null); setRowQuery(""); setSort("list"); }, [list?.id, refKey]);
@@ -400,19 +411,41 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const isMatch = (item: WatchItem) => watch.matched.has(itemKey(item));
   const ownRows = screenOn ? shownRows(shown, watch.matched, choice.matches_only) : shown;
   const sysRows = screenOn ? shownRows(systemRows, watch.matched, choice.matches_only) : systemRows;
+  // Compact: the Screen row opens by itself for a list with a screen chosen (on a list change and once the choices are read).
+  const screenFor = `${listKey ?? ""}|${choices.screens ? "read" : ""}`;
+  const [screenSeen, setScreenSeen] = useState(screenFor);
+  if (screenSeen !== screenFor) { setScreenSeen(screenFor); setScreenOpen(choice.screen_id != null); }
+
+  const eodShown = quotes.eodAsOf !== undefined && !quotes.failed;
+  const sysShown = !!systemSummary && !state.off && !browsing;
+  const ownShown = !!list && !state.off && !browsing;
+  const metaShown = eodShown || sysShown;
+  const headShown = compact && (metaShown || ownShown);
+  const screenBar = screenShown && !!listKey && !!choices.screens;
+  const screenToggle = compact && screenBar ? (
+    <button type="button" data-screen-toggle aria-expanded={screenOpen} onClick={() => setScreenOpen((v) => !v)}
+      aria-label={screen ? `Screen: ${screen.name}` : "Screen"} title={screen ? `Screen: ${screen.name}` : "Screen: show the rows that meet one of your screens"}
+      className={cx("inline-flex shrink-0 items-center justify-center rounded-control border hover:bg-surface-2", tall, focus,
+        screen ? "border-brand text-brand" : "border-transparent text-fg-muted hover:text-fg")}>
+      <Filter size={16} aria-hidden />
+    </button>
+  ) : null;
 
   return (
     <section aria-label="Watchlist" data-watchlist className={cx("flex min-h-0 flex-col text-t14 text-fg", className)}>
-      <div className={cx("flex items-center gap-space-1 border-b border-subtle p-space-2", narrow && "flex-wrap")} data-narrow={narrow ? "" : undefined}>
+      <div className={cx("flex items-center gap-space-1", compact ? cx("flex-wrap px-space-2 pt-space-1", headShown ? "pb-space-1" : "border-b border-subtle pb-space-2") : "border-b border-subtle p-space-2",
+        narrow && "flex-wrap")} data-narrow={narrow ? "" : undefined} data-compact={compact ? "" : undefined}>
         {hasSystem && !state.off ? (
           <>
             <button type="button" aria-expanded={browsing} aria-label={`Choose a list. Shown: ${currentName}`} onClick={openBrowser}
-              className={cx("flex h-11 min-w-0 flex-1 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-2 text-left text-t14 font-semibold text-fg", !touch && "md:h-9", narrow && "basis-full", focus)}>
-              {systemSummary && <Lock size={12} aria-hidden className="shrink-0 text-fg-muted" />}
-              <span className={cx("min-w-0 flex-1", narrow ? "break-words" : "truncate")} data-list-name>{currentName}{!namesCount(currentName) && <> <span className="font-normal text-fg-muted">({currentCount})</span></>}</span>
+              className={cx("flex min-w-0 flex-1 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-2 text-left font-semibold text-fg",
+                compact ? cx("min-h-11 basis-24 py-px text-t13", !touch && "md:min-h-9") : cx("h-11 text-t14", !touch && "md:h-9"), narrow && !compact && "basis-full", focus)}>
+              {systemSummary && !compact && <Lock size={12} aria-hidden className="shrink-0 text-fg-muted" />}
+              <span className={cx("min-w-0 flex-1", compact ? "break-words leading-tight" : narrow ? "break-words" : "truncate")} data-list-name>{currentName}{!namesCount(currentName) && <> <span className="font-normal text-fg-muted">({currentCount})</span></>}</span>
               <ChevronDown size={14} aria-hidden className="shrink-0 text-fg-muted" />
             </button>
             <button type="button" aria-label="New list" title="New list" className={iconBtn} onClick={() => startNaming("new")}><Plus size={16} aria-hidden /></button>
+            {sysShown && screenToggle}
             {list && <button type="button" aria-label="Rename list" title="Rename this list" className={iconBtn} onClick={() => startNaming("rename")}><Pencil size={16} aria-hidden /></button>}
             {list && <button type="button" aria-label="Delete list" title="Delete this list" className={iconBtn} onClick={() => { setNaming(null); setBrowsing(false); setAsking(true); }}><Trash2 size={16} aria-hidden /></button>}
           </>
@@ -420,7 +453,8 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           <>
             <label className="sr-only" htmlFor="watchlist-pick">Watchlist</label>
             <select id="watchlist-pick" value={list?.id ?? ""} onChange={(e) => onListId(Number(e.target.value))}
-              className={cx("h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t14 font-semibold text-fg", !touch && "md:h-9", narrow && "basis-full", focus)}>
+              className={cx("h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t14 font-semibold text-fg", !touch && "md:h-9",
+                compact ? "basis-36" : narrow && "basis-full", focus)}>
               {state.lists.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.items.length})</option>)}
             </select>
             <button type="button" aria-label="New list" title="New list" className={iconBtn} onClick={() => startNaming("new")}><Plus size={16} aria-hidden /></button>
@@ -468,7 +502,46 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
       )}
 
       {/* M86 D2 / D3: the prices are the last end-of-day close - one line with its date and the one connect button. */}
-      {quotes.eodAsOf !== undefined && !quotes.failed && (
+      {headShown && (
+        <div data-watchlist-head className="space-y-space-1 border-b border-subtle px-space-2 pb-space-1">
+          {metaShown && (
+            <div data-watchlist-meta data-no-broker={eodShown ? "watchlist" : undefined} className="flex flex-wrap items-center gap-x-space-2 gap-y-space-1">
+              <p className="flex min-w-0 flex-[1_1_8rem] flex-wrap items-center gap-x-space-2 px-space-1 text-t12 text-fg-muted">
+                {sysShown && systemSummary && (
+                  <span className="inline-flex min-w-0 items-center gap-space-1" title={systemSummary.refreshed_at ? `Read-only list · updated ${formatDateIST(systemSummary.refreshed_at)}` : "Read-only list"}>
+                    <Lock size={12} aria-hidden className="shrink-0" />
+                    <span>Read-only{systemSummary.refreshed_at && <span className="sr-only"> list, updated {formatDateIST(systemSummary.refreshed_at)}</span>}</span>
+                  </span>
+                )}
+                {eodShown && <span>{lastCloseText(quotes.eodAsOf)}</span>}
+              </p>
+              {sysShown && (
+                <button type="button" onClick={() => void copyList()} disabled={copying} aria-label={copying ? "Copying to my list" : "Copy to my list"}
+                  title="Copy to my list: make your own copy you can change"
+                  className={cx("inline-flex shrink-0 items-center gap-space-1 rounded-control border border-border px-space-2 text-t13 font-semibold text-brand hover:bg-surface-2 disabled:opacity-50",
+                    touch ? "min-h-11" : "min-h-11 md:min-h-9", focus)}>
+                  <Copy size={14} aria-hidden />{copying ? "Copying…" : "Copy"}
+                </button>
+              )}
+              {eodShown && connectButton && <ConnectLiveButton compact />}
+            </div>
+          )}
+          {sysShown && systemSummary && (
+            <SystemRowTools name={systemSummary.name} query={rowQuery} onQuery={setRowQuery} sort={sort} onSort={setSort} field={field} compact />
+          )}
+          {ownShown && list && (
+            <>
+              <div className="flex items-center gap-space-1">
+                <SymbolPicker key={picker} value="" exchange="NSE" onPick={add} storageKey={storageKey} label={`Add a symbol to ${list.name}`} className="min-w-0 flex-1" />
+                {screenToggle}
+              </div>
+              {items.length >= MAX_ITEMS && <p className="text-t12 text-fg-muted">This list holds the most it can ({MAX_ITEMS}). Remove a symbol to add another.</p>}
+            </>
+          )}
+        </div>
+      )}
+
+      {!compact && quotes.eodAsOf !== undefined && !quotes.failed && (
         <NoBrokerLine testId="watchlist" button={connectButton} className="border-b border-subtle px-space-3 py-space-2">{lastCloseText(quotes.eodAsOf)}</NoBrokerLine>
       )}
       {/* M90 B5: the broker answered "too many requests" - the prices refresh more slowly, the last ones stay shown */}
@@ -476,7 +549,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
         <p role="status" className="border-b border-subtle px-space-3 py-space-2 text-t12 text-warn" data-testid="watchlist-slowed">Slowed by broker limit</p>
       )}
 
-      {screenShown && listKey && choices.screens && (
+      {screenBar && listKey && choices.screens && (!compact || screenOpen) && (
         <WatchScreenBar listKey={listKey} screens={choices.screens} choice={choice} onChoose={(c) => void choices.choose(listKey, c)} state={watch}
           items={screenRows} touch={touch} error={choices.error} />
       )}
@@ -496,18 +569,18 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
         <SystemListView summary={systemSummary} list={sys.list} rows={sysRows} total={systemList?.items.length ?? systemSummary.count} matching={matching.length}
           query={rowQuery} onQuery={setRowQuery} sort={sort} onSort={setSort} quotes={priced} quotesFailed={quotes.failed}
           current={(i) => i.symbol === symbol && i.exchange === exchange} onOpen={openRow} onCopy={() => void copyList()} copying={copying}
-          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow}
+          onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow} compact={compact}
           screen={screenOn ? { isMatch, only: choice.matches_only } : undefined} />
       )}
 
       {list && !state.off && !browsing && (
         <>
-          <div className="p-space-2">
+          {!compact && <div className="p-space-2">
             <SymbolPicker key={picker} value="" exchange="NSE" onPick={add} storageKey={storageKey} label={`Add a symbol to ${list.name}`} className="w-full" />
             {items.length >= MAX_ITEMS && <p className="mt-space-1 text-t12 text-fg-muted">This list holds the most it can ({MAX_ITEMS}). Remove a symbol to add another.</p>}
-          </div>
+          </div>}
           {items.length === 0 ? (
-            <p className="px-space-3 pb-space-4 text-t13 text-fg-muted">This list is empty. Search a symbol above to add it.</p>
+            <p className={cx("px-space-3 pb-space-4 text-t13 text-fg-muted", compact && "pt-space-2")}>This list is empty. Search a symbol above to add it.</p>
           ) : live.length === 0 ? null : ownRows.length === 0 ? (
             <p className="px-space-3 pb-space-4 text-t13 text-fg-muted" data-testid="watch-screen-none">{NONE_MATCH}</p>
           ) : (
@@ -578,17 +651,37 @@ export interface SystemListViewProps {
   textBtn: string;
   /** UX-3: the Terminal's narrow column (see WatchlistPanelProps.narrow). */
   narrow?: boolean;
+  /** Owner 14 Nov: the panel's compact header shows read-only, Copy, the search and the sort (none here). */
+  compact?: boolean;
   /** M91 W2: a screen is chosen - its matches are marked, the rest dimmed (the rows come ordered). */
   screen?: { isMatch: (item: WatchItem) => boolean; only: boolean };
+}
+
+/** WL1: a system list's search (symbol or company) and sort. Owner 14 Nov, `compact`: a short search beside the sort,
+ * wrapping to a second line only in a very narrow panel. */
+export function SystemRowTools({ name, query, onQuery, sort, onSort, field, compact = false }: {
+  name: string; query: string; onQuery: (q: string) => void; sort: RowSort; onSort: (s: RowSort) => void; field: string; compact?: boolean;
+}) {
+  return (
+    <div className={cx("flex items-center gap-space-1", compact ? "flex-wrap" : "p-space-2")}>
+      <label className="sr-only" htmlFor="watchlist-row-search">Search in {name}</label>
+      <input id="watchlist-row-search" type="search" value={query} onChange={(e) => onQuery(e.target.value)} placeholder={compact ? "Search" : "Search symbol or company"}
+        title={compact ? "Search symbol or company" : undefined} className={cx(field, compact ? "flex-[1_1_6rem]" : "flex-1", "placeholder:text-fg-muted")} />
+      <label className="sr-only" htmlFor="watchlist-row-sort">Sort the list</label>
+      <select id="watchlist-row-sort" value={sort} onChange={(e) => onSort(e.target.value as RowSort)} className={cx(field, compact ? "w-28" : "w-32", "shrink-0")}>
+        {ROW_SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+      </select>
+    </div>
+  );
 }
 
 /** WL1: one read-only system list - "read-only" and "Copy to my list" on top, a search and a sort, then the rows (no
  * handle, no remove: the list is the exchange's, rebuilt by the server). */
 export function SystemListView({ summary, list, rows, total, matching, query, onQuery, sort, onSort, quotes, quotesFailed, current, onOpen, onCopy,
-  copying, onRetry, touch, field, textBtn, narrow = false, screen }: SystemListViewProps) {
+  copying, onRetry, touch, field, textBtn, narrow = false, compact = false, screen }: SystemListViewProps) {
   return (
-    <div data-system-list={summary.key} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-space-2 border-b border-subtle px-space-3 py-space-2">
+    <div data-system-list={summary.key} className={cx("flex min-h-0 flex-1 flex-col", compact && "pt-space-1")}>
+      {!compact && <div className="flex flex-wrap items-center gap-space-2 border-b border-subtle px-space-3 py-space-2">
         <p className="inline-flex min-w-0 flex-1 basis-48 items-center gap-space-1 text-t12 text-fg-muted">
           <Lock size={12} aria-hidden className="shrink-0" />
           <span>Read-only list{summary.refreshed_at ? ` · updated ${formatDateIST(summary.refreshed_at)}` : ""}</span>
@@ -597,16 +690,8 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
           className={cx(textBtn, "inline-flex items-center gap-space-1 border border-border px-space-2 text-brand hover:bg-surface-2 disabled:opacity-50")}>
           <Copy size={14} aria-hidden />{copying ? "Copying…" : "Copy to my list"}
         </button>
-      </div>
-      <div className="flex items-center gap-space-1 p-space-2">
-        <label className="sr-only" htmlFor="watchlist-row-search">Search in {summary.name}</label>
-        <input id="watchlist-row-search" type="search" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search symbol or company"
-          className={cx(field, "flex-1 placeholder:text-fg-muted")} />
-        <label className="sr-only" htmlFor="watchlist-row-sort">Sort the list</label>
-        <select id="watchlist-row-sort" value={sort} onChange={(e) => onSort(e.target.value as RowSort)} className={cx(field, "w-32 shrink-0")}>
-          {ROW_SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
-      </div>
+      </div>}
+      {!compact && <SystemRowTools name={summary.name} query={query} onQuery={onQuery} sort={sort} onSort={onSort} field={field} />}
       {list === undefined && <SkeletonRows label="Loading the list…" />}
       {list === "failed" && (
         <div role="status" className="space-y-space-1 px-space-3 py-space-4 text-t13">

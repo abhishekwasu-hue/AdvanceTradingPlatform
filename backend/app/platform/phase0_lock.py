@@ -53,7 +53,7 @@ def remember(on: bool, tenants) -> None:
     _state["tenants"] = frozenset(int(t) for t in tenants or ())
 
 
-def remember_owner(tenant_id: Optional[int]) -> None:
+def remember_owner(tenant_id: int | None) -> None:
     """B1: the owner's organisation from the last read (None = not resolved: every organisation locked)."""
     _state["owner_tenant"] = int(tenant_id) if tenant_id is not None else None
 
@@ -63,7 +63,7 @@ def reset_cache() -> None:
     remember_owner(None)
 
 
-async def owner_tenant_id(session: AsyncSession) -> Optional[int]:
+async def owner_tenant_id(session: AsyncSession) -> int | None:
     """B1: the organisation of the owner account (`live_owner.owner_user_id`), only while that account is the owner as
     `live_owner.is_owner` defines it (active platform administrator). None otherwise."""
     from app.db.models import User
@@ -83,7 +83,7 @@ async def is_on(session: AsyncSession, tenant_id: Optional[int]) -> bool:
     return locked(tenant_id)
 
 
-def is_owner_org(tenant_id: Optional[int]) -> bool:
+def is_owner_org(tenant_id: int | None) -> bool:
     """B1: True when `tenant_id` is the owner's organisation, from the last read (`is_on`). None / unresolved = False."""
     owner = _state["owner_tenant"]
     return tenant_id is not None and owner is not None and int(tenant_id) == owner
@@ -108,7 +108,7 @@ def locked(tenant_id: Optional[int]) -> bool:
     return int(tenant_id) in tenants
 
 
-def reason(tenant_id: Optional[int]) -> str:
+def reason(tenant_id: int | None) -> str:
     """The plain sentence for a refused LIVE entry, from the last read: the switch is off (`ENTRY_REASON`), else the
     organisation is not the owner's (`NOT_OWNER_REASON`)."""
     return ENTRY_REASON if _state["on"] else NOT_OWNER_REASON

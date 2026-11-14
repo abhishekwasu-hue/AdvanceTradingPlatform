@@ -482,7 +482,10 @@ ATP -> runner state (`app/runner_link/service.py` `runner_state`, `app/runner/li
 2. Run the one-line installer from `docs/RUNNER_INSTALL.md` (S6: pulls the signed image, checks its signature, starts it
    with `restart: always`); `install.sh status` shows the runner and the VPS public IP.
 3. ATP -> My runner (flag `user_runner` ON for his organisation, `ui_v2`): "Pair a runner" -> one-time code; on the VPS
-   `python -m app.runner pair <code> --atp https://aialgodesk.tech --name "Pilot VPS"`; My runner shows it ONLINE.
+   `docker exec -it atp-runner python -m app.runner pair <code> --atp https://aialgodesk.tech --name "Pilot VPS"`
+   (every runner command below runs the same way, inside the `atp-runner` container); My runner shows it ONLINE.
+   Note: S6's installer predates S4 / S5 in its own text ("Not in this version yet"); with this stack the pair and keys
+   commands exist - the installer's prompts for them follow in the next image release.
 4. `python -m app.runner keys init` then `keys add angel_one` (client code, PIN, TOTP secret, API key - asked without
    echo, never sent to ATP); `keys login angel_one` once to check.
 5. Angel One SmartAPI: register the VPS public IP (from step 2) as the app's static IP.

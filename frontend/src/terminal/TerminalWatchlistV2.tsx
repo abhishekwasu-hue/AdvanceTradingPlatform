@@ -18,6 +18,8 @@ import { isOptionable } from "../ui/symbolUniverse";
  * A row is linked to the Terminal: a symbol with options (an index or an F&O stock) becomes the ONE active symbol, so the
  * chart, the chain, the basket and the order panel follow it (the context bar's own change); any other symbol (a share
  * without options, a contract) opens on Charts in place, as on the Watchlist page.
+ *
+ * Owner 14 Nov: the panel's header is `compact` here (desktop grid and phone tab), so the list starts near the top.
  */
 export type WatchlistTarget = { kind: "underlying"; underlying: string } | { kind: "chart"; path: string };
 
@@ -63,7 +65,7 @@ export function TerminalWatchlistV2({ underlying, spotSymbol, onUnderlying, touc
     <div data-panel-body="watchlist" className="flex h-full min-h-0 flex-col">
       <WatchlistPanel symbol={mark.symbol} exchange={mark.exchange} onOpen={open} listId={view.watchlist_id} onListId={(id) => keep({ watchlist_id: id })}
         systemKey={view.watchlist_system} onSystemKey={(key) => keep({ watchlist_system: key })}
-        storageKey={recentKeyFor(userId)} touch={touch} narrow={!touch} className="flex-1" liveTicks={liveTicks} />
+        storageKey={recentKeyFor(userId)} touch={touch} narrow={!touch} compact className="flex-1" liveTicks={liveTicks} />
     </div>
   );
 }

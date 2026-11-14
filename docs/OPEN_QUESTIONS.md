@@ -608,3 +608,10 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 |---|---|---|---|---|
 | CTB-Q1 | Which charts get Buy / Sell. | Only an F&O contract (NFO / BFO): the ONE order ticket takes an F&O contract. An index chart (not tradable) and a stock chart (the equity ticket is the plan-before-trade form, a different path) show none. The Terminal's chart panels chart NSE symbols today, so none shows there yet (wired: a contract there would fill the order panel). | `chart/chartTrade.ts` `tradableOnChart` | open (default stated) |
 | CTB-Q2 | What Exit on a chart does. | The position's existing "Exit now" (its confirm, PAPER, never disabled, ADR-0004) - the same as My trades and the chain's held-strike Exit; the ticket has no single-position exit. A LIVE position: "Close a live position in your broker's app." as on My trades. | `chart/ChartTradeBar.tsx` | open (default stated) |
+## BIZ-1: Route 3 audit (owner order 14 Nov, docs/design/ROUTE3_AUDIT.md; PR `claude/route3-audit`)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| BIZ1-Q1 | LIVE-1 (11 Nov): `live_trading` ON = every user may go LIVE through ATP's server; Route 3 (14 Nov): no other user's LIVE through the server. | Route 3 narrows LIVE-1: with the switch ON, server LIVE only for the owner identity; every other user PAPER + "Trade in your broker app". Order-path change - not built before the owner's ✅. | ROUTE3_AUDIT §2, step B1 | open |
+| BIZ1-Q2 | "Free or Basic plan". | One free plan shown as "Basic"; the stored id `free` stays (no data change). | ROUTE3_AUDIT §3, step B6 | open |
+| BIZ1-Q3 | Brokers with no verified pre-filled order link (all but Zerodha today). | The button opens the broker's own site / app with the order facts shown in ATP to copy; a URL is never guessed. | ROUTE3_AUDIT §1c, steps B2-B4 | open |

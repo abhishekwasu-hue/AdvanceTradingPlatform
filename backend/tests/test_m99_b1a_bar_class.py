@@ -198,8 +198,8 @@ def test_the_flag_is_registered_off_with_catalog_state_and_pack_entries():
     assert M99_FLAG == "m99_primitives" == m99_gate.FLAG
     assert M99_FLAG in controls.FEATURE_FLAGS and M99_FLAG in controls.DEFAULT_OFF_FLAGS
     assert "places no orders" in controls.FEATURE_FLAGS[M99_FLAG]
-    assert flag_catalog.FLAG_INFO[M99_FLAG].status == "unfinished" and flag_catalog.FLAG_GROUP[M99_FLAG] == "screen_library"
-    assert "M99" in flag_catalog.FINISH[M99_FLAG] and "M99" in str(flag_state.FLAG_STATUS[M99_FLAG])
+    assert flag_catalog.FLAG_INFO[M99_FLAG].status == "ready" and flag_catalog.FLAG_GROUP[M99_FLAG] == "screen_library"
+    assert M99_FLAG not in flag_catalog.FINISH and flag_state.FLAG_STATUS[M99_FLAG].state == "ready"   # M99 B1 merged (#1013-#1016)
     assert M99_FLAG in trader_pack.EXCLUDED_REASONS
     # every M99 B1 function sits behind the one m99_primitives flag (B1-a bar classes, B1-b Fibonacci / clusters, B1-c structure)
     assert set(M99_FUNCTIONS) == {"RelRange", "SpreadClass", "ClosePosition", "BarDirection", "VolumeClass", "StructureEventSeries", "RegimeTag",

@@ -601,3 +601,13 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | SPOT-1 | Days left: the chain's OI banner counts calendar days (Trade compute_dte, M96 "AS IS"); the context bar and the "Days to expiry" card count trading days (B3, DECISIONS 24 Oct). | The banner stays Trade's, unchanged (coordinator, M96 binding); ATP's own labels name their unit: "Expiry in 2 trading days", card "2 trading days". | `optionChain/model.ts` `tradingDaysText` | open (default stated) |
 | SPOT-2 | When a live tick stops counting, and when the spot says "as of". | A tick this tab has not heard for 30 s goes out (the LTP read returns); the bar's spot says "as of <time>" once older than 60 s or while the market is closed. | `terminal/spot.ts` `TICK_FRESH_MS`, `SPOT_AS_OF_AFTER_MS` | open (default stated) |
 | SPOT-3 | The chart's last-price tag vs the spot. | No separate "last candle" label: every timeframe's forming bar now takes the one spot whenever it is newer than the bar's start, so the tag is the spot; only a 1-minute candle newer than the spot shows its own close. | `chart/timeframes.ts` `foldLive` (unchanged) | open (default stated) |
+
+## FN6-R1: Route 1 user runner (14 Nov, docs/design/USER_RUNNER.md, PR `claude/design-user-runner`)
+
+| ID | Question | Default (provisional, until answered) | Status |
+|---|---|---|---|
+| RUN-Q1 | Lawyer: does Route 1 fit the tech-savvy client exception (NSE/INVG/67858 I(h), NSE/INVG/69255 §14) when ATP supplies the runner software and the strategy DSL? Does ATP need RA registration / exchange empanelment for its templates? | Route 1 for users; owner LIVE only on his words | open (lawyer) |
+| RUN-Q2 | Pilot machine for the runner | a separate small Linux VPS with its own static IP; PAPER only | open (owner) |
+| RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app) | open (owner) |
+| RUN-Q4 | Where a user's PAPER runs | on ATP's server as today; the runner's PAPER mode for the pilot and a pre-LIVE dry run | open (owner) |
+| RUN-Q5 | New entries while the runner cannot reach ATP | paused after a grace period (runner setting); exits, stops and square-offs always continue (ADR-0004; same principle as trading_worker.py:24-25) | open (default stated) |

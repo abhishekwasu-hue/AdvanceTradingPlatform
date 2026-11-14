@@ -1221,7 +1221,10 @@ test.describe("v2 terminal 390: the Watchlist tab (UX-3)", () => {
     await expect(bubble).toHaveAttribute("aria-label", /^Chat with the Copilot/);          // still named and in the tab order
     await expect(bubble).not.toHaveAttribute("tabindex", "-1");
     await expect.poll(resting).toBe(true);
-    // the list's bottom edge level with the bubble's bottom edge (the worst place), the list at its end
+    // the list's bottom edge level with the bubble's bottom edge (the worst place), the list at its end; room above and below
+    // the page so the window can always scroll there (owner 14 Nov: with the compact top the list ends above that place at
+    // the page's top, and the window cannot scroll up past it)
+    await page.evaluate(() => { document.body.style.paddingTop = "50vh"; document.body.style.paddingBottom = "50vh"; });
     const gap = await page.evaluate(() => document.querySelector("[data-phone-panel='watchlist'] ul[aria-label^='Symbols in']")!.getBoundingClientRect().bottom
       - document.querySelector("[data-chat-bubble]")!.getBoundingClientRect().bottom);
     await page.evaluate((dy) => window.scrollBy(0, dy), gap);
@@ -1484,6 +1487,52 @@ test.describe("v2 terminal 390: the Net Diff table on the Chain tab (owner 13 No
         await diff.scrollIntoViewIfNeeded();
         await diff.screenshot({ path: `${CHAIN_SHOTS}/oi-table-390-${theme}.png`, animations: "disabled" });
       }
+    });
+  }
+});
+
+// Owner 14 Nov ("space waste hot aahe, important panel khali dablet"): the Terminal's top is ONE compact strip - the symbol,
+// expiry, figures, the layout controls and PAPER - so the panels start as high as they can (before: 138 px below the page
+// top at 1440, 198 px at 390). TOPBAR_SHOTS=<dir>: the proof screenshots.
+test.describe("v2 terminal top: one compact strip (owner 14 Nov)", () => {
+  const TOP_SHOTS = process.env.TOPBAR_SHOTS;
+  const sizes = [
+    { width: 1440, height: 900, phone: false, most: 100 }, { width: 1024, height: 768, phone: false, most: 140 },
+    { width: 390, height: 844, phone: true, most: 175 }, { width: 360, height: 780, phone: true, most: 200 },
+  ] as const;
+  for (const s of sizes) {
+    test.describe(`${s.width}`, () => {
+      test.use({ viewport: { width: s.width, height: s.height }, ...(s.phone ? { isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : {}) });
+      test(`the panels start right under the strip (${s.width})`, async ({ page }) => {
+        await open(page, "dark");
+        const bar = page.locator("[data-block='terminal-context']");
+        const b = (await bar.boundingBox())!;
+        const top = (await page.locator(s.phone ? "[data-terminal-tabs]" : "[data-terminal-grid]").boundingBox())!.y;
+        const main = (await page.locator("[data-page='terminal-v2']").boundingBox())!.y;
+        console.log(`TOPBAR ${s.width}: bar ${Math.round(b.height)} px, panels at ${Math.round(top - main)} px below the page top`);
+        if (TOP_SHOTS) await page.screenshot({ path: `${TOP_SHOTS}/terminal-top-${s.width}-dark.png`, animations: "disabled" });
+        expect(top - main).toBeLessThanOrEqual(s.most);
+        // No stacked "Symbol" / "Expiry" labels: the pickers name themselves.
+        await expect(bar.locator("label[for]")).toHaveCount(0);
+        await expect(page.locator("[data-terminal='symbol']")).toHaveAttribute("aria-label", "Symbol");
+        await expect(bar.locator("[data-terminal='mode']")).toHaveText("PAPER");
+        if (!s.phone) {
+          // The layout controls live in the bar (no Layout row of their own), each icon named by its tooltip and aria-label.
+          await expect(bar.locator("[data-block='terminal-toolbar']")).toHaveCount(1);
+          await expect(bar.locator("[data-terminal='save']")).toHaveAttribute("aria-label", "Save as mine");
+          await expect(bar.locator("[data-terminal='panels'] summary")).toHaveAttribute("title", "Panels");
+          await expect(bar.locator("[data-terminal='count']")).toHaveText("0 of 10 saved");
+          if (s.width === 1440) {
+            // One row at 1440: the layout picker and PAPER sit level with the symbol picker.
+            const mid = async (sel: string) => { const r = (await page.locator(sel).boundingBox())!; return r.y + r.height / 2; };
+            const row = await mid("[data-terminal='symbol']");
+            for (const sel of ["[data-terminal='layout']", "[data-terminal='mode']"]) expect(Math.abs((await mid(sel)) - row)).toBeLessThan(4);
+          }
+        } else {
+          for (const sel of ["[data-terminal='symbol']", "[data-terminal='expiry']"]) expect((await page.locator(sel).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        }
+        await noSidewaysScroll(page);
+      });
     });
   }
 });

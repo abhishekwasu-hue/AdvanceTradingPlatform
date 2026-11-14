@@ -1,5 +1,5 @@
-import { CalendarDays, ShieldCheck } from "lucide-react";
-import { useId, useMemo, type ReactNode } from "react";
+import { ShieldCheck } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
 import { usePolled, dataOf } from "../dashboard/useDashboardData";
 import { vixBand } from "../dashboard/model";
 import { api } from "../api/client";
@@ -61,7 +61,7 @@ export function useStripFigures(symbol: string, enabled: boolean): { prevClose: 
   }, [data, symbol]);
 }
 
-export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mode, compact = false }: {
+export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mode, compact = false, tools }: {
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
@@ -72,33 +72,39 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
   mode: { label: string; title: string };
   /** Phone and tablet: the figures wrap under the pickers. */
   compact?: boolean;
+  /** The layout controls, on the same row before the PAPER badge (from 1024 px; owner 14 Nov). */
+  tools?: ReactNode;
 }) {
-  const symbolId = useId();
-  const expiryId = useId();
   const f = contextFigures(chain, spot, prevClose, vix);
   const extra = useMemo(() => (new Set<string>([...INDEX_SYMBOLS, ...STOCK_SYMBOLS]).has(symbol) ? null : symbol), [symbol]);
   const expiries = chain.expiries?.expiries.length ? chain.expiries.expiries : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
+  const expiryOptions = expiryComboOptions(expiries);
   const paper = mode.label.toUpperCase() === "PAPER";
+  // Owner 14 Nov ("space waste hot aahe, important panel khali dablet"): one compact strip - no stacked "Symbol" / "Expiry"
+  // labels (each picker names itself to a screen reader and in its tooltip), little vertical padding, and the layout
+  // controls (`tools`) on the same row, so the panels start as high as they can.
   return (
     <section aria-label="Symbol and expiry" data-block="terminal-context" data-symbol={symbol} data-expiry={chain.expiry ?? ""}
-      className="relative flex flex-wrap items-end gap-x-space-4 gap-y-space-2 rounded-panel border border-border border-l-4 bg-surface-1 px-space-3 py-space-2"
+      className={cx("relative flex flex-wrap items-center gap-x-space-2 gap-y-space-2 rounded-panel border border-border border-l-4 bg-surface-1 px-space-3",
+        compact ? "pb-space-2 pt-space-3" : "py-space-1")}
       style={{ borderLeftColor: LINK_COLOUR }}>
-      <div className={cx("grid min-w-0 grid-cols-2 gap-space-2", compact ? "w-full" : "w-[24rem] max-w-full")}>
-        <div className="min-w-0">
-          <label htmlFor={symbolId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Symbol</label>
-          <Combobox id={symbolId} label="Symbol" value={symbol} onChange={onSymbol} searchable className="w-full"
+      <div className={compact ? "grid w-full min-w-0 grid-cols-2 gap-space-2" : "flex min-w-0 items-center gap-space-2"}>
+        <div className="min-w-0" title="Symbol">
+          <Combobox label="Symbol" value={symbol} onChange={onSymbol} searchable className={compact ? "w-full" : undefined}
             options={symbolOptions(extra)} dataAttrs={{ "data-terminal": "symbol" }} />
         </div>
-        <div className="min-w-0">
-          <label htmlFor={expiryId} className="mb-space-1 flex items-center gap-space-1 text-t12 font-medium text-fg-muted">
-            <CalendarDays size={12} aria-hidden />Expiry
-          </label>
-          <Combobox id={expiryId} label="Expiry" value={chain.expiry ?? ""} disabled={expiries.length === 0} className="w-full"
-            placeholder={chain.loading ? "Loading…" : "Nearest"} onChange={chain.setExpiry} options={expiryComboOptions(expiries)}
+        <div className="min-w-0" title="Expiry">
+          <Combobox label="Expiry" value={chain.expiry ?? ""} disabled={expiries.length === 0} className={compact ? "w-full" : undefined}
+            placeholder={chain.loading ? "Loading…" : "Nearest expiry"} onChange={chain.setExpiry} options={expiryOptions}
             dataAttrs={{ "data-terminal": "expiry" }} />
         </div>
       </div>
-      <dl className="flex min-w-0 flex-wrap items-end gap-x-space-3 gap-y-space-1 text-t12" data-context-figures>
+      {/* Owner 14 Nov: each figure on one line (its name small and muted before it), wrapping to a second line beside the
+          pickers instead of a label stacked over every value - the strip keeps the pickers' height. */}
+      {/* With the layout controls: one row from 1400 px; narrower, the pickers, the controls and PAPER keep the first row and
+          the figures take the full second row (never squeezed under the controls). */}
+      <dl className={cx("flex min-w-0 flex-1 flex-wrap items-center gap-x-space-3 gap-y-px text-t12",
+        tools ? "order-last basis-full min-[1400px]:order-none min-[1400px]:basis-[28rem]" : "basis-[28rem]")} data-context-figures>
         <Figure name="spot" label="Spot">
           <span className="text-t16 font-semibold text-fg">{formatPrice(f.spot)}</span>
           {f.moved && <span className="ml-space-1"><Signed value={f.moved.pct} kind="pct" /></span>}
@@ -111,12 +117,15 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
         <Figure name="atm" label="ATM" term="atm">{formatStrike(f.atm)}</Figure>
         <Figure name="dte" label="Expiry in"><DaysLeft text={tradingDaysText(f.dte)} /></Figure>
       </dl>
+      {tools && <div className="ml-auto flex min-w-0 items-center" data-context-tools>{tools}</div>}
       <span title={mode.title} data-terminal="mode" data-mode={paper ? "paper" : "live"}
-        className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-3 text-t12 font-bold tracking-wide",
-          // On a phone the badge sits top-right (beside the Expiry label), so it never takes a row of its own.
-          compact ? "absolute right-space-3 top-space-2 min-h-6" : "ml-auto min-h-9 self-center",
-          paper ? "border-warn/40 bg-warn-tint text-warn" : "border-down/40 text-down")}>
-        <ShieldCheck size={14} aria-hidden />{paper ? "PAPER" : "LIVE"}
+        className={cx("inline-flex items-center gap-space-1 rounded-full border px-space-2 text-t12 font-bold tracking-wide",
+          // On a phone the badge sits on the bar's top edge (right), so it never takes a row of its own; the solid surface
+          // under the tint keeps the edge line from showing through.
+          compact ? "absolute -top-space-3 right-space-3 min-h-6 bg-surface-1" : cx("relative min-h-9", !tools && "ml-auto"),
+          paper ? "border-warn/40 text-warn" : "border-down/40 text-down")}>
+        <span aria-hidden className={cx("pointer-events-none absolute inset-0 rounded-full", paper && "bg-warn-tint")} />
+        {compact && <ShieldCheck size={14} aria-hidden className="relative" />}<span className="relative">{paper ? "PAPER" : "LIVE"}</span>
       </span>
     </section>
   );
@@ -132,7 +141,7 @@ function DaysLeft({ text }: { text: string }) {
 
 function Figure({ name, label, children, term }: { name: string; label: string; children: ReactNode; term?: GlossaryKey }) {
   return (
-    <div className="min-w-0" data-figure={name}>
+    <div className="flex min-w-0 items-center gap-space-1 whitespace-nowrap" data-figure={name}>
       <dt className="flex items-center gap-space-1 text-fg-muted">{label}{term && <TermHint term={term} floating />}</dt>
       <dd className="font-tabular text-t14 font-semibold text-fg">{children}</dd>
     </div>

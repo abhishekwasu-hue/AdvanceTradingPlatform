@@ -35,7 +35,7 @@
     },
     {
       "id": "IN-SEBI.algo_id.required_for_live",
-      "title": "No LIVE order without an algo id",
+      "title": "No LIVE entry above the OPS threshold without the registered algo id; below it none is needed (the broker sends its generic id; owner 14 Nov)",
       "source": "SEBI retail-algo circular",
       "status": "enforced",
       "params": {},
@@ -45,7 +45,7 @@
         "app/execution/signal_execution.py"
       ],
       "tests": [
-        "tests/test_algo_tagging.py::test_live_refused_without_algo_id_when_required"
+        "tests/test_algo_tagging.py::test_live_refused_without_algo_id_only_above_the_ops_threshold"
       ],
       "flag": "ALGO_ID_REQUIRED_FOR_LIVE"
     },
@@ -64,7 +64,8 @@
       ],
       "tests": [
         "tests/test_d1_algo_id.py::test_registered_id_wins_generic_only_under_an_enforced_threshold",
-        "tests/test_d1_algo_id.py::test_live_refused_without_a_usable_id_and_generic_id_goes_through"
+        "tests/test_d1_algo_id.py::test_live_refused_without_a_usable_id_and_generic_id_goes_through",
+        "tests/test_d1_algo_id.py::test_below_the_threshold_no_organisation_algo_id_is_needed"
       ],
       "flag": "ALGO_ID_REQUIRED_FOR_LIVE"
     },

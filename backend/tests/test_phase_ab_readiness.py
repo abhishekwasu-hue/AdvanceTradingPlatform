@@ -22,12 +22,13 @@ def test_fresh_tenant_sees_blockers_then_clears_them():
     assert items["worker"]["status"] in ("todo", "warn", "ok")            # depends on other tests' heartbeats; never missing
     assert items["kill_switch"]["status"] == "ok" and items["broker_uncertain"]["status"] == "ok"
     # PAPER treats account hygiene as optional; LIVE requires it.
-    assert items["mfa"]["status"] == "info" and items["mfa"]["scope"] == "LIVE" and items["algo_id"]["status"] == "info"
+    assert items["mfa"]["status"] == "info" and items["mfa"]["scope"] == "LIVE"
+    assert "algo_id" not in items                     # owner 14 Nov: the user's own algo needs no algo id - never asked
     assert items["ai_provider"]["status"] == "info" and items["ai_provider"]["scope"] == "OPTIONAL"
     assert body["summary"]["todo"] >= 3 and "nothing here changes anything" in body["note"]
 
     live = _by_key(client.get("/api/readiness?target=live", headers=headers).json())
-    assert live["mfa"]["status"] == "todo" and live["email_verified"]["status"] == "todo" and live["algo_id"]["status"] == "todo"
+    assert live["mfa"]["status"] == "todo" and live["email_verified"]["status"] == "todo" and "algo_id" not in live
     assert live["alerts"]["status"] == "todo"                                               # warn on PAPER, a blocker on LIVE
     assert live["risk"]["status"] == "warn"           # DEF-0: no risk settings is a warning, never a blocker (his own choice)
     assert client.get("/api/readiness?target=nonsense", headers=headers).status_code == 422
@@ -48,6 +49,17 @@ def test_fresh_tenant_sees_blockers_then_clears_them():
     items = _by_key(client.get("/api/readiness", headers=headers).json())
     assert items["deployment"]["status"] == "ok" and "PAPER 1" in items["deployment"]["detail"]
     assert items["alerts"]["status"] == "ok" and "webhook" in items["alerts"]["detail"].lower()
+
+
+def test_algo_id_is_never_a_blocker_and_a_set_id_shows_only_as_optional():
+    """Owner 14 Nov: the user builds his own algo, so the checklist never asks for an algo id (LIVE or PAPER); an id the
+    organisation did set appears as one optional line."""
+    headers, _me = _owner("ab-algo@example.com")
+    for target in ("paper", "live"):
+        assert "algo_id" not in _by_key(client.get(f"/api/readiness?target={target}", headers=headers).json())
+    assert client.patch("/api/team/tenant", headers=headers, json={"algo_id": "NSE9001"}).status_code == 200
+    item = _by_key(client.get("/api/readiness?target=live", headers=headers).json())["algo_id"]
+    assert item["status"] == "info" and item["scope"] == "OPTIONAL" and item["detail"] == "NSE9001"
 
 
 def test_platform_checklist_is_super_admin_only_and_reads_config(monkeypatch):

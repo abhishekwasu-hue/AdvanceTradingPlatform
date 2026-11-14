@@ -611,6 +611,12 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 | RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app) | open (owner) |
 | RUN-Q4 | Where a user's PAPER runs | on ATP's server as today; the runner's PAPER mode for the pilot and a pre-LIVE dry run | open (owner) |
 | RUN-Q5 | New entries while the runner cannot reach ATP | paused after a grace period (runner setting); exits, stops and square-offs always continue (ADR-0004; same principle as trading_worker.py:24-25) | open (default stated) |
+## CTB-1 chart trading (owner 14 Nov, `claude/chart-buy-sell`)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| CTB-Q1 | Which charts get Buy / Sell. | Only an F&O contract (NFO / BFO): the ONE order ticket takes an F&O contract. An index chart (not tradable) and a stock chart (the equity ticket is the plan-before-trade form, a different path) show none. The Terminal's chart panels chart NSE symbols today, so none shows there yet (wired: a contract there would fill the order panel). | `chart/chartTrade.ts` `tradableOnChart` | open (default stated) |
+| CTB-Q2 | What Exit on a chart does. | The position's existing "Exit now" (its confirm, PAPER, never disabled, ADR-0004) - the same as My trades and the chain's held-strike Exit; the ticket has no single-position exit. A LIVE position: "Close a live position in your broker's app." as on My trades. | `chart/ChartTradeBar.tsx` | open (default stated) |
 ## BIZ-1: Route 3 audit (owner order 14 Nov, docs/design/ROUTE3_AUDIT.md; PR `claude/route3-audit`)
 
 | # | Question | Provisional default | Where | Status |

@@ -230,7 +230,49 @@ async def heartbeat(session: AsyncSession, device: RunnerDeviceRecord, beat: Hea
     commands = await _commands_for(session, device, beat.acked_commands, now)
     etag = (await rules_snapshot(session, device))["etag"]
     return {"ok": True, "device_status": ONLINE, "server_time": now.isoformat(), "mirror_upload": bool(prefs["mirror_upload"]),
-            "commands": commands, "rules_etag": etag}
+            "commands": commands, "rules_etag": etag, "state": await runner_state(session, device, now)}
+
+
+# --- S4c: ATP's state for his runner (signed) ---------------------------------------------------------------------------
+
+# The feature flags the runner's own pipeline reads (the runner loop's imported code, checked by a test that records every
+# flag the loop asks for): ATP sends his organisation's answer for each, the runner writes them into its local store so
+# the same code reads the same answer as on ATP's server. Nothing else of ATP's controls is sent (no admin kill switch,
+# no maintenance block - rule R-1).
+RUNNER_FLAGS: tuple[str, ...] = (
+    "smart_execution",          # multi-leg: hedge legs first on the smart-execution engine (execution/smart_execution.py)
+    "approval_only_entries",    # the approval-only gate (execution/approval.py)
+    "risk_by_default",          # the risk defaults the pipeline applies (risk_engine/by_default.py)
+    "risk_options",             # his own extra risk options (risk_engine/risk_options.py)
+    "vix_gate",                 # his own VIX setting (risk_engine/vix_gate.py)
+    "paper_account",            # the PAPER account's balance and charges (paper/service.py)
+    "experience_levels",        # the experience ladder's limits (paper/experience.py)
+    "discipline_engine",        # his discipline rules (journal, paper/service.py)
+)
+
+
+async def runner_state(session: AsyncSession, device: RunnerDeviceRecord, now: datetime) -> dict[str, Any]:
+    """S4c: ATP's state for this device's user, signed with ATP's command key under its own scheme
+    (`signing.state_message`): `live_open` for HIS organisation by the one rule every ATP path uses
+    (`live_switch.live_allowed`: the live switch, and with B1 the owner's organisation only), its plain reason when
+    closed, his organisation's answer for each of `RUNNER_FLAGS`, the server's F&O ban check setting and his plan's
+    `runner` field (None while plans carry none). The runner applies it each tick while it is fresh; it decides no trade."""
+    from app.core import config
+    from app.db.models import Tenant
+    from app.plans.registry import get_plan
+    from app.platform import live_switch
+    from app.platform.controls import features_for_tenant
+    open_ = bool(await live_switch.live_allowed(session, device.tenant_id))
+    reason = None if open_ else await live_switch.live_refusal(session, device.tenant_id)
+    answers = await features_for_tenant(session, device.tenant_id)
+    tenant = await session.get(Tenant, device.tenant_id)
+    plan_runner = getattr(get_plan(tenant.plan), "runner", None) if tenant is not None else None
+    payload = {"v": 1, "kind": "state", "device_id": device.device_uid, "user_ref": device.user_id,
+               "tenant_ref": device.tenant_id, "issued_at": now.isoformat(), "live_open": open_, "live_reason": reason,
+               "flags": {name: bool(answers.get(name, True)) for name in RUNNER_FLAGS},
+               "fo_ban_check": bool(config.FO_BAN_CHECK_ENABLED),
+               "plan_runner": None if plan_runner is None else bool(plan_runner)}
+    return {"payload": payload, "signature": signing.sign(_command_key(), signing.state_message(payload))}
 
 
 # --- S4: the user's own commands for his own runner (rule R-1) ---------------------------------------------------------

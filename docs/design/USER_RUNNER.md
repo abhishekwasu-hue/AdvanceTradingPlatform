@@ -399,3 +399,38 @@ Open points (not decided here):
 - Server finding: the worker sends an Upstox-spelled contract name to a non-Upstox adapter (`contract_ltp` / the leg
   orders use `tradingsymbol`); Angel One's adapter does not know that name. The runner binds it (above); the server path
   is unchanged.
+
+## S4c results (branch `claude/runner-s4c-state`, stacked on S4b)
+
+ATP -> runner state (`app/runner_link/service.py` `runner_state`, `app/runner/link.py`; tests
+`backend/tests/test_runner_s4c_state.py`):
+- The heartbeat answer carries `state`, signed with ATP's command key under its own scheme (`signing.state_message`, so a
+  state is never read as a command): `live_open` for HIS organisation by the one rule every ATP path uses
+  (`live_switch.live_allowed`) and its plain reason when closed (`live_switch.live_refusal`), his organisation's answer for
+  each flag in `RUNNER_FLAGS`, the server's `FO_BAN_CHECK_ENABLED`, his plan's `runner` field (None: no plan has one today;
+  False would pause new entries, exits continue), device / user / organisation and `issued_at` (strictly newer per runner).
+- B1 (PR #1077, `claude/live-owner-only`) is NOT merged into this stack: `live_allowed` is today's LIVE-1 rule (the one
+  switch). Once B1 merges, the same call returns B1's answer (owner's organisation only) with no change here. Merge note:
+  B1 and S4c both edit `platform/phase0_lock.py` (`is_on` / `locked`); keep S4c's runner-mode lines first in both.
+- Runner: verifies the state (ATP's key pinned at pairing, this device, this user, newer); keeps it in memory with its
+  receive time (a restart starts with LIVE closed until ATP answers); writes the flags into the local store's flag row (the
+  row `controls.feature_flags` reads), so the pipeline reads ATP's answers; sets `config.FO_BAN_CHECK_ENABLED` from ATP.
+- LIVE on the runner (replaces `LIVE_NO_ATP_STATE`): a LIVE entry needs ATP's `live_open` for his organisation received
+  within his grace setting (`link_grace_minutes`, default 3) AND his local `LIVE` file AND the deployment's own LIVE choice
+  AND his real broker session; otherwise the deployment says why ("LIVE needs ATP's answer ...", "LIVE is not open for your
+  organisation in ATP: <ATP's reason> ...", or S2's own reasons). In runner mode the PAPER-only lock
+  (`phase0_lock.is_on` / `locked`, read by `entry_blocks`, `live_allowed_for` and the broker chokepoint) follows the same
+  fresh state (`runtime_mode.live_open`), never the local store; the server's behaviour is unchanged. Exits never read it.
+- Flags sent (`RUNNER_FLAGS`) - every flag the runner loop's code asks for, recorded by `tests/runner_flag_spy.py` while
+  the S4b loop job runs (the test fails on a new unlisted one): `smart_execution`, `approval_only_entries`,
+  `risk_by_default`, `risk_options`, `vix_gate`, `paper_account`, `experience_levels`, `discipline_engine`. Not sent:
+  `phase0_paper_only` (follows `live_open`), `alerts_reliable_outbox` (ATP's alert delivery). F&O ban check: a server
+  setting (env), sent as `fo_ban_check`. No admin kill switch or maintenance block is sent (R-1).
+- Trigger engine (checked): resting / armed exits, combined exits (CX / SX) and trigger plans are created only by his
+  manual actions on ATP's own positions (order ticket, basket, position actions, trigger plans' fired entries -
+  `resting_book.arm_exit`, `group_exits.create`, `strategy_exits.arm`); no deployment entry arms one. A runner position
+  lives in the runner's store, so ATP cannot arm one on it: nothing for the runner's exit pass today.
+- "Complete the rest" as a runner command: not simple - it needs the incomplete group's state in the mirror, a signed
+  command kind with the group id and a button on My runner; listed for a later step. Until then a runner's incomplete
+  group follows his own "if I do not answer" rule (unchanged).
+- Migration: no.

@@ -161,6 +161,13 @@ RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
     "app.runner.derivatives",
 )))
 
+# Runner S4c: ATP's signed state - the link sets the server's F&O ban check setting (already in the closure through
+# `compliance/fo_limits`) and writes his organisation's flags into the local store's flag row (`platform.controls`).
+RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
+    "app.core.config",
+    "app.platform.controls",
+)))
+
 
 def is_forbidden(module: str, prefixes: tuple[str, ...] = FORBIDDEN_PREFIXES) -> bool:
     """True when `module` is one of `prefixes` or inside one of them."""

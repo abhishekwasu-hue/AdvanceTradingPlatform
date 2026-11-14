@@ -8,6 +8,11 @@ Two seams read it (S1 carry-overs):
 - the F&O ban list (`compliance/fo_limits.py`): the server reads its data lake; the runner reads the list ATP sends it
   (the link, step S4). Until a list has arrived it is UNKNOWN (None): a PAPER entry goes ahead with a note, a LIVE F&O
   entry is refused with a plain reason. Exits never read it (ADR-0004).
+
+S4c: ATP's LIVE state for his organisation. In runner mode the PAPER-only lock (`platform/phase0_lock.py`) does not read
+the local store's flags (they hold no switch of ATP's): it reads the organisations ATP's signed answer said are open for
+LIVE (`live_switch.live_allowed` on ATP's side, the B1 rule), as the runner's link last set them while that answer is
+fresh. Nothing received, or a stale answer = an empty set = locked (refusing an entry is always safe; exits never read it).
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ from collections.abc import Iterable
 
 _runner: bool = os.environ.get("ATP_RUNNER_MODE", "").strip() == "1"
 _ban_list: frozenset[str] | None = None
+_live_open: frozenset[int] = frozenset()
 
 
 def is_runner() -> bool:
@@ -41,4 +47,15 @@ def ban_list() -> frozenset[str] | None:
     return _ban_list
 
 
-__all__ = ["is_runner", "enable_runner_mode", "set_ban_list", "ban_list"]
+def set_live_open(tenant_ids: Iterable[int] | None) -> None:
+    """S4c: the organisations ATP's fresh signed answer says are open for LIVE (empty / None = none: locked)."""
+    global _live_open
+    _live_open = frozenset(int(t) for t in tenant_ids or ())
+
+
+def live_open() -> frozenset[int]:
+    """S4c: the organisations open for LIVE as the runner's link last set them (empty = none)."""
+    return _live_open
+
+
+__all__ = ["is_runner", "enable_runner_mode", "set_ban_list", "ban_list", "set_live_open", "live_open"]

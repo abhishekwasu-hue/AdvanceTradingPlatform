@@ -16,6 +16,15 @@ describe("Upstox login for orders", () => {
     expect(html).toContain("Remove");
   });
 
+  it("owner 14 Nov: a logged-in Upstox row says 'Logged in', otherwise 'Upstox login'", () => {
+    const on = renderToStaticMarkup(<ConnectionRow c={row({ data_only: false })} onOrderLogin={() => undefined} />);
+    expect(on).toContain("Logged in ✓");
+    expect(on).not.toContain(">Upstox login<");
+    const off = renderToStaticMarkup(<ConnectionRow c={row({ data_only: false, status: "needs_login" })} onOrderLogin={() => undefined} />);
+    expect(off).toContain("Upstox login");
+    expect(off).not.toContain("Logged in ✓");
+  });
+
   it("another broker's row has no Upstox login button", () => {
     const html = renderToStaticMarkup(<ConnectionRow c={row({ broker: "dhan", name: "Dhan", data_only: false })} onOrderLogin={() => undefined} />);
     expect(html).not.toContain("data-upstox-order-login-open");

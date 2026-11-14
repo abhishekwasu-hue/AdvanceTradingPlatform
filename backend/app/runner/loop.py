@@ -79,6 +79,7 @@ LIVE_NEEDS_BROKER = "LIVE needs your own broker session on this runner - it is r
 LIVE_NO_ATP_STATE = ("LIVE needs ATP's answer: this runner is not paired with ATP, so ATP's LIVE state for your organisation "
                      "is unknown - nothing was placed; exits continue")
 NOT_YET_TEMPLATES = "Strategy templates run on the runner in a later step - nothing was placed"
+NOT_YET_OI_GATES = "Your OI gates need ATP's option-chain data, which the runner does not have yet - nothing was placed"
 NO_USER = "No user for this deployment on the runner - nothing was placed"
 
 
@@ -314,6 +315,8 @@ class Runner:
         derivative = (dep.instrument_kind or "UNDERLYING") != "UNDERLYING"
         if normalize_strategy_id(dep.strategy_id).startswith(TEMPLATE_PREFIX):
             return await self._skip(session, dep, now, NOT_YET_TEMPLATES)
+        if getattr(dep, "oi_gates", None):
+            return await self._skip(session, dep, now, NOT_YET_OI_GATES)   # S8: fail-closed, as the worker's gate
 
         strategy = await resolve_strategy(dep.strategy_id, user, session)
         frames = await self.feed.frames(dep.symbol, dep.exchange, strategy.timeframes, now)
@@ -348,6 +351,8 @@ class Runner:
             TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id == dep.id).limit(1))
         if open_trade is not None:
             return await self._skip(session, dep, now, None)      # one position per deployment
+        if opposite := await order_defaults.opposite_position(session, dep, signal.direction):
+            return await self._skip(session, dep, now, opposite)  # S8: his organisation's "one direction per symbol", as the worker
         holding, holding_problem = await order_defaults.bot_holding(session, dep, user)   # the worker's rule (M68 PR-1)
         if holding is None:
             dep.last_signal_at = signal_ts                        # as the worker: nothing placed, the card says which setting
@@ -453,4 +458,5 @@ class Runner:
             self.lock.release()
 
 
-__all__ = ["Runner", "CycleSummary", "LIVE_SWITCH_OFF", "LIVE_NEEDS_BROKER", "LIVE_NO_ATP_STATE", "NOT_YET_TEMPLATES"]
+__all__ = ["Runner", "CycleSummary", "LIVE_SWITCH_OFF", "LIVE_NEEDS_BROKER", "LIVE_NO_ATP_STATE", "NOT_YET_TEMPLATES",
+           "NOT_YET_OI_GATES"]

@@ -76,10 +76,10 @@ class Runner:
             self.device_id = resp.json()["device_id"]
         return resp
 
-    def signed(self, path: str, payload, *, ts_ms: int | None = None, key: Ed25519PrivateKey | None = None):
+    def signed(self, path: str, payload, *, ts_ms: int | None = None, signer: Ed25519PrivateKey | None = None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         ts = ts_ms if ts_ms is not None else int(time.time() * 1000)
-        sig = (key or self.key).sign(signing.canonical("POST", path, ts, self.device_id, body))
+        sig = (signer or self.key).sign(signing.canonical("POST", path, ts, self.device_id, body))
         headers = {signing.HEADER_DEVICE: self.device_id, signing.HEADER_TIMESTAMP: str(ts),
                    signing.HEADER_SIGNATURE: base64.urlsafe_b64encode(sig).decode().rstrip("="), "Content-Type": "application/json"}
         return path, body, headers
@@ -211,7 +211,7 @@ def test_signed_heartbeat_is_stored_as_reported():
 def test_bad_signature_wrong_device_and_unknown_fields_are_refused():
     _, runner = _paired("rs3-badsig@example.com")
     stranger = Ed25519PrivateKey.generate()
-    resp = runner.send(HB, BEAT, key=stranger)
+    resp = runner.send(HB, BEAT, signer=stranger)
     assert resp.status_code == 401 and resp.json()["detail"]["code"] == "bad_signature"
     path, body, headers = runner.signed(HB, BEAT)
     tampered = client.post(path, content=body.replace(b'"open_positions": 2', b'"open_positions": 9'), headers=headers)

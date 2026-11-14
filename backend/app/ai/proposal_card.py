@@ -67,6 +67,17 @@ async def _broker_of(session: AsyncSession, tenant_id: int, trade: TradeRecord, 
     return await _tenant_broker(session, tenant_id)
 
 
+async def broker_app_info(session: AsyncSession, user: User) -> dict:
+    """Route 3 (BIZ-1 B2-B4): what the browser needs to show "Trade in your broker app" on the ticket, the basket,
+    Reverse, signal cards, scan matches and paper-bot signals - whether the flag is on, the organisation's broker (a name,
+    never a secret) and, for Zerodha only, the public Kite Publisher key. Reads only; ATP sends nothing to any broker."""
+    if not await flag_enabled(session, FLAG, user.tenant_id):
+        return {"on": False, "broker": None, "publisher_api_key": None}
+    broker = (await _tenant_broker(session, user.tenant_id) or "").lower() or None
+    key = (app_config.KITE_PUBLISHER_API_KEY or "").strip()
+    return {"on": True, "broker": broker, "publisher_api_key": (key or None) if broker == "zerodha" else None}
+
+
 def ticket_for(trade: TradeRecord, broker: Optional[str], publisher_api_key: str) -> Optional[dict]:
     """The facts of the closing order for an open position, or None when there is nothing tradable to pre-fill."""
     side, quantity = _side_to_close(trade.direction), _whole(trade.quantity)

@@ -9,6 +9,7 @@ LIVE - the user's own Market order to his own broker session, refused while the 
 - `GET  /api/paper/fno/contract`       the contract from the instrument master (trading symbol, lot and tick size); an
   option (`right` CE / PE with its strike) or, FNO-3, a future (`right` FUT, no strike).
 - `GET  /api/paper/fno/live-status`    M96-Q1: whether the ticket's LIVE choice can be placed now, and why not.
+- `GET  /api/paper/fno/broker-app`     Route 3: "Trade in your broker app" on / off, his organisation's broker, Kite's public key.
 - `GET  /api/paper/fno/held`           the caller's open PAPER option positions on one underlying and expiry.
 - `POST /api/paper/fno/order/preview`  the ticket checked: price, units, margin, max loss, risk checks in plain words.
 - `POST /api/paper/fno/order`          place it (at the live price; the pipeline checks again). TM-2: with
@@ -167,6 +168,15 @@ async def held(underlying: str = Query(pattern=SYMBOL), expiry: date = Query(), 
                session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
     await _enabled(session, user)
     return await fno_ticket.held(session, user, _name(underlying), expiry)
+
+
+@router.get("/broker-app")
+async def broker_app(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Route 3 (BIZ-1): whether "Trade in your broker app" is on (flag `broker_app_links`), the organisation's broker
+    name and, for Zerodha, the public Kite Publisher key. Reads only; nothing is sent to any broker."""
+    await _enabled(session, user)
+    from app.ai import proposal_card
+    return await proposal_card.broker_app_info(session, user)
 
 
 @router.get("/live-status")

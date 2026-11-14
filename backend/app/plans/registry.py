@@ -51,6 +51,9 @@ class Plan:
     min_schedule_interval_min: int = 60    # shortest interval a schedule may repeat at (AMW-15)
     lab_strategies: int = 3                # Strategy Lab strategies per user (AMW-19)
     lab_cpu_seconds_per_day: int = 300     # sandbox CPU seconds per user per day (AMW-21)
+    # Route 3 (BIZ-1 B6): Pro may pair the user's own runner (Route 1, design on claude/design-user-runner). Defined only:
+    # nothing reads it yet (no enforcement until the runner is built). False on every other plan (restricted by default).
+    runner: bool = False
 
 
 def _budget(name: str, default: float) -> float:
@@ -62,7 +65,8 @@ def _budget(name: str, default: float) -> float:
 
 PLANS: Dict[str, Plan] = {
     "free": Plan(
-        id="free", name="Free", max_active_deployments=2, live_trading=False, max_custom_strategies=3,
+        id="free", name="Basic",   # BIZ-1 B6 (BIZ1-Q2 default): shown as "Basic"; the id `free` is unchanged (no data change)
+        max_active_deployments=2, live_trading=False, max_custom_strategies=3,
         max_members=1, max_alert_channels=1,
         description="Paper trading only. Try strategies on live market data with one account.",
         max_backtests_per_month=50, max_accounts=1, max_brokers=1, support_level="community",
@@ -77,7 +81,7 @@ PLANS: Dict[str, Plan] = {
         max_api_calls_per_day=5000, max_accounts=3, max_brokers=2, option_features=True, ai_features=True,
         marketplace_access=True, support_level="email", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_PRO", 1500.0),
         max_watchlists=25, max_screen_symbols=500, reports_per_day=200, report_retention_days=90, report_storage_mb=1000,
-        report_schedules=10, min_schedule_interval_min=15, lab_strategies=50, lab_cpu_seconds_per_day=3600,
+        report_schedules=10, min_schedule_interval_min=15, lab_strategies=50, lab_cpu_seconds_per_day=3600, runner=True,
     ),
     "business": Plan(
         id="business", name="Business", max_active_deployments=50, live_trading=False, max_custom_strategies=200,

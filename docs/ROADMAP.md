@@ -180,6 +180,13 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | BR-2 | Reflection + calibration: R1 post-trade line, R2 weekly lessons as proposals, R3 reliability chart + Brier, R4 "I don't know" (>= 20 closed PAPER episodes) | ATP_ORDER_TRADING_BRAIN.md | reliability chart; proposals never auto-applied; owner ✅ |
 | BR-3 | Second opinion + state + proactive: S1 setup state machine (parity), S2 pre-trade check, S3 for / against, S4 brief + alerts | ATP_ORDER_TRADING_BRAIN.md | byte-identical decisions on stored history; with / without comparison; owner ✅ |
 
+### Phase BIZ — Business model (owner 14 Nov)
+| ID | Item | Source | Done when |
+|---|---|---|---|
+| BIZ-1 | Route 3 for all users (Free / Basic): Paper, signals, scans, Copilot and "Trade in your broker app" on every signal surface; ATP's server sends no other user's LIVE order | DECISIONS 14 Nov; docs/design/ROUTE3_AUDIT.md | B1-B7 merged + flags decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| BIZ-2 | Route 1 = Pro plan: a runner on the user's own machine; paid "we set up your VPS" service | DECISIONS 14 Nov; design on `claude/design-user-runner` | design ✅, then the same "done" as BIZ-1 |
+| BIZ-3 | Route 2: exchange empanelment as an algo provider | DECISIONS 14 Nov | deferred - only after BIZ-1 / BIZ-2 are done |
+
 ### Phase 5 — Business launch (last; owner decisions)
 | ID | Item |
 |---|---|
@@ -318,6 +325,9 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | LIVE-2 | merged (#1032); waits for deploy + ✅ | basket + Reverse LIVE on the one switch (same code path as the ticket) | DECISIONS 11 Nov (LIVE-1) |
 | ORD-1 | merged (#1030); waits for deploy + ✅ | Orders tab = today only; PAPER expiry settlement | INBOX 12 Nov |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
+| BIZ-1 | audit (14 Nov) | docs/design/ROUTE3_AUDIT.md done; BIZ1-Q1 (per-user LIVE gate) needs the owner's ✅ before B1 | claude/route3-audit |
+| BIZ-2 | audit (14 Nov) | runner design in progress | claude/design-user-runner |
+| BIZ-3 | deferred - after BIZ-1 / BIZ-2 are done | nothing until then | - |
 | P4-1 | not started | Terminal T5 + T6 | - |
 | P4-2 | not started | Terminal T4 + what-if / stress test | - |
 | P4-3 | in review | Kotak Neo / Groww merged with LIVE gated; connect guides to check | #473, #481 (merged) |

@@ -227,6 +227,42 @@ def verify_command(command: Any, pairing: Pairing, last_applied: int) -> tuple[d
     return payload, None
 
 
+# --- S4c: ATP's state (LIVE for his organisation, his organisation's flags) ---------------------------------------------
+
+STATE_STALE = ("LIVE needs ATP's answer: ATP has not confirmed LIVE for your organisation in the last {minutes} minutes - "
+               "nothing was placed; exits continue")
+STATE_NEVER = ("LIVE needs ATP's answer: ATP has not sent the LIVE state for your organisation to this runner yet - "
+               "nothing was placed; exits continue")
+STATE_CLOSED = "LIVE is not open for your organisation in ATP: {reason} - nothing was placed; exits continue"
+PLAN_NO_RUNNER = "Your plan does not include the runner - no new entries; exits continue"
+
+
+def verify_state(state: Any, pairing: Pairing, last_issued: str | None) -> tuple[dict[str, Any] | None, str | None]:
+    """(payload, None) when ATP's state answer may be applied; (None, reason) when it is refused: not signed with ATP's key
+    pinned at pairing, for another runner or user, not newer than the last one applied, or malformed."""
+    if not isinstance(state, dict) or not isinstance(state.get("payload"), dict):
+        return None, "no state"
+    payload: dict[str, Any] = state["payload"]
+    if not signing.verify(pairing.command_key, str(state.get("signature") or ""), signing.state_message(payload)):
+        return None, "signature does not match ATP's key pinned at pairing (pair the runner again if ATP changed it)"
+    if payload.get("v") != 1 or payload.get("kind") != "state":
+        return None, "unknown state"
+    if payload.get("device_id") != pairing.device_id:
+        return None, "the state is for another runner"
+    if payload.get("user_ref") != pairing.user_ref:
+        return None, "the state is not for the user this runner is paired to"
+    try:
+        issued = datetime.fromisoformat(str(payload.get("issued_at")))
+    except ValueError:
+        return None, "unknown state"
+    if issued.tzinfo is None or not isinstance(payload.get("live_open"), bool) or not isinstance(payload.get("tenant_ref"), int) \
+            or not isinstance(payload.get("flags"), dict) or not all(isinstance(v, bool) for v in payload["flags"].values()):
+        return None, "unknown state"
+    if last_issued is not None and issued <= datetime.fromisoformat(last_issued):
+        return None, "not newer than the state already applied"
+    return payload, None
+
+
 # --- the loop's link ----------------------------------------------------------------------------------------------------
 
 @dataclass
@@ -236,6 +272,7 @@ class LinkState:
     rules_etag: str | None = None          # the etag of the rules last applied to the local store
     mirror_since: str | None = None        # the newest order / position time mirrored
     mirror_audit_seq: int = 0              # the last audit row mirrored
+    state_issued_at: str | None = None     # S4c: ATP's time on the newest state applied (replay guard)
 
     @classmethod
     def load(cls, path: Path) -> LinkState:
@@ -270,6 +307,10 @@ class Link:
         self._refused: set[int] = set()
         self._paused_reason: str | None = None
         self._revoked = False
+        # S4c: ATP's last signed state (in memory: a restart waits for the next answer, so LIVE starts closed)
+        self.atp_state: dict[str, Any] | None = None
+        self.state_received_at: datetime | None = None
+        self._flags_written: dict[str, bool] | None = None
 
     # --- plain lines ---------------------------------------------------------------------------------------------
     def _log(self, now: datetime, line: str) -> None:
@@ -345,6 +386,7 @@ class Link:
         self._ok(now)
         self.mirror_upload = bool(answer.get("mirror_upload", True))
         self._apply_commands(now, answer.get("commands") or [])
+        await self._apply_state(now, answer.get("state"))
         etag = answer.get("rules_etag")
         if etag and etag != self.state.rules_etag:
             await self._pull_rules(now)
@@ -382,6 +424,76 @@ class Link:
                 self.audit.write("kill_switch_command", command_id=payload["command_id"], on=on, origin=payload["origin"])
         self._acks = acks
         self._save()
+
+    # --- S4c: ATP's state ------------------------------------------------------------------------------------------
+    def _fresh(self, now: datetime) -> bool:
+        grace = timedelta(minutes=max(0, int(self.settings.link_grace_minutes)))
+        return self.state_received_at is not None and now - self.state_received_at <= grace
+
+    async def _apply_state(self, now: datetime, state: Any) -> None:
+        """Verify ATP's signed state; keep it with its receive time; write his organisation's flags into the local store
+        (only when they changed) and follow ATP's F&O ban check setting. Never raises; a refused state changes nothing."""
+        payload, refusal = verify_state(state, self.pairing, self.state.state_issued_at)
+        if payload is None:
+            if refusal != "no state":
+                self._log(now, f"ATP state refused: {refusal}")
+                if self.audit is not None:
+                    self.audit.write("state_refused", reason=refusal)
+            return
+        changed = self.atp_state is None or any(self.atp_state.get(k) != payload.get(k)
+                                                for k in ("live_open", "live_reason", "flags", "fo_ban_check", "plan_runner"))
+        self.atp_state, self.state_received_at = payload, now
+        self.state.state_issued_at = str(payload["issued_at"])
+        import app.core.config as config
+        config.FO_BAN_CHECK_ENABLED = bool(payload.get("fo_ban_check"))      # the server's setting, read at each entry
+        flags = {str(k): bool(v) for k, v in payload["flags"].items()}
+        if flags != self._flags_written:
+            try:
+                await self._write_flags(flags)
+                self._flags_written = flags
+            except Exception as exc:  # noqa: BLE001 - written again on the next answer
+                logger.warning("Runner link: flags not written (%s)", type(exc).__name__)
+        if changed:
+            line = ("ATP: LIVE open for your organisation" if payload["live_open"] else
+                    f"ATP: LIVE not open for your organisation ({payload.get('live_reason') or 'closed'})")
+            self._log(now, line + "; flags " + ", ".join(f"{k} {'on' if v else 'off'}" for k, v in sorted(flags.items())))
+            if self.audit is not None:
+                self.audit.write("atp_state", live_open=payload["live_open"], live_reason=payload.get("live_reason"),
+                                 flags=flags, fo_ban_check=bool(payload.get("fo_ban_check")), plan_runner=payload.get("plan_runner"))
+
+    async def _write_flags(self, flags: dict[str, bool]) -> None:
+        """His organisation's answers into the local store's flag row (the row `platform.controls.feature_flags` reads), so
+        the pipeline's own flag reads give ATP's answer. Only the flags ATP sent; nothing else is kept."""
+        import app.platform.controls as controls
+        async with self.sessions() as session:
+            stored = {name: {"on": on, "tenants": []} for name, on in sorted(flags.items())}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
+            await session.commit()
+
+    def live_refusal(self, now: datetime, tenant_id: int | None) -> str | None:
+        """Why ATP's side does not allow a LIVE entry for this organisation now, or None: open only when ATP's last signed
+        state says so for this organisation and it was received within his grace setting (`link_grace_minutes`). Also sets
+        the process state the PAPER-only lock reads (`runtime_mode.live_open`), so the pipeline and the broker chokepoint
+        agree. Entries only - exits never read it."""
+        import app.core.runtime_mode as runtime_mode
+        payload = self.atp_state
+        fresh = self._fresh(now)
+        is_open = bool(payload and fresh and payload.get("live_open") and tenant_id is not None
+                       and payload.get("tenant_ref") == int(tenant_id))
+        runtime_mode.set_live_open([int(payload["tenant_ref"])] if is_open and payload else ())
+        if is_open:
+            return None
+        if payload is None:
+            return STATE_NEVER
+        if not fresh:
+            return STATE_STALE.format(minutes=max(0, int(self.settings.link_grace_minutes)))
+        if payload.get("tenant_ref") != tenant_id:
+            return STATE_CLOSED.format(reason="this deployment is not in your organisation")
+        return STATE_CLOSED.format(reason=str(payload.get("live_reason") or "closed").rstrip(". "))
+
+    def plan_refusal(self) -> str | None:
+        """His plan's `runner` field as ATP sent it: False = no new entries (exits continue); None / True = no refusal."""
+        return PLAN_NO_RUNNER if self.atp_state is not None and self.atp_state.get("plan_runner") is False else None
 
     async def _pull_rules(self, now: datetime) -> None:
         from app.runner import sync
@@ -439,5 +551,5 @@ def _session_word(line: str | None) -> str:
     return "none"
 
 
-__all__ = ["Link", "LinkClient", "LinkError", "LinkState", "Pairing", "pair", "verify_command", "check_atp_url",
+__all__ = ["Link", "LinkClient", "LinkError", "LinkState", "Pairing", "pair", "verify_command", "verify_state", "check_atp_url",
            "RUNNER_VERSION", "load_key", "new_key"]

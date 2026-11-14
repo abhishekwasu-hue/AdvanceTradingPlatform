@@ -26,8 +26,12 @@ structure from the deployment's OWN settings (`resolve_contract` / `resolve_stru
 S4), executed by the server's own pipelines (`execute_signal_for_user` with the contract; `multileg.execute_structure`:
 hedge legs first, incomplete structures, the F&O ban list for entries only). The exits add the PAPER expiry settlement
 (`paper/expiry_settlement.py`, the expiry-day close from his broker's Daily bar) and the incomplete-structure exits
-(`execution/incomplete_structures.run_exits`), as the worker runs them. A LIVE entry also needs ATP's LIVE state for his
-organisation; the link carries none yet, so every LIVE entry is refused in plain words (`LIVE_NO_ATP_STATE`).
+(`execution/incomplete_structures.run_exits`), as the worker runs them.
+
+S4c: ATP's signed state in the heartbeat answer (`link.Link.live_refusal`): a LIVE entry needs ATP's `live_open` for his
+organisation (the B1 rule on ATP's side), received within his grace setting, AND his local LIVE file AND the deployment's
+own LIVE choice; otherwise it is skipped with a plain reason. His organisation's flags arrive in the same answer and are
+written into the local store, so the pipeline reads ATP's answers. Exits never read any of it (ADR-0004).
 
 Not yet (each says so in the deployment's own words): strategy templates (they need the reader port, S1 note).
 Approval-only entries are refused by the pipeline's own gate (proposals are answered in ATP: S4).
@@ -70,8 +74,10 @@ logger = logging.getLogger("app.runner")
 
 LIVE_SWITCH_OFF = "LIVE is off on this runner - your own LIVE switch is not on (nothing was placed)"
 LIVE_NEEDS_BROKER = "LIVE needs your own broker session on this runner - it is running on a test feed (nothing was placed)"
-LIVE_NO_ATP_STATE = ("LIVE is not open for your organisation on this runner: ATP's link does not tell the runner the LIVE "
-                     "state yet - nothing was placed; exits continue")
+# S4c: LIVE_NO_ATP_STATE (S4b) is replaced by ATP's signed state (link.STATE_NEVER / STATE_STALE / STATE_CLOSED); the
+# name stays for its importers and is the text of a runner that is not paired (no link: no ATP state).
+LIVE_NO_ATP_STATE = ("LIVE needs ATP's answer: this runner is not paired with ATP, so ATP's LIVE state for your organisation "
+                     "is unknown - nothing was placed; exits continue")
 NOT_YET_TEMPLATES = "Strategy templates run on the runner in a later step - nothing was placed"
 NO_USER = "No user for this deployment on the runner - nothing was placed"
 
@@ -240,6 +246,10 @@ class Runner:
         if self.link is not None and (offline := self.link.entries_paused(now)):
             summary.entries_paused = offline                     # ATP unreachable past his grace: entries only
             return
+        if self.link is not None and (no_plan := self.link.plan_refusal()):
+            summary.entries_paused = no_plan                     # S4c: his plan's `runner` field says no: entries only
+            return
+        self._atp_live_refusal(now, tenant_id)                   # S4c: the lock state the pipeline reads, fresh this cycle
         deployments = list(await session.scalars(select(StrategyDeploymentRecord).where(
             StrategyDeploymentRecord.tenant_id == tenant_id,
             StrategyDeploymentRecord.status == DeploymentStatus.ACTIVE.value).order_by(StrategyDeploymentRecord.id)))
@@ -272,11 +282,15 @@ class Runner:
             return LIVE_SWITCH_OFF
         return None
 
-    def _atp_live_refusal(self) -> str | None:
-        """ATP's LIVE state for his organisation, as the link reports it (owner organisation only). The heartbeat answer
-        and the rules sync carry no such state yet, so it is unknown and LIVE is refused (`LIVE_NO_ATP_STATE`)."""
-        state = getattr(self.link, "live_allowed", None) if self.link is not None else None
-        return None if state is True else LIVE_NO_ATP_STATE
+    def _atp_live_refusal(self, now: datetime, tenant_id: int | None) -> str | None:
+        """S4c: ATP's LIVE state for his organisation from the link's last signed answer (fresh within his grace setting),
+        or the plain reason it is not open. Not paired: unknown, refused (`LIVE_NO_ATP_STATE`). Sets the lock state the
+        pipeline and the broker chokepoint read (`runtime_mode.live_open`)."""
+        if self.link is None:
+            import app.core.runtime_mode as runtime_mode
+            runtime_mode.set_live_open(())
+            return LIVE_NO_ATP_STATE
+        return self.link.live_refusal(now, tenant_id)
 
     async def _skip(self, session: AsyncSession, dep: StrategyDeploymentRecord, now: datetime, reason: str | None) -> bool:
         dep.last_evaluated_at = now
@@ -291,9 +305,11 @@ class Runner:
         if user is None:
             return await self._skip(session, dep, now, NO_USER)
         live = dep.mode == ExecutionMode.LIVE.value
+        if live and (refusal := self._atp_live_refusal(now, dep.tenant_id)):
+            return await self._skip(session, dep, now, refusal)                          # S4c: ATP's state, in plain words
         if live and phase0_lock.locked(dep.tenant_id):
             return await self._skip(session, dep, now, phase0_lock.WORKER_NOT_EVALUATED)   # as the worker: not evaluated
-        if live and (refusal := self._atp_live_refusal() or self._live_refusal()):
+        if live and (refusal := self._live_refusal()):
             return await self._skip(session, dep, now, refusal)
         derivative = (dep.instrument_kind or "UNDERLYING") != "UNDERLYING"
         if normalize_strategy_id(dep.strategy_id).startswith(TEMPLATE_PREFIX):
@@ -378,7 +394,7 @@ class Runner:
             intent["contracts"] = ([leg.contract.tradingsymbol for leg in structure.legs] if structure is not None
                                    else [contract.tradingsymbol] if contract is not None else [])
         self.audit.write("entry_intent", **intent)
-        if live and (refusal := self._atp_live_refusal() or self._live_refusal()):   # read again right before the order
+        if live and (refusal := self._atp_live_refusal(now, dep.tenant_id) or self._live_refusal()):   # again before the order
             self.audit.write("entry_result", **intent, executed=False, reasons=[refusal])
             return await self._skip(session, dep, now, refusal)
         if structure is not None:

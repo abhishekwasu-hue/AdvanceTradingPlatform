@@ -27,6 +27,7 @@ from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrderResponse
+from app.core import runtime_mode
 
 FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
@@ -49,7 +50,11 @@ def reset_cache() -> None:
 
 
 async def is_on(session: AsyncSession, tenant_id: Optional[int]) -> bool:
-    """Reads the flag fresh (and refreshes the process state the broker chokepoint reads)."""
+    """Reads the flag fresh (and refreshes the process state the broker chokepoint reads). Runner S4c: in the user's
+    runner process the lock follows ATP's signed LIVE state for his organisation (`core/runtime_mode.live_open`), never
+    the runner's local store (it holds no switch of ATP's)."""
+    if runtime_mode.is_runner():
+        return locked(tenant_id)
     from app.platform.controls import feature_flags
     entry = (await feature_flags(session)).get(FLAG) or {}
     remember(bool(entry.get("on")), entry.get("tenants") or ())
@@ -58,7 +63,10 @@ async def is_on(session: AsyncSession, tenant_id: Optional[int]) -> bool:
 
 def locked(tenant_id: Optional[int]) -> bool:
     """From the last read: on for everyone, or for this tenant through the allow-list. With no tenant known the lock
-    holds when it is on for anyone (refusing an entry is always safe; exits never come here)."""
+    holds when it is on for anyone (refusing an entry is always safe; exits never come here). Runner S4c: in the runner
+    process, locked unless ATP's fresh signed answer opened LIVE for this organisation (`runtime_mode.live_open`)."""
+    if runtime_mode.is_runner():
+        return tenant_id is None or int(tenant_id) not in runtime_mode.live_open()
     if _state["on"]:
         return True
     tenants = _state["tenants"]

@@ -37,6 +37,7 @@ REPLAY_WINDOW_SECONDS = 120
 _SCHEME = b"ATP-RUNNER-1"
 _PAIR_SCHEME = b"ATP-RUNNER-PAIR-1"
 _COMMAND_SCHEME = b"ATP-RUNNER-CMD-1"
+_STATE_SCHEME = b"ATP-RUNNER-STATE-1"                # S4c: ATP's state for the runner (its own scheme: never a command)
 COMMAND_KINDS: tuple[str, ...] = ("kill_switch",)   # S4: the user's own kill switch only
 COMMAND_ORIGIN = "user_signed"                       # the one origin a command may carry (runner/settings.py KILL_ORIGINS)
 
@@ -114,3 +115,9 @@ def command_bytes(payload: dict[str, Any]) -> bytes:
 
 def command_message(payload: dict[str, Any]) -> bytes:
     return _COMMAND_SCHEME + b"\n" + command_bytes(payload)
+
+
+def state_message(payload: dict[str, Any]) -> bytes:
+    """S4c: the bytes ATP signs for its state answer (LIVE state, his organisation's flags) - a scheme of its own, so a
+    state can never be read as a command, nor a command as a state."""
+    return _STATE_SCHEME + b"\n" + command_bytes(payload)

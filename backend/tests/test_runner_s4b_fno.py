@@ -11,7 +11,7 @@
    - the process never loads a forbidden module; the audit chain is intact.
 2. The broker side: ATP's contract names are bound to Angel One's own scrip-master rows (the real adapter, a fake scrip
    master over httpx's mock transport); a contract it does not list, or lists with another lot size, is refused.
-3. LIVE: ATP's LIVE state for his organisation is not sent by the link yet -> every LIVE entry is refused in plain words.
+3. LIVE: a runner without ATP's state (not paired) refuses every LIVE entry in plain words (S4c: tests/test_runner_s4c_state.py).
 """
 import asyncio
 import json
@@ -152,16 +152,12 @@ def test_a_feed_without_broker_names_keeps_atps_names():
 
 
 # --- LIVE ------------------------------------------------------------------------------------------------------------
-def test_live_is_refused_while_atp_sends_no_live_state_for_his_organisation(tmp_path):
+def test_live_is_refused_on_a_runner_that_has_no_atp_state(tmp_path):
+    """S4c replaced the S4b refusal: LIVE needs ATP's signed state (tests/test_runner_s4c_state.py); unpaired = unknown."""
+    from app.core import runtime_mode
     from app.runner.feed import FakeFeed
     from app.runner.loop import LIVE_NO_ATP_STATE, Runner
     settings = RunnerSettings.load(tmp_path)
-    assert Runner(settings, FakeFeed())._atp_live_refusal() == LIVE_NO_ATP_STATE             # not paired
-
-    class Link:                                                               # paired: the answer carries no LIVE state
-        pass
-    assert Runner(settings, FakeFeed(), link=Link())._atp_live_refusal() == LIVE_NO_ATP_STATE
-    link = Link()
-    link.live_allowed = True                                                  # type: ignore[attr-defined]
-    assert Runner(settings, FakeFeed(), link=link)._atp_live_refusal() is None
+    assert Runner(settings, FakeFeed())._atp_live_refusal(None, 1) == LIVE_NO_ATP_STATE       # type: ignore[arg-type]
+    assert runtime_mode.live_open() == frozenset()
     assert "nothing was placed" in LIVE_NO_ATP_STATE and "exits continue" in LIVE_NO_ATP_STATE

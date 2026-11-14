@@ -132,7 +132,8 @@ def test_the_forbidden_lists_agree():
 def spike(tmp_path_factory) -> dict:
     db = tmp_path_factory.mktemp("runner") / "runner.db"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("DATABASE_URL", "MIGRATION_DATABASE_URL", "REDIS_URL"))}
-    env.update(DATABASE_URL=f"sqlite+aiosqlite:///{db}", REDIS_URL="redis://127.0.0.1:1/0", PYTHONPATH=str(BACKEND))
+    env.update(DATABASE_URL=f"sqlite+aiosqlite:///{db}", REDIS_URL="redis://127.0.0.1:1/0", PYTHONPATH=str(BACKEND),
+               ATP_RUNNER_MODE="1")   # S2: runner mode (billing meter off, the ban list from ATP)
     run = subprocess.run([sys.executable, "tests/runner_s1_spike_job.py"], cwd=BACKEND, env=env, capture_output=True,
                          text=True, timeout=300)
     assert run.returncode == 0, run.stderr[-3000:]

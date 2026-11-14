@@ -202,6 +202,20 @@ First broker (RUN-Q3, answered 14 Nov): Angel One SmartAPI, his own SmartAPI app
 Lawyer (RUN-Q1, OPEN_QUESTIONS): does Route 1 fit the tech-savvy exception when ATP supplies the runner software and
 the DSL; does ATP need RA / empanelment for its templates. Default: Route 1 for users, owner LIVE only on his words.
 
+## Rules (owner decisions, CONFIRMED 14 Nov - "Default yes"; DECISIONS 2026-11-14 "Runner rules")
+
+| # | Rule | Where it holds |
+|---|---|---|
+| R-1 | Kill switch: the USER's own. Only he turns it ON / OFF - on his runner (CLI `kill` / `resume`), or with his own button in ATP, which only relays HIS command (a command signed for his action, S4). ATP / the platform admin never stops, pauses or changes a user's runner; no platform-wide or admin kill reaches runners. It stops new entries only; exits are never blocked (ADR-0004). Default OFF. | S2: `runner/settings.py` `set_killed(origin=...)` refuses any origin but `user_local` / `user_signed`; tests `test_only_the_user_turns_his_kill_switch_on_or_off`, `test_no_runner_code_writes_the_kill_switch_except_its_one_setter`. S4: the link carries no admin kill; synced rows must not include admin kill switches / maintenance blocks for the runner |
+| R-2 | Strategy evaluation only on the user's VPS: ATP sends only his saved rules and settings, never signals. | S2 loop evaluates locally; S4 sync sends rules only |
+| R-3 | Templates are starting points the user saves as his own, with his own settings. | S4 strategy sync |
+| R-4 | Pricing: subscription only - no per-trade fee, no profit share. | billing stays off in the runner (S2 meter seam) |
+| R-5 | No "AI bot" wording, no return claims. | S7 page text |
+| R-6 | Marketplace OFF. | boundary test (`app.marketplace` forbidden) |
+| R-7 | A public compliance page (like OpenAlgo's). | later step (with RUN-Q1) |
+| R-8 | Position mirror to ATP optional: default ON, the user can turn it off. | S4 |
+| R-9 | Runner OPS limit 10/s, default ON. | S2: his broker session goes out behind `RateLimitedBroker` + `OpsThrottle` (`runner/feed.py` `protected`; rate from the compliance rules); `runner.json` `ops_throttle` (default true) |
+
 ## S1 results (branch `claude/runner-s1-boundary`)
 
 Boundary (`backend/app/runner/manifest.py`, test `backend/tests/test_runner_s1_boundary.py`):
@@ -241,3 +255,30 @@ Spike (`backend/tests/runner_s1_spike_job.py`, run as a separate process by the 
   runner loop needs its in-process lock; the template engine (`strategy_templates`, H-templates) imports
   `screener.runtime` and `price_action` (public code), so shipping those templates needs `price_action` moved from the
   forbidden list to the allowed set (owner-visible change of section 2) - S1 ships the DSL + inbuilt templates only.
+
+## S2 results (branch `claude/runner-s2-loop`)
+
+- `python -m app.runner run --home <folder> [--once] [--broker angel_one]`: runner mode, the folder's SQLite file and
+  no Redis are set before the pipeline is imported. Files in the folder: `runner.db`, `audit.jsonl` (hash-chained, every
+  order intent and result), `runner.lock`, `LIVE` (his switch, default OFF; `live on|off|status`), `KILL` (his kill
+  switch, R-1; `kill` / `resume`), optional `runner.json` (operational: cycle length, history to read).
+- Loop (`runner/loop.py`), per cycle, in the worker's order: exits first - the square-off at his own time and the
+  structure settlement (moved unchanged from the worker into `trading/square_off.py`; the worker calls it) and the
+  position monitor; never gated by the kill switch, his LIVE switch, the ban list or the ATP link. Then entries per
+  ACTIVE deployment: his broker's candles (`runner/feed.py`; Angel One adapter, or a PAPER-only fake feed) -> staleness
+  check -> closed bars only -> the strategy -> one entry per signal bar -> `execute_signal_for_user` (the one pipeline).
+- His broker session is wrapped as the worker wraps every session (`RateLimitedBroker`: rate budget in-process, the
+  Phase 0 chokepoint on new entry orders, the OPS throttle - R-9, default ON).
+- LIVE: the deployment's LIVE choice + ATP's Phase 0 lock + his local `LIVE` file + a real broker feed; the switch is
+  read again right before the order. PAPER is the default.
+- Lock (`runner/lock.py`): an OS file lock (one runner per folder; freed by the OS on a crash) + an asyncio lock (one
+  cycle at a time; an overlapping cycle is skipped). Clean shutdown on SIGINT / SIGTERM: the running cycle finishes.
+- S1 exceptions cut: the billing meter is a lazy import never reached in runner mode; the F&O ban list in runner mode
+  is the list ATP sends (S4): unknown -> PAPER allowed with a note, LIVE F&O entry refused in plain words; exits never
+  read it. `app.billing` and `app.market_lake` are now in `RUNTIME_FORBIDDEN` (the loop process loads neither).
+- Not yet (each skipped in the deployment's own words): options / futures / multi-leg deployments (need the instrument
+  list from ATP, S4), strategy templates (reader port), approval-only entries (the pipeline's gate refuses them;
+  proposals answered in ATP, S4), the organisation's "one direction per symbol" setting (worker-only today; S8 parity
+  report), the per-account rate budget's shared windows (Redis; local store with S5). Broker details are read from
+  `<folder>/broker.json` (mode 600 enforced) until the keystore (S5).
+

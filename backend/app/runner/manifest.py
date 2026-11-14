@@ -57,6 +57,21 @@ RUNNER_MODULES: tuple[str, ...] = (
     "app.kill_switch.checks",
     "app.execution.signal_execution",
     "app.trading.position_monitor",
+    # Runner S2: the loop's own reads - the local store, the strategy lookup, closed bars, his windows / defaults, the
+    # PAPER-only lock, the shared square-off and the runner-mode seam (billing meter off, the ban list from ATP)
+    "app.core.runtime_mode",
+    "app.core.enums",
+    "app.core.models",
+    "app.db.base",
+    "app.db.models",
+    "app.db.session",
+    "app.custom_strategies.resolver",
+    "app.market_data.calendar",
+    "app.market_data.freshness",
+    "app.execution.exit_settings",
+    "app.execution.order_defaults",
+    "app.platform.phase0_lock",
+    "app.trading.square_off",
 )
 
 FORBIDDEN_PREFIXES: tuple[str, ...] = (
@@ -77,12 +92,12 @@ FORBIDDEN_PREFIXES: tuple[str, ...] = (
 
 # (importer, forbidden module imported, "top" | "lazy") -> why it is tolerated today and what ends it.
 KNOWN_EDGES: dict[tuple[str, str, str], str] = {
-    ("app.execution.order_persistence", "app.billing.service", "top"):
-        "usage meter: one 'order' unit per order (order_persistence.py:98); its Redis total is best effort. "
-        "S2: a meter seam (the runner counts locally and mirrors to ATP).",
-    ("app.compliance.fo_limits", "app.market_lake.asof", "top"):
-        "F&O ban-list read (MWPL, rule IN-SEBI.risk.futeq_mwpl) from the lake table; empty on the runner = no ban known. "
-        "S2/S4: the ban list synced from ATP into the runner's store.",
+    ("app.execution.order_persistence", "app.billing.service", "lazy"):
+        "usage meter (order_persistence.py create_order): server only - S2 made it a lazy import that runner mode never "
+        "reaches (core/runtime_mode.py; the runner meters nothing, its orders reach ATP as copies in S4).",
+    ("app.compliance.fo_limits", "app.market_lake.asof", "lazy"):
+        "F&O ban-list read from the server's lake (fo_limits.ban_status): S2 made it lazy; in runner mode the list ATP "
+        "sends (S4) is read instead - unknown = PAPER allowed with a note, LIVE F&O entry refused; exits never read it.",
     ("app.execution.approval", "app.ai", "lazy"):
         "approval-only mode: an entry proposal's Vision audit (approval.py:318); not on the automatic entry path. "
         "S2: decide the runner's approval mode (proposals answered in ATP, executed on the runner).",
@@ -107,6 +122,7 @@ KNOWN_EDGES: dict[tuple[str, str, str], str] = {
 RUNTIME_FORBIDDEN: tuple[str, ...] = (
     "atp_private", "app.engine_provider", "app.chart_reader", "app.chart_analyze", "app.price_action", "app.ai",
     "app.admin", "app.marketplace", "app.lab", "app.workers", "app.main",
+    "app.billing", "app.market_lake",   # S2: the meter and the lake ban-list read are server-only seams now
 )
 
 

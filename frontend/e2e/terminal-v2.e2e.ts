@@ -1487,3 +1487,119 @@ test.describe("v2 terminal 390: the Net Diff table on the Chain tab (owner 13 No
     });
   }
 });
+
+
+// Owner 14 Nov ("set the panel up neatly; the OI table has gone down - bring it up; cut unnecessary things or give an
+// on/off toggle to hide them; on the OI table no button is visible on the strike - how will a user know where to click to
+// open the order window?"): the chain panel's compact header, the hideable blocks and the visible B/S buttons. Measured:
+// the OI-difference table's first row from the panel's top (before: 863 px at 1440, 1,116 px at 390). Proof pictures
+// with CHAIN_COMPACT_SHOTS (docs/design/chain-compact/).
+const COMPACT_SHOTS = process.env.CHAIN_COMPACT_SHOTS;
+/** The Net Diff chain with the market closed and Trade's banner reading "BEARISH (Weakening)" (made up, as the owner's screen). */
+const closedBannerRoutes = async (page: Page) => {
+  await netDiffRoutes(page);
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/live/, (route) => {
+    type Leg = { oi: number | null; oi_change: number | null; ltp: number | null; volume?: number | null };
+    const scale = (l: Leg, k: number): Leg => ({ ...l, oi: (l.oi ?? 0) * 60 + k * 1_234, oi_change: (l.oi_change ?? 0) * 120 - k * 4_321, volume: (l.volume ?? 0) * 40 });
+    const rows = (DATA.live.rows as { strike: number; call: Leg; put: Leg }[]).map((r, i) => ({ ...r, call: scale(r.call, i), put: scale(r.put, 21 - i) }));
+    const summary = DATA.live.summary as Record<string, unknown>;
+    const atm = Math.round(Number(summary.spot) / 50) * 50;
+    const shown = rows.filter((r) => r.strike >= atm - 300 && r.strike <= atm + 300).map((r) => {
+      const ce = r.call.oi_change ?? 0;
+      const pe = r.put.oi_change ?? 0;
+      return { strike: r.strike, ce_chg: ce, ce_oi: r.call.oi ?? 0, ce_ltp: r.call.ltp, pe_ltp: r.put.ltp, pe_oi: r.put.oi ?? 0, pe_chg: pe,
+        diff: pe - ce, dominance: pe - ce > 0 ? "Bulls" : pe - ce < 0 ? "Bears" : "Neutral" };
+    });
+    return route.fulfill({ json: { ...DATA.live, rows, market_open: false, summary: { ...summary, pcr_oi_atm: 0.83 },
+      net_diff: { status: "ready", since: "2026-10-27T04:02:00+00:00", step: 50, atm, window: 6, pcr: 0.83, rows: shown } } });
+  });
+  await page.route(/\/api(?:\/v1)?\/option-chain\/([^/]+)\/banner/, (route) => route.fulfill({ json: { underlying: "NIFTY", market_open: false,
+    banner: { slot: "2026-10-27T09:57:00+00:00", data_as_of: "2026-10-27T09:57:00+00:00", direction: "bearish", message: "", put_class: "Short Covering",
+      call_class: "Long Buildup", signal: "BEARISH (Weakening)", diff: -1, delta_diff: -1, total_call_oi: 1, total_put_oi: 1, pcr: 0.83, pcr_band: null,
+      pcr_label: "", underlying_price: 24500, atm_strike: 24500, strike_step: 50, max_pain: 24500, expiry: null, dte: 3, first_of_day: false,
+      fact_message: "Calls added" } } }));
+};
+
+/** The OI-difference table's first row (and the chain table's) from the panel's top, in px. */
+async function rowOffsets(page: Page, scope: string) {
+  return page.evaluate((s) => {
+    const panel = document.querySelector(s)!.getBoundingClientRect().top;
+    const at = (sel: string) => Math.round(document.querySelector(`${s} ${sel}`)!.getBoundingClientRect().top - panel);
+    return { oiDiff: at("[data-oi-diff-row]"), chain: at("[data-chain-scroll] tr[data-strike]") };
+  }, scope);
+}
+
+async function compactChecks(page: Page, scope: string) {
+  const panel = page.locator(scope);
+  // the market state: one muted line (no box); the strip: spot, ATM, PCR, ATM IV, the rest behind More
+  await expect(panel.locator("[data-chain-notes][data-compact]")).toContainText("Market closed");
+  await expect(panel.locator("[data-block='chain-summary'] [data-summary='max-pain']")).toHaveCount(0);
+  // Trade's banner: one line until opened
+  const banner = panel.locator("[data-block='oi-banner']");
+  await expect(banner.locator("[data-banner-summary]")).toHaveText("Signal: BEARISH (Weakening) · PCR (ATM ± 6): 0.83");
+  await expect(banner.locator("[data-banner-message]")).toHaveCount(0);
+  // a visible B/S for the CE and the PE beside every strike of the OI table
+  const rows = panel.locator("[data-oi-diff-row]");
+  await expect(rows).toHaveCount(7);
+  await expect(panel.locator("[data-trade-hint]").first()).toBeVisible();
+  const atm = panel.locator("[data-oi-diff-atm] th");
+  await expect(atm.locator("[data-leg-trade]")).toHaveCount(2);
+  await expect(atm.locator("[data-leg-trade$='|CE']")).toHaveAccessibleName("Buy or sell NIFTY 24,500 CE");
+  await expect(atm.locator("[data-leg-trade$='|PE']")).toBeVisible();
+}
+
+test.describe("v2 terminal 1440: the compact chain panel (owner 14 Nov)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test("the OI table near the top; banner one line; B/S beside each strike opens the action sheet; choices remembered", async ({ page }) => {
+    await open(page, "dark", { features: WL_ON, routes: closedBannerRoutes });
+    const scope = "[data-panel='chain']";
+    await expect(page.locator(`${scope} [data-oi-diff-row]`).first()).toBeVisible();
+    await settle(page);
+    await compactChecks(page, scope);
+    const at = await rowOffsets(page, scope);
+    expect(at.oiDiff).toBeLessThanOrEqual(431);                                     // before: 863 px
+    expect(await tableProblems(page, scope)).toEqual([]);
+    await scrollsWithStickyStrike(page, scope);
+    await noSidewaysScroll(page);
+    if (COMPACT_SHOTS) await page.locator(scope).screenshot({ path: `${COMPACT_SHOTS}/after-chain-panel-1440-dark.png`, animations: "disabled" });
+    // B/S on the PE side: that contract's actions (the existing sheet: Buy / Sell, basket, chart...)
+    await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|PE']`).click();
+    await expect(page.locator("[data-chain-actions]")).toBeVisible();
+    await expect(page.locator("[data-chain-actions] [data-action='buy']")).toBeVisible();
+    await page.keyboard.press("Escape");
+    // the banner opens as before; the OI table hides; both remembered after a reload
+    await page.locator(`${scope} [data-banner-toggle]`).click();
+    await expect(page.locator(`${scope} [data-banner-message]`)).toHaveText("Market closed");
+    await page.locator(`${scope} [data-hideable-toggle='oi-diff']`).click();
+    await expect(page.locator(`${scope} [data-oi-diff-row]`)).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator(`${scope} [data-banner-message]`)).toHaveText("Market closed");
+    await expect(page.locator(`${scope} [data-block='oi-diff'][data-collapsed]`)).toBeVisible();
+    await expect(page.locator(`${scope} [data-oi-diff-row]`)).toHaveCount(0);
+  });
+});
+
+for (const width of [390, 360]) {
+  test.describe(`v2 terminal ${width}: the compact chain panel (owner 14 Nov)`, () => {
+    test.use({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    test("the OI table near the top, B/S visible and 44 px, a tap opens the action sheet; no sideways scroll", async ({ page }) => {
+      await open(page, "dark", { features: WL_ON, routes: closedBannerRoutes });
+      await page.locator("[data-tab='chain']").tap();
+      const scope = "[data-phone-panel='chain']";
+      await expect(page.locator(`${scope} [data-oi-diff-row]`).first()).toBeVisible();
+      await settle(page);
+      await compactChecks(page, scope);
+      const at = await rowOffsets(page, scope);
+      expect(at.oiDiff).toBeLessThanOrEqual(558);                                   // before: 1,116 px (390), 1,140 px (360)
+      await expectPhoneLayout(page);
+      const bs = (await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|CE']`).boundingBox())!;
+      expect(Math.min(bs.width, bs.height)).toBeGreaterThanOrEqual(44);
+      if (COMPACT_SHOTS && width === 390) {
+        await page.evaluate(() => { const el = document.querySelector("[data-phone-panel='chain']")!; window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 60); });
+        await page.screenshot({ path: `${COMPACT_SHOTS}/after-chain-390-dark.png`, animations: "disabled" });
+      }
+      await page.locator(`${scope} [data-oi-diff-atm] [data-leg-trade$='|CE']`).tap();
+      await expect(page.locator("[data-chain-actions] [data-action='sell']")).toBeVisible();
+    });
+  });
+}

@@ -4,6 +4,7 @@
   live on | off | status              HIS OWN LIVE switch for this runner (default off); only this command writes it
   kill | resume                       YOUR kill switch: no new entries while on; exits always run (only you set it)
   audit-verify                        checks the local audit log's hash chain
+  health                              exit 0 while a runner process holds this folder (the image's healthcheck, S6)
 
 Runner mode, the local SQLite file and "no Redis" are set BEFORE any pipeline module is imported (the database engine
 is created at import). Broker credentials: until the runner's keystore (step S5) they are read from `<home>/broker.json`,
@@ -89,9 +90,20 @@ async def _run(settings: RunnerSettings, broker_name: str | None, once: bool) ->
     return 0
 
 
+def runner_alive(settings: RunnerSettings) -> bool:
+    """True while a live `run` process holds this folder: the pid it wrote into `runner.lock` is running and is the
+    runner. Read-only - it never takes the lock, so a check can never stop a runner from starting (S6 healthcheck)."""
+    try:
+        pid = int(settings.lock_path.read_text().strip() or "0")
+        cmdline = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0") if pid > 0 else []
+    except (OSError, ValueError):
+        return False
+    return b"app.runner" in cmdline and b"run" in cmdline
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.runner", description="ATP runner (your own machine)")
-    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify"])
+    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify", "health"])
     parser.add_argument("value", nargs="?", help="live: on | off | status")
     parser.add_argument("--home", default=os.environ.get("ATP_RUNNER_HOME", "~/.atp-runner"))
     parser.add_argument("--broker", default=None)
@@ -122,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
         ok, rows, problem = verify(settings.audit_path)
         print(f"Audit log: {rows} rows, " + ("chain intact" if ok else f"BROKEN - {problem}"))
         return 0 if ok else 1
+    if args.command == "health":
+        alive = runner_alive(settings)
+        print("Runner " + ("running" if alive else "not running") + f" in {settings.home}")
+        return 0 if alive else 1
     prepare_process(settings)
     return asyncio.run(_run(settings, args.broker, args.once))
 
@@ -130,4 +146,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-__all__ = ["main", "prepare_process", "build_feed"]
+__all__ = ["main", "prepare_process", "build_feed", "runner_alive"]

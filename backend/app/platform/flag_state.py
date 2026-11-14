@@ -300,12 +300,18 @@ async def _broker(session: AsyncSession, user: User) -> bool:
 
 
 async def _chart_engine(session: AsyncSession, user: User) -> bool:
-    from app.chart_analyze import provider
+    try:   # Runner S6: the runner image has no loader package; absent = not installed, never a crash
+        from app.chart_analyze import provider
+    except ImportError:
+        return False
     return provider.load() is not None
 
 
 async def _signal_engine(session: AsyncSession, user: User) -> bool:
-    from app.engine_provider import loader
+    try:   # Runner S6: as _chart_engine
+        from app.engine_provider import loader
+    except ImportError:
+        return False
     return loader.load() is not None
 
 

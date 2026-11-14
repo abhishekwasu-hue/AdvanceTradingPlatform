@@ -1,3 +1,4 @@
+import ChartTradeBar from "../../chart/ChartTradeBar";
 import EmbeddedChartV2 from "../../chart/EmbeddedChartV2";
 import OptionPairChartV2 from "../../chart/OptionPairChartV2";
 import { optionRightOf } from "../../chart/optionPair";
@@ -39,7 +40,9 @@ export default function ChartPanel({ params, replace }: PanelProps) {
     return <OptionPairChartV2 symbol={symbol} exchange={exchange} timeframe={tf} onTimeframe={(next) => replace({ ...params, tf: next })} />;
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col">
+    <div className="flex min-h-0 flex-1 flex-col gap-space-1 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col">
+      {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart (nothing on an index or a stock) */}
+      <ChartTradeBar symbol={symbol} exchange={exchange} />
       <EmbeddedChartV2 symbol={symbol} exchange={exchange} timeframe={tf} openLink={false}
         screenId={screenOn && screenIdOf(params.wscreen) ? Number(params.wscreen) : null}
         onTimeframe={(next) => replace({ ...params, tf: next })} className="min-h-[18rem] flex-1" />

@@ -1,10 +1,9 @@
-import { LayoutPanelTop, Minus, Plus, RotateCcw, Save } from "lucide-react";
+import { LayoutPanelTop, Minus, Plus } from "lucide-react";
 import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
-import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
@@ -27,6 +26,7 @@ import { useOptionChain } from "../optionChain/useOptionChain";
 import { OptionChainView } from "../optionChain/OptionChainPageV2";
 import TerminalClassicV2 from "./TerminalClassicV2";
 import { ContextBarV2, useStripFigures } from "./ContextBarV2";
+import { LayoutToolsV2, MENU_SUMMARY } from "./LayoutToolsV2";
 import { modeChip } from "./statusModel";
 import { liveAvailableFrom } from "../settings/useLiveAvailable";
 import { defaultTerminalApi, type TerminalApi } from "./api";
@@ -50,7 +50,6 @@ import { StatusBarV2 } from "./StatusBarV2";
 import { useCombinedExits } from "../fno/CombinedExitV2";
 import { TerminalGridV2, screenRows } from "./TerminalGridV2";
 import { readMask, writeMask } from "./statusModel";
-import { Combobox } from "../ui/Combobox";
 
 /**
  * Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md T1; review TT-15..TT-19): the chart, the option
@@ -112,7 +111,9 @@ function useLayouts(terminal: TerminalApi) {
       setPrefs(r.value);
       setVersion(r.version);
       setWorking(nextWorking ?? layoutFor(r.value, activeKey(r.value)));
-      setNote({ kind: "done", text: done });
+      // Owner 14 Nov ("space waste jate"): a plain layout switch says nothing (the picker already shows the name);
+      // a save / rename / delete confirmation shows briefly and then goes away.
+      setNote(done ? { kind: "done", text: done } : null);
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -126,6 +127,12 @@ function useLayouts(terminal: TerminalApi) {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (note?.kind !== "done") return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), 4000);
+    return () => clearTimeout(t);
+  }, [note]);
 
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
@@ -235,7 +242,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         const main = id === "chart-1";
         return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
           live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot, live?.market_open === true) : undefined}
-          levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined} />;
+          levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined}
+          onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} />;
       }
       // Owner 9 Nov: the Terminal's chain IS the Option chain page (summary, futures / IV / expiry / OI walls, Chain · Charts ·
       // OI, analysis, Ask AI) on the Terminal's one symbol and its chain - the page itself, not a copy.
@@ -277,7 +285,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
     // The layout changes at once; it is remembered on the server so another device opens on it too.
     L.setPrefs(switched);
     setWorking(shown);
-    if (L.version !== null) void L.persist(switched, `${shown.name} is in use.`, shown);
+    if (L.version !== null) void L.persist(switched, "", shown);
   }
 
   async function submitAsk() {
@@ -314,32 +322,19 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {/* TERM-2 step 5: one line; every order is still shown to you before it is placed (the ticket's Review step). */}
       <PageIntro id="terminal" lines={["One symbol and expiry for the chart, chain, basket and your positions."]} />
       <ContextBarV2 symbol={underlying} onSymbol={setUnderlying}
-        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null, liveAvailableFrom(features))} compact={narrow} />
-      {/* CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs. */}
-      {!narrow && <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
-        <div className="flex flex-wrap items-center gap-space-2" data-tour="terminal-layouts">
-          <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
-            <span aria-hidden>Layout</span>
-            <Combobox label="Layout" value={key} onChange={pickLayout} disabled={L.busy} dataAttrs={{ "data-terminal": "layout" }}
-              options={[...PRESET_IDS.filter((id) => id !== "multi_chart" || key === "multi_chart")   // TERM-2: Charts owns multi-chart
-                .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
-                ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
-          </div>
-          {!narrow && <PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))}
-            onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} />}
-          <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
-            <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}
-          </button>
-          {own && <button type="button" className={BUTTON} onClick={() => setAsk({ kind: "save-as", value: "" })} disabled={L.busy || count >= MAX_LAYOUTS} data-terminal="save-as">Save as new</button>}
-          {own && <button type="button" className={BUTTON} onClick={() => setAsk({ kind: "rename", value: own.name })} disabled={L.busy} data-terminal="rename">Rename</button>}
-          {own && <button type="button" className={BUTTON} onClick={del} disabled={L.busy} data-terminal="delete">Delete</button>}
-          <button type="button" className={BUTTON} onClick={() => setWorking(resetToPreset(working))} data-terminal="reset"
-            title={`Back to the ${PRESETS[working.preset].name} layout`}>
-            <RotateCcw size={16} aria-hidden />Reset
-          </button>
-          <span className="text-t13 text-fg-muted" data-terminal="count">{count} of {MAX_LAYOUTS} saved</span>
-        </div>
-      </div>}
+        chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null, liveAvailableFrom(features))} compact={narrow}
+        // CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs.
+        // Owner 14 Nov: in the context bar's row (no Layout row of its own), so the panels start higher.
+        tools={narrow ? undefined : <div role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
+          <LayoutToolsV2 value={key} onPick={pickLayout} busy={L.busy} own={own ? own.name : null} dirty={dirty} count={count} max={MAX_LAYOUTS}
+            options={[...PRESET_IDS.filter((id) => id !== "multi_chart" || key === "multi_chart")   // TERM-2: Charts owns multi-chart
+              .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
+              ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]}
+            panels={<PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))}
+              onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} />}
+            onSave={save} onSaveAs={() => setAsk({ kind: "save-as", value: "" })} onRename={() => own && setAsk({ kind: "rename", value: own.name })}
+            onDelete={() => void del()} onReset={() => setWorking(resetToPreset(working))} resetTitle={`Back to the ${PRESETS[working.preset].name} layout`} />
+        </div>} />
 
       {ask && (
         <form className="flex flex-wrap items-end gap-space-2" data-terminal="ask" onSubmit={(e) => { e.preventDefault(); void submitAsk(); }}>
@@ -419,8 +414,10 @@ function PanelsMenu({ panels, onToggle, onPanels, ids = CHOOSER_PANEL_IDS }: {
   const sized = readingOrder(panels).filter((q) => ids.includes(q.id));
   return (
     <details className="relative" data-terminal="panels">
-      <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
-      <div className="absolute left-0 z-20 mt-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
+      <summary className={MENU_SUMMARY} title="Panels">
+        <LayoutPanelTop size={16} aria-hidden />Panels
+      </summary>
+      <div className="absolute right-full top-0 z-20 mr-space-1 flex items-start gap-space-3 rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <fieldset className="w-52 shrink-0 space-y-px">
           <legend className="sr-only">Show panels</legend>
           {ids.map((id) => (

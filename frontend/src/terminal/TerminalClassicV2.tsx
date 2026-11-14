@@ -1,10 +1,9 @@
-import { LayoutPanelTop, RotateCcw, Save } from "lucide-react";
+import { LayoutPanelTop } from "lucide-react";
 import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
-import { cx } from "../components/primitives/cx";
 import { dataOf, usePolled, type Loadable } from "../dashboard/useDashboardData";
 import { spotSymbolOf, useChainTrading } from "../fno/ChainTradingV2";
 import { useBasket } from "../fno/basket";
@@ -27,6 +26,7 @@ import {
   ChainPanelV2, ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
+import { LayoutToolsV2, MENU_SUMMARY } from "./LayoutToolsV2";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import { SpreadBuilderV2 } from "./SpreadBuilderV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
@@ -100,7 +100,7 @@ function useLayouts(terminal: TerminalApi) {
       setPrefs(r.value);
       setVersion(r.version);
       setWorking(nextWorking ?? layoutFor(r.value, activeKey(r.value)));
-      setNote({ kind: "done", text: done });
+      setNote(done ? { kind: "done", text: done } : null);  // owner 14 Nov: a plain switch says nothing
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -114,6 +114,12 @@ function useLayouts(terminal: TerminalApi) {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (note?.kind !== "done") return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), 4000);
+    return () => clearTimeout(t);
+  }, [note]);
 
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
@@ -211,7 +217,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
     // The layout changes at once; it is remembered on the server so another device opens on it too.
     L.setPrefs(switched);
     setWorking(shown);
-    if (L.version !== null) void L.persist(switched, `${shown.name} is in use.`, shown);
+    if (L.version !== null) void L.persist(switched, "", shown);
   }
 
   async function submitAsk() {
@@ -246,31 +252,19 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
     <div className="mx-auto w-full space-y-space-3" data-page="terminal-classic-v2" data-layout={key}>
       {confirmBox.dialog}
       <PageIntro id="terminal" lines={["The chart, the option chain and your order on one screen. Every order is checked and shown to you before it is placed."]} />
+      {/* Owner 14 Nov: one compact row - the underlying picker names itself (tooltip, aria-label), the layout controls as icons. */}
       <div className="flex flex-wrap items-center gap-space-2" role="toolbar" aria-label="Terminal" data-block="terminal-toolbar">
-        <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
-          <span aria-hidden>Underlying</span>
+        <div title="Underlying" className="min-w-0">
           <Combobox label="Underlying" value={underlying} onChange={(v) => setWorking((w) => ({ ...w, underlying: v === DEFAULT_UNDERLYING ? null : v }))}
             options={UNDERLYINGS.map((u) => ({ value: u, label: u }))} searchable={UNDERLYINGS.length > 8} dataAttrs={{ "data-terminal": "underlying" }} />
         </div>
-        <div className="hidden flex-wrap items-center gap-space-2 md:flex" data-tour="terminal-layouts">
-          <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
-            <span aria-hidden>Layout</span>
-            <Combobox label="Layout" value={key} onChange={pickLayout} disabled={L.busy} dataAttrs={{ "data-terminal": "layout" }}
-              options={[...PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
-                ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]} />
-          </div>
-          {!narrow && <PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))} />}
-          <button type="button" className={BUTTON} onClick={save} disabled={L.busy || (!!own && !dirty)} data-terminal="save">
-            <Save size={16} aria-hidden />{own ? "Save" : "Save as mine"}
-          </button>
-          {own && <button type="button" className={BUTTON} onClick={() => setAsk({ kind: "save-as", value: "" })} disabled={L.busy || count >= MAX_LAYOUTS} data-terminal="save-as">Save as new</button>}
-          {own && <button type="button" className={BUTTON} onClick={() => setAsk({ kind: "rename", value: own.name })} disabled={L.busy} data-terminal="rename">Rename</button>}
-          {own && <button type="button" className={BUTTON} onClick={del} disabled={L.busy} data-terminal="delete">Delete</button>}
-          <button type="button" className={BUTTON} onClick={() => setWorking(resetToPreset(working))} data-terminal="reset"
-            title={`Back to the ${PRESETS[working.preset].name} layout`}>
-            <RotateCcw size={16} aria-hidden />Reset
-          </button>
-          <span className="text-t13 text-fg-muted" data-terminal="count">{count} of {MAX_LAYOUTS} saved</span>
+        <div className="hidden md:block">
+          <LayoutToolsV2 value={key} onPick={pickLayout} busy={L.busy} own={own ? own.name : null} dirty={dirty} count={count} max={MAX_LAYOUTS} align="left"
+            options={[...PRESET_IDS.map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
+              ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]}
+            panels={narrow ? null : <PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))} />}
+            onSave={save} onSaveAs={() => setAsk({ kind: "save-as", value: "" })} onRename={() => own && setAsk({ kind: "rename", value: own.name })}
+            onDelete={() => void del()} onReset={() => setWorking(resetToPreset(working))} resetTitle={`Back to the ${PRESETS[working.preset].name} layout`} />
         </div>
       </div>
 
@@ -332,8 +326,10 @@ function PanelsMenu({ panels, onToggle }: { panels: readonly PanelPlace[]; onTog
   const open = new Set(panels.filter((x) => x.open).map((x) => x.id));
   return (
     <details className="relative" data-terminal="panels">
-      <summary className={cx(BUTTON, "cursor-pointer list-none")}><LayoutPanelTop size={16} aria-hidden />Panels</summary>
-      <fieldset className="absolute left-0 z-20 mt-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
+      <summary className={MENU_SUMMARY} title="Panels">
+        <LayoutPanelTop size={16} aria-hidden />Panels
+      </summary>
+      <fieldset className="absolute left-full top-0 z-20 ml-space-1 w-60 space-y-px rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
         <legend className="sr-only">Show panels</legend>
         {CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist").map((id) => (
           <label key={id} className="flex min-h-9 cursor-pointer items-center gap-space-2 rounded-control px-space-2 text-t14 text-fg hover:bg-surface-2">

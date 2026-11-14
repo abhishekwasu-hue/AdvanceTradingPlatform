@@ -67,3 +67,9 @@ scripts/check_public_repo.py:generic-api-key:152
 # M77 (study routes): `key=key` (the study's own idempotency key variable, not a secret) in backend/app/study/routes.py at commit f633ec1a on its branch.
 f633ec1a7fc54fdb371b1c8700d05a4e432a7a17:backend/app/study/routes.py:generic-api-key:111
 # (the current line carries an inline gitleaks:allow; the line number moved with M77 SX-6)
+# Runner S3 (claude/runner-s3-pairing, first push): the generic rule read the type annotation
+# type annotation of a parameter in backend/tests/test_runner_s3_pairing.py as a credential; there is no key in the
+# file (test keys are generated at run time). Parameter renamed to "signer" in 96347865.
+# The first version of this comment (commit 7ffb92d1) quoted that annotation and was itself flagged; it is ignored too.
+6bea545ff19a4edfe07e24853fbab722cd1e616f:backend/tests/test_runner_s3_pairing.py:generic-api-key:79
+7ffb92d1a2442987542b986965302e7467223048:.gitleaksignore:generic-api-key:71

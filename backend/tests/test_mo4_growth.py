@@ -142,7 +142,7 @@ def test_usage_numbers_come_from_the_fixtures():
     )
     page = _with_user(me, lambda s, u: growth_plan.plan_page(s, u, now=now))
     meters = {m["key"]: m for m in page["meters"]}
-    assert page["plan"]["name"] == "Free" and page["trial"] is None
+    assert page["plan"]["name"] == "Basic" and page["trial"] is None
     assert meters["watchlists"]["used"] == 2 and meters["watchlists"]["limit"] is None        # plan_limits_v2 off: no limit
     assert meters["watchlists"]["note"] == "No limit on your plan right now."
     assert meters["scans"]["used"] == 3 and meters["scans"]["text"] == "3 this month"

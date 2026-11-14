@@ -433,10 +433,11 @@ class RateLimitedBroker(BrokerInterface):
     async def get_option_chain(self, underlying, expiry=None): return await self._call("get_option_chain", underlying, expiry)
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
         # Z10-c: the broker-order chokepoint of the Phase 0 PAPER-only lock. A new entry is refused before it costs a
-        # token or reaches the broker; exits, stops, modifies and cancels always pass (ADR-0004).
+        # token or reaches the broker; exits, stops, modifies and cancels always pass (ADR-0004). B1: the lock also holds
+        # for every organisation that is not the owner's (`phase0_lock.locked`), so a non-owner LIVE entry stops here too.
         from app.platform import phase0_lock
         if phase0_lock.locked(self.tenant_id) and phase0_lock.is_entry_order(order):
-            return phase0_lock.refused_response()
+            return phase0_lock.refused_response(self.tenant_id)
         if self.ops is None:
             return await self._call("place_order", order)
         from app.execution.ops_throttle import is_entry, refused_response
@@ -466,7 +467,7 @@ class RateLimitedBroker(BrokerInterface):
         from app.brokers.models import GttStatus
         from app.platform import phase0_lock
         if phase0_lock.locked(self.tenant_id):
-            return GttStatus(gtt_id="", status="REJECTED", message=phase0_lock.refused_response().message)
+            return GttStatus(gtt_id="", status="REJECTED", message=phase0_lock.refused_response(self.tenant_id).message)
         return await self._call("place_gtt", gtt)
 
     async def modify_gtt(self, gtt_id, gtt): return await self._call("modify_gtt", gtt_id, gtt)

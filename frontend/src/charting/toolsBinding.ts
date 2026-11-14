@@ -42,6 +42,10 @@ export interface KeySource {
 export const PREVIEW_ID = "__preview";
 const SELECTED_EXTRA_WIDTH = 1;
 const drawingId = (key: string) => `d:${key}`;
+/** Owner 14 Nov (drawing tools on every chart window): several charts can be bound at once (the Terminal's chart and its
+ * chart sheet, an option's CE and PE). The keys go to the chart last pressed on, or whose tool was last picked; before
+ * any, to every chart bound to that key source (one chart: as before). */
+const lastSurface = new WeakMap<KeySource, Surface>();
 
 /** A key typed into a text box is the user typing, not a chart shortcut. */
 function typing(target: unknown): boolean {
@@ -82,7 +86,10 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
     return engine.toData(x, y);
   };
 
+  let armed = false;
   const render = (v: ToolView) => {
+    if (v.tool && !armed) lastSurface.set(keys, surface);
+    armed = !!v.tool;
     const next = new Set<string>();
     for (const d of v.drawings) {
       const id = drawingId(d.key);
@@ -107,6 +114,7 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
   };
 
   const down = (e: PointerLike) => {
+    lastSurface.set(keys, surface);
     if ((e.button != null && e.button !== 0) || belowPricePane(e)) return;
     const pt = point(e);
     if (ctl.view().tool) {
@@ -142,7 +150,7 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
   const leave = () => { if (!dragging) ctl.pointerMove(null); };
 
   const key = (e: KeyLike) => {
-    if (typing(e.target)) return;
+    if (typing(e.target) || (lastSurface.has(keys) && lastSurface.get(keys) !== surface)) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     if (e.key === "Escape") { stopDrag(); ctl.cancel(); return; }
@@ -160,6 +168,7 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
   keys.addEventListener("keydown", key);
 
   return () => {
+    if (lastSurface.get(keys) === surface) lastSurface.delete(keys);
     unsubscribe();
     surface.removeEventListener("pointerdown", down, true);
     surface.removeEventListener("pointermove", move);

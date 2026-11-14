@@ -9,6 +9,7 @@ import { EMPTY, formatChange, formatPct, formatPrice } from "../ui/format";
 import { usePageVisible } from "../utils/usePageVisible";
 import type { OverlayId } from "./chartCore";
 import { marketChip } from "./chartsPage";
+import ChartTradeBar from "./ChartTradeBar";
 import EmbeddedChartV2 from "./EmbeddedChartV2";
 import { headerFigures, shownSides, sidesOf, type OptionRight, type PairView } from "./optionPair";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, type TimeframeId } from "./timeframes";
@@ -95,6 +96,8 @@ function PairSide({ right, symbol, exchange, timeframe, onTimeframe, toolbar, ov
             </span>
           )}
         </p>
+        {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit for this pane's own contract */}
+        <ChartTradeBar symbol={symbol} exchange={exchange} ltp={fig.last} className="ml-auto" />
       </header>
       <EmbeddedChartV2 symbol={symbol} exchange={exchange} timeframe={timeframe} onTimeframe={onTimeframe} openLink={false}
         toolbar={toolbar} overlays={overlays} onOverlays={onOverlays} onCandles={setCandles} onEngine={onEngine}

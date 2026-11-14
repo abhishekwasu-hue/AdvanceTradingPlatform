@@ -131,9 +131,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "177ad3397c620544cce95188ae463e14e1a8b3437807a67d8d4a33566a3bd335",
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "e64acfe2d5604b173a9939193ac2746ecaea09513c1ccdf155b8a857d1be76c9",
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "62f83981eed0910df2678d1f604a7dcb9c5b71cd63f9232470eec992294dca87",
-    # M95: the front door's Journal image - the Week tab's discipline score card on the e2e journal fixture, every figure
-    # hidden (title and part names only, no amount, no price); re-pin after regenerating it (frontend/scripts/front-images/)
-    "frontend/public/front/journal.png": "fb1fc25f931c2c496d3317810bfdb6a4f60355ebe32c66f06eed99aa8a4b9924",
+    # M95 (remade after the owner's review, 14 Nov): the front door's Journal image - one made-up practice trade on
+    # "Index A" opened with its notes, every price, amount and R hidden; re-pin after regenerating it (frontend/scripts/front-images/)
+    "frontend/public/front/journal.png": "1d6776ec231b55378092daf59c3522b31db3b0531fc88d3d71a244004104a5d2",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
@@ -229,7 +229,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
     "frontend/e2e/fixtures/setup_v2.json": "8cedb077243878f1e3ee50c22996a933359db0a0127084b2eb471c637a54261b",
     # P3: hand-written, made-up replies for the front page and the go-live checklist (no real account, broker or token)
-    "frontend/e2e/fixtures/front_page.json": "a2a51de38eec31a2a2735557596a4599d3a1efd73c4bd39d929ca822447d850d",
+    "frontend/e2e/fixtures/front_page.json": "e37b09c96f9c849669df0fdb1ea9e4e1f9c07cfac96a891877d2e460b8d707bc",
     "frontend/e2e/fixtures/signals_v2.json": "8a8c59c855e923dd02db351c5f8753d26851310cd5af5e2f405b9c78339338a8",
     "frontend/e2e/fixtures/system_status.json": "1e6eb9fa4f6aadbabc6128522a423a6697471cb4f71dd6c548c0b4bbe788bb91",
     "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",

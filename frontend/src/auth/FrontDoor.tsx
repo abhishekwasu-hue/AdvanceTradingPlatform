@@ -28,8 +28,9 @@ export const BENEFITS = [
   { slug: "journal", title: "journalTitle", text: "journalText" },
   { slug: "daily-report", title: "reportTitle", text: "reportText" },
 ] as const satisfies readonly { slug: string; title: keyof FrontStrings; text: keyof FrontStrings }[];
-export const IMAGE_W = 640;
-export const IMAGE_H = 400;
+/** The files are made at the card's own 16:10 shape (scripts/front-images/, owner review 14 Nov), so the whole image shows. */
+export const IMAGE_W = 720;
+export const IMAGE_H = 450;
 
 /** The stored language, "en" when none (or storage is blocked). */
 export function readFrontLang(): FrontLang {

@@ -145,6 +145,7 @@ def _waiting(dep: "StrategyDeploymentRecord", now: datetime, reason: Optional[st
 TOKEN_RECHECK_SECONDS = 300
 WATCH_EVERY_MINUTES = 5             # M72 PR-7: how often the worker looks for new Copilot watch cards (operational)
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
+RUNNER_OFFLINE_EVERY_MINUTES = 1   # Runner S3: how often the worker looks for runners past their user's own offline time
 SETTLEMENT_EVERY_MINUTES = 30       # TM Part 7: how often the worker looks for stock F&O positions that may settle by delivery
 ONBOARDING_EVERY_MINUTES = 15       # C13: how often the worker looks for first-week onboarding e-mails due
 # Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
@@ -308,6 +309,7 @@ class TradingWorker:
         self._last_watch_check: Optional[datetime] = None      # M72 PR-7: the Copilot watch
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
         self._last_settlement_check: Optional[datetime] = None  # TM Part 7: the physical-settlement warnings
+        self._last_runner_check: Optional[datetime] = None      # Runner S3: the "runner offline" alert
         self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
@@ -796,6 +798,17 @@ class TradingWorker:
                             await workspace_watch.run_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a card never blocks the cycle
                         logger.warning("Workspace watch failed: %s", type(exc).__name__)
+                # Runner S3 (app/runner_link/service.py): a user's own runner whose last heartbeat is older than his own
+                # offline time turns "offline" with one alert to him (bell + his Telegram). Flags ui_v2 + user_runner. Its own
+                # session; nothing is sent to the runner and nothing on it is stopped.
+                if self._last_runner_check is None or now - self._last_runner_check >= timedelta(minutes=RUNNER_OFFLINE_EVERY_MINUTES):
+                    self._last_runner_check = now
+                    try:
+                        from app.runner_link import service as runner_link
+                        async with self.session_factory() as own:
+                            await runner_link.check_offline(own, now)
+                    except Exception as exc:  # noqa: BLE001 - an alert never blocks the cycle
+                        logger.warning("Runner offline check failed: %s", type(exc).__name__)
                 # TM Part 7 (app/paper/settlement_watch.py): stock F&O positions that may settle by delivery, once a day per
                 # position for users who keep the Telegram choice on. Flags ui_v2 + smart_execution. Information only.
                 if self._last_settlement_check is None or now - self._last_settlement_check >= timedelta(minutes=SETTLEMENT_EVERY_MINUTES):

@@ -287,7 +287,7 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
             <figcaption className="mb-space-1 text-t13 font-semibold text-fg">ATP&apos;s reading of {title}</figcaption>
             {live ? (
               <Suspense fallback={<Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}>
-                <EmbeddedChartV2 symbol={r.symbol} timeframe={LIVE_TF[r.timeframe]} className="h-72 md:h-80" {...readingOverlay(r)} />
+                <EmbeddedChartV2 symbol={r.symbol} timeframe={LIVE_TF[r.timeframe]} className="h-72 md:h-80" drawing={false} {...readingOverlay(r)} />
               </Suspense>
             ) : picture ?? <Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}
             {!live && <Legend />}

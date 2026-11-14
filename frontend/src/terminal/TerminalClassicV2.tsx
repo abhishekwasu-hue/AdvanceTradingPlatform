@@ -100,7 +100,7 @@ function useLayouts(terminal: TerminalApi) {
       setPrefs(r.value);
       setVersion(r.version);
       setWorking(nextWorking ?? layoutFor(r.value, activeKey(r.value)));
-      setNote({ kind: "done", text: done });
+      setNote(done ? { kind: "done", text: done } : null);  // owner 14 Nov: a plain switch says nothing
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -114,6 +114,12 @@ function useLayouts(terminal: TerminalApi) {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (note?.kind !== "done") return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), 4000);
+    return () => clearTimeout(t);
+  }, [note]);
 
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
@@ -211,7 +217,7 @@ export default function TerminalClassicV2({ terminal = defaultTerminalApi }: Pag
     // The layout changes at once; it is remembered on the server so another device opens on it too.
     L.setPrefs(switched);
     setWorking(shown);
-    if (L.version !== null) void L.persist(switched, `${shown.name} is in use.`, shown);
+    if (L.version !== null) void L.persist(switched, "", shown);
   }
 
   async function submitAsk() {

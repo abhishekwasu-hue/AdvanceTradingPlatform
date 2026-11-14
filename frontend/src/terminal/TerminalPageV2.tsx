@@ -112,7 +112,9 @@ function useLayouts(terminal: TerminalApi) {
       setPrefs(r.value);
       setVersion(r.version);
       setWorking(nextWorking ?? layoutFor(r.value, activeKey(r.value)));
-      setNote({ kind: "done", text: done });
+      // Owner 14 Nov ("space waste jate"): a plain layout switch says nothing (the picker already shows the name);
+      // a save / rename / delete confirmation shows briefly and then goes away.
+      setNote(done ? { kind: "done", text: done } : null);
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -126,6 +128,12 @@ function useLayouts(terminal: TerminalApi) {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (note?.kind !== "done") return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), 4000);
+    return () => clearTimeout(t);
+  }, [note]);
 
   return { prefs, setPrefs, version, working, setWorking, note, setNote, busy, persist, key: activeKey(prefs) };
 }
@@ -277,7 +285,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
     // The layout changes at once; it is remembered on the server so another device opens on it too.
     L.setPrefs(switched);
     setWorking(shown);
-    if (L.version !== null) void L.persist(switched, `${shown.name} is in use.`, shown);
+    if (L.version !== null) void L.persist(switched, "", shown);
   }
 
   async function submitAsk() {

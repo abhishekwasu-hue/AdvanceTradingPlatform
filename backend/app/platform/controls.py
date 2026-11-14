@@ -684,6 +684,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
     "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
+    # Runner S3 (docs/design/USER_RUNNER.md; app/runner_link; needs `ui_v2`): the ATP side of the user's own runner - device
+    # pairing (one-time code + the device's Ed25519 key), the signed heartbeat, the read-only mirror of his runner's orders /
+    # positions / audit rows and the "runner offline" alert. ATP never sets a runner's kill switch, never evaluates a runner
+    # user's strategy and never places an order for him. OFF: /api/runner/* answers 404 (X-Feature-Disabled), no alert.
+    "user_runner": "My runner: pair your own runner, its heartbeat, read-only copies of its orders and positions, and the offline alert (places no orders)",
     # AUD-T3 (owner audit 28 Oct; app/deployments/why.py; needs `ui_v2`): the "Why no trade" timeline on a bot's card -
     # the last closed bars with the reason it did or did not trade. Information only: the worker writes the log either way
     # and never reads it. OFF: GET /api/deployments/{id}/why answers 404 and the card is hidden.

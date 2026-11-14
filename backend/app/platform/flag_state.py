@@ -161,6 +161,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "market_zones": _ready(),
     "markets_view": _ready("Reads the nightly market data download"),
     "mobile_push": _setup("Phone-notification key on the server and the Android app published", HOST),
+    "user_runner": _not_built("The runner program and the My runner page (S4-S7); S3 is the server side only", "FN6 / G1 S7"),
     "multi_account": _ready("PAPER fan-out; LIVE fan-out only with your LIVE switch"),
     "my_day_card": _ready(),
     "screener_legends": _ready(),

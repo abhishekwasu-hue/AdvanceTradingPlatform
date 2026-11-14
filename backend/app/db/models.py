@@ -4210,3 +4210,135 @@ class TriggerPlanRecord(Base):
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+# --- Runner S3 (docs/design/USER_RUNNER.md section 4; flag `user_runner`, OFF): the ATP side of the user's own runner ---
+# ATP keeps a registry of each user's paired runner devices, what each device last reported in its signed heartbeat, and
+# read-only copies of the orders, positions and audit rows the runner chose to upload. No table here holds a broker key,
+# secret, access token or TOTP secret (those stay on the runner, design section 5; tests/test_runner_s3_pairing.py checks
+# every column name). The kill switch is the user's: `kill_switch_on` is only what the device reports - ATP never sets it.
+
+
+class RunnerDeviceRecord(Base):
+    """One paired runner of one user. `device_uid` (random, 32 hex) names the device in its signed requests; `public_key`
+    is its Ed25519 public key (64 hex), the only key ATP holds - the private key never leaves the device. `status`:
+    PAIRED (no heartbeat yet), ONLINE, OFFLINE (no heartbeat within the user's own `offline_after_minutes`, prefs
+    namespace `runner`), REVOKED (by the user; its signed requests are refused from then on). `last_signed_ms` is the
+    timestamp of the newest accepted signed request: a request must be newer (replay refused)."""
+
+    __tablename__ = "runner_devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_uid: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    public_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="PAIRED")
+    version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    paired_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # What the device last reported (never set by ATP).
+    run_state: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    kill_switch_on: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    open_positions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    broker_session: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    egress_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    last_signed_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    offline_alerted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class RunnerPairingCodeRecord(Base):
+    """A one-time pairing code a user created for a new runner: only the SHA-256 of the normalised code is stored (the
+    plain code is shown once). It expires after a few minutes and is spent by the first successful pairing."""
+
+    __tablename__ = "runner_pairing_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("runner_devices.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class RunnerMirrorOrderRecord(Base):
+    """Read-only copy of one order on the user's runner, keyed by the runner's own reference (one row per device and
+    reference; a re-upload updates it only when the runner's `updated_at` is newer). `reason` = a refusal's reason."""
+
+    __tablename__ = "runner_mirror_orders"
+    __table_args__ = (UniqueConstraint("device_id", "runner_ref", name="uq_runner_mirror_orders_ref"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("runner_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    runner_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    deployment_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mode: Mapped[str] = mapped_column(String(5), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(12), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    trigger_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    filled_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    average_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    placed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class RunnerMirrorPositionRecord(Base):
+    """Read-only copy of one position on the user's runner (with its P&L marks), keyed like the orders."""
+
+    __tablename__ = "runner_mirror_positions"
+    __table_args__ = (UniqueConstraint("device_id", "runner_ref", name="uq_runner_mirror_positions_ref"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("runner_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    runner_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    deployment_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mode: Mapped[str] = mapped_column(String(5), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(60), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    average_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    last_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    unrealised_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
+    realised_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    opened_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class RunnerMirrorAuditRecord(Base):
+    """Read-only summary of one row of the runner's local append-only audit log (hash-chained on the runner): its sequence
+    number, action, a short summary and the row's hash with the previous row's. One row per device and sequence; a
+    re-upload of the same row changes nothing."""
+
+    __tablename__ = "runner_mirror_audit"
+    __table_args__ = (UniqueConstraint("device_id", "seq", name="uq_runner_mirror_audit_seq"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("runner_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    action: Mapped[str] = mapped_column(String(60), nullable=False)
+    summary: Mapped[str] = mapped_column(String(300), nullable=False)
+    row_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)

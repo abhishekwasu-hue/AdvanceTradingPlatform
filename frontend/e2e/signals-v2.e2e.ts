@@ -528,6 +528,9 @@ test.describe("Route 3 signal card broker app at 360", () => {
     await expect(sheet.locator("[data-fact='Symbol']")).toContainText("NIFTY 50");
     await expect(sheet.locator("[data-fact='Quantity']")).toContainText("Your choice");      // an index has no cash order
     await expect(sheet.locator("[data-broker-home='zerodha']")).toHaveAttribute("href", "https://kite.zerodha.com");
+    // owner 14 Nov: the stop-loss reminder; no stop saved here, so nothing more (never an ATP-chosen stop)
+    await expect(sheet.locator("[data-sl-reminder]")).toContainText("Place your stop-loss (SL / GTT) in your broker app too - ATP cannot exit this order for you.");
+    await expect(sheet.locator("[data-sl-own]")).toHaveCount(0);
     await expectPhoneLayout(page);
     if (proof) await page.screenshot({ path: `${proof}/after-signal-sheet-360.png`, animations: "disabled" });
   });

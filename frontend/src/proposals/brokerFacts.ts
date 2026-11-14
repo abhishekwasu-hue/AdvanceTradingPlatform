@@ -65,3 +65,21 @@ export function entryFacts(signal: { symbol: string; exchange?: string | null; d
     quantity: legs || signal.index ? null : own.quantity, orderType: own.orderType, product: own.product, price: null, legs,
   };
 }
+
+export const STOP_KIND_KEY = "exits.stop_loss_kind";
+export const STOP_VALUE_KEY = "exits.stop_loss_value";
+
+/**
+ * Owner 14 Nov (Route 3 SL reminder): HIS OWN saved Stop-loss from Trade settings, as text to copy into his broker app -
+ * only when he saved a value; null otherwise (ATP never chooses a stop for him - CLAUDE.md §3). `copy` is the bare number.
+ */
+export function ownStopSetting(view: TradeSettingsView | null | undefined): { text: string; copy: string } | null {
+  const v = (key: string) => view?.sections.flatMap((s) => s.fields).find((f) => f.key === key && f.saved)?.value;
+  const value = v(STOP_VALUE_KEY);
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  const n = String(value);
+  const kind = v(STOP_KIND_KEY);
+  const text = kind === "POINTS" ? `${n} points from entry` : kind === "PCT" ? `${n}% from entry`
+    : kind === "RUPEES" ? `₹${n} on the trade` : n;
+  return { text, copy: n };
+}

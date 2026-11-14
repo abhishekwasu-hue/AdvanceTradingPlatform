@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { OrderModeChoice } from "../fno/OrderModeV2";
 import type { TradeSettingsView } from "../settings/tradeSettings";
 import actionSource from "./BrokerAppAction.tsx?raw";
-import { BrokerAppAction, BrokerFactsBody, type BrokerAppInfo } from "./BrokerAppAction";
-import { basketFacts, entryFacts, ownEntrySettings, reverseFacts, ticketFacts } from "./brokerFacts";
+import { BrokerAppAction, BrokerFactsBody, SL_REMINDER, StopLossReminder, type BrokerAppInfo } from "./BrokerAppAction";
+import { basketFacts, entryFacts, ownEntrySettings, ownStopSetting, reverseFacts, ticketFacts } from "./brokerFacts";
 import { BROKER_TABLE, KITE_BASKET_URL, brokerRow, factRows, factsText, kiteEntryLink, type OrderFacts } from "./brokerLinks";
 import ticketSource from "../fno/OrderTicketV2.tsx?raw";
 import basketSource from "../fno/BasketPanelV2.tsx?raw";
@@ -118,8 +118,12 @@ describe("B2 / B3 the button", () => {
   it("nothing while the feature is off; the label never says buy or sell", () => {
     expect(renderToStaticMarkup(<BrokerAppAction info={null} facts={{ instrument: "X", side: "BUY", quantity: 1, orderType: null, product: null, price: null }} testId="t" />)).toBe("");
     const html = renderToStaticMarkup(<BrokerAppAction info={ZERODHA} facts={{ instrument: "X", side: "BUY", quantity: 1, orderType: null, product: null, price: null }} testId="t" />);
-    expect(text(html).trim()).toBe("Trade in your broker app");
+    expect(text(html).trim()).toBe(`Trade in your broker app ${SL_REMINDER}`);
+    expect(text(html)).not.toMatch(/\b(buy|sell)\b/i);
     expect(html).toContain('data-testid="t-broker-app"');
+    // a compact row action (scan matches) keeps the row small: the reminder is on its sheet
+    const row = renderToStaticMarkup(<BrokerAppAction compact info={ZERODHA} facts={{ instrument: "X", side: "BUY", quantity: 1, orderType: null, product: null, price: null }} testId="t" />);
+    expect(row).not.toContain("data-sl-reminder");
   });
 
   it("the dead LIVE choice becomes the action while LIVE is not open for him, and only then", () => {
@@ -139,5 +143,39 @@ describe("B2 / B3 the button", () => {
     expect(boardSource).toContain("<EntryBrokerApp compact testId=\"scan\"");
     expect(actionSource).not.toMatch(/method:\s*"(POST|PUT|PATCH|DELETE)"|placeOrder|\/orders/);
     expect(actionSource).toContain('features.on("ui_v2") && features.on("broker_app_links")');
+  });
+});
+
+describe("owner 14 Nov: the stop-loss reminder", () => {
+  const facts: OrderFacts = { instrument: "RELIANCE", exchange: "NSE", side: "BUY", quantity: 10, orderType: "MARKET", product: null, price: null };
+
+  it("the copy sheet shows the reminder in the warn tone with an icon; no stop of ATP's own", () => {
+    const html = renderToStaticMarkup(<BrokerFactsBody facts={facts} broker="zerodha" onCopy={() => undefined} />);
+    expect(text(html)).toContain(SL_REMINDER);
+    expect(html).toContain("data-sl-reminder");
+    expect(html).toContain("bg-warn-tint");
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("data-sl-own");                    // nothing saved: nothing more
+  });
+
+  it("shows HIS saved Stop-loss setting, labelled as his, with Copy", () => {
+    const stop = ownStopSetting(settings({ "exits.stop_loss_kind": "PCT", "exits.stop_loss_value": 30 }));
+    expect(stop).toEqual({ text: "30% from entry", copy: "30" });
+    const html = renderToStaticMarkup(<BrokerFactsBody facts={facts} broker="zerodha" stop={stop} onCopy={() => undefined} />);
+    expect(text(html)).toContain("Your stop-loss setting: 30% from entry");
+    expect(html).toContain('data-copy="stop"');
+    expect(ownStopSetting(settings({ "exits.stop_loss_kind": "POINTS", "exits.stop_loss_value": 40 }))?.text).toBe("40 points from entry");
+    expect(ownStopSetting(settings({ "exits.stop_loss_kind": "RUPEES", "exits.stop_loss_value": 500 }))?.text).toBe("₹500 on the trade");
+    expect(ownStopSetting(settings({ "exits.stop_loss_value": 12 }))?.text).toBe("12");
+  });
+
+  it("nothing more when he saved no stop (a kind alone, zero, or nothing)", () => {
+    expect(ownStopSetting(null)).toBeNull();
+    expect(ownStopSetting(settings({ "exits.stop_loss_kind": "PCT" }))).toBeNull();
+    expect(ownStopSetting(settings({ "exits.stop_loss_value": 0 }))).toBeNull();
+    const unsaved = settings({ "exits.stop_loss_value": 30 });
+    unsaved.sections[0].fields[0].saved = false;
+    expect(ownStopSetting(unsaved)).toBeNull();
+    expect(text(renderToStaticMarkup(<StopLossReminder stop={null} />)).trim()).toBe(SL_REMINDER);
   });
 });

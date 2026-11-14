@@ -1,4 +1,4 @@
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { request } from "../api/client";
 import { cx } from "../components/primitives/cx";
@@ -6,7 +6,7 @@ import { Dialog } from "../components/primitives/Dialog";
 import { isIndex } from "../paperbot/model";
 import { useTradeSettings } from "../settings/tradeSettings";
 import { useFeatures } from "../ui/useFeatures";
-import { entryFacts, ownEntrySettings } from "./brokerFacts";
+import { entryFacts, ownEntrySettings, ownStopSetting } from "./brokerFacts";
 import { BROKER_TABLE, brokerRow, factRows, factsText, kiteEntryLink, openBrokerAppLink, type BrokerAppLink, type OrderFacts } from "./brokerLinks";
 
 /**
@@ -40,19 +40,56 @@ export function useBrokerApp(fetcher: typeof request = request): BrokerAppInfo |
 const BUTTON = "inline-flex min-h-11 items-center justify-center gap-space-1 rounded-control border border-border bg-surface-1 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50";
 const SMALL = "inline-flex min-h-11 items-center gap-space-1 rounded-control px-space-2 text-t13 font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
+/** Owner 14 Nov: the stop-loss reminder - ATP sends nothing to his broker, so it cannot exit an order placed there. */
+export const SL_REMINDER = "Place your stop-loss (SL / GTT) in your broker app too - ATP cannot exit this order for you.";
+
+/** The reminder line (warn tone), plus HIS OWN saved Stop-loss setting to copy when he saved one - nothing else
+ * (no ATP-chosen stop). `stop`: from `ownStopSetting`; `onCopy` adds a Copy for it (the sheet). */
+export function StopLossReminder({ stop, copied = null, onCopy }: {
+  stop: { text: string; copy: string } | null; copied?: string | null; onCopy?: (name: string, text: string) => void;
+}) {
+  return (
+    <div role="note" className="rounded-control border border-warn/40 bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-sl-reminder>
+      <p className="flex items-start gap-space-1 font-medium">
+        <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" />
+        <span>{SL_REMINDER}</span>
+      </p>
+      {stop && (
+        <p className="mt-space-1 flex flex-wrap items-center gap-space-1 pl-space-5 text-fg" data-sl-own>
+          <span className="text-fg-muted">Your stop-loss setting:</span>
+          <span className="font-tabular font-semibold">{stop.text}</span>
+          {onCopy && (
+            <button type="button" className={SMALL} aria-label="Copy your stop-loss setting" onClick={() => onCopy("stop", stop.copy)} data-copy="stop">
+              <Copy size={14} aria-hidden />{copied === "stop" ? "Copied" : "Copy"}
+            </button>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** His own saved Stop-loss (read once per page load while the feature is on; null while off or not saved). */
+function useOwnStop(enabled: boolean): { text: string; copy: string } | null {
+  return ownStopSetting(useTradeSettings(enabled));
+}
+
 async function copy(text: string): Promise<boolean> {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 
 /** The sheet's body (no dialog, for tests too): each set fact with Copy, "Copy all", and his broker's official home -
  * or every broker's in the table while his broker is not known. Nothing here sends anything anywhere. */
-export function BrokerFactsBody({ facts, broker, copied = null, onCopy }: {
+export function BrokerFactsBody({ facts, broker, copied = null, onCopy, stop = null }: {
   facts: OrderFacts; broker: string | null; copied?: string | null; onCopy: (name: string, text: string) => void;
+  /** His own saved Stop-loss setting (shown under the reminder), or null. */
+  stop?: { text: string; copy: string } | null;
 }) {
   const row = brokerRow(broker);
   const homes = row ? [row] : BROKER_TABLE;
   return (
     <>
+      <div className="mb-space-3"><StopLossReminder stop={stop} copied={copied} onCopy={onCopy} /></div>
       <dl className="divide-y divide-subtle rounded-control border border-subtle" data-broker-facts>
         {factRows(facts).map((r) => (
           <div key={r.name} className="flex min-h-11 items-center gap-space-2 px-space-3 py-space-1" data-fact={r.name}>
@@ -88,11 +125,12 @@ export function BrokerFactsSheet({ open, onOpenChange, facts, broker }: {
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const row = brokerRow(broker);
+  const stop = useOwnStop(open);
   async function onCopy(name: string, text: string) { if (await copy(text)) setCopied(name); }
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Trade in your broker app"
       description={<span data-broker-sheet-note>Copy your order, then place it in {row ? row.label : "your broker app"}. ATP places nothing.</span>}>
-      <BrokerFactsBody facts={facts} broker={broker} copied={copied} onCopy={(n, t) => { void onCopy(n, t); }} />
+      <BrokerFactsBody facts={facts} broker={broker} copied={copied} stop={stop} onCopy={(n, t) => { void onCopy(n, t); }} />
     </Dialog>
   );
 }
@@ -110,6 +148,7 @@ export function BrokerAppAction({ info, facts, prefill, testId, className, compa
   const [sheet, setSheet] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const stop = useOwnStop(!compact && !!info && info.on && !!facts);
   if (!info || !info.on || !facts) return null;
   async function go() {
     setNote(null);
@@ -133,6 +172,7 @@ export function BrokerAppAction({ info, facts, prefill, testId, className, compa
       <button type="button" className={compact ? SMALL : cx(BUTTON, "w-full sm:w-auto")} onClick={() => void go()} disabled={busy} data-testid={`${testId}-broker-app`}>
         <ExternalLink size={compact ? 14 : 16} aria-hidden />Trade in your broker app
       </button>
+      {!compact && <StopLossReminder stop={stop} />}
       {note && <p role="status" className="text-t12 text-fg-muted" data-broker-app-note>{note}</p>}
       {sheet && <BrokerFactsSheet open={sheet} onOpenChange={setSheet} facts={facts} broker={info.broker} />}
     </div>

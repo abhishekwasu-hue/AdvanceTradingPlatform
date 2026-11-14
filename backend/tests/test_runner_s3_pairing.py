@@ -120,7 +120,7 @@ def test_off_by_default_and_unfinished_in_the_catalog():
     from app.platform import flag_catalog, flag_state
     assert "user_runner" in controls.FEATURE_FLAGS and "user_runner" in controls.DEFAULT_OFF_FLAGS
     assert flag_catalog.FLAG_INFO["user_runner"].status == "unfinished"
-    assert flag_state.FLAG_STATUS["user_runner"].state == "not_built"
+    assert flag_state.FLAG_STATUS["user_runner"].state == "ready"          # S8: parity passed; still OFF by default
     headers = _auth("rs3-off@example.com")
     _set_flags(user_runner=False)
     for method, path in (("POST", "/api/runner/pairing-codes"), ("GET", "/api/runner/devices")):

@@ -4,6 +4,7 @@ import { LEARN_IDEAS_ADDRESS, LEARN_WORDS_ADDRESS, navItemFor, type ShellKey } f
 import { settingsSectionAt } from "../settings/paths";
 import { IDEAS_ADDRESS } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
+import { RUNNER_ADDRESS } from "../runner/address";
 
 export { V2_ALIASES, V2_MOVED, V2_RETIRED_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
@@ -63,6 +64,7 @@ export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (clean(pathname) === LEARN_ADDRESS) return "learn";
   if (clean(pathname) === TERMINAL_ADDRESS) return "terminal";
   if (clean(pathname) === WATCHLIST_ADDRESS) return "watchlist";
+  if (clean(pathname) === RUNNER_ADDRESS) return "runner";
   // Settings redesign B: the Settings section pages (v2 only).
   const section = settingsSectionAt(clean(pathname));
   if (section) return section.key;

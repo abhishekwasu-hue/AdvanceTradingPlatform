@@ -434,3 +434,78 @@ ATP -> runner state (`app/runner_link/service.py` `runner_state`, `app/runner/li
   command kind with the group id and a button on My runner; listed for a later step. Until then a runner's incomplete
   group follows his own "if I do not answer" rule (unchanged).
 - Migration: no.
+
+## S6 results (branch `claude/runner-s6-image`)
+
+- Build context (`deploy/runner/build_context.py --out <dir>`), generated from `app/runner/manifest.py`: `app.runner.*`
+  and `RUNNER_MODULES` with every import they make (module level and inside functions, any depth) EXCEPT
+  `FORBIDDEN_PREFIXES`, which are never followed and never copied (451 modules, 551 files with the packages' data
+  files). The private package, its loaders, AI, admin, marketplace, Lab, worker, web app, billing and the lake are
+  physically absent; a path that reaches one gets an ImportError.
+- S1 open item closed: `platform/controls.engine_missing_flags` and `platform/flag_state` read an absent loader
+  package as "unavailable" (no crash).
+- Image (`deploy/runner/Dockerfile`): `python:3.13-slim` as the backend; installs `deploy/runner/requirements.lock`
+  (39 of the backend lock's packages, same pins and hashes; no uvicorn, asyncpg, AI SDKs, image / Parquet / S3,
+  tracing exporters, test tools); re-checks at build that no forbidden package is present; user `runner` (uid 10001);
+  volume `/runner`; healthcheck `python -m app.runner health` (reads the pid in `runner.lock`, never takes the lock);
+  no `EXPOSE`.
+- CI: the container-scan job builds the image from the generated context, runs one PAPER cycle and checks the
+  forbidden paths; Trivy report only. shellcheck covers `deploy/runner/install.sh`.
+- Release (`.github/workflows/runner-release.yml`, `runner-v*` tags only): build, smoke, push to
+  `ghcr.io/<owner>/atp-runner`, cosign keyless sign by digest, self-verify, publish `install.sh` with the digest
+  written in (+ its sha256) as the release asset.
+- Installer (`deploy/runner/install.sh`): Docker (Ubuntu `docker.io`) if missing; cosign (pinned, checksum) verifies
+  the image against this workflow's identity at a `runner-v*` tag BEFORE the pull by digest; folder 0700 owned by the
+  runner uid; pairing / keystore asked only when the image has those commands (S3-S5 not merged: skipped and said
+  so; until S5 `broker.json`, mode 600); `--restart unless-stopped`, read-only root, no capabilities, no port; prints
+  the public IP to register at Angel One. `install | update | status | uninstall`, `--dry-run`.
+- Owner one-time setup before the first release: after the first `runner-v*` tag, set the GHCR package
+  `atp-runner` to Public (so a VPS pulls without a login).
+- Docs: `docs/RUNNER_INSTALL.md` (beginner steps), `docs/runbooks/RUNNER_SETUP_SERVICE.md` (paid set-up checklist).
+
+## S8 results (branch `claude/runner-s8-parity`: S4c + S6 + S7 merged, then the parity harness)
+
+- PAPER parity, server worker vs runner loop, five owner-style cases: ALL MATCH (trades, orders, hedge-first sequence,
+  P&L, reasons, settlement time). Table and differences: `docs/design/RUNNER_PARITY.md`; CI test
+  `backend/tests/test_runner_s8_parity.py` fails on any mismatch.
+- Fixed on the way: the organisation's "one direction per symbol" check (worker-only) moved unchanged to
+  `execution/order_defaults.opposite_position`, called by the worker and the runner loop; a deployment with OI gates is
+  skipped on the runner fail-closed ("Your OI gates need ATP's option-chain data ..."). Listed: RUN-S8-1 (index future
+  volume), RUN-S8-2 (VIX readings) in docs/OPEN_QUESTIONS.md.
+- The whole runner is one stack: S1-S5, S4b, S4c, S6, S7, S8. Flag `user_runner`: state `ready`
+  (`platform/flag_state.py`), still OFF by default (`DEFAULT_OFF_FLAGS`) - the owner turns it on.
+- Migration: yes for the stack (S4 `d2f4b6c8e0a1`, and S3's); S4c / S8 add none.
+
+## Pilot runbook (owner)
+
+1. Rent a KVM VPS: x86-64, Ubuntu LTS, a static public IP (any provider; 1 vCPU / 1 GB is enough for a few deployments).
+2. Run the one-line installer from `docs/RUNNER_INSTALL.md` (S6: pulls the signed image, checks its signature, starts it
+   with `restart: always`); `install.sh status` shows the runner and the VPS public IP.
+3. ATP -> My runner (flag `user_runner` ON for his organisation, `ui_v2`): "Pair a runner" -> one-time code; on the VPS
+   `docker exec -it atp-runner python -m app.runner pair <code> --atp https://aialgodesk.tech --name "Pilot VPS"`
+   (every runner command below runs the same way, inside the `atp-runner` container); My runner shows it ONLINE.
+   Note: S6's installer predates S4 / S5 in its own text ("Not in this version yet"); with this stack the pair and keys
+   commands exist, but the installer does not run them: run them as above.
+4. `python -m app.runner keys init` then `keys add angel_one` (client code, PIN, TOTP secret, API key - asked without
+   echo, never sent to ATP); `keys login angel_one` once to check.
+5. Angel One SmartAPI: register the VPS public IP (from step 2) as the app's static IP.
+6. PAPER first: his deployments stay PAPER; run N sessions (his choice) and compare each session's runner trades (My
+   runner's copy) with ATP's own PAPER run of the same deployment (entries, exits, P&L, reasons). Any difference = a bug
+   to report with both rows.
+7. LIVE (only on his own words): his local LIVE file (`python -m app.runner live on`) + `live_trading` ON (owner
+   organisation only; B1) + the deployment's own Live choice. The runner places LIVE only while ATP's signed state says
+   LIVE is open for his organisation (fresh within `link_grace_minutes`); exits always run. Kill switch: his CLI
+   `kill` / `resume` or his own button on My runner.
+
+To verify in the pilot (from S5, and S4c / S8):
+- the login with client code + PIN + TOTP from the VPS, and that the session lasts until midnight as documented;
+- that orders are accepted from the registered static IP (and refused from another), and whether SmartAPI checks the
+  `X-ClientPublicIP` header (the keystore's optional `public_ip`) against the registered IP;
+- Angel One's error codes for a wrong PIN / TOTP (`AUTH_ERROR_CODES`); a refusal with another code reads "did not answer
+  as expected" until listed;
+- whether repeated wrong logins lock the account (the default is 2 attempts a day; keep retries low);
+- the TOTP code at a 30-second boundary (one retry covers it);
+- Angel One contract binding for his NFO deployments (S4b `ContractBinder`: same underlying / expiry / strike / right / lot);
+- the LIVE state line in `link.log` ("ATP: LIVE open / not open for your organisation") after the owner's switch changes;
+- PAPER parity on real bars over N sessions (S8 covers recorded bars only).
+

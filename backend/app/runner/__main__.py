@@ -7,6 +7,7 @@
   pair <code> --atp <address> [--name] S4: pairs this runner with your ATP account (the one-time code from My runner);
                                       the device key is made here and never leaves this machine
   keys ...                            S5: the keystore and the daily broker login (python -m app.runner keys --help)
+  health                              exit 0 while a runner process holds this folder (the image's healthcheck, S6)
 
 Runner mode, the local SQLite file and "no Redis" are set BEFORE any pipeline module is imported (the database engine
 is created at import). Broker credentials: until the runner's keystore (step S5) they are read from `<home>/broker.json`,
@@ -127,13 +128,24 @@ async def _run(settings: RunnerSettings, broker_name: str | None, once: bool) ->
     return 0
 
 
+def runner_alive(settings: RunnerSettings) -> bool:
+    """True while a live `run` process holds this folder: the pid it wrote into `runner.lock` is running and is the
+    runner. Read-only - it never takes the lock, so a check can never stop a runner from starting (S6 healthcheck)."""
+    try:
+        pid = int(settings.lock_path.read_text().strip() or "0")
+        cmdline = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0") if pid > 0 else []
+    except (OSError, ValueError):
+        return False
+    return b"app.runner" in cmdline and b"run" in cmdline
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["keys"]:                                     # S5's keystore CLI, unchanged
         from app.runner import keys
         return int(keys.main(argv[1:]) or 0)
     parser = argparse.ArgumentParser(prog="python -m app.runner", description="ATP runner (your own machine)")
-    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify", "pair"])
+    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify", "pair", "health"])
     parser.add_argument("value", nargs="?", help="live: on | off | status; pair: the one-time code from My runner")
     parser.add_argument("--home", default=os.environ.get("ATP_RUNNER_HOME", "~/.atp-runner"))
     parser.add_argument("--broker", default=None)
@@ -179,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
         ok, rows, problem = verify(settings.audit_path)
         print(f"Audit log: {rows} rows, " + ("chain intact" if ok else f"BROKEN - {problem}"))
         return 0 if ok else 1
+    if args.command == "health":
+        alive = runner_alive(settings)
+        print("Runner " + ("running" if alive else "not running") + f" in {settings.home}")
+        return 0 if alive else 1
     prepare_process(settings)
     return asyncio.run(_run(settings, args.broker, args.once))
 
@@ -187,4 +203,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-__all__ = ["main", "prepare_process", "build_feed", "build_broker_session", "build_link"]
+__all__ = ["main", "prepare_process", "build_feed", "build_broker_session", "build_link", "runner_alive"]

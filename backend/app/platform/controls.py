@@ -792,16 +792,31 @@ CHART_READER_MISSING_REASON = "The chart reader (private package) is not install
 
 
 def engine_missing_flags() -> Dict[str, str]:
-    """{flag: reason} for each flag whose engine is not installed here (empty when every engine is)."""
-    from app.chart_analyze import provider as chart_engine
-    from app.engine_provider import loader as trade_engine
+    """{flag: reason} for each flag whose engine is not installed here (empty when every engine is).
+
+    Runner S6: the runner image leaves the loader packages out (docs/design/USER_RUNNER.md, S1 results); an absent
+    loader package reads as "engine unavailable", never as a crash."""
     missing: Dict[str, str] = {}
-    if chart_engine.load() is None:
+    try:
+        from app.chart_analyze import provider as chart_engine
+        chart_loaded = chart_engine.load() is not None
+    except ImportError:
+        chart_loaded = False
+    if not chart_loaded:
         missing.update({name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS})
-    if trade_engine.load() is None:
+    try:
+        from app.engine_provider import loader as trade_engine
+        trade_loaded = trade_engine.load() is not None
+    except ImportError:
+        trade_loaded = False
+    if not trade_loaded:
         missing.update({name: TRADE_ENGINE_MISSING_REASON for name in TRADE_ENGINE_FLAGS})
-    from app.chart_reader import loader as chart_reader
-    if chart_reader.load() is None:
+    try:
+        from app.chart_reader import loader as chart_reader
+        reader_loaded = chart_reader.load() is not None
+    except ImportError:
+        reader_loaded = False
+    if not reader_loaded:
         missing.update({name: CHART_READER_MISSING_REASON for name in CHART_READER_FLAGS})
     return missing
 

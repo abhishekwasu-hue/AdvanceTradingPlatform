@@ -161,7 +161,9 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "market_zones": _ready(),
     "markets_view": _ready("Reads the nightly market data download"),
     "mobile_push": _setup("Phone-notification key on the server and the Android app published", HOST),
-    "user_runner": _not_built("The runner program and the My runner page (S4-S7); S3 is the server side only", "FN6 / G1 S7"),
+    # Runner S8: S3-S7 in one stack and PAPER parity with the worker passes (docs/design/RUNNER_PARITY.md). Still OFF by
+    # default (DEFAULT_OFF_FLAGS): the owner turns it on.
+    "user_runner": _ready("My runner page + the runner program; PAPER parity with ATP's worker checked (S8). Off until you turn it on"),
     "multi_account": _ready("PAPER fan-out; LIVE fan-out only with your LIVE switch"),
     "my_day_card": _ready(),
     "screener_legends": _ready(),
@@ -301,12 +303,18 @@ async def _broker(session: AsyncSession, user: User) -> bool:
 
 
 async def _chart_engine(session: AsyncSession, user: User) -> bool:
-    from app.chart_analyze import provider
+    try:   # Runner S6: the runner image has no loader package; absent = not installed, never a crash
+        from app.chart_analyze import provider
+    except ImportError:
+        return False
     return provider.load() is not None
 
 
 async def _signal_engine(session: AsyncSession, user: User) -> bool:
-    from app.engine_provider import loader
+    try:   # Runner S6: as _chart_engine
+        from app.engine_provider import loader
+    except ImportError:
+        return False
     return loader.load() is not None
 
 

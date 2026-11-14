@@ -19,6 +19,8 @@ import { installDiagnostics } from "./diagnostics";
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 const V2: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
+/** The first check after a full reload (page.goto) waits this long for the app to boot again - see the M60 tabs test. */
+const BOOT = { timeout: 15_000 };
 // M60 CI diagnostics: on a failure only, the last /api calls, console errors and <html> attributes go to the job log.
 installDiagnostics();
 
@@ -216,17 +218,21 @@ test.describe("v2 shell 1440 desktop", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/positions\/orders$/);
 
+    // Each page.goto below is a full reload: the app boots again (auth, the flags read, the page's chunks) before the
+    // v2 shell and its tabs exist. On a busy CI runner that boot has taken over the 5 s default (main run of 13 Nov:
+    // /analytics reached /positions/results 5.0 s after the load; on the retry the runner stalled ~5 s - one URL poll
+    // in 5 s, the flags answer only at teardown). The first check after each reload waits for the boot (BOOT).
     await page.goto("/strategies");
-    await expect(page.getByRole("navigation", { name: "Strategies" }).getByRole("link")).toHaveText(["Library", "Build", "Test"]);
+    await expect(page.getByRole("navigation", { name: "Strategies" }).getByRole("link")).toHaveText(["Library", "Build", "Test"], BOOT);
     // Performance is My trades › Results; Journal (and, while the AI Copilot is off, the Coach) are its parts.
     await page.goto("/analytics");
-    await expect(page).toHaveURL(/\/positions\/results$/);
+    await expect(page).toHaveURL(/\/positions\/results$/, BOOT);
     await expect(tabs.getByRole("link", { name: "Results" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("navigation", { name: "Results" }).getByRole("link")).toHaveText(["Summary", "Journal", "Coach"]);
     await page.goto("/learn/news");
-    await expect(page.getByRole("navigation", { name: "Learn" }).getByRole("link")).toHaveText(["Lessons", /Words explained/, "Ideas", "News & events"]);
+    await expect(page.getByRole("navigation", { name: "Learn" }).getByRole("link")).toHaveText(["Lessons", /Words explained/, "Ideas", "News & events"], BOOT);
     await page.goto("/settings/alerts");
-    await expect(page.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText([/Account & broker/, "Trading", "AI", "App"]);
+    await expect(page.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText([/Account & broker/, "Trading", "AI", "App"], BOOT);
     await expect(page.getByRole("navigation", { name: "Trading" }).getByRole("link")).toHaveText(["My trading defaults", "Risk limits", "Alerts", "Inbox"]);
   });
 

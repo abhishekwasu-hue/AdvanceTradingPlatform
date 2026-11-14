@@ -525,13 +525,13 @@ class TradingWorker:
 
     def _note_lock_state(self) -> None:
         """Logs when the PAPER-only lock changes between cycles (LIVE-1: it follows live_trading, the owner's one switch)."""
-        locked = phase0_lock.locked(None)
+        locked = phase0_lock.switch_locked()      # B1: the global switch (per organisation: `phase0_lock.locked`)
         if locked != self._live_paths_locked:
             from app.platform.deployment_phase import LIVE_PATHS_NOT_STARTED
             if locked:
                 logger.warning("Trading worker: %s", LIVE_PATHS_NOT_STARTED)
             else:
-                logger.warning("Trading worker: live_trading is on - LIVE deployments are evaluated again (each user's own mode)")
+                logger.warning("Trading worker: live_trading is on - LIVE deployments of the owner's organisation are evaluated again")
             self._live_paths_locked = locked
 
     # --- one cycle ---------------------------------------------------------------------------
@@ -1749,13 +1749,15 @@ class TradingWorker:
             if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
                 # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
                 # (layers 1 and 2 would refuse the entry anyway). Exits, stops and square-off above already ran.
-                dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
+                # B1: the lock also holds for every organisation that is not the owner's (its own plain sentence).
+                dep.last_error = phase0_lock.WORKER_NOT_EVALUATED if phase0_lock.switch_locked() else phase0_lock.WORKER_NOT_OWNER
                 _waiting(dep, now, WAIT_PRACTICE_ONLY)                     # M55 S7: every pass, with its time
                 await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
-                from app.platform.live_switch import LIVE_OFF
-                dep.last_error = LIVE_OFF + " (LIVE entries skipped)"   # LIVE-1: the one live switch is off
+                # LIVE-1 / B1: the switch is off, or not the owner's organisation
+                from app.platform import live_switch
+                dep.last_error = (await live_switch.live_refusal(session, tenant_id) or live_switch.LIVE_OFF) + " (LIVE entries skipped)"
                 _waiting(dep, now, WAIT_PLAN)
                 await session.commit()
                 continue

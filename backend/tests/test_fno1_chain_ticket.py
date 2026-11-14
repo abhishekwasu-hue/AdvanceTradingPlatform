@@ -281,11 +281,15 @@ def _lock(tenant_id, on: bool) -> None:
 
 def test_assert_paper_refuses_live_only_while_the_lock_holds():
     phase0_lock.remember(False, (41,))
+    phase0_lock.remember_owner(42)                                  # B1: 42 is the owner's organisation
     try:
         assert phase0_lock.assert_paper("PAPER", 41) == "PAPER"
         with pytest.raises(phase0_lock.LiveOrderRefused):
             phase0_lock.assert_paper("LIVE", 41)
         assert phase0_lock.assert_paper("LIVE", 42) == "LIVE"      # not locked for that organisation
+        phase0_lock.remember_owner(43)                              # B1: 42 is not the owner's any more
+        with pytest.raises(phase0_lock.LiveOrderRefused, match="platform owner only"):
+            phase0_lock.assert_paper("LIVE", 42)
     finally:
         phase0_lock.reset_cache()
 

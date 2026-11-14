@@ -69,8 +69,11 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not await live_allowed_for(session, tenant):
-        from app.platform.live_switch import LIVE_OFF
-        reasons.append(LIVE_OFF)                     # LIVE-1: the one live switch (live_trading) is off
+        # LIVE-1 / B1: the switch is off, or not the owner's organisation
+        from app.platform import live_switch
+        refusal = await live_switch.live_refusal(session, tenant.id if tenant is not None else None) or live_switch.LIVE_OFF
+        if refusal not in reasons:
+            reasons.append(refusal)
     if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE:
         # D1: the registered id, or the broker's generic one while the OPS throttle keeps us under the threshold.
         problem = algo_ids.live_problem(tenant.algo_id if tenant else None, broker_name)

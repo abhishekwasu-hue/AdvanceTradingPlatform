@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { choose } from "./combobox";
+import { mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 import { T, mockTrading, type TradingMocks, type Writes } from "./tradingMocks";
@@ -143,7 +144,10 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(page.locator("[data-closed='191']")).toContainText("Charges ₹52.10 (from your contract note)");
     await expect(page.locator("[data-closed='191']")).toContainText("Entered before the level held.");
 
-    // Owner bug report 13 Nov: the option's own chart opens in place, with the one-tap switch to its underlying
+    // Owner bug report 13 Nov: the option's own chart opens in place, with the one-tap switch to its underlying. The
+    // contract has made-up candles here, so the chart stays on it (without any, it moves to the underlying, which
+    // e2e/position-chart-v2.e2e.ts checks) - not a race against that move.
+    await mockCharts(page);
     await option.getByRole("link", { name: "Chart" }).click();
     const chart = page.locator("[data-position-chart='201']");
     await expect(chart).toHaveAttribute("data-view", "contract");

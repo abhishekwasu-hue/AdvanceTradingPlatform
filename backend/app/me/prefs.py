@@ -752,6 +752,19 @@ class WorkspaceWatchPrefs(_Prefs):
         return self
 
 
+class RunnerPrefs(_Prefs):
+    """`runner` (Runner S3, docs/design/USER_RUNNER.md section 4; flag `user_runner`): the user's own choices for his runner's
+    link to ATP. Operational only - nothing here is a trading rule, and no order path reads it (app/runner_link only).
+    - mirror_upload: his runner may upload read-only copies of its orders, positions and audit rows (ON by default; OFF =
+      ATP refuses and stores none, and tells the runner in each heartbeat answer);
+    - offline_after_minutes: no heartbeat for this long = "Runner offline" and one alert. Reference for the default 3: three
+      missed heartbeats at the runner's heartbeat period of 60 s (S4); he changes it on My runner (S7);
+    - offline_telegram: the offline alert also goes to his own Telegram chat (always in the app's bell)."""
+    mirror_upload: bool = True
+    offline_after_minutes: int = Field(default=3, ge=1, le=240)
+    offline_telegram: bool = True
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
@@ -761,7 +774,8 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "trade_settings": TradeSettingsPrefs, "ai_usage": AiUsagePrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
                                        "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs,
-                                       "workspace_watch": WorkspaceWatchPrefs, "chart_reader": ChartReaderPrefs}
+                                       "workspace_watch": WorkspaceWatchPrefs, "chart_reader": ChartReaderPrefs,
+                                       "runner": RunnerPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

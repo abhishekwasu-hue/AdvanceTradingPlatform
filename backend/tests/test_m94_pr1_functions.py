@@ -62,9 +62,9 @@ def test_the_flag_is_registered_off_with_its_description():
     assert INTRADAY_FLAG in controls.FEATURE_FLAGS and INTRADAY_FLAG in controls.DEFAULT_OFF_FLAGS
     assert "places no orders" in controls.FEATURE_FLAGS[INTRADAY_FLAG]
     info = flag_catalog.FLAG_INFO[INTRADAY_FLAG]
-    assert info.depends_on == ("screener_breakouts",) and info.status == "unfinished"
-    assert flag_catalog.FLAG_GROUP[INTRADAY_FLAG] == "screen_library" and "M94" in flag_catalog.FINISH[INTRADAY_FLAG]
-    assert flag_state.FLAG_STATUS[INTRADAY_FLAG].state == "not_built"
+    assert info.depends_on == ("screener_breakouts",) and info.status == "ready"
+    assert flag_catalog.FLAG_GROUP[INTRADAY_FLAG] == "screen_library" and INTRADAY_FLAG not in flag_catalog.FINISH
+    assert flag_state.FLAG_STATUS[INTRADAY_FLAG].state == "ready"   # M94 merged (#972-#982)
     assert INTRADAY_FLAG not in trader_pack.PACK and "M94" in trader_pack.excluded()[INTRADAY_FLAG]
 
 

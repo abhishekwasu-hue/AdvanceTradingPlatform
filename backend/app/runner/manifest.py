@@ -147,6 +147,21 @@ RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
 )))
 
 
+# Runner S4b: options / futures and multi-leg deployments - the server's own contract / structure resolution (from the
+# deployment's own settings, against the contracts ATP sent in S4), the multi-leg pipeline (hedge legs first) and its
+# incomplete-structure exits, the PAPER expiry settlement, and the runner's broker-side contract names.
+RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
+    "app.instruments.contracts",
+    "app.instruments.spreads",
+    "app.execution.multileg",
+    "app.execution.incomplete_structures",
+    "app.paper.expiry_settlement",
+    "app.paper.fno_contracts",
+    "app.instruments.master",
+    "app.runner.derivatives",
+)))
+
+
 def is_forbidden(module: str, prefixes: tuple[str, ...] = FORBIDDEN_PREFIXES) -> bool:
     """True when `module` is one of `prefixes` or inside one of them."""
     return any(module == p or module.startswith(p + ".") for p in prefixes)

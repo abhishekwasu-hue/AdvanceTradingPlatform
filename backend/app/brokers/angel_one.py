@@ -278,6 +278,12 @@ class AngelOneBroker(BrokerInterface):
                 symbol_map[(exchange, name)] = (token, str(row.get("symbol") or symbol))
         return out, symbol_map
 
+    def alias_symbol(self, exchange: str, platform_symbol: str, token: str, angel_symbol: str) -> None:
+        """Runner S4b: one more name for a scrip-master row - ATP's own spelling of a derivative contract (its instrument
+        master's trading symbol) -> (symboltoken, Angel trading symbol). The caller matched the row on the contract's
+        own facts (underlying, expiry, strike, right, lot); quotes and orders on ATP's name then reach that token."""
+        self._symbol_map[((exchange or "NFO").upper(), platform_symbol.strip().upper())] = (str(token), angel_symbol)
+
     async def _resolve(self, symbol: str, exchange: str) -> Tuple[str, str]:
         """Platform symbol -> (symboltoken, Angel trading symbol)."""
         exchange = (exchange or "NSE").upper()

@@ -2431,21 +2431,11 @@ class TradingWorker:
         checks a bot's own SWING passes when it is created); any other bot needs its own holding. Returns (holding or
         None, the plain-words reason when None)."""
         from app.execution import order_defaults
-        from app.instruments.spreads import can_hold_for_days
-        own = getattr(dep, "holding", None)
         self._holdings.pop(dep.id, None)
-        if own:
-            return own, ""
-        mine = (await order_defaults.load(session, user)).holding
-        if mine is None:
-            return None, order_defaults.needs_setting("holding")
-        from app.risk_engine import own_risk
-        written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
-        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
-            return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
-                          f"(it reads {dep.timeframe} candles) - set this bot's own holding")
-        self._holdings[dep.id] = mine
-        return mine, ""
+        holding, problem = await order_defaults.bot_holding(session, dep, user)   # Runner S4b: shared with the runner
+        if holding is not None and not getattr(dep, "holding", None):
+            self._holdings[dep.id] = holding
+        return holding, problem
 
     def _why(self, dep: StrategyDeploymentRecord, code: str, bar: Optional[datetime], detail: Optional[str]) -> None:
         """AUD-T3: note why this evaluation ended (stored by `_store_why` once it is done; never read by the worker)."""

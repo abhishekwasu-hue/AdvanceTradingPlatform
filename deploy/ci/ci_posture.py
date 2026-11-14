@@ -10,7 +10,7 @@ from typing import Dict
 
 PHASE0_LOCK: Dict[str, bool] = {
     "live_trading": False,            # no new LIVE deployments
-    "phase0_paper_only": True,        # every new LIVE entry refused, also at the broker-order chokepoint
+    "phase0_paper_only": True,        # every new LIVE entry refused, also at the broker-order chokepoint (derived: LIVE-1)
     "beta_cohort_gate": True,         # sign-up needs an invite code
 }
 
@@ -26,3 +26,8 @@ FEATURES: Dict[str, bool] = {
 }
 
 POSTURE: Dict[str, bool] = {**PHASE0_LOCK, **FEATURES}
+
+# LIVE-1 (owner order: ONE live switch, #1006): `phase0_paper_only` is derived from `live_trading` (live_trading OFF ->
+# the lock ON for everyone) and the admin API refuses to set it on its own. The acceptance flow sets live_trading off
+# and then checks that the lock reads ON, as before; it never PUTs a derived flag.
+DERIVED_FLAGS = frozenset({"phase0_paper_only"})

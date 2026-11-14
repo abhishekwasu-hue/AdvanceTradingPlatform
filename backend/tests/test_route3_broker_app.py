@@ -12,7 +12,6 @@ import dataclasses
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import List
 
 import httpx
 from sqlalchemy import update
@@ -123,7 +122,7 @@ def _telegram_text(me: dict, action_id: int) -> str:
         from app.db.models import AlertChannelRecord
         async with _session_factory() as session:
             record = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == me["tenant_id"]))
-            seen: List[httpx.Request] = []
+            seen: list[httpx.Request] = []
             note = _n(tenant_id=me["tenant_id"], ai_action_id=action_id, id=91, message="Higher low held at the buyer area")
             await dispatcher.send_via_channel(record, note, client=_telegram_mock([httpx.Response(200, json={"ok": True})], seen), session=session)
             return json.loads(seen[0].content)["text"]

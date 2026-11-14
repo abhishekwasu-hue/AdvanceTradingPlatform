@@ -458,7 +458,7 @@ async def send_sms(config: Union[SmsConfig, WhatsAppConfig], notification: Notif
         raise RuntimeError(f"{kind}: " + "; ".join(errors))
 
 
-async def broker_app_wanted(session: Optional[AsyncSession], notification: NotificationRecord) -> bool:
+async def broker_app_wanted(session: AsyncSession | None, notification: NotificationRecord) -> bool:
     """Route 3 (BIZ-1 B5): an entry signal's alert adds one line pointing to "Trade in your broker app" in ATP, only
     with the `broker_app_links` flag on for the organisation. Every other alert is unchanged."""
     if session is None or notification.event_type != NotificationType.AI_PROPOSAL.value or not notification.ai_action_id:

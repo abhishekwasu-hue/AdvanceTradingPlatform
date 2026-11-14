@@ -59,6 +59,7 @@ import { OVERLAY_PARAM, OVERLAY_TF_PARAM, overlayFromSearch } from "../strategyT
 import { SCREEN_PARAM, screenParam, type ScreenFrom } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
 import { Skeleton } from "../components/primitives";
+import ChartTradeBar from "./ChartTradeBar";
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
@@ -365,6 +366,8 @@ export default function ChartsPageV2(_props: PageProps) {
               drawing={{ tools, symbol, hidden: view.drawings_hidden, onHidden: (h) => setView({ drawings_hidden: h }) }}
               settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
               actions={actions} endActions={endActions} />
+            {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart (nothing on an index or a stock) */}
+            <ChartTradeBar symbol={symbol} exchange={exchange} ltp={live.ltp?.ltp ?? null} className="border-b border-subtle px-space-3 py-space-1" />
             <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}

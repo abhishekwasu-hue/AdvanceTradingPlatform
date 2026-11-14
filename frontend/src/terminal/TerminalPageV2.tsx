@@ -235,7 +235,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         const main = id === "chart-1";
         return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
           live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot, live?.market_open === true) : undefined}
-          levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined} />;
+          levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined}
+          onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} />;
       }
       // Owner 9 Nov: the Terminal's chain IS the Option chain page (summary, futures / IV / expiry / OI walls, Chain · Charts ·
       // OI, analysis, Ask AI) on the Terminal's one symbol and its chain - the page itself, not a copy.

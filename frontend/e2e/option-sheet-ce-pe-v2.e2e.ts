@@ -150,7 +150,7 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
       await page.locator("[data-option-pair-switch] [data-option='both']").click();
       await expect(ce).toBeVisible();
       const text = await page.locator("[data-inplace-panel='chart']").innerText();
-      expect(text).not.toMatch(/\b(Buy|Sell|Target|Stop)\b/);
+      expect(text).not.toMatch(/\b(Target|Stop)\b/);   // CTB-1 (owner 14 Nov): Buy / Sell are the trade buttons now
     });
   });
 }

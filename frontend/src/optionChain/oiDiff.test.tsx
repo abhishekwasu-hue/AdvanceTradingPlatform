@@ -287,7 +287,7 @@ describe("M96 O1: a tap in the OI-difference table opens that contract's ticket 
     expect(pageSource).toMatch(/<OiDiffTableV2 [^>]*onPickLeg=\{trading\.onPickLeg\}/);
     expect(pageSource).toMatch(/<ChainLadderV2 [\s\S]*?onPickLeg=\{trading\.onPickLeg\}/);
     expect(pageSource).toContain("const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions, signal, onTicket });");
-    expect(pageSource).toContain("<TradeOiBannerV2 symbol={symbol} live={live} />");
+    expect(pageSource).toContain("<TradeOiBannerV2 symbol={symbol} live={live} collapsible={embedded} />");
     expect(terminalSource).toContain("onTicket={orderPanelShown ? (t) => setTicket(t) : undefined}");
   });
 

@@ -150,9 +150,13 @@ FLAG_STATUS: dict[str, FlagStatus] = {
                            "Screener > Wyckoff; Charts > Layers > Wyckoff; Strategy templates > Wyckoff"),
     "vsa_pack": _ready("The thirteen readings, the Volume spread screens, the chart layer with Why? and the J templates",
                        "Screener > Volume spread; Charts > Layers > Volume spread; Strategy templates > Volume spread"),
-    "intraday_pack": _not_built("Only the screen functions are built; the intraday scanners, templates and risk tools come next", "M94"),
-    "sd_pack": _not_built("Only the zone detector and the screen functions are built; the scanners, templates, chart layer, presets and Copilot facts come next", "M97"),
-    "m99_primitives": _not_built("Only the shared primitives are built; the M99 packs that use them come next", "M99"),
+    # Re-audited against the roadmap and the code (M94 merged #972-#982; M97 and M99 merged, #1012-#1036): built and
+    # tested, off until the owner decides each flag.
+    "intraday_pack": _ready("The intraday screen functions, the intraday scanners, the H templates (how it works, chart overlay, level exit) and the three optional risk tools",
+                            "Screener > Intraday; Strategy templates > Intraday"),
+    "sd_pack": _ready("The zone detector and states, the Supply & Demand screens, the chart layer, the I templates, the style presets and the Copilot facts",
+                      "Screener > Supply & Demand; Charts > Layers; Strategy templates > Supply & Demand"),
+    "m99_primitives": _ready("The shared building blocks: bar classes, structure (BOS / CHoCH, regime), Fibonacci levels and price clusters in screens"),
     "screener_breakouts_fitness": _ready(),
     "evidence_context": _ready(),
     "evidence_charts": _ready(),

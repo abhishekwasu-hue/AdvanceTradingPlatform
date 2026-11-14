@@ -137,6 +137,10 @@ PROCESS_ENTRY_POINTS: Dict[str, str] = {
     "app.workers.trading_worker.<module>":
         "the trading worker: LIVE deployments (behind the plan, the live_trading flag, entry checks and the "
         "phase0_paper_only lock), protective stops and exits",
+    "app.runner.__main__.<module>":
+        "Runner S2 / S4 (docs/design/USER_RUNNER.md): the user's OWN runner on his own machine - the same one entry "
+        "pipeline and close path as the worker (his LIVE needs the deployment's LIVE choice, ATP's Phase 0 lock and his "
+        "own local LIVE switch), exits never blocked; never imported by the server (tests/test_runner_s1_boundary.py)",
 }
 
 

@@ -1073,4 +1073,21 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/webhooks/tradingview/token"): "member",
     ("POST", "/api/webhooks/tradingview/token/rotate"): "owner",
     ("POST", "/api/webhooks/tradingview/{webhook_token}"): P_TV_WEBHOOK,
+    # Runner S3 (app/runner_link): the user's own runners; and the runner's own calls, which carry no login.
+    ("POST", "/api/runner/pairing-codes"): "trader",
+    ("GET", "/api/runner/devices"): "member",
+    ("POST", "/api/runner/devices/{device_id}/revoke"): "trader",
+    ("GET", "/api/runner/devices/{device_id}/mirror"): "member",
+    ("POST", "/api/runner/pair"): ("public: a new runner pairs itself - the user's one-time pairing code (hashed, short expiry, "
+                                   "single use) and a proof signature by the device's own key are the credential; rate-limited"),
+    ("POST", "/api/runner/device/heartbeat"): ("public: the runner's heartbeat - the device's Ed25519 signature over the request "
+                                               "(replay window, newer than its last) is the credential; it reaches only that device's row"),
+    ("POST", "/api/runner/device/mirror"): ("public: the runner's read-only mirror upload - signed by the device like the "
+                                            "heartbeat; rows are written under that device's own user only"),
+    # Runner S4: his own kill switch button for his own runner; the runner's signed reads of his own rules / reference data.
+    ("POST", "/api/runner/devices/{device_id}/kill-switch"): "trader",
+    ("GET", "/api/runner/device/rules"): ("public: the runner pulls its user's own saved rules - signed by the device like "
+                                          "the heartbeat; only that device's own user's strategies, deployments and settings"),
+    ("GET", "/api/runner/device/reference"): ("public: the runner pulls the F&O ban list and its user's own symbols' contracts - "
+                                              "signed by the device like the heartbeat"),
 }

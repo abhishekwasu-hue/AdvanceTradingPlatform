@@ -97,6 +97,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "screener_waves": "Unfinished: the wave-count work is still open",
     "fib_ew_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P5)",
     "risk_options": "Off until the owner decides the flag (M99 P7: the user's own risk options)",
+    "user_runner": "Unfinished: the server side of the user's own runner only; the runner and My runner page come in S4-S7",
     "intraday_pack": "Unfinished: the intraday scanners, templates and risk tools are still being built (M94)",
     "wyckoff_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P4)",
     "vsa_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P3)",

@@ -11,6 +11,7 @@
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -121,7 +122,8 @@ def test_the_runner_package_imports_only_its_manifest_and_the_server_never_impor
     for path in (BACKEND / "app").rglob("*.py"):
         if "runner" in path.relative_to(BACKEND / "app").parts[:1]:
             continue
-        assert "app.runner" not in path.read_text(), path
+        # the runner package itself (app.runner, app.runner.*) - not ATP's own server side of the link, app.runner_link (S3)
+        assert not re.search(r"\bapp\.runner(?![A-Za-z0-9_])", path.read_text()), path
 
 
 def test_the_forbidden_lists_agree():

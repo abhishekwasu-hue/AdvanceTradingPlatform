@@ -4,10 +4,15 @@
   live on | off | status              HIS OWN LIVE switch for this runner (default off); only this command writes it
   kill | resume                       YOUR kill switch: no new entries while on; exits always run (only you set it)
   audit-verify                        checks the local audit log's hash chain
+  pair <code> --atp <address> [--name] S4: pairs this runner with your ATP account (the one-time code from My runner);
+                                      the device key is made here and never leaves this machine
+  keys ...                            S5: the keystore and the daily broker login (python -m app.runner keys --help)
 
 Runner mode, the local SQLite file and "no Redis" are set BEFORE any pipeline module is imported (the database engine
 is created at import). Broker credentials: until the runner's keystore (step S5) they are read from `<home>/broker.json`,
 which must be readable by its owner only (mode 600); nothing from it is ever logged or written to the audit log.
+S4: with a keystore in the folder (`keys init` + `keys add angel_one`) the loop logs in daily and builds the adapter
+from it (broker.json is read only when no keystore exists). Once paired (`link.json`), the loop runs the link to ATP.
 Without `--broker` the runner has no broker: PAPER only, with no market data (used by dry runs and tests).
 """
 from __future__ import annotations
@@ -46,6 +51,33 @@ def _broker_credentials(settings: RunnerSettings) -> Any:
     return BrokerCredentials(**json.loads(path.read_text()))
 
 
+def build_broker_session(settings: RunnerSettings, broker_name: str | None) -> Any:
+    """S4: the keystore's daily login + adapter, when the folder has a keystore (else None: S2's broker.json feed)."""
+    if broker_name != "angel_one":
+        return None
+    import getpass
+
+    from app.runner.broker_session import BrokerSession
+    from app.runner.keystore import Keystore
+    keystore = Keystore(settings.home, passphrase=lambda: getpass.getpass("Keystore passphrase: "))
+    if not keystore.exists():
+        return None
+    return BrokerSession(settings, keystore, broker_name)
+
+
+def build_link(settings: RunnerSettings, runner: Any) -> Any:
+    """S4: the link to ATP once this runner is paired (link.json), else None."""
+    from app.runner.link import Link, LinkClient, Pairing, load_key
+    pairing = Pairing.load(settings.link_path)
+    if pairing is None:
+        return None
+    import httpx
+    client = LinkClient(httpx.Client(base_url=pairing.atp_url, timeout=15.0), load_key(settings.device_key_path),
+                        pairing.device_id)
+    login = runner.broker_session.status_line if runner.broker_session is not None else None
+    return Link(settings, pairing, client, runner.sessions, audit=runner.audit, login_status=login)
+
+
 def build_feed(settings: RunnerSettings, broker_name: str | None) -> Any:
     from app.runner.feed import BrokerFeed, FakeFeed, protected
     if not broker_name:
@@ -68,7 +100,13 @@ async def _create_schema() -> None:
 async def _run(settings: RunnerSettings, broker_name: str | None, once: bool) -> int:
     from app.runner.loop import Runner
     await _create_schema()
-    runner = Runner(settings, build_feed(settings, broker_name))
+    broker_session = build_broker_session(settings, broker_name)
+    if broker_session is not None:
+        from app.runner.feed import FakeFeed
+        runner = Runner(settings, FakeFeed(), broker_session=broker_session)   # the first cycle builds the real feed
+    else:
+        runner = Runner(settings, build_feed(settings, broker_name))
+    runner.link = build_link(settings, runner)
     if once:
         runner.lock.acquire()
         try:
@@ -90,14 +128,33 @@ async def _run(settings: RunnerSettings, broker_name: str | None, once: bool) ->
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["keys"]:                                     # S5's keystore CLI, unchanged
+        from app.runner import keys
+        return int(keys.main(argv[1:]) or 0)
     parser = argparse.ArgumentParser(prog="python -m app.runner", description="ATP runner (your own machine)")
-    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify"])
-    parser.add_argument("value", nargs="?", help="live: on | off | status")
+    parser.add_argument("command", choices=["run", "live", "kill", "resume", "audit-verify", "pair"])
+    parser.add_argument("value", nargs="?", help="live: on | off | status; pair: the one-time code from My runner")
     parser.add_argument("--home", default=os.environ.get("ATP_RUNNER_HOME", "~/.atp-runner"))
     parser.add_argument("--broker", default=None)
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--atp", default=os.environ.get("ATP_URL"), help="pair: ATP's address (https://...)")
+    parser.add_argument("--name", default=None, help="pair: a name for this runner (default: the machine's name)")
     args = parser.parse_args(argv)
     settings = RunnerSettings.load(args.home)
+
+    if args.command == "pair":
+        from app.runner.link import LinkError, pair
+        if not args.value or not args.atp:
+            parser.error("pair: python -m app.runner pair <code> --atp https://<ATP address>")
+        try:
+            pairing = pair(settings.home, args.value, atp_url=args.atp, name=args.name,
+                           key_path=settings.device_key_path, link_path=settings.link_path)
+        except LinkError as exc:
+            print(f"Not paired: {exc}")
+            return 1
+        print(f"Paired as \"{pairing.name}\". Start the runner: python -m app.runner run --home {settings.home}")
+        return 0
 
     if args.command == "live":
         if args.value == "on":
@@ -130,4 +187,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-__all__ = ["main", "prepare_process", "build_feed"]
+__all__ = ["main", "prepare_process", "build_feed", "build_broker_session", "build_link"]

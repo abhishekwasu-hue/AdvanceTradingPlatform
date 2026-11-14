@@ -57,7 +57,9 @@ async function pickProduct(ticket: Locator): Promise<void> {
 
 async function open(page: Page, theme: "light" | "dark", opts: { options?: MockOptions; held?: unknown[]; tradingDefaults?: unknown;
   /** M68 PR-1: the Trade settings saves ("Save as my default") are recorded here; the read answers Not set. */
-  tradeSettings?: Record<string, unknown>[] } = {}): Promise<Seen> {
+  tradeSettings?: Record<string, unknown>[];
+  /** Route 3 (BIZ-1 B2): what /paper/fno/broker-app answers (absent: 404, the feature is off). */
+  brokerApp?: { on: boolean; broker: string | null; publisher_api_key: string | null } } = {}): Promise<Seen> {
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -84,6 +86,7 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
     const request = route.request();
     const url = new URL(request.url());
     // M96-Q1: the ticket reads whether LIVE can go (off here, as by default).
+    if (url.pathname.endsWith("/broker-app")) return opts.brokerApp ? route.fulfill({ json: opts.brokerApp }) : route.fulfill({ status: 404, json: { detail: "Not found" } });
     if (url.pathname.endsWith("/live-status")) return route.fulfill({ json: { open: false, text: "Live trading is switched off by the admin." } });
     if (url.pathname.endsWith("/contract")) return route.fulfill({ json: { ...CONTRACT, strike: Number(url.searchParams.get("strike")), right: url.searchParams.get("right") } });
     if (url.pathname.endsWith("/held")) { seen.held += 1; return route.fulfill({ json: held }); }
@@ -523,3 +526,51 @@ test.describe("M96-Q1 ticket mode at 390", () => {
     await expect(ticket.locator("[data-ticket='review']")).toBeEnabled();
   });
 });
+
+// Route 3 (BIZ-1 B2, owner 14 Nov): while LIVE is not open for him, the dead Live choice becomes "Trade in your broker
+// app" - his own order to copy, his broker's own home; nothing is placed by ATP. R3_PROOF: before / after screenshots.
+for (const width of [390, 360] as const) {
+  test.describe(`Route 3 ticket broker app at ${width}`, () => {
+    test.use({ viewport: { width, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+    test("before: flag off - the sentence only; after: the working action and the copy sheet", async ({ page }) => {
+      const proof = process.env.R3_PROOF;
+      const seen = await open(page, "light", { options: { ...ON, features: { ...ON.features, broker_app_links: true } },
+        brokerApp: { on: true, broker: "angel_one", publisher_api_key: null } });
+      await callCell(page).tap();
+      await page.locator("[data-chain-actions] [data-action='buy']").tap();
+      const ticket = page.locator("[data-order-ticket]");
+      await pickProduct(ticket);
+      await ticket.locator("[data-ticket='mode'] [data-option='LIVE']").tap();
+      await expect(ticket.locator("[data-ticket='live-off']")).toHaveText("Live trading is switched off by the admin.");
+      const action = ticket.getByTestId("ticket-broker-app");
+      await expect(action).toHaveText("Trade in your broker app");
+      await expect(ticket.locator("[data-ticket='review']")).toBeDisabled();       // LIVE through ATP stays shut
+      await expectPhoneLayout(page);
+      if (proof) await ticket.screenshot({ path: `${proof}/after-ticket-${width}.png`, animations: "disabled" });
+      await action.tap();
+      const sheet = page.getByRole("dialog", { name: "Trade in your broker app" });
+      await expect(sheet.locator("[data-fact='Symbol']")).toContainText("NIFTY");
+      await expect(sheet.locator("[data-fact='Side']")).toContainText("Buy");
+      await expect(sheet.locator("[data-fact='Quantity']")).toContainText("75 (1 lot)");
+      await expect(sheet.locator("[data-fact='Order type']")).toContainText("Market");
+      await expect(sheet.locator("[data-fact='Product']")).toContainText("NRML");
+      await expect(sheet.locator("[data-broker-home='angelone']")).toHaveAttribute("href", "https://www.angelone.in");
+      await expectPhoneLayout(page);
+      if (proof) await page.screenshot({ path: `${proof}/after-sheet-${width}.png`, animations: "disabled" });
+      expect(seen.posts.filter((p) => /\/paper\/fno\/order/.test(p.url))).toEqual([]);   // ATP placed nothing
+    });
+
+    test("before (flag off): the LIVE choice shows its sentence and no action", async ({ page }) => {
+      await open(page, "light");
+      await callCell(page).tap();
+      await page.locator("[data-chain-actions] [data-action='buy']").tap();
+      const ticket = page.locator("[data-order-ticket]");
+      await pickProduct(ticket);
+      await ticket.locator("[data-ticket='mode'] [data-option='LIVE']").tap();
+      await expect(ticket.locator("[data-ticket='live-off']")).toBeVisible();
+      await expect(ticket.getByTestId("ticket-broker-app")).toHaveCount(0);
+      if (process.env.R3_PROOF) await ticket.screenshot({ path: `${process.env.R3_PROOF}/before-ticket-${width}.png`, animations: "disabled" });
+    });
+  });
+}

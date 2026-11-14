@@ -55,7 +55,7 @@ from app.alerts.channels import (
     encrypt_config,
     severity_reaches,
 )
-from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
+from app.alerts.deeplink import BROKER_APP_FLAG, app_path, broker_app_line, open_in_app_row, push_wanted
 from app.core.egress import check_url_resolved
 from app.core.enums import AlertChannelType, AlertDeliveryStatus, NotificationType
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -458,12 +458,27 @@ async def send_sms(config: Union[SmsConfig, WhatsAppConfig], notification: Notif
         raise RuntimeError(f"{kind}: " + "; ".join(errors))
 
 
+async def broker_app_wanted(session: Optional[AsyncSession], notification: NotificationRecord) -> bool:
+    """Route 3 (BIZ-1 B5): an entry signal's alert adds one line pointing to "Trade in your broker app" in ATP, only
+    with the `broker_app_links` flag on for the organisation. Every other alert is unchanged."""
+    if session is None or notification.event_type != NotificationType.AI_PROPOSAL.value or not notification.ai_action_id:
+        return False
+    if await action_of(session, notification) != push_kinds.ACTION_ENTRY:
+        return False
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, BROKER_APP_FLAG, notification.tenant_id)
+
+
+def with_broker_app_line(body: str, notification: NotificationRecord, wanted: bool, html_link: bool = False) -> str:
+    return f"{body}\n{broker_app_line(notification, html_link=html_link)}" if wanted else body
+
+
 async def send_push(config: PushConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
-                    path: Optional[str] = None) -> List[str]:
+                    path: Optional[str] = None, broker_app: bool = False) -> List[str]:
     """Phase O3: every registered device; returns the endpoints the push service reports gone so
     the caller can prune them. Raises only when no device could be reached. B8: `path` is the screen of the
     notification's kind (an entry signal opens its Signals item); app_path when not given."""
-    payload = {"title": f"[{notification.severity}] {notification.title}", "body": notification.message[:300],
+    payload = {"title": f"[{notification.severity}] {notification.title}", "body": with_broker_app_line(notification.message[:300], notification, broker_app),
                "event_type": notification.event_type, "severity": notification.severity, "notification_id": notification.id,
                "url": path or app_path(notification)}               # PW3: opens the exact screen (a same-origin path)
     gone: List[str] = []
@@ -531,6 +546,7 @@ async def send_via_channel(
         if address and address == config.chat_id:  # type: ignore[union-attr]
             return                                         # S3b-2: the linked chat is the channel's own chat - sent once already
         row = open_in_app_row(notification)                # PW4: every Telegram alert opens its screen in the app
+        html_body = with_broker_app_line(html_body, notification, await broker_app_wanted(session, notification), html_link=True)
         await send_telegram(config, html_body, client, chat_id=address,  # type: ignore[arg-type]
                             reply_markup={"inline_keyboard": [row]} if row else None)
         if session is not None and address and notification.event_type == NotificationType.SCREEN_ALERT.value:
@@ -546,7 +562,8 @@ async def send_via_channel(
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
         await send_webhook(config, notification, client, alert, idempotency_key=idempotency_key)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.PUSH.value:
-        gone = await send_push(config, notification, client, path=await web_push_path(session, notification))  # type: ignore[arg-type]
+        gone = await send_push(config, notification, client, path=await web_push_path(session, notification),  # type: ignore[arg-type]
+                               broker_app=await broker_app_wanted(session, notification))
         if gone:
             remaining = [s for s in config.subscriptions if str(s.endpoint) not in gone]  # type: ignore[union-attr]
             if remaining:
@@ -640,6 +657,7 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         if action is None or action.tenant_id != channel.tenant_id:
             return False
         _, html_body = render_text(notification)
+        html_body = with_broker_app_line(html_body, notification, await broker_app_wanted(session, notification), html_link=True)
         return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client,
                                                             extra_row=open_in_app_row(notification))
     except RuntimeError:

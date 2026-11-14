@@ -434,3 +434,31 @@ ATP -> runner state (`app/runner_link/service.py` `runner_state`, `app/runner/li
   command kind with the group id and a button on My runner; listed for a later step. Until then a runner's incomplete
   group follows his own "if I do not answer" rule (unchanged).
 - Migration: no.
+
+## S6 results (branch `claude/runner-s6-image`)
+
+- Build context (`deploy/runner/build_context.py --out <dir>`), generated from `app/runner/manifest.py`: `app.runner.*`
+  and `RUNNER_MODULES` with every import they make (module level and inside functions, any depth) EXCEPT
+  `FORBIDDEN_PREFIXES`, which are never followed and never copied (451 modules, 551 files with the packages' data
+  files). The private package, its loaders, AI, admin, marketplace, Lab, worker, web app, billing and the lake are
+  physically absent; a path that reaches one gets an ImportError.
+- S1 open item closed: `platform/controls.engine_missing_flags` and `platform/flag_state` read an absent loader
+  package as "unavailable" (no crash).
+- Image (`deploy/runner/Dockerfile`): `python:3.13-slim` as the backend; installs `deploy/runner/requirements.lock`
+  (39 of the backend lock's packages, same pins and hashes; no uvicorn, asyncpg, AI SDKs, image / Parquet / S3,
+  tracing exporters, test tools); re-checks at build that no forbidden package is present; user `runner` (uid 10001);
+  volume `/runner`; healthcheck `python -m app.runner health` (reads the pid in `runner.lock`, never takes the lock);
+  no `EXPOSE`.
+- CI: the container-scan job builds the image from the generated context, runs one PAPER cycle and checks the
+  forbidden paths; Trivy report only. shellcheck covers `deploy/runner/install.sh`.
+- Release (`.github/workflows/runner-release.yml`, `runner-v*` tags only): build, smoke, push to
+  `ghcr.io/<owner>/atp-runner`, cosign keyless sign by digest, self-verify, publish `install.sh` with the digest
+  written in (+ its sha256) as the release asset.
+- Installer (`deploy/runner/install.sh`): Docker (Ubuntu `docker.io`) if missing; cosign (pinned, checksum) verifies
+  the image against this workflow's identity at a `runner-v*` tag BEFORE the pull by digest; folder 0700 owned by the
+  runner uid; pairing / keystore asked only when the image has those commands (S3-S5 not merged: skipped and said
+  so; until S5 `broker.json`, mode 600); `--restart unless-stopped`, read-only root, no capabilities, no port; prints
+  the public IP to register at Angel One. `install | update | status | uninstall`, `--dry-run`.
+- Owner one-time setup before the first release: after the first `runner-v*` tag, set the GHCR package
+  `atp-runner` to Public (so a VPS pulls without a login).
+- Docs: `docs/RUNNER_INSTALL.md` (beginner steps), `docs/runbooks/RUNNER_SETUP_SERVICE.md` (paid set-up checklist).

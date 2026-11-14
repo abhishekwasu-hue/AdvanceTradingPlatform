@@ -1,4 +1,5 @@
-"""M95 front-door images: the raw captures (FRONT_RAW, 720 x 900) to public/front/<slug>.png, each under 120 KB.
+"""M95 front-door images: the raw captures (FRONT_RAW, 720 x 450: the card's 16:10, FrontDoor.tsx IMAGE_W x IMAGE_H) to
+public/front/<slug>.png, each under 120 KB.
 
 Palette-quantised PNG (the screens are flat UI colours); the colour count steps down only when a file is still too big.
   python3 scripts/front-images/shrink.py [raw dir]
@@ -18,8 +19,8 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     for slug in SLUGS:
         img = Image.open(RAW / f"{slug}.png").convert("RGB")
-        if img.size != (720, 900):
-            raise SystemExit(f"{slug}: {img.size}, expected 720 x 900")
+        if img.size != (720, 450):
+            raise SystemExit(f"{slug}: {img.size}, expected 720 x 450")
         for colours in (256, 128, 96, 64):
             out = OUT / f"{slug}.png"
             img.quantize(colors=colours, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(out, optimize=True)

@@ -131,9 +131,9 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-360-light.png": "177ad3397c620544cce95188ae463e14e1a8b3437807a67d8d4a33566a3bd335",
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-dark.png": "e64acfe2d5604b173a9939193ac2746ecaea09513c1ccdf155b8a857d1be76c9",
     "frontend/e2e/__screenshots__/fno8b4-journal-chart-v2-390-light.png": "62f83981eed0910df2678d1f604a7dcb9c5b71cd63f9232470eec992294dca87",
-    # M95: the front door's Journal image - the Week tab's discipline score card on the e2e journal fixture, every figure
-    # hidden (title and part names only, no amount, no price); re-pin after regenerating it (frontend/scripts/front-images/)
-    "frontend/public/front/journal.png": "fb1fc25f931c2c496d3317810bfdb6a4f60355ebe32c66f06eed99aa8a4b9924",
+    # M95 (remade after the owner's review, 14 Nov): the front door's Journal image - one made-up practice trade on
+    # "Index A" opened with its notes, every price, amount and R hidden; re-pin after regenerating it (frontend/scripts/front-images/)
+    "frontend/public/front/journal.png": "1d6776ec231b55378092daf59c3522b31db3b0531fc88d3d71a244004104a5d2",
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",

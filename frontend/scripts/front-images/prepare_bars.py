@@ -1,5 +1,8 @@
 """M95 front-door images: index daily bars for the capture, from a local store of real bars.
 
+Not used since the owner's review of 14 Nov: the images now carry made-up data and placeholder names only
+(front-images.e2e.ts needs no bars). Kept for reference.
+
 Reads daily bar CSVs (timestamp, bar_end, open, high, low, close; .csv or .csv.gz), keeps the bars up to the as-of
 date (at least three months old, rule M95-Q1) and writes one JSON file OUTSIDE the repository for the capture script
 (FRONT_BARS=<that file>). The raw bars are never committed; the images hide every price figure and price axis.

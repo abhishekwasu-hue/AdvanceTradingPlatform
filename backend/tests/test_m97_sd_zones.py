@@ -325,8 +325,8 @@ def test_the_flag_is_registered_off_with_catalog_state_and_pack_entries():
     assert SD_FLAG == "sd_pack" == sd_gate.FLAG
     assert SD_FLAG in controls.FEATURE_FLAGS and SD_FLAG in controls.DEFAULT_OFF_FLAGS
     assert "places no orders" in controls.FEATURE_FLAGS[SD_FLAG]
-    assert flag_catalog.FLAG_INFO[SD_FLAG].status == "unfinished" and flag_catalog.FLAG_GROUP[SD_FLAG] == "screen_library"
-    assert "M97" in flag_catalog.FINISH[SD_FLAG] and "M97" in str(flag_state.FLAG_STATUS[SD_FLAG])
+    assert flag_catalog.FLAG_INFO[SD_FLAG].status == "ready" and flag_catalog.FLAG_GROUP[SD_FLAG] == "screen_library"
+    assert SD_FLAG not in flag_catalog.FINISH and flag_state.FLAG_STATUS[SD_FLAG].state == "ready"   # M97 merged (#1036)
     assert SD_FLAG in trader_pack.EXCLUDED_REASONS
     assert set(SD_FUNCTIONS) == M97_FUNCTIONS | {"SDZoneEntry", "SDZoneEntryRef", "SDZoneEntryScore", "SDZoneScore",
                                                  "SDZoneCompression", "SDZoneHtfWith"}         # M99 P1

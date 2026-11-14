@@ -462,3 +462,47 @@ ATP -> runner state (`app/runner_link/service.py` `runner_state`, `app/runner/li
 - Owner one-time setup before the first release: after the first `runner-v*` tag, set the GHCR package
   `atp-runner` to Public (so a VPS pulls without a login).
 - Docs: `docs/RUNNER_INSTALL.md` (beginner steps), `docs/runbooks/RUNNER_SETUP_SERVICE.md` (paid set-up checklist).
+
+## S8 results (branch `claude/runner-s8-parity`: S4c + S6 + S7 merged, then the parity harness)
+
+- PAPER parity, server worker vs runner loop, five owner-style cases: ALL MATCH (trades, orders, hedge-first sequence,
+  P&L, reasons, settlement time). Table and differences: `docs/design/RUNNER_PARITY.md`; CI test
+  `backend/tests/test_runner_s8_parity.py` fails on any mismatch.
+- Fixed on the way: the organisation's "one direction per symbol" check (worker-only) moved unchanged to
+  `execution/order_defaults.opposite_position`, called by the worker and the runner loop; a deployment with OI gates is
+  skipped on the runner fail-closed ("Your OI gates need ATP's option-chain data ..."). Listed: RUN-S8-1 (index future
+  volume), RUN-S8-2 (VIX readings) in docs/OPEN_QUESTIONS.md.
+- The whole runner is one stack: S1-S5, S4b, S4c, S6, S7, S8. Flag `user_runner`: state `ready`
+  (`platform/flag_state.py`), still OFF by default (`DEFAULT_OFF_FLAGS`) - the owner turns it on.
+- Migration: yes for the stack (S4 `d2f4b6c8e0a1`, and S3's); S4c / S8 add none.
+
+## Pilot runbook (owner)
+
+1. Rent a KVM VPS: x86-64, Ubuntu LTS, a static public IP (any provider; 1 vCPU / 1 GB is enough for a few deployments).
+2. Run the one-line installer from `docs/RUNNER_INSTALL.md` (S6: pulls the signed image, checks its signature, starts it
+   with `restart: always`); `install.sh status` shows the runner and the VPS public IP.
+3. ATP -> My runner (flag `user_runner` ON for his organisation, `ui_v2`): "Pair a runner" -> one-time code; on the VPS
+   `python -m app.runner pair <code> --atp https://aialgodesk.tech --name "Pilot VPS"`; My runner shows it ONLINE.
+4. `python -m app.runner keys init` then `keys add angel_one` (client code, PIN, TOTP secret, API key - asked without
+   echo, never sent to ATP); `keys login angel_one` once to check.
+5. Angel One SmartAPI: register the VPS public IP (from step 2) as the app's static IP.
+6. PAPER first: his deployments stay PAPER; run N sessions (his choice) and compare each session's runner trades (My
+   runner's copy) with ATP's own PAPER run of the same deployment (entries, exits, P&L, reasons). Any difference = a bug
+   to report with both rows.
+7. LIVE (only on his own words): his local LIVE file (`python -m app.runner live on`) + `live_trading` ON (owner
+   organisation only; B1) + the deployment's own Live choice. The runner places LIVE only while ATP's signed state says
+   LIVE is open for his organisation (fresh within `link_grace_minutes`); exits always run. Kill switch: his CLI
+   `kill` / `resume` or his own button on My runner.
+
+To verify in the pilot (from S5, and S4c / S8):
+- the login with client code + PIN + TOTP from the VPS, and that the session lasts until midnight as documented;
+- that orders are accepted from the registered static IP (and refused from another), and whether SmartAPI checks the
+  `X-ClientPublicIP` header (the keystore's optional `public_ip`) against the registered IP;
+- Angel One's error codes for a wrong PIN / TOTP (`AUTH_ERROR_CODES`); a refusal with another code reads "did not answer
+  as expected" until listed;
+- whether repeated wrong logins lock the account (the default is 2 attempts a day; keep retries low);
+- the TOTP code at a 30-second boundary (one retry covers it);
+- Angel One contract binding for his NFO deployments (S4b `ContractBinder`: same underlying / expiry / strike / right / lot);
+- the LIVE state line in `link.log` ("ATP: LIVE open / not open for your organisation") after the owner's switch changes;
+- PAPER parity on real bars over N sessions (S8 covers recorded bars only).
+

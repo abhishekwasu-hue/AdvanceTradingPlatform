@@ -164,7 +164,7 @@ Beginner install (a), behind `ui_v2`, all from ATP's "My runner" page:
 | S2 | runner loop: exits first, DSL / template evaluation on broker bars, router + OPS + tagging + market protection, PAPER broker, local kill, local audit | ~250k | no (runner-local SQLite only) |
 | S3 | ATP side: device pairing, runner registry, heartbeat, mirror tables, "runner offline" + Telegram | ~180k | **yes** (runner devices / heartbeats / mirrors) |
 | S4 | link protocol: outbound WSS, signed messages, commands (kill / pause / square-off), strategy sync | ~150k | no |
-| S5 | runner keystore + daily login (localhost and sealed relay), TOTP brokers; Upstox first | ~150k | no |
+| S5 | runner keystore + daily login (localhost and sealed relay), TOTP brokers; Angel One first (RUN-Q3) | ~150k | no |
 | S6 | image build + signing in CI, install line, update channel | ~100k | no |
 | S7 | "My runner" page (pair, status, IP, session, mirrored positions, kill) on desktop + phone | ~150k | no |
 | S8 | pilot report: PAPER through the runner vs the server worker on the same deployments (parity), screenshots | ~80k | no |
@@ -172,18 +172,72 @@ Beginner install (a), behind `ui_v2`, all from ATP's "My runner" page:
 Total about 1.2M tokens over 8 PRs. Server-side LIVE for non-owner users stays off throughout (Phase 0 lock,
 `platform/phase0_lock.py`).
 
-Pilot (owner's own machine): runner on one machine he owns (RUN-Q2), PAPER only, his deployments mirrored side by side
-with the server worker for a few sessions; check exits with ATP disconnected, the kill switch both ways, a broker
-login, a runner restart with an open position. LIVE through the runner only on his explicit words; his current LIVE
-path via the ATP server IP is unchanged.
+Pilot (RUN-Q2, answered 14 Nov: a separate small VPS, both PAPER and LIVE): the runner on a separate small VPS of the
+owner's, on his own account only. PAPER first: his deployments mirrored side by side with the server worker for a few
+sessions; check exits with ATP disconnected, the kill switch both ways, a broker login, a runner restart with an open
+position. Then LIVE on his own account with his own settings (lots, SL, targets, exits from his dashboard, CLAUDE.md §3).
+The LIVE switches stay his: `live_trading` on ATP and the runner's own LIVE enable each need his action; nothing turns
+LIVE on by default or by a deploy. Exits are never blocked (ADR-0004). His current LIVE path via the ATP server IP is
+unchanged.
+
+First broker (RUN-Q3, answered 14 Nov): Angel One SmartAPI, his own SmartAPI app and API key (never ATP's).
+- Daily login: client code + PIN + TOTP (`loginByPassword`; `brokers/angel_one.py:185-186`); the session lasts until
+  midnight (docs/brokers/EASIEST_LOGIN.md section 5). The PIN and TOTP secret stay in the runner's keystore (S5).
+- Static IP: from 1 Apr 2026 SmartAPI accepts place / modify / cancel only from the registered primary static IP (the
+  VPS's IP; the primary IP can be changed once a week) (EASIEST_LOGIN.md section 5).
+- Market / IOC orders are prohibited for algo orders; Angel One converts market orders to limits within its MPP band -
+  the runner keeps the router's protected limit (`router.py:256-268`).
+- Data terms: in ATP, Angel One's market-data terms are "pending" (docs/BROKER_DATA_TERMS.md:22, :56). In the runner the
+  data stays on the user's own machine for his own use; that this is within Angel One's terms is NOT verified - to
+  confirm with Angel One / the lawyer (with RUN-Q1) before users other than the owner.
 
 ## 8. Owner questions (max 3, each with a default)
 
-| ID | Question | Default |
-|---|---|---|
-| RUN-Q2 | Pilot machine for the runner | a separate small Linux VPS with its own static IP (closest to what users will do); PAPER only |
-| RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app); others after the pilot |
-| RUN-Q4 | Where a user's PAPER runs | on ATP's server as today (no broker order); the runner's PAPER mode is for the pilot and a dry run before his LIVE |
+| ID | Question | Default | Answer (owner, 14 Nov) |
+|---|---|---|---|
+| RUN-Q2 | Pilot machine for the runner | a separate small Linux VPS with its own static IP (closest to what users will do); PAPER only | a separate small VPS; both PAPER and LIVE (LIVE on his own account, his switches) |
+| RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app); others after the pilot | Angel One (SmartAPI) |
+| RUN-Q4 | Where a user's PAPER runs | on ATP's server as today (no broker order); the runner's PAPER mode is for the pilot and a dry run before his LIVE | as the default: on ATP's server, as today |
 
 Lawyer (RUN-Q1, OPEN_QUESTIONS): does Route 1 fit the tech-savvy exception when ATP supplies the runner software and
 the DSL; does ATP need RA / empanelment for its templates. Default: Route 1 for users, owner LIVE only on his words.
+
+## S1 results (branch `claude/runner-s1-boundary`)
+
+Boundary (`backend/app/runner/manifest.py`, test `backend/tests/test_runner_s1_boundary.py`):
+- 36 allowed entry modules (DSL + inbuilt templates, indicators, broker base + adapters Angel One / Upstox / Zerodha /
+  Dhan, rate budget, TOTP, token lifecycle, router, OPS throttle, tagging, market protection, compliance rules, PAPER
+  broker + charges, risk manager, by_default, hierarchy, guardian, kill switch, signal_execution, position_monitor).
+  Their module-level import closure (what ships) is 137 modules.
+- Forbidden: `atp_private`, `engine_provider`, `chart_reader`, `chart_analyze`, `price_action`, `ai`, `admin`,
+  `marketplace`, `lab`, `workers`, `main`, `billing`, `market_lake`. The test walks the closure by AST (module-level and
+  function-level imports, relative ones resolved, and any `import_module("atp_private...")` by name) and fails on any
+  forbidden import that is not one of the 13 reviewed `KNOWN_EDGES` (and on a listed edge that no longer exists).
+- Found and how they stand (no server code changed):
+
+| Edge | Kind | Status |
+|---|---|---|
+| `order_persistence` -> `billing.service` (usage meter, `order_persistence.py:98`) | module level | tolerated; S2: a meter seam |
+| `compliance/fo_limits` -> `market_lake.asof` (F&O ban list) | module level | tolerated; S2/S4: ban list synced from ATP |
+| `execution/approval` -> `ai.*` (vision_audit, monitor, worker_bridge) | inside functions, approval-only mode | not on the automatic entry path; S2 decides the runner's approval mode |
+| `platform/controls.engine_missing_flags` -> `engine_provider`, `chart_reader`, `chart_analyze` loaders | inside a function (admin flag list, `/api/system/features`) | never loaded by the pipeline; S6: the image leaves these packages out, so that function must then read an absent package as "unavailable" |
+| `alerts/signed_webhooks` -> `chart_analyze.linkfetch` | inside a function | alerts only |
+
+  No module-level import of the private package, its loaders, AI, admin, marketplace, Lab, the worker or the web app.
+- Not followed: imports inside functions of non-forbidden modules (following them reaches 406 modules, most of the
+  app); the runtime check below covers the real path, and the S2 loop test will cover the loop's path.
+
+Spike (`backend/tests/runner_s1_spike_job.py`, run as a separate process by the test):
+- `DATABASE_URL=sqlite+aiosqlite:///<file>`, `REDIS_URL` at a closed port, no Postgres. Schema from the models
+  (`Base.metadata.create_all`), one organisation + one user, a DSL strategy (CLOSE crosses above SMA, the user's own ATR
+  stop) -> Signal -> `execute_signal_for_user(mode=PAPER)` -> `POSITION_OPEN`, one PAPER position ->
+  `monitor_open_positions` with a price past the stop -> closed, exit reason "Stop Loss".
+- It ran with NO shim: the models' SQLite variants, the pipeline and the close path work unchanged on a file database;
+  without Redis the billing meter's Redis total is skipped (best effort, as written). The process loads 161 app modules
+  and none of the runtime-forbidden ones (private package, loaders, AI, admin, marketplace, Lab, worker, web app).
+- The pipeline refused the first try with "Needs your setting: Holding / Order type" - correct (M68: ATP never
+  pre-chooses them); the spike passes them as the bot's own values, as a deployment does.
+- Notes for S2: the worker's Redis replica lock and the trigger engine's entry pause (M55 A18) are outside this path - the
+  runner loop needs its in-process lock; the template engine (`strategy_templates`, H-templates) imports
+  `screener.runtime` and `price_action` (public code), so shipping those templates needs `price_action` moved from the
+  forbidden list to the allowed set (owner-visible change of section 2) - S1 ships the DSL + inbuilt templates only.

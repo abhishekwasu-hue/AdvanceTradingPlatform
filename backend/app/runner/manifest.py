@@ -1,0 +1,118 @@
+"""Runner S1: the module boundary of the runner (docs/design/USER_RUNNER.md section 2, step S1).
+
+`RUNNER_MODULES` are the entry points the runner may import: the DSL and the public inbuilt templates, indicators, the
+broker adapters (Angel One first, RUN-Q3), the router, the OPS throttle, tagging, market protection, the compliance rules,
+the PAPER broker and the one entry / close pipeline. Everything they import at module level (their closure) ships with
+them.
+
+`FORBIDDEN_PREFIXES` must never be in that closure: the private package and its loaders (never to users), AI (provider
+keys), admin, marketplace, the Strategy Lab, the server's multi-tenant worker and app, and server-only data / billing.
+
+`KNOWN_EDGES` are the imports of a forbidden module that the closure holds TODAY, each reviewed, with why it is not on the
+runner's path or which build step removes it. The test fails on any edge not listed here (a new coupling) and on any
+listed edge that is gone (keep the list exact). `RUNTIME_FORBIDDEN` must not be loaded at all when the entry pipeline
+runs (the S1 spike checks the process's modules).
+"""
+from __future__ import annotations
+
+RUNNER_MODULES: tuple[str, ...] = (
+    # strategy evaluation: the DSL (ADR-0005, the same code as backtest / paper / worker) and the inbuilt templates
+    "app.strategy_engine.base",
+    "app.strategy_engine.declarative",
+    "app.strategy_engine.indicator_strategies",
+    "app.strategy_engine.combo_strategies",
+    "app.strategy_engine.swing_strategies",
+    "app.strategy_engine.mtf_strategy",
+    "app.strategy_engine.registry",
+    "app.indicators",
+    # broker adapters, from the user's own machine and key (RUN-Q3: Angel One first)
+    "app.brokers.base",
+    "app.brokers.models",
+    "app.brokers.exceptions",
+    "app.brokers.timestamps",
+    "app.brokers.circuit_breaker",
+    "app.brokers.rate_budget",
+    "app.brokers.totp",
+    "app.brokers.token_lifecycle",
+    "app.brokers.angel_one",
+    "app.brokers.upstox",
+    "app.brokers.zerodha",
+    "app.brokers.dhan",
+    # order routing, OPS throttle, algo tag, market protection, rules as data
+    "app.execution.router",
+    "app.execution.ops_throttle",
+    "app.execution.tagging",
+    "app.execution.order_safety",
+    "app.compliance.order_policy",
+    "app.compliance.rules",
+    # PAPER on the runner (the same code path as LIVE)
+    "app.execution.paper_broker",
+    "app.execution.paper_charges",
+    "app.execution.india_costs",
+    # the one entry pipeline and the one close path (ADR-0004: exits are never blocked)
+    "app.risk_engine.risk_manager",
+    "app.risk_engine.by_default",
+    "app.risk_engine.hierarchy",
+    "app.risk_engine.guardian",
+    "app.kill_switch.checks",
+    "app.execution.signal_execution",
+    "app.trading.position_monitor",
+)
+
+FORBIDDEN_PREFIXES: tuple[str, ...] = (
+    "atp_private",          # the private package: Trade engine snapshot, chart reader method, KB, Method Pack
+    "app.engine_provider",  # its loader (M66 EN-1)
+    "app.chart_reader",     # its loader (M86 W1)
+    "app.chart_analyze",    # the analysis engine loader (private package)
+    "app.price_action",     # the reader port: not needed to run a DSL deployment (design section 2)
+    "app.ai",               # AI features and the platform's AI provider keys
+    "app.admin",
+    "app.marketplace",
+    "app.lab",              # Strategy Lab code modes: research only, never trade (ADR-0027)
+    "app.workers",          # the server's multi-tenant worker (the runner gets its own slim loop, S2)
+    "app.main",             # the server's web app
+    "app.billing",          # plans / payments are server features
+    "app.market_lake",      # the server's data lake and its jobs
+)
+
+# (importer, forbidden module imported, "top" | "lazy") -> why it is tolerated today and what ends it.
+KNOWN_EDGES: dict[tuple[str, str, str], str] = {
+    ("app.execution.order_persistence", "app.billing.service", "top"):
+        "usage meter: one 'order' unit per order (order_persistence.py:98); its Redis total is best effort. "
+        "S2: a meter seam (the runner counts locally and mirrors to ATP).",
+    ("app.compliance.fo_limits", "app.market_lake.asof", "top"):
+        "F&O ban-list read (MWPL, rule IN-SEBI.risk.futeq_mwpl) from the lake table; empty on the runner = no ban known. "
+        "S2/S4: the ban list synced from ATP into the runner's store.",
+    ("app.execution.approval", "app.ai", "lazy"):
+        "approval-only mode: an entry proposal's Vision audit (approval.py:318); not on the automatic entry path. "
+        "S2: decide the runner's approval mode (proposals answered in ATP, executed on the runner).",
+    ("app.execution.approval", "app.ai.vision_audit", "lazy"): "as app.ai (approval.py:318).",
+    ("app.execution.approval", "app.ai.monitor", "lazy"): "approval-only mode: settles an overdue proposal (approval.py:472).",
+    ("app.execution.approval", "app.ai.worker_bridge", "lazy"):
+        "approval-only mode: re-quote / exit-now price lookup (approval.py:512, 779, 854); not on the automatic path.",
+    ("app.platform.controls", "app.engine_provider", "lazy"):
+        "engine_missing_flags (controls.py:789): the admin flag list and /api/system/features only, never the entry path "
+        "(the S1 spike shows it is not loaded). S6: the runner image leaves the package out; that function then needs "
+        "to read an absent package as 'unavailable'.",
+    ("app.platform.controls", "app.engine_provider.loader", "lazy"): "as app.engine_provider (controls.py:792).",
+    ("app.platform.controls", "app.chart_reader", "lazy"): "as app.engine_provider (controls.py:798).",
+    ("app.platform.controls", "app.chart_reader.loader", "lazy"): "as app.engine_provider (controls.py:798).",
+    ("app.platform.controls", "app.chart_analyze", "lazy"): "as app.engine_provider (controls.py:791).",
+    ("app.platform.controls", "app.chart_analyze.provider", "lazy"): "as app.engine_provider (controls.py:791).",
+    ("app.alerts.signed_webhooks", "app.chart_analyze.linkfetch", "lazy"):
+        "a signed webhook's chart link fetch (signed_webhooks.py:79); alerts only, not the entry path.",
+}
+
+# Never loaded in the runner's process, not even lazily, when the entry pipeline runs (the S1 spike).
+RUNTIME_FORBIDDEN: tuple[str, ...] = (
+    "atp_private", "app.engine_provider", "app.chart_reader", "app.chart_analyze", "app.price_action", "app.ai",
+    "app.admin", "app.marketplace", "app.lab", "app.workers", "app.main",
+)
+
+
+def is_forbidden(module: str, prefixes: tuple[str, ...] = FORBIDDEN_PREFIXES) -> bool:
+    """True when `module` is one of `prefixes` or inside one of them."""
+    return any(module == p or module.startswith(p + ".") for p in prefixes)
+
+
+__all__ = ["RUNNER_MODULES", "FORBIDDEN_PREFIXES", "KNOWN_EDGES", "RUNTIME_FORBIDDEN", "is_forbidden"]

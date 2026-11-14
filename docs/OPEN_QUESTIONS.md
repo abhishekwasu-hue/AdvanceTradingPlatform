@@ -604,10 +604,10 @@ Checked against CLAUDE.md (§3 signals not advice: no new rule, only the data's 
 
 ## FN6-R1: Route 1 user runner (14 Nov, docs/design/USER_RUNNER.md, PR `claude/design-user-runner`)
 
+RUN-Q2, RUN-Q3, RUN-Q4 answered by the owner on 14 Nov: moved to docs/archive/OPEN_QUESTIONS_ARCHIVE.md.
+
 | ID | Question | Default (provisional, until answered) | Status |
 |---|---|---|---|
 | RUN-Q1 | Lawyer: does Route 1 fit the tech-savvy client exception (NSE/INVG/67858 I(h), NSE/INVG/69255 §14) when ATP supplies the runner software and the strategy DSL? Does ATP need RA registration / exchange empanelment for its templates? | Route 1 for users; owner LIVE only on his words | open (lawyer) |
-| RUN-Q2 | Pilot machine for the runner | a separate small Linux VPS with its own static IP; PAPER only | open (owner) |
-| RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app) | open (owner) |
-| RUN-Q4 | Where a user's PAPER runs | on ATP's server as today; the runner's PAPER mode for the pilot and a pre-LIVE dry run | open (owner) |
 | RUN-Q5 | New entries while the runner cannot reach ATP | paused after a grace period (runner setting); exits, stops and square-offs always continue (ADR-0004; same principle as trading_worker.py:24-25) | open (default stated) |
+| RUN-Q6 | Angel One data terms in the runner: in ATP they are "pending" (docs/BROKER_DATA_TERMS.md:22, :56). In the runner the user's bars / LTPs come from his own SmartAPI session onto his own machine for his own use - is that within Angel One's API terms? | the pilot (owner's own account) goes ahead; confirm with Angel One in writing / the lawyer (with RUN-Q1) before any other user's runner | open (verify) |

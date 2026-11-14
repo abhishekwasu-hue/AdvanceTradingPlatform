@@ -4247,6 +4247,9 @@ class RunnerDeviceRecord(Base):
     egress_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     last_signed_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     offline_alerted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Runner S4: the runner's daily broker login line as it reports it ("broker session valid" / "login failed: <plain
+    # reason>", app/runner/broker_login.py status_line) - never a value, a key or a token.
+    broker_login: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class RunnerPairingCodeRecord(Base):
@@ -4342,3 +4345,23 @@ class RunnerMirrorAuditRecord(Base):
     prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     received_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
+class RunnerCommandRecord(Base):
+    """Runner S4 (docs/design/USER_RUNNER.md section 4, rule R-1): a command for ONE user's own runner, created only by
+    that user's own action on his own device in ATP (today: his kill switch ON / OFF). ATP signs the payload with its
+    command key; the runner applies it only when the signature, the device, the user and the origin check out, and acks it
+    in its next heartbeat. No admin, platform or worker path creates one. It stops new entries only; exits always run."""
+
+    __tablename__ = "runner_commands"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("runner_devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    signature: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    delivered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    acked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)

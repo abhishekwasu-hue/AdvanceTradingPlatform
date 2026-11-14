@@ -6,13 +6,18 @@ The logged-in user, his own runners only (no admin path, no other member's runne
 * `GET  /api/runner/devices`                    - his paired runners with what each last reported
 * `POST /api/runner/devices/{device_id}/revoke` - removes a runner from his account (its signed requests are refused)
 * `GET  /api/runner/devices/{device_id}/mirror` - the read-only copies that runner uploaded
+* `POST /api/runner/devices/{device_id}/kill-switch` - S4: HIS kill switch for HIS runner, ON / OFF (rule R-1): a command
+                                                  signed for that device; the runner applies it (entries only)
 
 The runner (no login; the pairing code, then its own Ed25519 signature - app/runner_link/signing.py):
 * `POST /api/runner/pair`             - code + public key + proof -> its device id
 * `POST /api/runner/device/heartbeat` - signed: run state, version, its kill switch state, open positions count
 * `POST /api/runner/device/mirror`    - signed, idempotent, size-capped: orders, positions, audit summaries
+* `GET  /api/runner/device/rules`     - S4, signed: HIS saved strategies, deployments and settings (never a signal)
+* `GET  /api/runner/device/reference` - S4, signed: the F&O ban list and his symbols' derivative contracts
 
-Nothing here places, changes or forwards an order, evaluates a strategy or sets a runner's kill switch.
+Nothing here places, changes or forwards an order or evaluates a strategy. A runner's kill switch is set only on the
+runner, by the user's own action there or by his own button here (relayed as a command signed for his device).
 """
 from __future__ import annotations
 
@@ -38,6 +43,7 @@ pairing_code_rate_limit = user_rate_limit("runner_pairing_code", limit=10, windo
 pair_rate_limit = rate_limit("runner_pair", limit=10, window_seconds=600,
                              message="Too many pairing attempts. Wait a few minutes and try again.")
 device_rate_limit = rate_limit("runner_device", limit=120, window_seconds=60)
+kill_rate_limit = user_rate_limit("runner_kill_switch", limit=30, window_seconds=3600)
 
 
 async def _require_flags(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
@@ -89,6 +95,27 @@ async def device_mirror(device_id: str, user: User = Depends(get_current_user), 
     return {"device": service.device_dict(device), **await service.mirror_view(session, device)}
 
 
+class KillBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    on: bool
+
+
+@router.post("/devices/{device_id}/kill-switch", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(_require_flags), Depends(kill_rate_limit)])
+async def kill_switch_command(device_id: str, body: KillBody, user: User = Depends(require_trader),
+                              session: AsyncSession = Depends(get_session)) -> dict:
+    """His own kill switch for his own runner (rule R-1). Only the logged-in owner of the device reaches it."""
+    try:
+        command = await service.create_kill_command(session, user, device_id, body.on)
+    except RunnerError as exc:
+        await session.rollback()
+        raise _http(exc) from exc
+    await write_audit_log(session, user.tenant_id, user.id, "runner_kill_switch_command",
+                          f"runner command #{command.id}: kill switch {'ON' if body.on else 'OFF'}")
+    await session.commit()
+    return {"command_id": command.id, "on": body.on, "status": "sent to your runner with its next heartbeat"}
+
+
 # --- the runner ---------------------------------------------------------------------------------------------------------------
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,59}$")]
@@ -113,7 +140,9 @@ async def pair_device(body: PairBody, session: AsyncSession = Depends(get_sessio
         raise _http(exc) from exc
     await write_audit_log(session, device.tenant_id, device.user_id, "runner_device_paired", f"runner #{device.id}")
     await session.commit()
-    return {"device_id": device.device_uid, "name": device.name, "status": device.status}
+    # S4: the user the device is paired to and ATP's command key, which the runner pins for his own commands.
+    return {"device_id": device.device_uid, "name": device.name, "status": device.status, "user_ref": device.user_id,
+            "command_key": service.command_public_key()}
 
 
 async def _signed(request: Request, session: AsyncSession, cap: int) -> tuple[Any, bytes]:
@@ -162,3 +191,19 @@ async def device_mirror_upload(request: Request, session: AsyncSession = Depends
     counts = await service.mirror(session, device, upload)
     await session.commit()
     return {"ok": True, **counts}
+
+
+@router.get("/device/rules", dependencies=[Depends(device_rate_limit)])
+async def device_rules(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
+    device, _ = await _signed(request, session, 0)
+    answer = await service.rules_snapshot(session, device)
+    await session.commit()                                       # the signed request is spent (no replay)
+    return answer
+
+
+@router.get("/device/reference", dependencies=[Depends(device_rate_limit)])
+async def device_reference(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
+    device, _ = await _signed(request, session, 0)
+    answer = await service.reference(session, device)
+    await session.commit()
+    return answer

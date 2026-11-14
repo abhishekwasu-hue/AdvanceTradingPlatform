@@ -11,7 +11,11 @@ Everything the runner keeps lives in ONE folder on the user's machine (`home`):
                    stops, pauses or changes a user's runner): new entries stop while it exists; exits always run
                    (ADR-0004). Default OFF. Only `set_killed` writes it, and only for his own action - the CLI on his
                    runner, or (S4) his own button in ATP relayed as a command signed for his action;
-- `runner.json`    optional operational settings (cycle length, history to read) - never a trading rule.
+- `runner.json`    optional operational settings (cycle length, history to read, the link's heartbeat and grace) - never
+                   a trading rule;
+- S4, the link to ATP (`link.py`): `device.key` (this runner's own Ed25519 private key, made here at pairing, mode 600,
+  never sent), `link.json` (ATP's address, the device id, the user it is paired to and ATP's command key, pinned),
+  `link_state.json` (when ATP last answered, the last command applied, what was mirrored) and `link.log` (plain lines).
 """
 from __future__ import annotations
 
@@ -35,6 +39,12 @@ DEFAULTS: dict[str, Any] = {
     "history_days_intraday": 20,  # how far back the broker's candles are read for minute timeframes
     "history_days_daily": 400,    # ... and for day / week / month timeframes
     "ops_throttle": True,         # rule R-9: the orders-per-second limit (10/s) on his broker session, default ON
+    # S4, the link to ATP (design section 4). The heartbeat period: reference 60 s = ATP's offline time of 3 minutes
+    # (S3 `offline_after_minutes` default) is three missed heartbeats.
+    "heartbeat_seconds": 60,
+    # How long ATP may be unreachable before NEW entries pause (design section 4: "a runner setting"; exits, stops and
+    # square-offs never pause). Reference for the default 3: ATP's own "runner offline" time (S3 default 3 minutes).
+    "link_grace_minutes": 3,
 }
 
 
@@ -46,6 +56,8 @@ class RunnerSettings:
     history_days_intraday: int = DEFAULTS["history_days_intraday"]
     history_days_daily: int = DEFAULTS["history_days_daily"]
     ops_throttle: bool = DEFAULTS["ops_throttle"]
+    heartbeat_seconds: int = DEFAULTS["heartbeat_seconds"]
+    link_grace_minutes: int = DEFAULTS["link_grace_minutes"]
 
     @classmethod
     def load(cls, home: str | os.PathLike[str]) -> RunnerSettings:
@@ -76,6 +88,22 @@ class RunnerSettings:
     @property
     def kill_path(self) -> Path:
         return self.home / "KILL"
+
+    @property
+    def device_key_path(self) -> Path:
+        return self.home / "device.key"
+
+    @property
+    def link_path(self) -> Path:
+        return self.home / "link.json"
+
+    @property
+    def link_state_path(self) -> Path:
+        return self.home / "link_state.json"
+
+    @property
+    def link_log_path(self) -> Path:
+        return self.home / "link.log"
 
     @property
     def database_url(self) -> str:

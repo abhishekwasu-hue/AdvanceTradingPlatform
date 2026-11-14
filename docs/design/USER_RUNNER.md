@@ -323,3 +323,31 @@ To verify in the pilot (a real Angel One account on the pilot VPS):
 - the TOTP code at a 30-second boundary (one retry covers it);
 - no redirect step: Angel One's TOTP login has none, so the localhost / sealed-relay redirect of section 5 is for the
   OAuth brokers (Upstox, Zerodha) in a later step.
+
+## S4 results (branch `claude/runner-s4-link`: S2 + S5 + S3 merged, then the link)
+
+Runner side (`backend/app/runner/link.py`, `sync.py`, `broker_session.py`; tests `backend/tests/test_runner_s4_link.py`):
+- Outbound HTTPS only (the design's polling fallback; WSS later). `python -m app.runner pair <code> --atp https://...
+  [--name]`: the Ed25519 device key is made on the machine (`device.key`, 600), the code + public key + proof go to
+  S3's pair endpoint; `link.json` (600) keeps the device id, the user it is paired to and ATP's command key (pinned).
+- One signing module for both sides: `app/runner_link/signing.py` (request canonical bytes, pairing proof, command
+  bytes); the runner imports only that file of app.runner_link (manifest). Timestamps strictly newer per request.
+- Each cycle: broker session (S5 `DailyLogin.run_due` + `build_adapter` from the keystore; broker.json only when no
+  keystore exists) -> exits -> link tick -> entries. Heartbeat every `heartbeat_seconds` (60): run state, version,
+  kill switch, `status_line`, open positions. Its answer: his mirror choice (R-8), his commands, his rules' etag.
+- Rules sync (R-2 / R-3): on a new etag the runner pulls `GET /api/runner/device/rules` (his strategies, his ACTIVE /
+  PAUSED deployments' rule columns, his trading-settings prefs, his organisation's risk limits; never a signal, an
+  evaluation, another member's row or a platform control) into its store with ATP's ids; a deployment gone from ATP
+  is STOPPED locally (never deleted). `GET /api/runner/device/reference` once a day: the F&O ban list (into
+  `runtime_mode.set_ban_list`) and his symbols' contracts. Until a list arrives the S2 behaviour stays.
+- Kill relay (R-1): `POST /api/runner/devices/{id}/kill-switch {"on": bool}` - the logged-in owner of that device only
+  (another member, another organisation, an admin: 404; a removed runner: 409); the device list carries
+  `kill_relay: true` for his live devices. ATP signs the command with its command key (HKDF from the server secret,
+  never stored); the runner applies it only for this device, this user, origin `user_signed`, a newer id and a valid
+  signature, through S2's one setter (`set_killed(origin="user_signed")`), then acks it. Entries only.
+- Offline: exits never wait; new entries pause when ATP has not answered for `link_grace_minutes` (default 3, the
+  same as ATP's own offline time) - a plain line in `link.log` + the audit log; they resume when it answers.
+- Mirror: orders, positions, audit summaries in S3's schema, paged (200), only while his mirror choice is ON.
+- Migration: yes - `d2f4b6c8e0a1` (table `runner_commands`, column `runner_devices.broker_login`).
+- Not yet: derivative deployments on the runner still skip in plain words (the contracts are stored; the contract
+  resolver on the runner comes with the S8 parity work); start / pause / square-off commands (only the kill switch).

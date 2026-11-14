@@ -136,6 +136,17 @@ RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
 )))
 
 
+# Runner S4: the link to ATP (outbound HTTPS, signed with the device key), the local rules sync / mirror and the S5 wiring.
+# `app.runner_link.signing` is the ONE canonical-signing module both sides import (cryptography only; the rest of
+# app.runner_link is ATP's server side and is never imported here).
+RUNNER_MODULES = tuple(dict.fromkeys(RUNNER_MODULES + (
+    "app.runner_link.signing",
+    "app.runner.link",
+    "app.runner.sync",
+    "app.runner.broker_session",
+)))
+
+
 def is_forbidden(module: str, prefixes: tuple[str, ...] = FORBIDDEN_PREFIXES) -> bool:
     """True when `module` is one of `prefixes` or inside one of them."""
     return any(module == p or module.startswith(p + ".") for p in prefixes)

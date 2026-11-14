@@ -428,8 +428,12 @@ def _member_of(tenant_id: int, email: str):
 
 def test_no_route_lets_anyone_set_a_runners_kill_switch():
     routes = iter_api_routes(app)
+    # S4 adds the user's own kill switch button for his own runner (a command signed for his device; the runner applies
+    # it - tests/test_runner_s4_link.py) and the runner's signed reads of his own rules / reference data.
     assert {r.path for r in routes if "runner" in r.path} == {"/api/runner/pairing-codes", "/api/runner/devices", "/api/runner/devices/{device_id}/revoke",
-                                              "/api/runner/devices/{device_id}/mirror", "/api/runner/pair", HB, MIRROR}
+                                              "/api/runner/devices/{device_id}/mirror", "/api/runner/pair", HB, MIRROR,
+                                              "/api/runner/devices/{device_id}/kill-switch", "/api/runner/device/rules",
+                                              "/api/runner/device/reference"}
     assert not [r.path for r in routes if r.path.startswith("/api/admin") and "runner" in r.path]
     # Only the device's own signed heartbeat writes `kill_switch_on` (what it reports); no other code in the app does.
     writers = [str(p.relative_to(BACKEND)) for p in (BACKEND / "app").rglob("*.py")
@@ -478,8 +482,21 @@ def test_migration_creates_and_drops_only_the_runner_tables():
         module.upgrade()
         tables = set(sa.inspect(conn).get_table_names())
         assert set(names) <= tables
-        for name in names:                                                        # the migration matches the models
+        s4 = _migration("d2f4b6c8e0a1", ops)                                     # S4 adds a column to runner_devices
+        s4.upgrade()
+        for name in names:                                                        # the migrations match the models
             assert {c["name"] for c in sa.inspect(conn).get_columns(name)} == set(Base.metadata.tables[name].c.keys())
+        s4.downgrade()
         module.downgrade()
         assert not set(names) & set(sa.inspect(conn).get_table_names())
         assert {"tenants", "users"} <= set(sa.inspect(conn).get_table_names())
+
+
+def _migration(revision: str, ops):
+    import importlib.util
+    path = next((BACKEND / "alembic/versions").glob(f"{revision}_*.py"))
+    spec = importlib.util.spec_from_file_location(f"mig_{revision}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.op = ops
+    return module

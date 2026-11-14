@@ -16,6 +16,11 @@ PAPER is the default. A LIVE entry needs, on top of the deployment's own LIVE ch
 lock), his own local switch (`settings.live_enabled`) and a real broker feed; the switch is read again right before the
 order. Every order intent and result is written to the local audit log (`audit.py`).
 
+S4 (the link, `link.py`; S5 wired in, `broker_session.py`): each cycle first refreshes his broker session (the daily login
+when due, the adapter from the keystore), then runs the exits, then ticks the link (heartbeat, his own commands, his
+saved rules, the mirror) and only then the entries. While ATP has not answered for longer than his grace setting, new
+entries pause (a plain line in link.log); exits never wait for the link.
+
 Not in S2 (each says so in the deployment's own words): options / futures and multi-leg deployments (they resolve a
 contract from the instrument list, which reaches the runner with the link, S4) and strategy templates (they need the
 reader port, S1 note). Approval-only entries are refused by the pipeline's own gate (proposals are answered in ATP: S4).
@@ -76,12 +81,15 @@ def _utc(value: datetime) -> datetime:
 
 class Runner:
     def __init__(self, settings: RunnerSettings, feed: BarFeed, *, audit: AuditLog | None = None,
-                 lock: RunnerLock | None = None) -> None:
+                 lock: RunnerLock | None = None, sessions: Any = None, link: Any = None, broker_session: Any = None) -> None:
         self.settings = settings
         self.feed = feed
         self.audit = audit or AuditLog(settings.audit_path)
         self.lock = lock or RunnerLock(settings.lock_path)
         self._killed: bool | None = None
+        self.sessions = sessions or _session_factory        # the runner's local store (tests: their own file)
+        self.link = link                                    # S4: None = not paired (dry runs, tests): no link gate
+        self.broker_session = broker_session                # S4: S5's login + keystore adapter (None: the given feed)
 
     # --- one cycle ------------------------------------------------------------------------------------------------
     async def run_cycle(self, now: datetime | None = None) -> CycleSummary:
@@ -91,7 +99,14 @@ class Runner:
             if not mine:
                 summary.skipped = True
                 return summary
-            async with _session_factory() as session:
+            if self.broker_session is not None:
+                try:
+                    feed = await self.broker_session.refresh(now)
+                    if feed is not None:
+                        self.feed = feed
+                except Exception as exc:  # noqa: BLE001 - the last feed stands; exits go on
+                    summary.errors.append(f"broker session: {exc}")
+            async with self.sessions() as session:
                 try:
                     await phase0_lock.is_on(session, None)      # ATP's PAPER-only lock, as the worker refreshes it
                 except Exception as exc:  # noqa: BLE001 - unknown state: the last read (or the safe default) stands
@@ -100,6 +115,16 @@ class Runner:
                 for tenant_id in await self._tenants(session):
                     summary.tenants += 1
                     await self._exits(session, tenant_id, now, summary)
+                open_positions = len(list(await session.scalars(select(TradeRecord.id).where(TradeRecord.exit_time.is_(None)))))
+                await session.commit()                           # no read held open while the link writes the store
+            if self.link is not None:
+                try:
+                    await self.link.tick(now, killed=self.settings.killed(), open_positions=open_positions)
+                except Exception as exc:  # noqa: BLE001 - the link never stops the runner
+                    summary.errors.append(f"link: {exc}")
+                    logger.exception("Runner: link tick failed")
+            async with self.sessions() as session:
+                for tenant_id in await self._tenants(session):
                     await self._entries(session, tenant_id, now, summary)
         return summary
 
@@ -164,6 +189,9 @@ class Runner:
             self._killed = killed
         if killed:
             summary.entries_paused = "Local kill switch is on - no new entries; exits continue"
+            return
+        if self.link is not None and (offline := self.link.entries_paused(now)):
+            summary.entries_paused = offline                     # ATP unreachable past his grace: entries only
             return
         deployments = list(await session.scalars(select(StrategyDeploymentRecord).where(
             StrategyDeploymentRecord.tenant_id == tenant_id,

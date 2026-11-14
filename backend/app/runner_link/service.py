@@ -9,30 +9,45 @@
   reference / audit sequence; a re-upload changes nothing unless the runner's row is newer), size-capped.
 - Offline: no heartbeat within the user's own `offline_after_minutes` -> OFFLINE and one alert (bell + his own Telegram);
   the next heartbeat re-arms it.
+- S4: the runner pulls his own saved rules (`rules_snapshot`: his strategies, his deployments' own settings, his trading
+  settings - never a signal, an evaluation or a platform control) and the day's reference data (`reference`: the F&O ban
+  list, the derivative contracts of his deployments' symbols); his own kill switch button creates a command signed with
+  ATP's command key for his own device only (`create_kill_command`), delivered in the heartbeat answer and acked by the
+  runner. The runner applies it; nothing in ATP sets its kill switch.
 Everything is the caller's own: every user route filters by his user id; there is no admin path.
 """
 from __future__ import annotations
 
 import hashlib
 import html
+import json
 import logging
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
 from app.db.models import (
+    CustomStrategyRecord,
+    FoBanRecord,
+    InstrumentRecord,
+    RiskSettingsRecord,
+    RunnerCommandRecord,
     RunnerDeviceRecord,
     RunnerMirrorAuditRecord,
     RunnerMirrorOrderRecord,
     RunnerMirrorPositionRecord,
     RunnerPairingCodeRecord,
+    StrategyDeploymentRecord,
     User,
     UserPrefsRecord,
 )
@@ -49,6 +64,17 @@ _CODE_LENGTH = 8
 MAX_MIRROR_BYTES = 256 * 1024        # one mirror upload's body (operational; the runner sends in pages)
 MAX_HEARTBEAT_BYTES = 4 * 1024
 MAX_MIRROR_ROWS = 500                # per kind in one upload
+MAX_COMMANDS = 20                    # commands in one heartbeat answer / acks in one heartbeat (operational)
+MAX_INSTRUMENTS = 5000               # derivative contracts in one reference answer (operational)
+# S4: the user's own trading settings the runner's order path reads (prefs namespaces; app/execution/exit_settings.py,
+# order_defaults.py, risk_engine/own_risk.py) - his own values, synced as they are.
+SETTINGS_NAMESPACES: tuple[str, ...] = ("trade_settings", "trading_defaults", "smart_execution", "strategy_exits", "my_limits")
+# Deployment columns that are the server's run state (evaluations, signals seen, errors) or server ids - never synced
+# (rule R-2: ATP sends his saved rules and settings, never a signal or an evaluation).
+DEPLOYMENT_NOT_SYNCED: frozenset[str] = frozenset({
+    "tenant_id", "created_by", "last_evaluated_at", "last_signal_at", "last_error", "consecutive_failures", "wait_reason",
+    "data_failures", "waiting_for_data_since", "last_route", "broker_account_id", "created_at", "updated_at"})
+RISK_NOT_SYNCED: frozenset[str] = frozenset({"id", "tenant_id", "updated_by", "created_at", "updated_at"})
 IST = ZoneInfo("Asia/Kolkata")
 
 PAIRED, ONLINE, OFFLINE, REVOKED = "PAIRED", "ONLINE", "OFFLINE", "REVOKED"
@@ -182,6 +208,9 @@ class Heartbeat(BaseModel):
     kill_switch_on: bool
     open_positions: int = Field(ge=0, le=100_000)
     broker_session: Literal["valid", "expired", "none"] | None = None
+    # S4: the runner's daily login line (broker_login.status_line - never a value) and the commands it has applied.
+    broker_login: Annotated[str, StringConstraints(max_length=200)] | None = None
+    acked_commands: list[int] = Field(default_factory=list, max_length=MAX_COMMANDS)
 
 
 async def heartbeat(session: AsyncSession, device: RunnerDeviceRecord, beat: Heartbeat, egress_ip: str | None,
@@ -192,14 +221,130 @@ async def heartbeat(session: AsyncSession, device: RunnerDeviceRecord, beat: Hea
     device.kill_switch_on = beat.kill_switch_on
     device.open_positions = beat.open_positions
     device.broker_session = beat.broker_session
+    device.broker_login = beat.broker_login
     device.egress_ip = (egress_ip or "")[:45] or None
     device.last_heartbeat_at = now
     device.status = ONLINE
     device.offline_alerted_at = None                            # back online: the next offline spell alerts again
     prefs = await user_prefs(session, device.tenant_id, device.user_id)
-    # S4 adds the user's own commands (start / pause / stop, kill switch, square-off) to this answer.
+    commands = await _commands_for(session, device, beat.acked_commands, now)
+    etag = (await rules_snapshot(session, device))["etag"]
     return {"ok": True, "device_status": ONLINE, "server_time": now.isoformat(), "mirror_upload": bool(prefs["mirror_upload"]),
-            "commands": []}
+            "commands": commands, "rules_etag": etag}
+
+
+# --- S4: the user's own commands for his own runner (rule R-1) ---------------------------------------------------------
+
+def _command_key() -> Ed25519PrivateKey:
+    """ATP's command key: derived from the server's own secret (HKDF, its own label), never stored, never sent. Rotating
+    that secret changes the key: the runner then refuses commands until it is paired again (it says so in its log)."""
+    from app.core import config
+    seed = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"atp-runner-command-key-1").derive(
+        str(config.JWT_SECRET_KEY).encode())
+    return Ed25519PrivateKey.from_private_bytes(seed)
+
+
+def command_public_key() -> str:
+    """The public half the runner pins at pairing (64 hex)."""
+    return signing.public_hex(_command_key())
+
+
+async def create_kill_command(session: AsyncSession, user: User, device_uid: str, on: bool,
+                              now: datetime | None = None) -> RunnerCommandRecord:
+    """The logged-in user's own kill switch button for HIS OWN runner (rule R-1): a command signed for that device and
+    that user. Another member's, an admin's or a removed runner's device answers "No such runner" / refused. It stops new
+    entries only on the runner; exits always run there (ADR-0004)."""
+    now = now or datetime.now(UTC)
+    device = await own_device(session, user, device_uid)                 # his own device only (tenant + user)
+    if device.revoked_at is not None or device.status == REVOKED:
+        raise RunnerError("revoked", "This runner was removed from your account. Pair it again on My runner.", 409)
+    row = RunnerCommandRecord(tenant_id=device.tenant_id, user_id=user.id, device_id=device.id, kind="kill_switch",
+                              payload_json="{}", signature="-", created_at=now)
+    session.add(row)
+    await session.flush()
+    payload = {"v": 1, "command_id": row.id, "device_id": device.device_uid, "user_ref": user.id, "kind": "kill_switch",
+               "on": bool(on), "origin": signing.COMMAND_ORIGIN, "issued_at": now.isoformat()}
+    row.payload_json = signing.command_bytes(payload).decode()
+    row.signature = signing.sign(_command_key(), signing.command_message(payload))
+    await session.flush()
+    return row
+
+
+async def _commands_for(session: AsyncSession, device: RunnerDeviceRecord, acked: list[int], now: datetime) -> list[dict[str, Any]]:
+    """Marks the device's own acked commands, then returns its pending ones (oldest first) as signed by ATP."""
+    if acked:
+        await session.execute(update(RunnerCommandRecord).where(
+            RunnerCommandRecord.device_id == device.id, RunnerCommandRecord.id.in_(list(acked)),
+            RunnerCommandRecord.acked_at.is_(None)).values(acked_at=now))
+    pending = list(await session.scalars(select(RunnerCommandRecord).where(
+        RunnerCommandRecord.device_id == device.id, RunnerCommandRecord.user_id == device.user_id,
+        RunnerCommandRecord.acked_at.is_(None)).order_by(RunnerCommandRecord.id).limit(MAX_COMMANDS)))
+    for row in pending:
+        row.delivered_at = row.delivered_at or now
+    return [{"id": row.id, "payload": json.loads(row.payload_json), "signature": row.signature} for row in pending]
+
+
+# --- S4: his own saved rules and the day's reference data ---------------------------------------------------------------
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return (_aware(value) or value).isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+async def rules_snapshot(session: AsyncSession, device: RunnerDeviceRecord) -> dict[str, Any]:
+    """HIS saved rules for his runner (rules R-1 / R-2 / R-3): his own strategies, his own ACTIVE / PAUSED deployments with
+    their own settings (lots, legs, strikes, stops, targets, exits) and his own trading settings. Never a signal, an
+    evaluation, another member's row, a platform control, an admin kill switch or a maintenance block. `etag`: a hash of
+    the rest, so the runner pulls only when something changed."""
+    tenant_id, user_id = device.tenant_id, device.user_id
+    strategies = [{"id": r.id, "name": r.name, "config_json": r.config_json, "origin": r.origin}
+                  for r in await session.scalars(select(CustomStrategyRecord).where(
+                      CustomStrategyRecord.tenant_id == tenant_id, CustomStrategyRecord.user_id == user_id)
+                      .order_by(CustomStrategyRecord.id))]
+    columns = [c.name for c in StrategyDeploymentRecord.__table__.columns if c.name not in DEPLOYMENT_NOT_SYNCED]
+    deployments = [{name: _plain(getattr(r, name)) for name in columns}
+                   for r in await session.scalars(select(StrategyDeploymentRecord).where(
+                       StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.created_by == user_id,
+                       StrategyDeploymentRecord.status.in_(("ACTIVE", "PAUSED"))).order_by(StrategyDeploymentRecord.id))]
+    prefs = {ns: value for ns, value in (await session.execute(select(UserPrefsRecord.namespace, UserPrefsRecord.value_json).where(
+        UserPrefsRecord.tenant_id == tenant_id, UserPrefsRecord.user_id == user_id,
+        UserPrefsRecord.namespace.in_(SETTINGS_NAMESPACES)).order_by(UserPrefsRecord.namespace))).all()}
+    risk_row = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant_id))
+    risk = None if risk_row is None else {c.name: _plain(getattr(risk_row, c.name))
+                                          for c in RiskSettingsRecord.__table__.columns if c.name not in RISK_NOT_SYNCED}
+    body: dict[str, Any] = {"user_ref": user_id, "org_ref": tenant_id, "strategies": strategies, "deployments": deployments,
+                            "settings": {"prefs": prefs, "risk": risk}}
+    body["etag"] = hashlib.sha256(signing.command_bytes(body)).hexdigest()
+    return body
+
+
+async def reference(session: AsyncSession, device: RunnerDeviceRecord, now: datetime | None = None) -> dict[str, Any]:
+    """The day's reference data the runner's entry checks read: the exchange's F&O ban list as ATP last stored it (None
+    while ATP has none - the runner then keeps refusing LIVE F&O entries in plain words) and the live derivative contracts
+    of the symbols in his own deployments. Market data is not sent (the runner reads his own broker)."""
+    now = now or datetime.now(UTC)
+    latest = await session.scalar(select(FoBanRecord.trade_date).order_by(FoBanRecord.trade_date.desc()).limit(1))
+    ban = None
+    if latest is not None:
+        names = sorted(await session.scalars(select(FoBanRecord.underlying).where(FoBanRecord.trade_date == latest)))
+        ban = {"trade_date": latest.isoformat(), "underlyings": names}
+    symbols = sorted({s.upper() for s in await session.scalars(select(StrategyDeploymentRecord.symbol).where(
+        StrategyDeploymentRecord.tenant_id == device.tenant_id, StrategyDeploymentRecord.created_by == device.user_id,
+        StrategyDeploymentRecord.status.in_(("ACTIVE", "PAUSED"))))})
+    today = now.astimezone(IST).date()
+    fields = ("broker", "exchange", "segment", "instrument_key", "tradingsymbol", "name", "underlying", "instrument_type",
+              "expiry", "strike", "lot_size", "tick_size", "weekly")
+    instruments: list[dict[str, Any]] = []
+    if symbols:
+        rows = await session.scalars(select(InstrumentRecord).where(
+            InstrumentRecord.underlying.in_(symbols), InstrumentRecord.instrument_type.in_(("FUT", "CE", "PE")),
+            (InstrumentRecord.expiry.is_(None)) | (InstrumentRecord.expiry >= today))
+            .order_by(InstrumentRecord.id).limit(MAX_INSTRUMENTS))
+        instruments = [{f: _plain(getattr(r, f)) for f in fields} for r in rows]
+    return {"day": today.isoformat(), "ban_list": ban, "instruments": instruments}
 
 
 # --- mirror -------------------------------------------------------------------------------------------------------------
@@ -336,7 +481,10 @@ def device_dict(device: RunnerDeviceRecord) -> dict[str, Any]:
     return {"device_id": device.device_uid, "name": device.name, "status": device.status, "version": device.version,
             "paired_at": _iso(device.paired_at), "last_heartbeat_at": _iso(device.last_heartbeat_at),
             "revoked_at": _iso(device.revoked_at), "run_state": device.run_state, "kill_switch_on": device.kill_switch_on,
-            "open_positions": device.open_positions, "broker_session": device.broker_session, "egress_ip": device.egress_ip}
+            "open_positions": device.open_positions, "broker_session": device.broker_session, "egress_ip": device.egress_ip,
+            # S4: his own kill switch button relays to this runner (POST /api/runner/devices/{id}/kill-switch {"on": bool});
+            # a removed runner takes no command. S4 also reports the daily broker login line.
+            "kill_relay": device.revoked_at is None and device.status != REVOKED, "broker_login": device.broker_login}
 
 
 async def list_devices(session: AsyncSession, user: User) -> list[RunnerDeviceRecord]:

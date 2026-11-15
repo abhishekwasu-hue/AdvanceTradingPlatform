@@ -1,11 +1,12 @@
-# HANDOVER_NOW (12 Nov)
+# HANDOVER_NOW (15 Nov)
 
-State: M96, LIVE-1, LIVE-2, M97, M98, M99, PHONE-1 and ORD-1 are all merged. main = c91e6bb7.
+Prod: edd6592d deployed (Terminal strip/chain/watchlist, chart draw + Buy/Sell, Route 3, B1 owner-only LIVE). live_trading reported ON.
 
-Deploy pending: the owner runs the deploy block for the main head. Migrations: b4d6f8a0c2e3 and b4d6f8a0c2e5.
+Merge when CI green (squash, expectedHeadSha), then ONE deploy (migration YES):
+- #1092 runner S1-S8 (migrations c1e3a5b7d9f2, d2f4b6c8e0a1)
+- #1093 integration 15 Nov (#1088-#1091)
+- #1094 Copilot reading on chart; #1095 Copilot 1H for stocks + health text
 
-Flags stay OFF until the owner turns them on: sd_pack, vsa_pack, wyckoff_pack, fib_ew_pack, pa_pack, risk_options, m99_primitives, intraday_pack.
-
-Open items:
-- M60 e2e race: diagnostics merged in #1035; root cause comes from the [m60-diag] lines of the next failing run.
-- The owner's ✅ after checking the real site.
+Paused by owner: runner S9 (annual Pro, VPS in customer's name, plan expiry).
+Owner flags to decide (all OFF): broker_app_links, broker_book, user_runner.
+Disk tight: worktrees in /dev/shm.

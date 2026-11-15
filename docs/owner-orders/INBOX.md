@@ -416,3 +416,9 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 | 2026-11-14 | (owner wrote it in Devanagari; transliterated) "Mnje ki broker chya panavar trade execution aaplyasathi changle" | Route 3 (BIZ-1): placing the order on the broker's own page is the right path for ATP; answer proposed (1) a prominent stop-loss reminder on the "Trade in your broker app" sheet and ticket, (2) check that a user with a linked broker sees his broker positions in ATP read-only |
 | 2026-11-14 | "Yes" (to the two proposals above) | (1) SL / GTT reminder line + his own saved Stop-loss setting (only if saved) on the copy sheet, ticket, basket, Reverse, signal card and scan-row sheet (PR #1074); (2) read-only broker positions audit - result and follow-up in PR #1074 |
 | 2026-11-15 | "Trade repo mdhe 15 minute dynamic reversal ha bot active hota to apan atp mdhe copy kela ka, nasel tar trade repo madhye tayar karnyat aalele bot ATP madhye copy kara tyanchya settingsah as it is ... mode paper ani live ... settings ya buttonkhali ... bot active kela ki automatically tya signal ne tayar karnyat aalele charts Vision kade jatil, Vision varun Telegram var with buttons ani tyanusar paper trade / live trade entry ghetli jail ... tumhala tyamadhye konatahi badal karaycha nahi, te as it is ATP madhye lagu karayche aahe" (owner wrote parts in Devanagari, transliterated) | Port Trade bot 15M SRv2 (15m_dynamic_sr) AS IS into ATP (engine code in atp-private), settings button, PAPER/LIVE, Vision -> Telegram buttons -> entry; next session (credits) |
+
+## 15 Nov - owner (after deploy 5b837e7d)
+
+> "Runner flag ali aahe me ti on keli"
+
+Note: owner turned user_runner ON. No runner-v* release tag exists yet, so the image / install.sh are not published; release needs owner ok.

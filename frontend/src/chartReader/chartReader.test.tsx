@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { fixtureAbhiRead, fixtureAbhiResult, fixtureBookRead, fixtureBookResult, fixtureStrategies } from "./fixtures";
 import { AbhiCard, BookCard, bookTitle, ERROR_TEXT, estimateText, LOADING_TEXT, range, REFUSED_TEXT, TWO_CHART_NOTE, usd, type ReadState } from "./ReaderCardsV2";
 import { WITHHELD } from "../chartAnalyze/signalLanguage";
+import { bookOptionsFor, ownMethodShown } from "./ChartReaderSectionV2";
 
 /** M86 W3: the chart reader's cards. Made-up neutral fixtures only (fixtures.ts). */
 const noop = () => undefined;
@@ -12,6 +13,20 @@ const book = (state: ReadState, title = "A. Writer, Example Book One (1901) stra
   renderToStaticMarkup(<BookCard title={title} state={state} symbol="DEMO" onClose={noop} onRetry={noop} />);
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
 const BANNED = /\b(buy|buys|buying|sell|sells|selling|hold|holds|holding|target|targets|stop[- ]?loss|SL|strike|strikes|lots?)\b/i;
+
+describe("the owner's own method is his alone (owner 15 Nov)", () => {
+  it("shown only when the server says so; never for anyone else", () => {
+    const owner = fixtureStrategies();
+    expect(ownMethodShown(owner)).toBe(true);
+    expect(bookOptionsFor(owner).map((s) => s.id)).toEqual(["DEMO_ONE", "DEMO_TWO"]);
+    const member = fixtureStrategies({ own_method: false, default: "DEMO_ONE", strategies: fixtureStrategies().strategies.slice(1) });
+    expect(ownMethodShown(member)).toBe(false);
+    expect(bookOptionsFor(member).map((s) => s.id)).toEqual(["DEMO_ONE", "DEMO_TWO"]);  // the first book stays a book
+    const older = fixtureStrategies({ own_method: undefined });                         // an older server: hidden
+    expect(ownMethodShown(older)).toBe(false);
+    expect(JSON.stringify(owner)).not.toContain("Abhi");
+  });
+});
 
 describe("the helpers", () => {
   it("costs, estimate, ranges and the book title", () => {
@@ -28,13 +43,14 @@ describe("the helpers", () => {
   });
 });
 
-describe("Abhi's method card", () => {
-  it("before a read: the action and the estimate, nothing spent", () => {
+describe("the owner's own method card (My method)", () => {
+  it("before a read: the action and the estimate, nothing spent; a generic label, never a name", () => {
     const html = abhi({ phase: "idle" });
-    expect(html).toContain("Abhi&#x27;s method");
-    expect(html).toContain("Read with Abhi&#x27;s method");
+    expect(html).toContain("My method");
+    expect(html).toContain("Read with my method");
+    expect(html).not.toContain("Abhi");
     expect(html).toContain("est. $0.07 per read");
-    expect(html).not.toContain('data-testid="abhi-read"');
+    expect(html).not.toContain('data-testid="own-read"');
     expect(html).not.toContain("Cost");
   });
 
@@ -109,7 +125,7 @@ describe("a book strategy card", () => {
     expect(html).toContain("Example statement");
     expect(html).not.toContain("Placeholder evidence");                    // behind (?)
     expect(html).not.toContain("reader-two-chart-note");
-    expect(html).not.toContain("Abhi");                                    // never merged into Abhi's card
+    expect(html).not.toContain("Abhi");                                    // never merged into the owner's card
     expect(text(html)).not.toMatch(BANNED);
   });
 

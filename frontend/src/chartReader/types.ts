@@ -13,7 +13,8 @@ export interface ReaderStrategy {
   sides: string[];
 }
 
-/** GET /api/chart-reader/strategies. `default` is "ABHI" (listed first, name "Abhi's method"). */
+/** GET /api/chart-reader/strategies. For the platform owner `own_method` is true and `default` is his own method (listed
+ * first, name "My method"); for everyone else it is omitted from the list and `default` is the first book strategy. */
 export interface ReaderStrategies {
   available: boolean;
   /** One plain line when the reader is not available (not installed / not connected), else null. */
@@ -21,7 +22,9 @@ export interface ReaderStrategies {
   /** The private reader is installed on this server / the caller has his own Claude key (owner 7 Nov: own key only). */
   installed?: boolean;
   connected?: boolean;
-  default: string;
+  default: string | null;
+  /** Owner 15 Nov: the caller may use the owner's own method (the platform owner only). Missing = no. */
+  own_method?: boolean;
   model: string;
   effort: string;
   estimate_usd: number;

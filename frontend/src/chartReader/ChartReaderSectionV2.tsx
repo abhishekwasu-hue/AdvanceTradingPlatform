@@ -14,12 +14,24 @@ import type { ReaderRequest, ReaderSource, ReaderStrategies } from "./types";
 /**
  * M86 W3: the chart reader inside the Analyze-a-chart panel (the Copilot's Analyze tab and /chart-analyze), behind the
  * `chart_reader` flag (nothing shows while it is off). Opens in place. The strategies list is free (labels only); a
- * read runs ONLY when the user presses a read button - never on its own. "Abhi's method" is the default card; each
- * book-strategy read opens its own card below (they stack, each closes), never merged into Abhi's card and never a
+ * read runs ONLY when the user presses a read button - never on its own. "My method" (the owner's own method) shows
+ * only when the server says the caller may use it (`own_method`, the platform owner alone - owner 15 Nov); each
+ * book-strategy read opens its own card below (they stack, each closes), never merged into another card and never a
  * filter or gate on anything.
  */
 
 export const READER_FLAG = "chart_reader";
+
+/** Owner 15 Nov: the owner's own method only when the server says this caller may use it (missing = no). */
+export function ownMethodShown(list: ReaderStrategies): boolean {
+  return list.own_method === true && Boolean(list.default);
+}
+
+/** The book strategies: every listed strategy except the owner's own method. */
+export function bookOptionsFor(list: ReaderStrategies) {
+  const own = ownMethodShown(list) ? list.default : null;
+  return list.strategies.filter((s) => s.id !== own);
+}
 export const NOT_AVAILABLE = "The chart reader is not available right now.";
 export const NEED_SYMBOL = "Type a symbol first.";
 export const NEED_CHART = "Add a chart above first.";
@@ -78,7 +90,8 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
 
   const readAbhi = useCallback(async () => {
     if (!list || blocked) return;
-    const req = requestFor(list.default || "ABHI");
+    if (!ownMethodShown(list) || !list.default) return;
+    const req = requestFor(list.default);
     setAbhiSymbol(req.symbol);
     setAbhi({ phase: "loading" });
     const state = await run(req);
@@ -106,8 +119,10 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
     <div className="flex items-center gap-space-2">
       <h2 id="reader-title" className="text-t15 font-semibold text-fg">Chart reader</h2>
       <HelpPopover title="Chart reader">
-        <p>Abhi&apos;s method reads the trend, the buyer and seller areas, the correction and the commitment candle, and names the area of interest.</p>
-        <p>Each book strategy is a separate read in its own card, named after its book. It never changes Abhi&apos;s card.</p>
+        {list && ownMethodShown(list) ? (
+          <p>My method reads the trend, the buyer and seller areas, the correction and the commitment candle, and names the area of interest.</p>
+        ) : null}
+        <p>Each book strategy is a separate read in its own card, named after its book. It never changes another card.</p>
         <p>A read runs only when you press a read button. A chart read before, with the same structure, is shown from the cache at no cost.</p>
       </HelpPopover>
     </div>
@@ -142,7 +157,8 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
     );
   }
 
-  const bookOptions = list.strategies.filter((s) => s.id !== list.default);
+  const bookOptions = bookOptionsFor(list);
+  const ownMethod = ownMethodShown(list);
   // The API's own estimate for what this read sends: one uploaded picture, or the stored-candles charts (plus the
   // paired chart for a strategy with two-chart conditions).
   const estimateFor = (twoChart: boolean) => (source === "upload" ? list.estimate_usd_upload
@@ -178,8 +194,8 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
         )}
       </section>
 
-      <AbhiCard state={abhi} estimateUsd={estimateFor(false)} symbol={abhiSymbol} onRead={() => void readAbhi()}
-        disabled={Boolean(blocked) || abhi.phase === "loading"} disabledReason={blocked ?? undefined} />
+      {ownMethod && <AbhiCard state={abhi} estimateUsd={estimateFor(false)} symbol={abhiSymbol} onRead={() => void readAbhi()}
+        disabled={Boolean(blocked) || abhi.phase === "loading"} disabledReason={blocked ?? undefined} />}
 
       {bookOptions.length > 0 && (
         <section className={card} aria-labelledby="reader-books-title" data-testid="reader-books">

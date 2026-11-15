@@ -9,11 +9,15 @@ import { TrendChip } from "../ui/TrendChip";
 import type { AbhiRead, BookRead, ConditionStatus, ReaderResult, ReaderStrategy, Tri } from "./types";
 
 /**
- * M86 W3: the chart reader's cards in the Analyze-a-chart panel (docs/design/M86_PLAN.md "UI (W3)"). "Abhi's method"
- * is the default card; every book-strategy read is its OWN card, titled after its book, never merged into Abhi's card
+ * M86 W3: the chart reader's cards in the Analyze-a-chart panel (docs/design/M86_PLAN.md "UI (W3)"). "My method" (the
+ * platform owner's own method, shown to him only - owner 15 Nov) is the first card; every book-strategy read is its OWN
+ * card, titled after its book, never merged into that card
  * and never a filter or gate. The cards show only what the API returns: numbers and chips first, the evidence behind
  * (?). Every text is guarded on render (no call words), as the result screen does.
  */
+
+/** The visible title of the owner's own method - generic, never a name (owner 15 Nov). */
+export const OWN_METHOD_TITLE = "My method";
 
 export type ReadState =
   | { phase: "idle" }
@@ -164,7 +168,7 @@ function okRead<R>(state: ReadState): { result: ReaderResult; read: R } | null {
   return { result, read: result.read as R };
 }
 
-// --- Abhi's method -----------------------------------------------------------------------------------------------------
+// --- My method (owner only) -------------------------------------------------------------------------------------------------
 
 const TREND_KEY = { up: "UP", down: "DOWN", sideways: "SIDEWAYS" } as const;
 
@@ -172,7 +176,7 @@ export function AbhiReadBody({ read }: { read: AbhiRead }) {
   const dir = String(read.trend?.direction ?? "unclear").toLowerCase();
   const trend = TREND_KEY[dir as keyof typeof TREND_KEY];
   return (
-    <div className="mt-space-3 divide-y divide-subtle" data-testid="abhi-read">
+    <div className="mt-space-3 divide-y divide-subtle" data-testid="own-read">
       <Row label="Trend" testid="trend">
         {trend ? <TrendChip trend={trend} /> : <Chip variant="meaning" icon="◆" name="trend-unclear">Unclear</Chip>}
         <Evidence title="Trend" text={read.trend?.evidence} />
@@ -216,17 +220,17 @@ export function AbhiCard({ state, estimateUsd, symbol, onRead, disabled, disable
   const ok = okRead<AbhiRead>(state);
   const loading = state.phase === "loading";
   return (
-    <section className={card} aria-labelledby="reader-abhi-title" data-card="chart-reader-abhi" data-testid="reader-abhi">
+    <section className={card} aria-labelledby="reader-own-title" data-card="chart-reader-own" data-testid="reader-own">
       <div className="flex flex-wrap items-center gap-space-2">
-        <h3 id="reader-abhi-title" className="mr-auto text-t15 font-semibold text-fg">Abhi&apos;s method</h3>
+        <h3 id="reader-own-title" className="mr-auto text-t15 font-semibold text-fg">{OWN_METHOD_TITLE}</h3>
         {state.phase === "done" ? <ResultChips result={state.result} symbol={symbol} /> : null}
       </div>
       {ok ? <AbhiReadBody read={ok.read} /> : <NotOk state={state} onRetry={state.phase === "idle" || loading ? undefined : onRead} />}
       {state.phase === "done" ? <CostLine result={guardDeep(state.result)} /> : null}
       {(state.phase === "idle" || ok) && (
         <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:items-center">
-          <Button variant="primary" className="h-11 w-full sm:w-auto md:h-9" disabled={disabled} reason={disabledReason} onClick={onRead} data-testid="reader-abhi-read">
-            {ok ? "Read again" : "Read with Abhi's method"}
+          <Button variant="primary" className="h-11 w-full sm:w-auto md:h-9" disabled={disabled} reason={disabledReason} onClick={onRead} data-testid="reader-own-read">
+            {ok ? "Read again" : "Read with my method"}
           </Button>
           <span className="font-tabular text-t12 text-fg-muted" data-testid="reader-estimate">{estimateText(estimateUsd)}</span>
         </div>

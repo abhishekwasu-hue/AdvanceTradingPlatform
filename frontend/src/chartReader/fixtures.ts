@@ -9,10 +9,10 @@ export const DEMO_SYMBOL = "DEMO";
 
 export function fixtureStrategies(over: Partial<ReaderStrategies> = {}): ReaderStrategies {
   return {
-    available: true, message: null, default: "ABHI", model: "demo-model", effort: "high", estimate_usd: 0.07,
+    available: true, message: null, default: "ABHI", own_method: true, model: "demo-model", effort: "high", estimate_usd: 0.07,
     estimate_usd_two_chart: 0.08, estimate_usd_upload: 0.06,
     strategies: [
-      { id: "ABHI", name: "Abhi's method", book: "", author: "", edition: "", two_chart: false, sides: ["buyer", "seller"] },
+      { id: "ABHI", name: "My method", book: "", author: "", edition: "", two_chart: false, sides: ["buyer", "seller"] },
       { id: "DEMO_ONE", name: "Example strategy one", book: "Example Book One", author: "A. Writer", edition: "1901", two_chart: false, sides: ["long"] },
       { id: "DEMO_TWO", name: "Example strategy two", book: "Example Book Two", author: "B. Author", edition: "1902", two_chart: true, sides: ["long", "short"] },
     ],
@@ -62,7 +62,7 @@ function base(strategy: { id: string; name: string; independent_book_strategy?: 
 }
 
 export function fixtureAbhiResult(over: Partial<ReaderResult<AbhiRead>> = {}): ReaderResult<AbhiRead> {
-  return { ...base({ id: "ABHI", name: "Abhi's method" }), read: fixtureAbhiRead(), removed: ["x"], time_flags: ["y", "z"], ...over };
+  return { ...base({ id: "ABHI", name: "My method" }), read: fixtureAbhiRead(), removed: ["x"], time_flags: ["y", "z"], ...over };
 }
 
 export function fixtureBookResult(id = "DEMO_ONE", over: Partial<ReaderResult<BookRead>> = {}): ReaderResult<BookRead> {

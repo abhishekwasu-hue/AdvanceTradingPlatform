@@ -10,7 +10,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  * M86 W3: the chart reader's cards inside the Analyze-a-chart panel (flag `chart_reader`), against MOCKED answers built
  * from made-up fixtures (src/chartReader/fixtures.ts) - no real read, no real book content (public repository).
  * - Nothing is read on its own: the list of strategies is loaded, a read runs only on the button.
- * - "Abhi's method" card: trend / areas / correction / commitment chips, the sentences, label, cost, cached.
+ * - "My method" card (the platform owner only, owner 15 Nov): trend / areas / correction / commitment chips, the
+ *   sentences, label, cost, cached. Anyone else sees no such card and no name, only the book strategies.
  * - "Book strategies": each read opens its own card (they stack, each closes); the two-chart note.
  * - Not available, refused and error states; the flag off hides it all.
  * - 390 (phone rules: no sideways scroll, 44 px targets) and 1440; no buy / sell / hold / target / stop-loss words.
@@ -80,13 +81,13 @@ async function readAll(page: Page, calls: Calls) {
   await expect(page.getByTestId("reader-estimate")).toHaveText("est. $0.07 per read");
   expect(calls.lists).toBe(1);
   expect(calls.reads).toHaveLength(0);
-  const readButton = page.getByTestId("reader-abhi-read");
+  const readButton = page.getByTestId("reader-own-read");
   await expect(readButton).toBeDisabled();                                  // no symbol yet
   await page.getByTestId("reader-symbol").fill("demo");
   await readButton.click();
 
-  const abhi = page.getByTestId("reader-abhi");
-  await expect(abhi.getByTestId("abhi-read")).toBeVisible();
+  const abhi = page.getByTestId("reader-own");
+  await expect(abhi.getByTestId("own-read")).toBeVisible();
   expect(calls.reads[0]).toEqual({ strategy: "ABHI", source: "lake", symbol: "DEMO" });
   await expect(abhi.locator('[data-chip="trend-up"]')).toHaveText(/Up/);
   await expect(abhi.locator('[data-chip="area-buyer"]')).toBeVisible();
@@ -101,7 +102,7 @@ async function readAll(page: Page, calls: Calls) {
   await expect(abhi.getByTestId("reader-cost")).toContainText("Cost $0.07");
   await expect(abhi).not.toContainText("Placeholder: each swing");         // evidence behind (?)
 
-  // two book strategies, each its own card (stacked), never inside Abhi's card
+  // two book strategies, each its own card (stacked), never inside the owner's card
   const pick = page.getByTestId("reader-book-pick");
   await pickOption(page, pick, "DEMO_ONE");
   await page.getByTestId("reader-book-read").click();
@@ -128,7 +129,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
     test.use(size.phone ? { viewport: { width: size.width, height: size.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 }
       : { viewport: { width: size.width, height: size.height } });
 
-    test("Abhi's card, two book cards, the chips, no call words, no sideways scroll", async ({ page }) => {
+    test("the owner's card, two book cards, the chips, no call words, no sideways scroll", async ({ page }) => {
       const calls = await open(page);
       await page.goto("/chart-analyze");
       await readAll(page, calls);
@@ -137,25 +138,45 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       if (size.phone) await expectPhoneLayout(page);
       await shot(page, `m86-chart-reader-${size.width}-dark.png`);
 
-      // each book card closes on its own; Abhi's card stays
+      // each book card closes on its own; the owner's card stays
       await page.getByRole("button", { name: "Close A. Writer, Example Book One (1901) strategy" }).click();
       await expect(page.getByTestId("reader-book")).toHaveCount(1);
-      await expect(page.getByTestId("reader-abhi").getByTestId("abhi-read")).toBeVisible();
+      await expect(page.getByTestId("reader-own").getByTestId("own-read")).toBeVisible();
 
       // the cleaning counts sit behind (?) only
-      await page.getByTestId("reader-abhi").getByRole("button", { name: "Help: About this read" }).click();
+      await page.getByTestId("reader-own").getByRole("button", { name: "Help: About this read" }).click();
       await expect(page.getByTestId("reader-about").first()).toContainText("Sentences removed: 1 · Time words flagged: 2");
+    });
+
+    test("not the owner: no own-method card, no name, the books only", async ({ page }) => {
+      const list = fixtureStrategies({ own_method: false, default: "DEMO_ONE", strategies: fixtureStrategies().strategies.slice(1) });
+      const calls = await open(page, { list });
+      await page.goto("/chart-analyze");
+      await expect(page.getByTestId("reader-books")).toBeVisible();
+      await expect(page.getByTestId("reader-own")).toHaveCount(0);
+      await expect(page.getByTestId("chart-reader")).not.toContainText(/Abhi|My method/);
+      await page.getByRole("button", { name: "Help: Chart reader" }).click();
+      await expect(page.getByText("Each book strategy is a separate read")).toBeVisible();
+      await expect(page.getByText(/reads the trend, the buyer and seller areas/)).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("reader-symbol").fill("DEMO");
+      await pickOption(page, page.getByTestId("reader-book-pick"), "DEMO_ONE");
+      await page.getByTestId("reader-book-read").click();
+      await expect(page.getByTestId("reader-book")).toHaveCount(1);
+      expect(calls.reads.map((r) => r.strategy)).toEqual(["DEMO_ONE"]);
+      await expectNoSidewaysScroll(page);
+      if (size.phone) await expectPhoneLayout(page);
     });
 
     test("a repeated read of the same chart shows cached at no cost", async ({ page }) => {
       const calls = await open(page, { cachedRepeat: true });
       await page.goto("/chart-analyze");
       await page.getByTestId("reader-symbol").fill("DEMO");
-      await page.getByTestId("reader-abhi-read").click();
-      await expect(page.getByTestId("reader-abhi").getByTestId("abhi-read")).toBeVisible();
+      await page.getByTestId("reader-own-read").click();
+      await expect(page.getByTestId("reader-own").getByTestId("own-read")).toBeVisible();
       await page.getByRole("button", { name: "Read again" }).click();
-      await expect(page.getByTestId("reader-abhi").locator('[data-chip="reader-cached"]')).toBeVisible();
-      await expect(page.getByTestId("reader-abhi").getByTestId("reader-cost")).toContainText("Cost $0.00 · cached");
+      await expect(page.getByTestId("reader-own").locator('[data-chip="reader-cached"]')).toBeVisible();
+      await expect(page.getByTestId("reader-own").getByTestId("reader-cost")).toContainText("Cost $0.00 · cached");
       expect(calls.reads).toHaveLength(2);
     });
 
@@ -165,7 +186,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await page.goto("/chart-analyze");
       await expect(page.getByTestId("reader-unavailable")).toContainText("The chart reader is not available right now.");
       await expect(page.getByTestId("reader-unavailable")).toContainText("Example reason: switched off for now.");
-      await expect(page.getByTestId("reader-abhi-read")).toHaveCount(0);
+      await expect(page.getByTestId("reader-own-read")).toHaveCount(0);
       await expectNoSidewaysScroll(page);
       if (size.phone) await expectPhoneLayout(page);
     });
@@ -174,7 +195,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await open(page, { mode: "refused" });
       await page.goto("/chart-analyze");
       await page.getByTestId("reader-symbol").fill("DEMO");
-      await page.getByTestId("reader-abhi-read").click();
+      await page.getByTestId("reader-own-read").click();
       await expect(page.getByTestId("reader-refused")).toContainText("The AI declined to read this chart.");
       await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
       await expectNoCallWords(page);
@@ -184,7 +205,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await open(page, { mode: "error" });
       await page.goto("/chart-analyze");
       await page.getByTestId("reader-symbol").fill("DEMO");
-      await page.getByTestId("reader-abhi-read").click();
+      await page.getByTestId("reader-own-read").click();
       await expect(page.getByTestId("reader-error")).toContainText("The read did not finish. Please try again.");
     });
 

@@ -63,7 +63,7 @@ export function BrokerBookView({ part, load, busy, onRefresh, onConnect }: {
   return (
     <CardV2 title="From your broker" count={total} testId="broker-book">
       <div className="mb-space-3 flex flex-wrap items-center justify-between gap-space-2">
-        <p className="text-t13 text-fg-muted">Read-only, straight from your broker. Make changes in your broker app.</p>
+        <p className="text-t13 text-fg-muted">Read-only. Make changes in your broker app.</p>
         <button type="button" data-broker-book-refresh onClick={onRefresh} disabled={busy} className={BUTTON_SECONDARY}>
           <RefreshCw size={16} aria-hidden className={busy ? "animate-spin" : undefined} /> Refresh
         </button>

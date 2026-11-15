@@ -35,6 +35,7 @@ from app.screener.runtime import ScreenRuntimeError, SymbolData, _Eval, _last, b
 FLAG = "watchlist_screen"
 SETTINGS = "watchlist_screens"          # internal user_prefs row: each list's screen and alert choice (W1 / W4)
 SEEN = "watchlist_screen_seen"          # internal user_prefs row: each list's matches at its last check (W4)
+LAST = "watchlist_screen_last"          # internal user_prefs row: each list's last result per symbol and bar (owner 15 Nov)
 OVERLAY_BARS = E.DEFAULT_WINDOW         # bars the chart overlay draws (the evidence pack's own window)
 CUT_BARS = 60                           # a last-bar-only screen's markers: cut evaluations of at most this many bars
 CHECK_GRACE_SECONDS = 20                # operational: the re-check waits this long after a bar closes for its data
@@ -196,4 +197,4 @@ def next_close(now: datetime, tf: str, holidays: Iterable[date] = ()) -> datetim
     return None
 
 
-__all__ = ["FLAG", "SETTINGS", "SEEN", "OVERLAY_BARS", "CUT_BARS", "screen_marks", "condition_rows", "bar_hits", "marks_of", "next_close"]
+__all__ = ["FLAG", "SETTINGS", "SEEN", "LAST", "OVERLAY_BARS", "CUT_BARS", "screen_marks", "condition_rows", "bar_hits", "marks_of", "next_close"]

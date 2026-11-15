@@ -15,7 +15,7 @@
  */
 import { request } from "../api/client";
 import type { RunResponse, RunResult } from "../screener/api";
-import { FALLBACK_PLAN, runInBatches, type BatchBudget, type BatchPlan } from "../screener/universe";
+import { FALLBACK_PLAN, RATE_LIMITED, runInBatches, type BatchBudget, type BatchPlan } from "../screener/universe";
 import type { EvidenceDrawable, EvidencePack, RowState } from "../screener/evidence";
 import type { ChartBar } from "./timeframes";
 import { itemKey, type WatchItem } from "./watchlistsV2";
@@ -34,6 +34,11 @@ export interface CheckReply extends Omit<RunResponse, "run_id" | "results"> {
   next_check_at: number | null;
   alerted: string[];
 }
+/** Owner 15 Nov: the kept results of a list on one market. `fresh`: rows read on the newest closed bar (nothing to check). */
+export interface SavedReply {
+  results: CheckResult[]; fresh: string[]; bar: string | null; market_open: boolean; last_close: string | null;
+  checked_at: string | null; next_check_at: number | null;
+}
 export interface LegendRow { id: string; block: string; text: string; state: RowState; value: string }
 export interface OverlayReply {
   symbol: string; exchange: string; base_tf: string; screen: { id: number; name: string }; text: string; disclaimer: string;
@@ -50,6 +55,9 @@ export const watchScreenApi = {
       { method: "PUT", body: JSON.stringify(choice) }),
   check: (body: { list_key: string; list_name: string; screen_id: number; symbols: string[]; exchange: string }) =>
     request<CheckReply>("/screener/watchlist-screen/check", { method: "POST", body: JSON.stringify(body) }),
+  /** Owner 15 Nov: the list's results kept on the server (no broker call) - which rows are read on the newest closed bar. */
+  saved: (body: { list_key: string; list_name: string; screen_id: number; symbols: string[]; exchange: string }) =>
+    request<SavedReply>("/screener/watchlist-screen/saved", { method: "POST", body: JSON.stringify(body) }),
   overlay: (body: { screen_id: number; symbol: string; exchange: string }) =>
     request<OverlayReply>("/screener/watchlist-screen/overlay", { method: "POST", body: JSON.stringify(body) }),
 };
@@ -99,7 +107,52 @@ export function byExchange(items: readonly WatchItem[]): Map<string, string[]> {
   return out;
 }
 
-export interface CheckOutcome { matched: Set<string>; results: Map<string, CheckResult>; nextAt: number | null; alerted: string[]; slowed: boolean; bar: string | null }
+export interface CheckOutcome {
+  matched: Set<string>; results: Map<string, CheckResult>; nextAt: number | null; alerted: string[]; slowed: boolean; bar: string | null;
+  /** Owner 15 Nov: rows read so far (a held-back row is not counted), of `total` rows in the list. */
+  checked?: number; total?: number;
+  /** Rows the broker's limit held back: "not checked" (never counted as not matched); retried at the next bar. */
+  held?: Set<string>;
+  /** The market is closed: the result is the one from the last close (ISO time), nothing is checked until a new bar. */
+  closedSince?: string | null;
+  /** The check reached its time limit; the rows not read are retried at the next bar. */
+  timedOut?: boolean;
+}
+
+/** Owner 15 Nov: a held-back row - the broker's limit (or a budget) kept it from being read; it is checked again. */
+export function isHeld(r: CheckResult | undefined): boolean {
+  return !!r && !r.matched && (r.code === RATE_LIMITED || r.action === "retry");
+}
+
+/** The counts the bar shows: rows read (held-back rows are not), matches, held back. */
+export function tally(o: CheckOutcome | null, total: number): { checked: number; total: number; matched: number; held: number } {
+  if (!o) return { checked: 0, total, matched: 0, held: 0 };
+  const held = o.held?.size ?? [...o.results.values()].filter(isHeld).length;
+  return { checked: Math.min(total, o.checked ?? Math.max(0, o.results.size - held)), total, matched: o.matched.size, held };
+}
+
+/** Owner 15 Nov: "Checked 40 of 218" while it runs; "Checked 218 of 218 · 3 match" when done. */
+export function progressText(o: CheckOutcome | null, total: number, busy: boolean): string {
+  const t = tally(o, total);
+  const head = `Checked ${t.checked} of ${t.total}`;
+  return busy ? head : `${head} · ${t.matched} ${t.matched === 1 && t.total === 1 ? "matches" : "match"}`;
+}
+
+/** "15 Nov, 15:30" - when the market last closed (the exchange clock). */
+export function closeLabel(iso: string | null | undefined): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "the last close";
+  return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(t);
+}
+
+function finish(out: CheckOutcome, items: readonly WatchItem[]): CheckOutcome {
+  const held = new Set<string>();
+  for (const [k, r] of out.results) if (isHeld(r)) { held.add(k); out.matched.delete(k); }
+  out.held = held;
+  out.total = items.length;
+  out.checked = [...out.results.keys()].filter((k) => !held.has(k)).length;
+  return out;
+}
 
 /**
  * W3: one check of the whole list - each market's rows through the screener's own paced batch queue (store-first on
@@ -107,11 +160,19 @@ export interface CheckOutcome { matched: Set<string>; results: Map<string, Check
  * the screen). The earliest `next_check_at` of the replies says when to check again.
  */
 export async function checkList(api: Pick<WatchScreenApi, "check">, args: { listKey: string; listName: string; screenId: number; items: readonly WatchItem[] },
-  opts: { plan?: BatchPlan; stopped?: () => boolean; sleep?: (ms: number) => Promise<void>; onProgress?: (o: CheckOutcome) => void } = {}): Promise<CheckOutcome> {
-  const out: CheckOutcome = { matched: new Set(), results: new Map(), nextAt: null, alerted: [], slowed: false, bar: null };
+  opts: { plan?: BatchPlan; stopped?: () => boolean; sleep?: (ms: number) => Promise<void>; onProgress?: (o: CheckOutcome) => void;
+    /** Owner 15 Nov: the kept results to start from, and the rows they already hold on the newest bar (not sent). */
+    start?: CheckOutcome | null; skip?: ReadonlySet<string> } = {}): Promise<CheckOutcome> {
+  const out: CheckOutcome = opts.start
+    ? { ...opts.start, matched: new Set(opts.start.matched), results: new Map(opts.start.results), alerted: [], slowed: false }
+    : { matched: new Set(), results: new Map(), nextAt: null, alerted: [], slowed: false, bar: null };
+  if (opts.start) out.nextAt = null;
   const plan = opts.plan ?? { ...FALLBACK_PLAN, size: 500, max_symbols: 500 };
-  for (const [exchange, symbols] of byExchange(args.items)) {
+  const progress = () => opts.onProgress?.(finish(out, args.items));
+  for (const [exchange, all] of byExchange(args.items)) {
     if (opts.stopped?.()) break;
+    const symbols = opts.skip ? all.filter((s) => !opts.skip?.has(`${exchange}:${s}`)) : all;
+    if (symbols.length === 0) continue;
     const replies: CheckReply[] = [];
     await runInBatches(symbols, plan, {
       run: async (batch) => {
@@ -126,7 +187,7 @@ export async function checkList(api: Pick<WatchScreenApi, "check">, args: { list
           if (r.matched) out.matched.add(key); else out.matched.delete(key);
         }
         out.slowed = out.slowed || slowed;
-        opts.onProgress?.(out);
+        progress();
       },
       stopped: opts.stopped, sleep: opts.sleep,
     }, plan.size);
@@ -136,7 +197,44 @@ export async function checkList(api: Pick<WatchScreenApi, "check">, args: { list
       if (r.bar && (!out.bar || r.bar > out.bar)) out.bar = r.bar;
     }
   }
-  return out;
+  if (opts.start && out.nextAt == null) out.nextAt = opts.start.nextAt;
+  return finish(out, args.items);
+}
+
+/**
+ * Owner 15 Nov: the list's kept results (no broker call) as an outcome, and the rows already read on the newest closed
+ * bar (`fresh`: not sent again). A market whose answer failed counts nothing as fresh (its rows are checked as before).
+ */
+export async function savedList(api: Pick<WatchScreenApi, "saved">, args: { listKey: string; listName: string; screenId: number; items: readonly WatchItem[] }):
+  Promise<{ outcome: CheckOutcome; fresh: Set<string>; closed: boolean } | null> {
+  const out: CheckOutcome = { matched: new Set(), results: new Map(), nextAt: null, alerted: [], slowed: false, bar: null };
+  const fresh = new Set<string>();
+  let closed = true;
+  let any = false;
+  let lastClose: string | null = null;
+  for (const [exchange, symbols] of byExchange(args.items)) {
+    let r: SavedReply;
+    try {
+      r = await api.saved({ list_key: args.listKey, list_name: args.listName, screen_id: args.screenId, symbols, exchange });
+    } catch {
+      closed = false;
+      continue;
+    }
+    any = true;
+    for (const row of r.results ?? []) {
+      const key = `${exchange}:${row.symbol.toUpperCase()}`;
+      out.results.set(key, row);
+      if (row.matched) out.matched.add(key);
+    }
+    for (const s of r.fresh ?? []) fresh.add(`${exchange}:${s.toUpperCase()}`);
+    if (r.next_check_at != null && (out.nextAt == null || r.next_check_at < out.nextAt)) out.nextAt = r.next_check_at;
+    if (r.bar && (!out.bar || r.bar > out.bar)) out.bar = r.bar;
+    closed = closed && !r.market_open;
+    if (r.last_close && (!lastClose || r.last_close > lastClose)) lastClose = r.last_close;
+  }
+  if (!any) return null;
+  if (closed) out.closedSince = lastClose;
+  return { outcome: finish(out, args.items), fresh, closed };
 }
 
 // ------------------------------------------------------------------------------------------------ C1: the overlay
@@ -177,8 +275,17 @@ export { SCREEN_PARAM, screenIdOf, screenParam, withScreen } from "./screenParam
 
 // ------------------------------------------------------------------------------------------- W3: when a list is checked
 export interface CheckerTarget { listKey: string; listName: string; screenId: number; items: readonly WatchItem[] }
+/** Owner 15 Nov: one check stops after this long; the rows not read by then are checked at the next bar. */
+export const CHECK_LIMIT_MS = 10 * 60_000;
+/** A check that failed outright tries again at the next bar close, or after this when none is known. */
+export const RETRY_AFTER_ERROR_MS = 5 * 60_000;
+export interface SavedState { outcome: CheckOutcome; fresh: ReadonlySet<string>; closed: boolean }
 export interface CheckerDeps {
-  check: (target: CheckerTarget, stopped: () => boolean, onProgress: (o: CheckOutcome) => void) => Promise<CheckOutcome>;
+  check: (target: CheckerTarget, stopped: () => boolean, onProgress: (o: CheckOutcome) => void,
+    resume?: { start: CheckOutcome; skip: ReadonlySet<string> }) => Promise<CheckOutcome>;
+  /** Owner 15 Nov: the kept results (null: none / not readable - the whole list is checked). */
+  saved?: (target: CheckerTarget) => Promise<SavedState | null>;
+  limitMs?: number;
   onOutcome: (o: CheckOutcome | null) => void;
   onBusy: (busy: boolean) => void;
   onFailed: (failed: boolean) => void;
@@ -199,6 +306,8 @@ export class ScreenChecker {
   private timer: unknown = null;
   private due = false;
   private run = 0;
+  private busy = false;
+  private lastNext: number | null = null;
 
   constructor(private readonly deps: CheckerDeps) {}
 
@@ -228,6 +337,13 @@ export class ScreenChecker {
     if (this.timer !== null) this.deps.clearTimer(this.timer);
     this.timer = null;
     this.due = false;
+    this.setBusy(false);                         // owner 15 Nov: a stopped check never leaves "Checking…" behind
+  }
+
+  private setBusy(busy: boolean): void {
+    if (busy === this.busy) return;
+    this.busy = busy;
+    this.deps.onBusy(busy);
   }
 
   private check(): void {
@@ -235,22 +351,60 @@ export class ScreenChecker {
     if (this.deps.hidden()) { this.due = true; return; }
     this.due = false;
     const run = ++this.run;
-    const stopped = () => run !== this.run;
-    this.deps.onBusy(true);
-    this.deps.check(this.target, stopped, (o) => { if (!stopped()) this.deps.onOutcome(o); }).then((o) => {
-      if (stopped()) return;
-      this.deps.onOutcome(o);
-      this.deps.onFailed(false);
-      this.schedule(o.nextAt);
-    }, () => {
-      if (!stopped()) this.deps.onFailed(true);
-    }).finally(() => { if (!stopped()) this.deps.onBusy(false); });
+    const target = this.target;
+    const deadline = this.deps.now() + (this.deps.limitMs ?? CHECK_LIMIT_MS);
+    let timedOut = false;
+    const stopped = () => {
+      if (run !== this.run) return true;
+      if (this.deps.now() <= deadline) return false;
+      timedOut = true;                           // the time limit: what was read stays, the rest waits for the next bar
+      return true;
+    };
+    const left = () => run !== this.run;
+    this.setBusy(true);
+    const begin = this.deps.saved ? this.deps.saved(target).catch(() => null) : Promise.resolve(null);
+    begin.then((kept) => {
+      if (left()) return undefined;
+      if (kept) {
+        this.deps.onOutcome(kept.outcome);
+        const stale = target.items.filter((i) => SCREENED_EXCHANGES.has(i.exchange.toUpperCase()) && !kept.fresh.has(itemKey(i)));
+        if (stale.length === 0) {                // every row read on the newest closed bar (or the market is closed): nothing to ask
+          this.deps.onFailed(false);
+          this.setBusy(false);
+          this.schedule(kept.outcome.nextAt);
+          return undefined;
+        }
+      }
+      const resume = kept ? { start: kept.outcome, skip: kept.fresh } : undefined;
+      return this.deps.check(target, stopped, (o) => { if (!left()) this.deps.onOutcome(o); }, resume).then((o) => {
+        if (left()) return;
+        const out = timedOut ? { ...o, timedOut: true } : o;
+        this.deps.onOutcome(out);
+        this.deps.onFailed(false);
+        this.setBusy(false);
+        this.schedule(out.nextAt);
+      });
+    }).catch(() => {
+      if (left()) return;
+      this.deps.onFailed(true);
+      this.setBusy(false);
+      // owner 15 Nov: a failed check is tried again - at the next bar close when it is still ahead, else a little later
+      const next = this.lastNext != null && this.lastNext > this.deps.now() ? this.lastNext : this.deps.now() + RETRY_AFTER_ERROR_MS;
+      this.schedule(next);
+    });
   }
 
   private schedule(nextAt: number | null): void {
     const wait = waitUntil(nextAt, this.deps.now());
     if (wait == null) return;
+    this.lastNext = nextAt;
     const run = this.run;
-    this.timer = this.deps.setTimer(() => { this.timer = null; if (run === this.run) this.check(); }, wait);
+    // owner 15 Nov: a wait longer than one timer (a weekend, a holiday) is waited out, never a check before the bar closes
+    const capped = nextAt != null && nextAt - this.deps.now() > MAX_WAIT_MS;
+    this.timer = this.deps.setTimer(() => {
+      this.timer = null;
+      if (run !== this.run) return;
+      if (capped) this.schedule(nextAt); else this.check();
+    }, wait);
   }
 }

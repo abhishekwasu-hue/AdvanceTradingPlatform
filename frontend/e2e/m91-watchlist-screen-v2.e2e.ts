@@ -101,7 +101,7 @@ test.describe("M91 desktop 1440 dark", () => {
   test("the list's screen: matches on top, the rest dimmed, the count; the matched stock's chart draws the screen and its legend", async ({ page }) => {
     const calls = await open(page, "/charts/CCC?tf=day&wscreen=4");
     await expect(page.getByTestId("watch-screen-pick")).toHaveValue("4");                    // W1: remembered for this list
-    await expect(page.getByTestId("watch-screen-count")).toContainText("3 of 8 match");
+    await expect(page.getByTestId("watch-screen-count")).toContainText("Checked 8 of 8 · 3 match");
     await expect(rows(page)).toHaveText([/CCC/, /FFF/, /HHH/, /AAA/, /BBB/, /DDD/, /EEE/, /GGG/]);
     await expect(rows(page).locator("xpath=self::*[@data-match='no']")).toHaveCount(5);
     expect(calls.checks).toHaveLength(1);                                                     // W3: once; again only at the bar close
@@ -150,7 +150,7 @@ test.describe("M91 phone 390 dark", () => {
 
   test("the Watchlist page with a screen chosen: matches on top, fits the phone", async ({ page }) => {
     await open(page, "/watchlist");
-    await expect(page.getByTestId("watch-screen-count")).toContainText("3 of 8 match");
+    await expect(page.getByTestId("watch-screen-count")).toContainText("Checked 8 of 8 · 3 match");
     await expect(rows(page)).toHaveText([/CCC/, /FFF/, /HHH/, /AAA/, /BBB/, /DDD/, /EEE/, /GGG/]);
     await expectPhoneLayout(page);
     await proof(page, "phone-390-dark-watchlist");

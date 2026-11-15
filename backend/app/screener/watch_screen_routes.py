@@ -9,6 +9,10 @@ POST /api/screener/watchlist-screen/check            W2 / W3: the list's symbols
                                                      paced, the rest `pending`); the answer has the run's shape, so the page
                                                      streams it with the screener's own batch queue. W4: new matches are
                                                      alerted only when HIS choice for that list says so (default OFF)
+POST /api/screener/watchlist-screen/saved            owner 15 Nov: the list's last results kept on the server (no broker
+                                                     call): which symbols are already read on the newest closed bar, and
+                                                     whether the market is closed now (then nothing is checked again
+                                                     until a new bar closes)
 POST /api/screener/watchlist-screen/overlay          C1: one stock's chart overlay - the screen's own drawables (the
                                                      evidence pack), a marker per bar where the whole screen held, and the
                                                      legend (every condition with its mark and value on the last closed bar)
@@ -24,7 +28,7 @@ import asyncio
 import html
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,7 +41,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import ScreenRecord, User
 from app.db.session import get_session, release_connection
 from app.platform.controls import require_flag
-from app.screener import nodes, reasons
+from app.screener import nodes, reasons, watch_fetch
 from app.screener import ranking as ranking_gate
 from app.screener import routes as R
 from app.screener import watch_screen as W
@@ -217,8 +221,9 @@ async def check(body: CheckBody, user: User = Depends(require_trader), session: 
     budget: dict[str, Any] = {}
     pending: list[str] = []
     store = await R.store_first(session, user.tenant_id)
-    universe, problems, data_source, systems = await R.load_universe(session, user, ast, validated, params, symbols, body.exchange, base_tf,
-                                                                     {}, release=True, budget=budget, store=store, pending=pending)
+    with watch_fetch.lean():     # owner 15 Nov: cached history tails, coarse timeframes from 30-minute bars, stored daily
+        universe, problems, data_source, systems = await R.load_universe(session, user, ast, validated, params, symbols, body.exchange,
+                                                                         base_tf, {}, release=True, budget=budget, store=store, pending=pending)
     if pending:
         later = set(pending)
         symbols = [s for s in symbols if s not in later]
@@ -237,6 +242,7 @@ async def check(body: CheckBody, user: User = Depends(require_trader), session: 
     matched = [str(r["symbol"]) for r in results if r["matched"]]
     alerted = await _alert_new(session, user, body, screen_name, symbols, matched)
     nxt = W.next_close(datetime.now(UTC), base_tf, holidays)
+    await _keep_results(session, user, body, results, current_bar(datetime.now(UTC), base_tf, holidays))
     out: dict[str, Any] = {
         "text": nodes.to_text(ast), "screen": {"id": row.id, "name": screen_name}, "base_tf": base_tf, "data_source": data_source,
         "scanned": len(symbols), "matched": matched, "results": results,
@@ -248,6 +254,85 @@ async def check(body: CheckBody, user: User = Depends(require_trader), session: 
     if pending:
         out["pending"] = pending
     return out
+
+
+# -------------------------------------------------------------------------------- owner 15 Nov: the kept results
+MAX_KEPT_LISTS = 10                     # lists whose last results are kept (the most recently checked)
+
+
+def current_bar(now: datetime, tf: str, holidays: set[Any]) -> str | None:
+    """The newest bar of `tf` that has closed at `now` (the bar-close engine's `expected_bar`), as the key a kept result
+    is valid for: while it is the same (the market closed, or no new bar since), the kept result is the answer."""
+    from app.alerts import barclose as bc
+    got = bc.expected_bar(now, tf, holidays) if tf in bc.SUPPORTED else None
+    return got.isoformat() if got is not None else None
+
+
+def market_state(now: datetime, exchange: str, holidays: set[Any]) -> tuple[bool, str | None]:
+    """(the exchange session is open now, the close of the last session when it is not) on the NSE calendar."""
+    from app.alerts import barclose as bc
+    from app.market_data.calendar import IST, is_trading_day
+    day = now.astimezone(IST).date()
+    for _ in range(30):
+        if is_trading_day(day, holidays):
+            open_, close = bc._session_bounds(day)
+            if open_ <= now < close:
+                return True, None
+            if close <= now:
+                return False, close.astimezone(UTC).isoformat()
+        day -= timedelta(days=1)
+    return False, None
+
+
+def _list_entry(kept: dict[str, Any], body: Any) -> dict[str, Any] | None:
+    mine = kept.get(f"{body.list_key}|{body.exchange}")
+    return mine if isinstance(mine, dict) and mine.get("screen_id") == body.screen_id else None
+
+
+async def _keep_results(session: AsyncSession, user: User, body: CheckBody, results: list[dict[str, Any]], bar: str | None) -> None:
+    """Each symbol's row with the bar it was read on. A row held back for a passing reason (the broker's limit, a budget)
+    is not kept: it is checked again. A new screen for the list starts from nothing."""
+    from app.ai import watch
+    row, kept = await watch.read_marks(session, user, W.LAST)
+    key = f"{body.list_key}|{body.exchange}"
+    mine = _list_entry(kept, body) or {"screen_id": body.screen_id, "rows": {}}
+    rows = mine["rows"] if isinstance(mine.get("rows"), dict) else {}
+    for r in results:
+        if r.get("action") == "retry":
+            rows.pop(str(r["symbol"]), None)
+            continue
+        rows[str(r["symbol"])] = {**r, "at": bar}
+    now = datetime.now(UTC)
+    kept[key] = {"screen_id": body.screen_id, "rows": rows, "checked_at": now.isoformat()}
+    if len(kept) > MAX_KEPT_LISTS:
+        for old in sorted(kept, key=lambda k: str((kept[k] or {}).get("checked_at", "")))[: len(kept) - MAX_KEPT_LISTS]:
+            kept.pop(old, None)
+    await watch.write_marks(session, user, row, kept, now, W.LAST)
+
+
+@router.post("/saved")
+async def saved(body: CheckBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The list's kept results for these symbols, no broker call: `fresh` - read on the newest closed bar of the screen's
+    timeframe (nothing to check again); the rest were read on an older bar or never. With the market closed every kept
+    row is fresh until the next bar closes (`next_check_at`)."""
+    from app.ai import watch
+    await _enabled(session, user)
+    row = await _own_screen(session, user, body.screen_id)
+    holidays = await _holidays(session, body.exchange)
+    now = datetime.now(UTC)
+    bar = current_bar(now, row.base_tf, holidays)
+    _, kept = await watch.read_marks(session, user, W.LAST)
+    mine = _list_entry(kept, body) or {}
+    found = mine.get("rows")
+    rows: dict[str, Any] = found if isinstance(found, dict) else {}
+    symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    results = [{k: v for k, v in rows[s].items() if k != "at"} for s in symbols if isinstance(rows.get(s), dict)]
+    fresh = [s for s in symbols if isinstance(rows.get(s), dict) and bar is not None and rows[s].get("at") == bar]
+    is_open, last_close = market_state(now, body.exchange, holidays)
+    nxt = W.next_close(now, row.base_tf, holidays)
+    return {"screen": {"id": row.id, "name": row.name}, "base_tf": row.base_tf, "results": results, "fresh": fresh, "bar": bar,
+            "market_open": is_open, "last_close": last_close, "checked_at": mine.get("checked_at"),
+            "next_check_at": (nxt.timestamp() + W.CHECK_GRACE_SECONDS) * 1000 if nxt is not None else None}
 
 
 async def _alert_new(session: AsyncSession, user: User, body: CheckBody, screen_name: str, checked: list[str], matched: list[str]) -> list[str]:

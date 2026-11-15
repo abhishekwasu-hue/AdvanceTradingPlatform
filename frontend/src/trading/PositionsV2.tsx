@@ -45,6 +45,7 @@ import PageDishV2 from "../growth/PageDishV2";
 import {
   NO_STOP, closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
+import BrokerBookV2 from "./BrokerBookV2";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
 import { showsPaper } from "../ui/paperWords";
@@ -313,6 +314,9 @@ export default function PositionsV2(_props: PageProps = {}) {
           <AdjustCompareV2 open title={compare.title} legs={compare.legs} adjust={compare.adjust} onClose={() => setCompare(null)} />
         </Suspense>
       )}
+
+      {/* Owner 14 Nov "Ho" (flag broker_book): his own broker's positions, read-only. */}
+      {features.on("broker_book") && signedIn && <BrokerBookV2 part="positions" />}
 
       {hasOptions && <GreeksCardV2 symbolOf={(id) => byId.get(id)?.symbol} />}
 

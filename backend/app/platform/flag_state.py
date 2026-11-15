@@ -110,6 +110,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "ai_research": _not_built("No screen to start a study or read its results; only the server side and its worker exist", "FN5"),
     "ai_one_key": _ready(),
     "cost_meter": _ready(),
+    "broker_book": _ready("Some brokers need your static IP even for these lists"),
     "daily_rhythm": _ready("The Dashboard card works; the messages need Telegram", ALERTS, ("telegram",)),
     "data_hub": _setup("Broker with a live price stream (Upstox or Zerodha)", BROKER, ("broker",)),
     "smart_execution": _ready(),

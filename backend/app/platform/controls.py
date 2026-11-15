@@ -179,6 +179,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own closed trades' charges against the gross P&L, this financial year and this month, PAPER and LIVE apart,
     # contract-note charges first. Read-only. OFF: GET /api/trades/cost-meter answers 404 and the card is hidden.
     "cost_meter": "Cost of trading: your own closed trades' charges against gross P&L, this year and this month (read-only)",
+    # Owner 14 Nov "Ho" (app/me/broker_book.py; needs `ui_v2`): "From your broker" - his own broker's positions, holdings
+    # and today's orders as read-only lists on Positions / Portfolio / Orders, through the broker rate budget, cached
+    # briefly; a refusal is a plain sentence. OFF: GET /api/me/broker-book answers 404 and the pages show nothing new.
+    # Places, blocks or changes no order.
+    "broker_book": "From your broker: your own broker's positions, holdings and today's orders as read-only lists",
     # Master Order 4 slice 1 (app/rhythm; needs `ui_v2`): the daily rhythm - the pre-market brief, the mid-session pulse,
     # the closing wrap and the weekly review as a card on the Dashboard, and on the user's own Telegram when the user
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;

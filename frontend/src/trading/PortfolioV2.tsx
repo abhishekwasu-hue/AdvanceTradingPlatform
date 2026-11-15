@@ -11,7 +11,9 @@ import { PageIntro } from "../ui/PageIntro";
 import { PageFootnote } from "../ui/numbersFirst";
 import { useLiveHidden } from "../settings/useLiveHidden";
 import { allocationRows, bookedCurve, longShortLine, portfolioTiles, type AllocationRow } from "./model";
+import BrokerBookV2 from "./BrokerBookV2";
 import { NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
+import { useFeatures } from "../ui/useFeatures";
 import { Details } from "../ui/Details";
 
 const REFRESH_MS = 30_000;
@@ -29,6 +31,7 @@ const every = (ms: number) => () => ms;
 export default function PortfolioV2(_props: PageProps = {}) {
   const { user } = useAuth();
   const signedIn = !!user;
+  const features = useFeatures();
   const liveHidden = useLiveHidden();                       // item 2: no "paper and live" in the paper phase
   const [positions] = usePolled(api.listPositions, every(REFRESH_MS), signedIn);
   const [trades] = usePolled(api.listTrades, every(REFRESH_MS * 2), signedIn);
@@ -98,6 +101,9 @@ export default function PortfolioV2(_props: PageProps = {}) {
           <BookedChartV2 curve={curve} />
         )}
       </CardV2>
+
+      {/* Owner 14 Nov "Ho" (flag broker_book): his own broker's holdings, read-only. */}
+      {features.on("broker_book") && <BrokerBookV2 part="holdings" />}
 
       <Details id="portfolio.limits" className="mt-0">
         <p>

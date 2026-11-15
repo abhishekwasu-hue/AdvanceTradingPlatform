@@ -9,9 +9,11 @@ import { useColourV2 } from "../ui/colourV2";
 import { DirectionChip } from "../ui/DirectionChip";
 import { EMPTY } from "../ui/format";
 import { PageFootnote } from "../ui/numbersFirst";
+import { useFeatures } from "../ui/useFeatures";
 import { LiveBadge, PaperBadge } from "../ui/PaperBadge";
 import { showsPaper } from "../ui/paperWords";
 import { orderFillRows, orderTiles, type OrderFillRow } from "./model";
+import BrokerBookV2 from "./BrokerBookV2";
 import { BUTTON_SECONDARY, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
 
 const REFRESH_MS = 60_000;
@@ -35,6 +37,7 @@ const FILTERS: readonly { key: Filter; label: string }[] = [
 export default function OrdersV2(_props: PageProps = {}) {
   const { user } = useAuth();
   const signedIn = !!user;
+  const features = useFeatures();
   const [pages, setPages] = useState(1);
   const [page, reloadPage] = usePolled(() => api.listNewestTrades(pages * ORDERS_TRADES_PAGE), every(REFRESH_MS), signedIn);
   useEffect(() => { if (pages > 1) reloadPage(); }, [pages, reloadPage]);      // the older page now, not at the next poll
@@ -99,6 +102,9 @@ export default function OrdersV2(_props: PageProps = {}) {
           </>
         )}
       </CardV2>
+
+      {/* Owner 14 Nov "Ho" (flag broker_book): his own broker's order list for today, read-only. */}
+      {features.on("broker_book") && <BrokerBookV2 part="orders" />}
 
       {/* UX-11 U5: the page's one footer line, as on Positions (owner default: the My trades pages). */}
       <PageFootnote />

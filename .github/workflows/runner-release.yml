@@ -1,0 +1,84 @@
+name: Runner release
+
+# Runner S6 (docs/design/USER_RUNNER.md step S6): builds the runner image from the context generated from the runner
+# manifest, pushes it to GHCR, signs it keyless with cosign (the GitHub OIDC identity of THIS workflow at a
+# `runner-v*` tag - the identity deploy/runner/install.sh verifies) and publishes install.sh with the image digest
+# written in. Only a pushed `runner-v*` tag starts it: it is never part of the main CI run.
+on:
+  push:
+    tags: ["runner-v*"]
+
+concurrency:
+  group: runner-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write    # the GitHub release with install.sh
+      packages: write    # push the image to ghcr.io
+      id-token: write    # cosign keyless signing (GitHub OIDC)
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/atp-runner
+      COSIGN_VERSION: v2.4.1
+      COSIGN_SHA256: 8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b
+    steps:
+      # P0.7: pinned to a commit SHA (the tag in the comment), as in ci.yml
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build context from the runner manifest (and check the runner lock is current)
+        run: python3 deploy/runner/build_context.py --check --out "$RUNNER_TEMP/runner-ctx"
+
+      - name: Build the image
+        run: docker build -t atp-runner:release "$RUNNER_TEMP/runner-ctx"
+
+      - name: Smoke test (one PAPER cycle, no broker; forbidden packages absent)
+        run: |
+          docker run --rm atp-runner:release run --once --home /runner
+          docker run --rm --entrypoint python atp-runner:release -c \
+            "import importlib.util as u, sys; sys.exit(1 if any(u.find_spec(n) for n in ('atp_private',)) else 0)"
+
+      - name: Install cosign (pinned release, checksum checked)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/cosign" \
+            "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          echo "${COSIGN_SHA256}  $RUNNER_TEMP/cosign" | sha256sum -c -
+          chmod 0755 "$RUNNER_TEMP/cosign"
+
+      - name: Push to GHCR and sign by digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          image="${IMAGE,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker tag atp-runner:release "$image:${GITHUB_REF_NAME}"
+          docker push "$image:${GITHUB_REF_NAME}"
+          digest="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image:${GITHUB_REF_NAME}" \
+            | grep "^$image@" | head -n 1 | cut -d@ -f2)"
+          case "$digest" in sha256:*) ;; *) echo "no digest after push"; exit 1 ;; esac
+          "$RUNNER_TEMP/cosign" sign --yes "$image@$digest"
+          # the same check the installer runs on the user's VPS
+          "$RUNNER_TEMP/cosign" verify \
+            --certificate-identity-regexp "^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/runner-release\.yml@refs/tags/runner-v" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$image@$digest" > /dev/null
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Installer with the digest written in
+        run: |
+          mkdir -p dist
+          sed -e "s|@RUNNER_VERSION@|${GITHUB_REF_NAME}|" -e "s|@RUNNER_DIGEST@|${DIGEST}|" \
+            deploy/runner/install.sh > dist/install.sh
+          grep -q "^RUNNER_DIGEST=\"${DIGEST}\"$" dist/install.sh
+          bash -n dist/install.sh
+          (cd dist && sha256sum install.sh > install.sh.sha256)
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/install.sh dist/install.sh.sha256 \
+            --title "ATP runner ${GITHUB_REF_NAME#runner-}" \
+            --notes "Image: ${IMAGE,,}@${DIGEST} (signed keyless by this workflow). Install: docs/RUNNER_INSTALL.md"

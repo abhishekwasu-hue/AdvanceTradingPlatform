@@ -1,6 +1,7 @@
 import type { Page } from "../components/Sidebar";
 import { isDataPath } from "../ui/dataPages";
 import { settingsSectionAt } from "../settings/paths";
+import { RUNNER_ADDRESS } from "../runner/address";
 
 /**
  * UI2-1: the merged pages' new addresses (UI v2 proposal §3 M1, M2, M3, M4) and the page each shows until its tab
@@ -71,6 +72,9 @@ export const TERMINAL_ADDRESS = "/terminal";
 /** P1-8 (2): the Watchlist page, a v2-only page (flag `watchlists`). With `ui_v2` off it goes to the dashboard. */
 export const WATCHLIST_ADDRESS = "/watchlist";
 
+/** Runner S7: My runner, a v2-only page (flag `user_runner`). With `ui_v2` off it goes to the dashboard. */
+export { RUNNER_ADDRESS };
+
 /**
  * With `ui_v2` off (never turned on, turned off again as a kill switch, or the trader just signed out - flags are not
  * read while signed out): a v2-only address of a merged page goes back to today's address, so a bookmark or the page
@@ -82,7 +86,7 @@ export function flagOffFallback(pathname: string): string | null {
   if (malformed) return null;
   const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
   if (clean === SETUP_ADDRESS || clean === TRADING_DEFAULTS_ADDRESS) return "/settings";
-  if (clean === MARKETS_ADDRESS || clean === TERMINAL_ADDRESS || clean === WATCHLIST_ADDRESS) return "/";
+  if (clean === MARKETS_ADDRESS || clean === TERMINAL_ADDRESS || clean === WATCHLIST_ADDRESS || clean === RUNNER_ADDRESS) return "/";
   if (LEARN_V2_ONLY.includes(clean)) return "/";
   // Settings redesign B: a section page goes back to today's Settings page, at the part that holds it.
   const section = settingsSectionAt(clean);

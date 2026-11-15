@@ -99,6 +99,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "fib_ew_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P5)",
     "risk_options": "Off until the owner decides the flag (M99 P7: the user's own risk options)",
     "intraday_pack": "Off until the owner reviews the pack's evidence and decides the flag (M94)",
+    "user_runner": "Off until the owner decides the flag: the user's own runner and My runner page (FN6 / G1, S1-S8)",
     "wyckoff_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P4)",
     "vsa_pack": "Off until the owner reviews the pack's evidence and decides the flag (M99 P3)",
     "sd_pack": "Off until the owner reviews the pack's evidence and decides the flag (M97)",

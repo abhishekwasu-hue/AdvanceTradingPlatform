@@ -162,13 +162,13 @@ describe("UI2-1 sidebar", () => {
     expect(withMembers(3)).toContain(">Owner<");
   });
 
-  it("M60: 11 entries with every feature on; Admin at the end of Account for the platform operator only", () => {
+  it("M60: 11 entries with every feature on (12 with Runner S7's My runner); Admin at the end of Account for the platform operator only", () => {
     const all = { on: () => true, role: "SUPER_ADMIN" };
     const html = sidebar(all, "dashboard");
     const entries = hrefs(html).slice(1, -1);
     expect(entries).toEqual([
       "/", "/terminal", "/positions", "/screener", "/signals", "/markets", "/strategies", "/deployments", "/copilot", "/learn",
-      "/settings", "/admin",
+      "/settings", "/runner", "/admin",
     ]);
     expect(html.indexOf("data-nav-admin")).toBeLessThan(html.indexOf('href="/admin"'));
     expect(html.indexOf(">Account</h2>")).toBeLessThan(html.indexOf('href="/admin"'));

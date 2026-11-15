@@ -94,7 +94,7 @@ jobs:
         run: bandit -q -r app -ll -ii
 
       - name: shellcheck (Z11 deploy bundle; ShellCheck ships with the runner image)
-        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh deploy/ci/*.sh backend/scripts/serve_api.sh
+        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh deploy/ci/*.sh deploy/runner/install.sh backend/scripts/serve_api.sh
 
       - name: Migration rollback safety (every migration declares ROLLBACK_SAFE; risky upgrades are not marked safe)
         run: python backend/scripts/migration_rollback_safety.py lint
@@ -362,6 +362,17 @@ jobs:
       - name: Build frontend image
         run: docker build -t atp-frontend:ci ./frontend
 
+      # Runner S6: the runner image from the context generated from the runner manifest (deploy/runner/build_context.py);
+      # one PAPER cycle with no broker, and the forbidden packages are absent. Publishing and signing are in
+      # runner-release.yml (a `runner-v*` tag only), never here.
+      - name: Build runner image (context from the runner manifest) and smoke-test it
+        run: |
+          python3 deploy/runner/build_context.py --check --out "$RUNNER_TEMP/runner-ctx"
+          docker build -t atp-runner:ci "$RUNNER_TEMP/runner-ctx"
+          docker run --rm atp-runner:ci run --once --home /runner
+          docker run --rm --entrypoint sh atp-runner:ci -c \
+            'for p in app/ai app/admin app/engine_provider app/chart_reader app/chart_analyze app/price_action app/marketplace app/lab app/workers app/main.py app/billing app/market_lake; do [ ! -e "$p" ] || { echo "forbidden in the runner image: $p"; exit 1; }; done'
+
       - name: Scan backend image for OS/dependency vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -376,6 +387,16 @@ jobs:
           image-ref: atp-frontend:ci
           severity: "CRITICAL,HIGH"
           exit-code: "1"
+          ignore-unfixed: true
+
+      # Runner S6: report only while the image is new (same base and pinned packages as the backend image, which is gated)
+      - name: Scan runner image (Trivy, report only)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: atp-runner:ci
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
           ignore-unfixed: true
 
       # A4 (review A4 notes): the images the server also runs but this repository does not build from its own code - the

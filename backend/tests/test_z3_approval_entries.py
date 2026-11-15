@@ -308,7 +308,14 @@ def test_every_order_entry_point_is_reviewed_for_approval():
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
                                    "app/paper/ticket.py": {"execute_signal_for_user"},
                                    "app/paper/fno_ticket.py": {"execute_signal_for_user"},
-                                   "app/execution/core/dispatcher.py": {"execute_signal_for_user"}}
+                                   "app/execution/core/dispatcher.py": {"execute_signal_for_user"},
+                                   "app/runner/loop.py": {"execute_signal_for_user", "execute_structure"}}
+    # Runner S2 / S4b: the user's own runner calls the same two pipelines with their default (refusing) origin - it never
+    # passes "approval" or "manual" - so under approval-only mode (his organisation's flag, synced into the runner's
+    # store by S4c, his bot's entry mode or his own Automation setting, synced by S4) both refuse the entry; proposals
+    # are answered in ATP. The runner writes no proposal of its own.
+    runner = (BACKEND / "app" / "runner" / "loop.py").read_text()
+    assert "origin=" not in runner and "approval_action_id" not in runner
     # FNO-1 + TT-2 (answers FNO-1-4): the option chain's manual PAPER ticket asks the gate with the origin its route
     # gives ("manual" only on the ticket / basket routes: the user's own confirmed order is his approval); `place` places
     # only what `assess` allowed, PAPER only.

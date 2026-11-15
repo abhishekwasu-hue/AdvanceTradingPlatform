@@ -109,6 +109,7 @@ Facts from the code that the tables rely on:
 | retention | Data retention / erasure | - | - | INTERNAL | - |
 | rhythm | Pre-market brief, pulse, closing wrap, weekly review | `/api/rhythm` | `ui_v2` + `daily_rhythm` | EMPTY-BY-DEFAULT (worker must run) | unknown until the owner's check |
 | risk_engine | Risk config, ceilings, loss streak, guardian events | `/api/risk`, `/api/risk-guardian`, `/api/risk-settings` | `vix_gate`, `risk_by_default` | WORKS | unknown until the owner's check |
+| runner_link | The user's own local runner (docs/design/USER_RUNNER.md): pairing code, his paired runners, revoke, read-only copies, his kill switch for his runner; the runner's signed heartbeat / mirror upload and the read of his saved rules and reference data - it places, changes or forwards no order | `/api/runner` | `ui_v2` + `user_runner` (404 while off) | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | scanner | AI scan plan / read; custom scan run (code in `backend/app/screener/scanner`, `backend/app/scanner` is an import shim) | `/api/scanner/ai`, routes `/api/scanner/run` (section 3) | `ai_copilot` (ON), `thesis_stock_targets` | PARTIAL (needs an AI key) | unknown until the owner's check |
 | screener | Screens, runs, alert rules, breakouts, evidence, watchlist screens (M91), history, rankings, ETF, library | `/api/screener`, `/api/screener/board`, `/api/screener/breakouts`, `/api/screener/etf`, `/api/screener/evidence`, `/api/screener/watchlist-screen`, `/api/screener/history`, `/api/screener/library`, `/api/screener/rankings`, `/api/screener/universes`, `/api/alerts` | `screener_v2` + sub-flags | EMPTY-BY-DEFAULT (503 until `screener_v2`) | unknown until the owner's check |
 | secrets_store | Envelope encryption of broker / AI keys | - | - | INTERNAL | - |
@@ -162,6 +163,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Today | `/` | Markets (bottom bar) | - (My day: `my_day_card`; brief: `daily_rhythm`) | WORKS | unknown until the owner's check |
 | Charts | `/charts`, `/charts/:symbol` | Markets (bottom bar) | - (multi-chart: `chart_workspace`) | WORKS | unknown until the owner's check |
 | Watchlist | `/watchlist` | Markets | `watchlists` | EMPTY-BY-DEFAULT + DUPLICATE (Charts panel) | unknown until the owner's check |
+| My runner | `/runner` | Account | `user_runner` (+ the plan's `runner` where known) | PARTIAL (Runner S7: set-up steps, pairing code, runner cards, link settings, read-only copies; the kill-switch button waits for S4's relay) | not built (flag stays not_built until S4 + S6 are merged) |
 | Option chain (Chain, Charts, OI, Analyses) | `/option-chain` | Markets | - (broker gate) | WORKS; OI view PARTIAL (needs recorded snapshots) | unknown until the owner's check |
 | Sectors and indices | `/markets` | Markets | `markets_view` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Find setups | `/screener` | Markets | `screener_v2` | EMPTY-BY-DEFAULT | unknown until the owner's check |

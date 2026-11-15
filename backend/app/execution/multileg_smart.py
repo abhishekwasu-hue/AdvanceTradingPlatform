@@ -48,17 +48,19 @@ class LegSpec:
     index: int = 0                 # the leg's place in the structure (its order row `:L<index>`)
     instrument_key: Optional[str] = None
     ratio: int = 1
+    lot_size: Optional[int] = None     # the platform's lot (never sent; the strict contract match checks it on entry)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"key": self.key, "exchange": self.exchange, "side": self.side, "role": self.role, "quantity": self.quantity,
-                "index": self.index, "instrument_key": self.instrument_key, "ratio": self.ratio}
+                "index": self.index, "instrument_key": self.instrument_key, "ratio": self.ratio,
+                "lot_size": self.lot_size}
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "LegSpec":
         return cls(key=str(raw["key"]), exchange=str(raw.get("exchange") or "NFO"), side=str(raw["side"]).upper(),
                    role=str(raw.get("role") or ("LONG" if str(raw["side"]).upper() == "BUY" else "SHORT")),
                    quantity=float(raw["quantity"]), index=int(raw.get("index") or 0), instrument_key=raw.get("instrument_key"),
-                   ratio=int(raw.get("ratio") or 1))
+                   ratio=int(raw.get("ratio") or 1), lot_size=int(raw["lot_size"]) if raw.get("lot_size") else None)
 
 
 @dataclass
@@ -110,7 +112,7 @@ async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strat
             quantity=spec.quantity, order_type=order_type, price=limit, product=product,
             tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
                                 client_id=new_client_order_id()) if live else None,
-            intent=ORDER_INTENT_ENTRY,
+            intent=ORDER_INTENT_ENTRY, lot_size=spec.lot_size,
         )
         try:
             response = await broker.place_order(request)
@@ -146,7 +148,7 @@ async def place_legs(broker: BrokerInterface, specs: Sequence[LegSpec], *, strat
         if got + EPS < spec.quantity:
             pending.append(LegSpec(key=spec.key, exchange=spec.exchange, side=spec.side, role=spec.role,
                                    quantity=round(spec.quantity - got, 6), index=spec.index,
-                                   instrument_key=spec.instrument_key, ratio=spec.ratio))
+                                   instrument_key=spec.instrument_key, ratio=spec.ratio, lot_size=spec.lot_size))
     reasons = {specs[leg.index].key: list(leg.reasons) for leg in outcome.legs if leg.reasons}
     state = outcome.state
     if state == smart_execution.NOTHING_PLACED and fills:
@@ -165,7 +167,8 @@ def _stop(failure: Dict[str, str], text: str, *, result: Optional[LegFill] = Non
 def entry_specs(structure: Any, quantity: float) -> List[LegSpec]:
     """The structure's legs as specs, in the structure's own order (the engine orders them)."""
     return [LegSpec(key=leg.contract.tradingsymbol, exchange=leg.contract.exchange, side=leg.side.value.upper(), role=leg.role,
-                    quantity=float(quantity * leg.ratio), index=i, instrument_key=leg.contract.instrument_key, ratio=int(leg.ratio))
+                    quantity=float(quantity * leg.ratio), index=i, instrument_key=leg.contract.instrument_key, ratio=int(leg.ratio),
+                    lot_size=getattr(leg.contract, "lot_size", None))
             for i, leg in enumerate(structure.legs)]
 
 

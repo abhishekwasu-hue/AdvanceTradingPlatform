@@ -754,7 +754,7 @@ async def _place_live_legs(
                 tag=(leg_tags or {}).get(leg.contract.tradingsymbol)
                 or build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name,
                                    client_id=new_client_order_id()),
-                intent=ORDER_INTENT_ENTRY,
+                intent=ORDER_INTENT_ENTRY, lot_size=getattr(leg.contract, "lot_size", None),
             )
             try:
                 response = await broker.place_order(request)

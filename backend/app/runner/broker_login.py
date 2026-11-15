@@ -35,10 +35,11 @@ import json
 import logging
 import os
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 import httpx
 
@@ -138,7 +139,7 @@ def credentials(keystore: Keystore, broker: str, now: datetime) -> BrokerCredent
     return BrokerCredentials.model_validate({**fields, "access_token": (stored or {}).get("access_token")})
 
 
-def build_adapter(keystore: Keystore, broker: str, now: datetime, client: Optional[httpx.AsyncClient] = None) -> Any:
+def build_adapter(keystore: Keystore, broker: str, now: datetime, client: httpx.AsyncClient | None = None) -> Any:
     """The broker adapter the runner trades and reads market data through, on today's session (S2's feed can use it in
     place of its interim broker.json)."""
     return AngelOneBroker(credentials(keystore, broker, now), client=client or broker_client(broker))
@@ -182,7 +183,7 @@ class DailyLogin:
 
     def _log(self, now: datetime, line: str) -> None:
         with open(self.home / LOG_FILE, "a", encoding="utf-8") as handle:
-            handle.write(f"{now.astimezone(timezone.utc).isoformat(timespec='seconds')} {self.broker} {line}\n")
+            handle.write(f"{now.astimezone(UTC).isoformat(timespec='seconds')} {self.broker} {line}\n")
 
     def status_line(self, now: datetime) -> str:
         """The one line the heartbeat (S4) reports - never a value."""
@@ -212,19 +213,19 @@ class DailyLogin:
         next_try = state.get("next_try")
         return not next_try or now >= datetime.fromisoformat(next_try)
 
-    async def run_due(self, now: Optional[datetime] = None) -> Optional[bool]:
+    async def run_due(self, now: datetime | None = None) -> bool | None:
         """Called by the loop every cycle: True logged in now, False this attempt failed, None nothing due."""
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         if not self.due(now):
             return None
         return await self.login(now)
 
-    async def login(self, now: Optional[datetime] = None, *, manual: bool = False) -> bool:
+    async def login(self, now: datetime | None = None, *, manual: bool = False) -> bool:
         """One login attempt. `manual` (the CLI): logs in even when today's was given up, and starts the count again."""
-        now = now or datetime.now(timezone.utc)
+        now = now or datetime.now(UTC)
         state: dict[str, Any] = {"broker": self.broker, "day": _today(now), "attempts": 0} if manual else self._today_state(now)
         attempts = int(state.get("attempts") or 0) + 1
-        client: Optional[httpx.AsyncClient] = None
+        client: httpx.AsyncClient | None = None
         try:
             fields = self.keystore.broker_fields(self.broker)
             client = self.client_factory(self.broker)
@@ -233,7 +234,7 @@ class DailyLogin:
             tokens = {"access_token": getattr(adapter, "_access_token", None),
                       "refresh_token": getattr(adapter, "_refresh_token", None),
                       "feed_token": getattr(adapter, "_feed_token", None)}
-            self.keystore.put_session(self.broker, _today(now), tokens, now.astimezone(timezone.utc).isoformat())
+            self.keystore.put_session(self.broker, _today(now), tokens, now.astimezone(UTC).isoformat())
         except Exception as exc:  # noqa: BLE001 - every failure becomes a plain status; nothing may escape with a value
             reason = plain_reason(self.broker, exc)
             not_set_up = isinstance(exc, KeystoreError)

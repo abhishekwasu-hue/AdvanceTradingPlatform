@@ -31,8 +31,9 @@ import json
 import os
 import secrets
 import stat
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping, Optional
+from typing import Any
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -111,7 +112,7 @@ class Keystore:
     def __init__(self, home: str | os.PathLike[str], passphrase: str | Callable[[], str] | None = None) -> None:
         self.home = Path(home).expanduser()
         self._passphrase = passphrase
-        self._key: Optional[bytes] = None
+        self._key: bytes | None = None
 
     def __repr__(self) -> str:                      # never a key or a value
         return f"Keystore({str(self.home)!r})"
@@ -188,7 +189,7 @@ class Keystore:
         return key
 
     # --- create / read / write ---------------------------------------------------------------------------------------
-    def init(self, mode: str = KEYFILE, passphrase: Optional[str] = None) -> None:
+    def init(self, mode: str = KEYFILE, passphrase: str | None = None) -> None:
         """Creates an empty keystore (refuses to overwrite one: `rekey` changes the key of an existing one)."""
         with self._locked():
             if self.path.exists():
@@ -197,8 +198,8 @@ class Keystore:
             self._write({"brokers": {}, "sessions": {}}, self._pending_header)
             self._commit_key()
 
-    def _new_key(self, mode: str, passphrase: Optional[str]) -> None:
-        self._pending_key_file: Optional[Path] = None
+    def _new_key(self, mode: str, passphrase: str | None) -> None:
+        self._pending_key_file: Path | None = None
         if mode == KEYFILE:
             key = secrets.token_bytes(32)
             # written beside the old one and moved in only after the store is written under it (`_commit_key`)
@@ -251,7 +252,7 @@ class Keystore:
             yield data
             self._write(data, header)
 
-    def rekey(self, mode: str = KEYFILE, passphrase: Optional[str] = None) -> None:
+    def rekey(self, mode: str = KEYFILE, passphrase: str | None = None) -> None:
         """Re-encrypts the store under a new key (a new key file, or a new passphrase); the old key no longer opens it."""
         with self._locked():
             data, _ = self._read()
@@ -269,7 +270,7 @@ class Keystore:
         data, _ = self._read()
         return {b: sorted(k for k, v in fields.items() if v) for b, fields in data["brokers"].items()}
 
-    def put_broker(self, broker: str, fields: Mapping[str, Optional[str]], *, replace: bool) -> None:
+    def put_broker(self, broker: str, fields: Mapping[str, str | None], *, replace: bool) -> None:
         """`replace` True: the broker's details become exactly `fields` (add). False: only the given fields change
         (rotate). Any change of details ends the stored session (the next login uses the new details)."""
         allowed = BROKER_FIELDS.get(broker)
@@ -308,14 +309,14 @@ class Keystore:
         return dict(fields)
 
     # --- the day's broker session ------------------------------------------------------------------------------------
-    def put_session(self, broker: str, day: str, tokens: Mapping[str, Optional[str]], at: str) -> None:
+    def put_session(self, broker: str, day: str, tokens: Mapping[str, str | None], at: str) -> None:
         with self._edit() as data:
             if broker not in data["brokers"]:
                 raise KeystoreError(f"No {broker} details in the keystore")
             data["sessions"][broker] = {"day": day, "at": at,
                                         **{k: tokens.get(k) for k in SESSION_FIELDS if tokens.get(k)}}
 
-    def session(self, broker: str, day: str) -> Optional[dict[str, str]]:
+    def session(self, broker: str, day: str) -> dict[str, str] | None:
         """The stored session of `day`, or None (none, or an older day's - a broker session ends at its daily expiry)."""
         data, _ = self._read()
         stored = data["sessions"].get(broker)

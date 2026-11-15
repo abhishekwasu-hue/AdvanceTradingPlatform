@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import stat
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
@@ -26,7 +26,7 @@ JWT, REFRESH, FEED = "jwt-SECRET-token-9921", "refresh-SECRET-5512", "feed-SECRE
 PASSPHRASE = "correct horse battery"
 SECRETS = (API_KEY, PIN, TOTP, JWT, REFRESH, FEED, PASSPHRASE)
 # A Monday, 08:40 IST (03:10 UTC): inside the login window (09:15 - 45 minutes = 08:30) on an NSE trading day.
-MONDAY_0840 = datetime(2026, 11, 16, 3, 10, tzinfo=timezone.utc)
+MONDAY_0840 = datetime(2026, 11, 16, 3, 10, tzinfo=UTC)
 POSIX = pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 
 
@@ -195,7 +195,7 @@ def test_login_success_stores_todays_session_and_reports_a_valid_session(tmp_pat
     assert len(fake.calls) == 2
     adapter = BL.build_adapter(store, "angel_one", MONDAY_0840)           # the loop trades on today's session
     assert adapter.credentials.access_token == JWT
-    assert BL.build_adapter(store, "angel_one", datetime(2026, 11, 17, 3, 10, tzinfo=timezone.utc)).credentials.access_token is None
+    assert BL.build_adapter(store, "angel_one", datetime(2026, 11, 17, 3, 10, tzinfo=UTC)).credentials.access_token is None
 
 
 def test_a_refused_login_is_retried_with_backoff_then_given_up_with_a_plain_reason(tmp_path):
@@ -207,18 +207,18 @@ def test_a_refused_login_is_retried_with_backoff_then_given_up_with_a_plain_reas
     state = daily.status()
     assert state["state"] == BL.RETRYING and state["next_try"] == "2026-11-16T03:15:00+00:00"           # +5 min
     assert daily.status_line(MONDAY_0840).startswith("login failed: Angel One refused the login")
-    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 14, tzinfo=timezone.utc))) is None       # not yet
-    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 15, tzinfo=timezone.utc))) is False
+    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 14, tzinfo=UTC))) is None       # not yet
+    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 15, tzinfo=UTC))) is False
     assert daily.status()["next_try"] == "2026-11-16T03:25:00+00:00"                                    # then doubling
-    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 25, tzinfo=timezone.utc))) is False
+    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 3, 25, tzinfo=UTC))) is False
     assert daily.status()["state"] == BL.FAILED and daily.status()["attempts"] == 3
-    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 5, 0, tzinfo=timezone.utc))) is None        # given up today
+    assert asyncio.run(daily.run_due(datetime(2026, 11, 16, 5, 0, tzinfo=UTC))) is None        # given up today
     assert daily.status_line(MONDAY_0840) == ("login failed: Angel One refused the login - check the client code, PIN "
                                               "and TOTP secret (python -m app.runner.keys rotate angel_one)")
     log = (tmp_path / "broker_login.log").read_text().splitlines()
     assert len(log) == 3 and "attempt 3 failed" in log[-1]
     daily.client_factory = FakeAngel().factory                               # the user fixes it and logs in by hand
-    assert asyncio.run(daily.login(datetime(2026, 11, 16, 5, 0, tzinfo=timezone.utc), manual=True)) is True
+    assert asyncio.run(daily.login(datetime(2026, 11, 16, 5, 0, tzinfo=UTC), manual=True)) is True
     assert daily.status_line(MONDAY_0840) == "broker session valid"
 
 
@@ -242,10 +242,10 @@ def test_network_trouble_and_a_missing_or_locked_keystore_give_plain_reasons(tmp
 def test_the_login_window_and_its_setting(tmp_path):
     settings = BL.LoginSettings.load(tmp_path)
     assert (settings.minutes_before_open, settings.retries, settings.retry_minutes) == (45, 1, 10)   # the rule set
-    assert not settings.in_window(datetime(2026, 11, 16, 2, 59, tzinfo=timezone.utc))     # 08:29 IST
-    assert settings.in_window(datetime(2026, 11, 16, 3, 0, tzinfo=timezone.utc))          # 08:30 IST
-    assert not settings.in_window(datetime(2026, 11, 16, 10, 0, tzinfo=timezone.utc))     # 15:30 IST: closed
-    assert not settings.in_window(datetime(2026, 11, 15, 3, 10, tzinfo=timezone.utc))     # a Sunday
+    assert not settings.in_window(datetime(2026, 11, 16, 2, 59, tzinfo=UTC))     # 08:29 IST
+    assert settings.in_window(datetime(2026, 11, 16, 3, 0, tzinfo=UTC))          # 08:30 IST
+    assert not settings.in_window(datetime(2026, 11, 16, 10, 0, tzinfo=UTC))     # 15:30 IST: closed
+    assert not settings.in_window(datetime(2026, 11, 15, 3, 10, tzinfo=UTC))     # a Sunday
     (tmp_path / "runner.json").write_text(json.dumps({"cycle_seconds": 60, "broker_login_minutes_before_open": 20}))
     assert BL.LoginSettings.load(tmp_path).login_time(MONDAY_0840.date()).strftime("%H:%M") == "08:55"
 

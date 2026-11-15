@@ -21,12 +21,11 @@ runner, by the user's own action there or by his own button here (relayed as a c
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing_extensions import Annotated
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader

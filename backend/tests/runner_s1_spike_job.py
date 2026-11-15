@@ -14,7 +14,7 @@ The bars are generic made-up numbers (no market data, no symbol-specific content
 import asyncio
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -50,7 +50,7 @@ async def main() -> dict:
                                    right=Operand(type="indicator", indicator="SMA", period=5))])
     strategy = DeclarativeStrategy("custom:spike", config)
     closes = [100.0 - 0.5 * i for i in range(30)] + [90.0]   # a steady fall, then the last bar closes back above the SMA
-    index = pd.date_range(end=datetime.now(timezone.utc).replace(second=0, microsecond=0), periods=len(closes), freq="5min")
+    index = pd.date_range(end=datetime.now(UTC).replace(second=0, microsecond=0), periods=len(closes), freq="5min")
     df = pd.DataFrame({"open": closes, "high": [c + 0.4 for c in closes], "low": [c - 0.4 for c in closes],
                        "close": closes, "volume": [1000.0] * len(closes)}, index=index)
     df.iloc[-1, df.columns.get_loc("open")] = 85.0
@@ -73,7 +73,7 @@ async def main() -> dict:
 
         async def price(symbol, exchange):
             return below
-        outcomes = await monitor_open_positions(session, tenant_id, price, now=datetime.now(timezone.utc) + timedelta(minutes=1))
+        outcomes = await monitor_open_positions(session, tenant_id, price, now=datetime.now(UTC) + timedelta(minutes=1))
         out["closed"] = sum(1 for o in outcomes if o.closed)
     async with _session_factory() as session:
         trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id)))

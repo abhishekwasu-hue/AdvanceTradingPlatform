@@ -25,7 +25,7 @@ import logging
 import re
 import secrets
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import hashes
@@ -34,7 +34,6 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing_extensions import Annotated
 
 from app.db.models import (
     CustomStrategyRecord,

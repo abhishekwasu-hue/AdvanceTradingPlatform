@@ -20,7 +20,8 @@ import asyncio
 import getpass
 import os
 import sys
-from typing import Callable, Optional
+from collections.abc import Callable
+from datetime import UTC
 
 from app.runner.keystore import BROKER_FIELDS, KEYFILE, REQUIRED_FIELDS, SCRYPT, SECRET_FIELDS, Keystore, KeystoreError
 
@@ -41,7 +42,7 @@ def _new_passphrase(secret_prompt: Callable[[str], str]) -> str:
     return first
 
 
-def main(argv: Optional[list[str]] = None, *, secret_prompt: Callable[[str], str] = getpass.getpass,
+def main(argv: list[str] | None = None, *, secret_prompt: Callable[[str], str] = getpass.getpass,
          plain_prompt: Callable[[str], str] = input, out: Callable[[str], None] = print) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.runner.keys", description="Runner keystore and broker login")
     parser.add_argument("command", choices=["init", "add", "rotate", "remove", "list", "rekey", "login", "status"])
@@ -92,8 +93,8 @@ def main(argv: Optional[list[str]] = None, *, secret_prompt: Callable[[str], str
             daily = DailyLogin(args.home, store, args.broker)
             if args.command == "login":
                 asyncio.run(daily.login(manual=True))
-            from datetime import datetime, timezone
-            out(daily.status_line(datetime.now(timezone.utc)))
+            from datetime import datetime
+            out(daily.status_line(datetime.now(UTC)))
             return 0 if daily.status().get("state") == "logged_in" or args.command == "status" else 1
     except KeystoreError as exc:
         out(str(exc))

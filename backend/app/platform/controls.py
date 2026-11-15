@@ -685,6 +685,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
     # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
     "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
+    # Runner S3 (docs/design/USER_RUNNER.md; app/runner_link; needs `ui_v2`): the ATP side of the user's own runner - device
+    # pairing (one-time code + the device's Ed25519 key), the signed heartbeat, the read-only mirror of his runner's orders /
+    # positions / audit rows and the "runner offline" alert. ATP never sets a runner's kill switch, never evaluates a runner
+    # user's strategy and never places an order for him. OFF: /api/runner/* answers 404 (X-Feature-Disabled), no alert.
+    "user_runner": "My runner: pair your own runner, its heartbeat, read-only copies of its orders and positions, and the offline alert (places no orders)",
     # AUD-T3 (owner audit 28 Oct; app/deployments/why.py; needs `ui_v2`): the "Why no trade" timeline on a bot's card -
     # the last closed bars with the reason it did or did not trade. Information only: the worker writes the log either way
     # and never reads it. OFF: GET /api/deployments/{id}/why answers 404 and the card is hidden.
@@ -788,16 +793,31 @@ CHART_READER_MISSING_REASON = "The chart reader (private package) is not install
 
 
 def engine_missing_flags() -> Dict[str, str]:
-    """{flag: reason} for each flag whose engine is not installed here (empty when every engine is)."""
-    from app.chart_analyze import provider as chart_engine
-    from app.engine_provider import loader as trade_engine
+    """{flag: reason} for each flag whose engine is not installed here (empty when every engine is).
+
+    Runner S6: the runner image leaves the loader packages out (docs/design/USER_RUNNER.md, S1 results); an absent
+    loader package reads as "engine unavailable", never as a crash."""
     missing: Dict[str, str] = {}
-    if chart_engine.load() is None:
+    try:
+        from app.chart_analyze import provider as chart_engine
+        chart_loaded = chart_engine.load() is not None
+    except ImportError:
+        chart_loaded = False
+    if not chart_loaded:
         missing.update({name: ENGINE_MISSING_REASON for name in ENGINE_FLAGS})
-    if trade_engine.load() is None:
+    try:
+        from app.engine_provider import loader as trade_engine
+        trade_loaded = trade_engine.load() is not None
+    except ImportError:
+        trade_loaded = False
+    if not trade_loaded:
         missing.update({name: TRADE_ENGINE_MISSING_REASON for name in TRADE_ENGINE_FLAGS})
-    from app.chart_reader import loader as chart_reader
-    if chart_reader.load() is None:
+    try:
+        from app.chart_reader import loader as chart_reader
+        reader_loaded = chart_reader.load() is not None
+    except ImportError:
+        reader_loaded = False
+    if not reader_loaded:
         missing.update({name: CHART_READER_MISSING_REASON for name in CHART_READER_FLAGS})
     return missing
 

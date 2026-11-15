@@ -162,6 +162,7 @@ navigation and shows "Coming soon" at its address (`frontend/src/shell/pageFlags
 | Today | `/` | Markets (bottom bar) | - (My day: `my_day_card`; brief: `daily_rhythm`) | WORKS | unknown until the owner's check |
 | Charts | `/charts`, `/charts/:symbol` | Markets (bottom bar) | - (multi-chart: `chart_workspace`) | WORKS | unknown until the owner's check |
 | Watchlist | `/watchlist` | Markets | `watchlists` | EMPTY-BY-DEFAULT + DUPLICATE (Charts panel) | unknown until the owner's check |
+| My runner | `/runner` | Account | `user_runner` (+ the plan's `runner` where known) | PARTIAL (Runner S7: set-up steps, pairing code, runner cards, link settings, read-only copies; the kill-switch button waits for S4's relay) | not built (flag stays not_built until S4 + S6 are merged) |
 | Option chain (Chain, Charts, OI, Analyses) | `/option-chain` | Markets | - (broker gate) | WORKS; OI view PARTIAL (needs recorded snapshots) | unknown until the owner's check |
 | Sectors and indices | `/markets` | Markets | `markets_view` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | Find setups | `/screener` | Markets | `screener_v2` | EMPTY-BY-DEFAULT | unknown until the owner's check |

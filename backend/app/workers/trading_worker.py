@@ -87,6 +87,7 @@ from app.reconciliation.service import broker_uncertain_reason, reconcile_accoun
 from app.retention.service import RetentionReport, run_retention
 from app.secrets_store.envelope import ensure_tenant_key
 from app.strategy_templates.exits import TemplateExits
+from app.trading import square_off
 from app.trading.position_monitor import broker_for_trade, close_group, close_position, monitor_open_positions, open_trade_families_by_tenant, trade_venues
 from app.trading.stop_guard import verify_protective_stops
 from app.workers import eod_summary
@@ -145,6 +146,7 @@ def _waiting(dep: "StrategyDeploymentRecord", now: datetime, reason: Optional[st
 TOKEN_RECHECK_SECONDS = 300
 WATCH_EVERY_MINUTES = 5             # M72 PR-7: how often the worker looks for new Copilot watch cards (operational)
 RHYTHM_EVERY_MINUTES = 5            # MO4: how often the worker looks for daily-rhythm digests due on Telegram
+RUNNER_OFFLINE_EVERY_MINUTES = 1   # Runner S3: how often the worker looks for runners past their user's own offline time
 SETTLEMENT_EVERY_MINUTES = 30       # TM Part 7: how often the worker looks for stock F&O positions that may settle by delivery
 ONBOARDING_EVERY_MINUTES = 15       # C13: how often the worker looks for first-week onboarding e-mails due
 # Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
@@ -224,12 +226,7 @@ def _pre_open(now: datetime) -> bool:
     return ist.weekday() < 5 and dtime(8, 0) <= ist.time() < dtime(9, 15)
 
 
-def _held_spread_expires(trade: TradeRecord, today: date | None) -> bool:
-    """M55 T1: a deployment's structure held for days (SWING legs in a group) settles at the square-off time of its expiry
-    day, as the option backtest settles it (SETTLEMENT_FROM). Single swing positions are unchanged."""
-    expiry = getattr(trade, "expiry", None)
-    return (today is not None and expiry is not None and bool(trade.leg_group_id) and trade.deployment_id is not None
-            and expiry <= today)
+_held_spread_expires = square_off.held_spread_expires   # moved to trading/square_off.py (Runner S2)
 
 
 def _adapter_key(broker_name: str, account_label: str) -> str:
@@ -308,6 +305,7 @@ class TradingWorker:
         self._last_watch_check: Optional[datetime] = None      # M72 PR-7: the Copilot watch
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
         self._last_settlement_check: Optional[datetime] = None  # TM Part 7: the physical-settlement warnings
+        self._last_runner_check: Optional[datetime] = None      # Runner S3: the "runner offline" alert
         self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
@@ -796,6 +794,17 @@ class TradingWorker:
                             await workspace_watch.run_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a card never blocks the cycle
                         logger.warning("Workspace watch failed: %s", type(exc).__name__)
+                # Runner S3 (app/runner_link/service.py): a user's own runner whose last heartbeat is older than his own
+                # offline time turns "offline" with one alert to him (bell + his Telegram). Flags ui_v2 + user_runner. Its own
+                # session; nothing is sent to the runner and nothing on it is stopped.
+                if self._last_runner_check is None or now - self._last_runner_check >= timedelta(minutes=RUNNER_OFFLINE_EVERY_MINUTES):
+                    self._last_runner_check = now
+                    try:
+                        from app.runner_link import service as runner_link
+                        async with self.session_factory() as own:
+                            await runner_link.check_offline(own, now)
+                    except Exception as exc:  # noqa: BLE001 - an alert never blocks the cycle
+                        logger.warning("Runner offline check failed: %s", type(exc).__name__)
                 # TM Part 7 (app/paper/settlement_watch.py): stock F&O positions that may settle by delivery, once a day per
                 # position for users who keep the Telegram choice on. Flags ui_v2 + smart_execution. Information only.
                 if self._last_settlement_check is None or now - self._last_settlement_check >= timedelta(minutes=SETTLEMENT_EVERY_MINUTES):
@@ -2424,21 +2433,11 @@ class TradingWorker:
         checks a bot's own SWING passes when it is created); any other bot needs its own holding. Returns (holding or
         None, the plain-words reason when None)."""
         from app.execution import order_defaults
-        from app.instruments.spreads import can_hold_for_days
-        own = getattr(dep, "holding", None)
         self._holdings.pop(dep.id, None)
-        if own:
-            return own, ""
-        mine = (await order_defaults.load(session, user)).holding
-        if mine is None:
-            return None, order_defaults.needs_setting("holding")
-        from app.risk_engine import own_risk
-        written = (await own_risk.for_user(session, user)).overnight_short_options if mine == "SWING" else False   # TS1-041
-        if mine == "SWING" and dep.timeframe != "day" and not can_hold_for_days(dep.option_strategy or "SINGLE", written_overnight=written):
-            return None, (f"{order_defaults.needs_setting('holding')}: your Carry forward setting does not fit this bot "
-                          f"(it reads {dep.timeframe} candles) - set this bot's own holding")
-        self._holdings[dep.id] = mine
-        return mine, ""
+        holding, problem = await order_defaults.bot_holding(session, dep, user)   # Runner S4b: shared with the runner
+        if holding is not None and not getattr(dep, "holding", None):
+            self._holdings[dep.id] = holding
+        return holding, problem
 
     def _why(self, dep: StrategyDeploymentRecord, code: str, bar: Optional[datetime], detail: Optional[str]) -> None:
         """AUD-T3: note why this evaluation ended (stored by `_store_why` once it is done; never read by the worker)."""
@@ -2883,105 +2882,19 @@ class TradingWorker:
         return open_trade is not None
 
     async def _opposite_position(self, session: AsyncSession, dep: StrategyDeploymentRecord, direction: Any) -> Optional[str]:
-        """M55 S6 (A11): the plain reason a NEW automated entry is held back, or None. Under the organisation's
-        `opposite_positions` setting "deny" (owner order M55; risk_settings) an entry is skipped while another
-        of its bots holds an open position in the same mode on the same underlying in the other direction. Same direction:
-        unchanged. A position with no known direction (a neutral structure) never counts. Reads only - exits never come here.
-        M68 PR-5 (TS1-052, owner decision D3 / M68Q-3): only a SAVED "deny" holds an entry back; Not set (NULL, no row) and
-        "allow" never do."""
-        from app.core.models import OPPOSITE_DENY
-        from app.db.models import RiskSettingsRecord
-        from app.portfolio.risk import BEARISH, BULLISH, direction_of, underlying_of_trade
-        wanted = {"LONG": BULLISH, "SHORT": BEARISH}.get(str(getattr(direction, "value", direction) or "").upper())
-        if wanted is None:
-            return None
-        setting = await session.scalar(select(RiskSettingsRecord.opposite_positions).where(RiskSettingsRecord.tenant_id == dep.tenant_id))
-        if setting != OPPOSITE_DENY:           # Not set (NULL / no row yet) or "allow": two bots may hold opposite sides
-            return None
-        underlying = master.underlying_of(dep.symbol)
-        others = await session.scalars(select(TradeRecord).where(
-            TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == dep.mode,
-            TradeRecord.deployment_id.is_not(None), TradeRecord.deployment_id != dep.id))
-        for trade in others:
-            held = direction_of(trade)
-            if held in (BULLISH, BEARISH) and held != wanted and underlying_of_trade(trade) == underlying:
-                side = "long" if held == BULLISH else "short"
-                return (f"Skipped: another of your bots already holds a {side} position on {underlying}, and your risk "
-                        "settings allow one direction per symbol")
-        return None
+        """M55 S6 (A11): the organisation's "one direction per symbol" setting - moved unchanged to
+        `execution/order_defaults.opposite_position` (Runner S8: the runner loop reads the same rule)."""
+        from app.execution.order_defaults import opposite_position
+        return await opposite_position(session, dep, direction)
 
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
         live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
         today: date | None = None, settle_families: Optional[set] = None, now_ist: Optional[datetime] = None,
     ) -> int:
-        """M68 PR-3 (TS1-026, D1): the INTRADAY positions whose owner's own Square-off time has come (Not set: none - ATP
-        squares off nothing by itself), and the held spreads expiring today on a venue in `settle_families` (M55 T1).
-        `now_ist` None (a direct call): every INTRADAY position of `families` whose owner set a time, as at that time."""
-        open_trades = list(await session.scalars(
-            select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
-        ))
-        venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
-        closed = 0
-        groups: Dict[str, List[TradeRecord]] = {}
-        expiring: dict[str, list[TradeRecord]] = {}
-        own: Dict[int, exit_settings.ExitSettings] = {}
-        settle = families if settle_families is None else settle_families
-        for trade in open_trades:
-            family = session_family(venues[trade.id])
-            if families is not None and family not in families:
-                continue
-            if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
-                if (settle is None or family in settle) and _held_spread_expires(trade, today):
-                    expiring.setdefault(trade.leg_group_id, []).append(trade)   # M55 T1: settles on its expiry day
-                continue   # Phase AS: a swing position is held overnight by design
-            if trade.user_id not in own:
-                own[trade.user_id] = await exit_settings.load(session, tenant_id=tenant_id, user_id=trade.user_id)
-            cut = own[trade.user_id].square_off_at(family)
-            if cut is None or (now_ist is not None and now_ist.time() < cut):
-                continue   # M68 D1: his own time not set (or not reached) - ATP closes nothing; his broker's MIS close is a fact
-            if trade.leg_group_id:
-                groups.setdefault(trade.leg_group_id, []).append(trade)
-                continue
-            try:
-                price = await market_data.get_ltp(trade.symbol, venues[trade.id])
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
-                continue
-            broker = None
-            if trade.mode == ExecutionMode.LIVE.value:
-                # #221 MED-2: the trade's own account (cached per cycle), as the monitor does, when no LIVE deployment named
-                # a session - a LIVE position with no deployment is squared off too (an exit: the Phase 0 chokepoint lets
-                # it through).
-                broker = live_broker or await broker_for_trade(session, trade)
-            trade_id = trade.id
-            try:
-                # Review LOW-2 (ADR-0004): one savepoint per position - one close that fails never ends the square-off.
-                async with guarded(session, keep=(trade,)):
-                    outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
-                closed += int(outcome.closed)
-            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
-                logger.error("Square-off of trade %s failed: %s", trade_id, exc)
-        jobs = [(gid, legs, "Intraday square-off") for gid, legs in groups.items()]
-        jobs += [(gid, legs, "Expiry settlement") for gid, legs in expiring.items()]
-        for group_id, legs, reason in jobs:
-            # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
-            # held while a LIVE short has not closed (selling them first would leave a naked short).
-            prices: Dict[int, float] = {}
-            for leg in legs:
-                try:
-                    prices[leg.id] = await market_data.get_ltp(leg.symbol, venues[leg.id])
-                except Exception as exc:  # noqa: BLE001 - that leg is left open (a short without a quote holds its wings)
-                    logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
-            try:
-                async with guarded(session, keep=tuple(legs)):
-                    outcomes = await close_group(session, legs, prices, reason, broker=live_broker, user_id=user_id)
-                closed += sum(int(o.closed) for o in outcomes)
-            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
-                logger.error("Square-off of group %s failed: %s", group_id, exc)
-        if closed:
-            logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
-        return closed
+        """M68 PR-3 (TS1-026, D1) / M55 T1: the shared square-off (`trading/square_off.py`, also run by the user's runner)."""
+        return await square_off.square_off_due(session, tenant_id, market_data.get_ltp, live_broker, user_id, families=families,
+                                               today=today, settle_families=settle_families, now_ist=now_ist)
 
     async def _record_failure(self, session: AsyncSession, dep: StrategyDeploymentRecord, exc: Exception, user_id: int) -> None:
         if isinstance(exc, DataReadFailed):

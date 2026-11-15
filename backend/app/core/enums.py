@@ -56,6 +56,9 @@ class NotificationType(str, Enum):
     # M72 PR-7 (CP-7): a Copilot watch card on the user's OWN position, strike or watchlist (opt-in per type). Addressed to
     # him alone (never organisation-wide), in the app and on his own Telegram only; information only (ADR-0006).
     COPILOT_WATCH = "COPILOT_WATCH"
+    # Runner S3 (docs/design/USER_RUNNER.md section 4): the user's own runner sent no heartbeat within his own
+    # offline_after_minutes. Addressed to him alone (never organisation-wide), in the app and on his own Telegram only.
+    RUNNER_OFFLINE = "RUNNER_OFFLINE"
 
 
 class NotificationSeverity(str, Enum):

@@ -73,6 +73,8 @@ async def _visible(session: AsyncSession, user: User, query):
     from app.platform.controls import flag_enabled
     # M72 PR-7: a Copilot watch card is about one member's own position / strike / watchlist: his alone, whatever the flags.
     query = query.where(or_(NotificationRecord.event_type != NotificationType.COPILOT_WATCH.value, NotificationRecord.user_id == user.id))
+    # Runner S3: a "runner offline" alert is about one member's own runner: his alone, whatever the flags.
+    query = query.where(or_(NotificationRecord.event_type != NotificationType.RUNNER_OFFLINE.value, NotificationRecord.user_id == user.id))
     if await flag_enabled(session, "byob_data_tier", user.tenant_id):
         return query.where(or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id, not_(private_to_addressee())))
     return query

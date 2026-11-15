@@ -1,7 +1,7 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Eye, Filter, GraduationCap, History, Layers,
   Inbox, LayoutDashboard, LayoutGrid, Lightbulb, Link2, ListChecks, ListTodo, MonitorDot, Newspaper, Pencil, PieChart, Radar, ScanEye, ScrollText, Settings, Shield, ShieldEllipsis,
-  ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
+  ScanSearch, Server, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
 import type { Page } from "../components/Sidebar";
@@ -9,7 +9,8 @@ import { PAGE_FLAGS } from "./pageFlags";
 import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 import { IDEA_FLAG } from "../ideas/model";
 import { LEARN_ADDRESS } from "../learn/model";
-import { TERMINAL_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
+import { RUNNER_ADDRESS, TERMINAL_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
+import { RUNNER_PLAN_FIELD } from "../runner/plan";
 
 /**
  * UI2-1 (UI v2 proposal §2 navigation map, §4 bottom bar): the one navigation model the v2 shell reads - the sidebar,
@@ -23,7 +24,7 @@ import { TERMINAL_ADDRESS, WATCHLIST_ADDRESS } from "./aliases";
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B).
  * M60: Learn › Words explained (`/learn/words`) and two AI Copilot tabs that search lists on their own (Read the chart, Coach). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | "terminal" | "watchlist" | SettingsSectionKey
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "ideas" | "markets" | "learn" | "terminal" | "watchlist" | "runner" | SettingsSectionKey
   | "learn-words" | "copilot-read" | "copilot-coach";
 
 /** M60 (owner order, approved 30 Oct): the five sidebar sections; `more` only captions search results. */
@@ -41,6 +42,8 @@ export interface NavItemV2 {
   flag?: string;
   /** Shown to this role only. */
   role?: string;
+  /** Runner S7: the plan field this page needs (`runner`); hidden only when the context's plan says false for it. */
+  plan?: string;
   /** Other words a trader may type to find it: today's labels, so a renamed page is still found (§3 renames). */
   keywords?: string[];
   /** M60: listed in the sidebar only while this flag is off (its new home behind the flag is not on); always searchable. */
@@ -135,6 +138,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
     id: "account", title: "Account", items: [
       item("settings", "Settings", "Settings", "/settings", Settings,
         { keywords: ["preferences", "appearance", "theme", "integrations", "webhook"] }),
+      // Runner S7: his own runner on his own VPS (flag `user_runner`; the plan's `runner` field, Pro, where it is known).
+      item("runner", "My runner", "My runner", RUNNER_ADDRESS, Server,
+        { flag: PAGE_FLAGS.runner, plan: RUNNER_PLAN_FIELD, keywords: ["runner", "vps", "static ip", "pairing code", "pair", "own server", "kill switch"] }),
       item("admin", "Admin", "Admin console", "/admin", ShieldEllipsis, { role: ADMIN_ROLE, keywords: ["admin console", "platform"] }),
     ],
   },
@@ -271,10 +277,13 @@ export interface NavContext {
   /** True only when the flag is known and on (useFeatures().on). */
   on: (flag: string) => boolean;
   role: string | null;
+  /** Runner S7: his plan's fields where the shell knows them (absent: the flag alone decides). */
+  plan?: Readonly<Record<string, unknown>> | null;
 }
 
-export function isItemVisible(it: Pick<NavItemV2, "flag" | "role" | "offWhen">, ctx: NavContext): boolean {
+export function isItemVisible(it: Pick<NavItemV2, "flag" | "role" | "offWhen" | "plan">, ctx: NavContext): boolean {
   if (it.flag && !ctx.on(it.flag)) return false;
+  if (it.plan && ctx.plan && ctx.plan[it.plan] === false) return false;
   if (it.role && ctx.role !== it.role) return false;
   if (it.offWhen && ctx.on(it.offWhen)) return false;
   return true;

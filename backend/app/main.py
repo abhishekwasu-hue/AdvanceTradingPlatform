@@ -171,6 +171,7 @@ from app.rhythm.routes import router as rhythm_router
 from app.risk_engine.guardian_routes import router as risk_guardian_router
 from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
 from app.risk_engine.routes import router as risk_settings_router
+from app.runner_link.routes import router as runner_link_router
 from app.screener.board import router as screener_board_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.etf_routes import router as screener_etf_router
@@ -398,6 +399,7 @@ app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
 app.include_router(accounts_router)
+app.include_router(runner_link_router)        # Runner S3: /api/runner/* (flag user_runner)
 app.include_router(backtest_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)

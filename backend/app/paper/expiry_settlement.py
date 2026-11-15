@@ -27,6 +27,7 @@ Idempotent: only rows with no exit are read, and close_position claims the close
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
@@ -112,9 +113,14 @@ def _due_query(now: datetime, tenant_id: int | None):
     return query.order_by(TradeRecord.expiry, TradeRecord.id)
 
 
-async def settle_expired(session: AsyncSession, now: datetime | None = None, *, tenant_id: int | None = None) -> SettleReport:
+async def settle_expired(session: AsyncSession, now: datetime | None = None, *, tenant_id: int | None = None,
+                         close_of: Callable[[str, date], Awaitable[float | None]] | None = None) -> SettleReport:
     """Settles every open PAPER index option / future past its expiry close (one tenant, or all). Never raises for one
-    position: a failure is logged and that position is tried again on the next pass."""
+    position: a failure is logged and that position is tried again on the next pass.
+
+    `close_of(underlying, expiry)`: where the expiry-day close is read - the stored licensed Daily bar (`expiry_close`)
+    unless given. Runner S4b: the user's runner has no licensed files and passes his own broker's Daily bar of that day
+    (app/runner/derivatives.py `daily_close`); the rule and the booking are this function's, unchanged."""
     from app.trading.position_monitor import close_position
     now = now or datetime.now(UTC)
     report = SettleReport()
@@ -137,7 +143,7 @@ async def settle_expired(session: AsyncSession, now: datetime | None = None, *, 
             continue
         key = (underlying, expiry)
         if key not in closes:
-            closes[key] = await expiry_close(session, underlying, expiry)
+            closes[key] = await (close_of(underlying, expiry) if close_of is not None else expiry_close(session, underlying, expiry))
         close = closes[key]
         if close is None:
             report.waiting.append((trade_id, "expiry-day close not stored yet"))

@@ -33,6 +33,7 @@ from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrderResponse
+from app.core import runtime_mode
 
 FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
@@ -75,7 +76,12 @@ async def owner_tenant_id(session: AsyncSession) -> int | None:
 
 
 async def is_on(session: AsyncSession, tenant_id: Optional[int]) -> bool:
-    """Reads the flag and the owner's organisation fresh (and refreshes the process state the broker chokepoint reads)."""
+    """Reads the flag and the owner's organisation fresh (and refreshes the process state the broker chokepoint reads).
+    Runner S4c: in the user's runner process the lock follows ATP's signed LIVE state for his organisation
+    (`core/runtime_mode.live_open`, computed by ATP with this module's B1 rule), never the runner's local store (it holds
+    no switch of ATP's)."""
+    if runtime_mode.is_runner():
+        return locked(tenant_id)
     from app.platform.controls import feature_flags
     entry = (await feature_flags(session)).get(FLAG) or {}
     remember(bool(entry.get("on")), entry.get("tenants") or ())
@@ -98,7 +104,10 @@ def switch_locked() -> bool:
 def locked(tenant_id: Optional[int]) -> bool:
     """From the last read: on for everyone (`live_trading` OFF), or (B1) for every organisation that is not the owner's,
     or for this tenant through the allow-list. With no tenant known, or no owner resolved, the lock holds (refusing an
-    entry is always safe; exits never come here)."""
+    entry is always safe; exits never come here). Runner S4c: in the runner process, locked unless ATP's fresh signed
+    answer opened LIVE for this organisation (`runtime_mode.live_open`; ATP computes it with the B1 rule below)."""
+    if runtime_mode.is_runner():
+        return tenant_id is None or int(tenant_id) not in runtime_mode.live_open()
     if _state["on"]:
         return True
     if tenant_id is None or not is_owner_org(tenant_id):

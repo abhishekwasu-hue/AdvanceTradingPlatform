@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { mockCharts } from "./chartsMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 
 /**
@@ -8,7 +9,13 @@ import { mockApi, type MockOptions } from "./mockApi";
  * held PAPER position, Exit runs its "Exit now" (confirmed, never disabled). Every candle and price here is made up
  * (round shapes, not market data). CTB_SHOTS=<dir> writes the proof screenshots (CTB_BEFORE=1: only the screenshot, for
  * the build before this change).
+ * Follow-up 15 Nov: a LIVE position gets Exit (all its lots through the existing LIVE exit, "Exit part") when his
+ * organisation may go LIVE through ATP (the Terminal's `live_allowed`), else "Close a live position in your broker's
+ * app"; an NSE share's chart (made-up "BANKBEES" of e2e/chartsMocks.ts) gets Buy / Sell opening the equity ticket, an
+ * index chart none.
  */
+/** The equity ticket's made-up risk strip (the My trades cards fixture: his own limits, none set). */
+const PAPER_RISK = (JSON.parse(readFileSync(new URL("./fixtures/mytrades_cards_v2.json", import.meta.url), "utf8")) as { paper_risk: unknown }).paper_risk;
 const DATA = JSON.parse(readFileSync(new URL("./fixtures/option_chain_v2.json", import.meta.url), "utf8")) as {
   expiries: Record<string, unknown>; live: Record<string, unknown> & { rows: unknown[] };
 };
@@ -56,9 +63,12 @@ function facts(symbol: string): Record<string, unknown> {
 
 type Seen = { posts: string[] };
 
-async function open(page: Page, opts: { noPe?: boolean; held?: boolean } = {}): Promise<Seen> {
+/** The same contract held LIVE (made up). */
+const HELD_LIVE = { ...HELD, id: 42, mode: "LIVE" };
+
+async function open(page: Page, opts: { noPe?: boolean; held?: boolean; live?: boolean; liveAllowed?: boolean } = {}): Promise<Seen> {
   const seen: Seen = { posts: [] };
-  let held = opts.held ? [HELD] : [];
+  let held: Record<string, unknown>[] = opts.live ? [HELD_LIVE] : opts.held ? [HELD] : [];
   await page.clock.install({ time: new Date("2026-10-27T10:30:00+05:30") });
   await page.addInitScript(() => {
     try {
@@ -94,6 +104,14 @@ async function open(page: Page, opts: { noPe?: boolean; held?: boolean } = {}): 
     if (url.pathname.endsWith("/live-status")) return route.fulfill({ json: { open: false, text: "Live trading is switched off by the admin." } });
     return route.fulfill({ status: 404, json: { detail: "Not found" } });
   });
+  await page.route(/\/api(?:\/v1)?\/paper\/fno\/positions\/42\/exit-part$/, (route) => {
+    const body = route.request().postDataJSON() as { lots: number; client_ref: string; confirm: boolean };
+    seen.posts.push(`/paper/fno/positions/42/exit-part lots=${body.lots}`);
+    held = [];
+    return route.fulfill({ json: { status: "CLOSED", repeat: false, warning: null, remaining_lots: 0,
+      closed: { trade_id: 42, symbol: COMPACT_PE, lots: body.lots, closed: true, exit_price: 150, pnl: 750 } } });
+  });
+  await page.route(/\/api(?:\/v1)?\/terminal\/status$/, (r) => r.fulfill({ json: { mode: { mode: "PAPER", live_allowed: opts.liveAllowed === true, message: "" } } }));
   await page.route(/\/api(?:\/v1)?\/market-data\/candles$/, (r) => {
     const body = r.request().postDataJSON() as { symbols: string[]; timeframe: string; lookback_days: number; before?: string };
     const symbol = body.symbols[0];
@@ -190,3 +208,75 @@ for (const [width, height] of [[1440, 900], [390, 844]] as const) {
     });
   });
 }
+
+test.describe("follow-up 15 Nov: LIVE Exit on the chart (B1) and Buy / Sell on a share's chart", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("his organisation may go LIVE through ATP: Exit closes all lots through the existing LIVE exit", async ({ page }) => {
+    const calls = await open(page, { live: true, liveAllowed: true });
+    const pe = page.locator("[data-option-side='PE']");
+    await expect(pe.locator("[data-chart-trade-held='42']")).toContainText("Long");
+    const exit = pe.locator("[data-chart-trade-action='exit']");
+    await expect(exit).toBeEnabled();
+    const box = (await exit.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    await expect(pe.locator("[data-chart-trade-live]")).toHaveCount(0);
+    await page.waitForTimeout(400);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-live-exit.png` });
+    page.once("dialog", (d) => d.accept());
+    await exit.click();
+    await expect(pe.locator("[data-chart-trade-note='done']")).toContainText("Closed");
+    expect(calls.posts).toContain("/paper/fno/positions/42/exit-part lots=1");
+    expect(calls.posts).not.toContain("/positions/42/exit-now");
+  });
+
+  test("any other organisation: no Exit, the broker-app line", async ({ page }) => {
+    await open(page, { live: true, liveAllowed: false });
+    const pe = page.locator("[data-option-side='PE']");
+    await expect(pe.locator("[data-chart-trade-live]")).toHaveText("Close a live position in your broker's app.");
+    await expect(pe.locator("[data-chart-trade-action='exit']")).toHaveCount(0);
+  });
+
+  async function charts(page: Page, symbol: string | null) {
+    await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem("atp_appearance", JSON.stringify({ theme: "dark" }));
+        localStorage.setItem("atp_install_dismissed", "1");
+        localStorage.setItem("atp_page_intro_dismissed:2", JSON.stringify(["charts"]));
+      } catch { /* storage unavailable */ }
+    });
+    await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    await mockApi(page, { features: { ui_v2: true, chart_workspace: true, paper_account: true, risk_by_default: true }, brokers: CONNECTED });
+    await mockCharts(page, {});
+    await page.route(/\/api(?:\/v1)?\/positions$/, (r) => r.fulfill({ json: [] }));
+    await page.route(/\/api(?:\/v1)?\/paper\/risk$/, (r) => r.fulfill({ json: PAPER_RISK }));
+    await page.route(/\/api(?:\/v1)?\/paper\/plans$/, (r) => r.fulfill({ json: [] }));
+    await page.goto(symbol ? `/charts/${symbol}` : "/charts");
+    await expect(page.locator("[data-page='charts-v2'] .tv-lightweight-charts canvas").first()).toBeVisible();
+  }
+
+  test("an NSE share's chart: Buy opens the equity ticket with the symbol and side only", async ({ page }) => {
+    await charts(page, "BANKBEES");
+    const buy = page.locator("[data-chart-trade='BANKBEES'] [data-chart-trade-action='buy']");
+    await expect(buy).toBeVisible();
+    await expect(page.locator("[data-chart-trade='BANKBEES'] [data-chart-trade-action='sell']")).toBeVisible();
+    expect((await buy.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(sideways).toBeLessThanOrEqual(0);
+    await page.waitForTimeout(400);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-share-chart.png` });
+    await buy.click();
+    const ticket = page.locator("[data-chart-trade-equity='BANKBEES']");
+    await expect(ticket).toBeVisible();
+    await expect(page.getByRole("dialog")).toContainText("Buy BANKBEES");
+    await page.waitForTimeout(400);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-share-ticket.png` });
+  });
+
+  test("an index chart: no trade buttons", async ({ page }) => {
+    await charts(page, null);
+    await page.waitForTimeout(800);
+    await expect(page.locator("[data-chart-trade-action]")).toHaveCount(0);
+  });
+});

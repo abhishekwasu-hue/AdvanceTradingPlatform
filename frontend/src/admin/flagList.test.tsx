@@ -13,7 +13,7 @@ const FLAGS: FeatureFlags = {
     turns_on: "contract chart window", depends_on: ["history_backfill"], needs: "the nightly download has run", status: "unfinished", status_label: "Unfinished / needs setup", default_on: false },
   history_backfill: { on: true, tenants: [], description: "Backfill", plain: "Nightly NSE end-of-day download", area: "data", area_label: "Data and alerts",
     turns_on: "nothing visible", depends_on: [], needs: "", status: "behind_the_scenes", status_label: "Ready (behind the scenes)", default_on: false },
-  live_trading: { on: false, tenants: [], description: "Live", plain: "New LIVE (real money) bots", area: "trading", area_label: "Trading and risk",
+  live_trading: { on: false, tenants: [], description: "Live", plain: "Live trading (real money) - through ATP for your own organisation; each order, basket or bot chooses Paper or Live", area: "trading", area_label: "Trading and risk",
     turns_on: "LIVE mode", depends_on: [], needs: "go-live checklist, two-factor", status: "decision", status_label: "Owner / compliance decision", default_on: true },
 };
 

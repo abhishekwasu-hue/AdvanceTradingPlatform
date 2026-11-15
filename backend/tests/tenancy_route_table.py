@@ -752,6 +752,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
     ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("GET", "/api/me/broker-book"): "member: the caller's own broker sessions only (tenant and user); reads only",
     ("GET", "/api/me/notices"): "member: the caller's own one-time notices only (tenant and user; TT12-1)",
     ("POST", "/api/me/notices/{notice_id}/seen"): S_OWN_PREFS,
     ("GET", "/api/me/trade-settings"): "member: M68 PR-0 - the caller's own Trade settings only (tenant and user)",

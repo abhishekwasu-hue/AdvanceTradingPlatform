@@ -11,7 +11,7 @@ vi.mock("../ui/useFeatures", () => ({
 import type { ContractFacts } from "../fno/contracts";
 import { trade } from "../trading/trading.fixture";
 import ChartTradeBar, { ChartTradeButtons } from "./ChartTradeBar";
-import { chartTicketTarget, heldOnChart, heldWords, positionItems, tradableOnChart } from "./chartTrade";
+import { chartTicketTarget, equityTicketInitial, heldOnChart, heldWords, isNseShare, liveExitOnChart, maybeShareChart, positionItems, tradableOnChart } from "./chartTrade";
 import { itemKey } from "./watchlistsV2";
 
 /** CTB-1 (owner 14 Nov): Buy / Sell / Exit on a chart window. Made-up contracts ("DEMO ..."), not market data. */
@@ -114,7 +114,7 @@ describe("the bar", () => {
     expect(html).toContain(">Exit Practice B<");
   });
 
-  it("nothing on an index or a stock chart, for a viewer, or with the PAPER account and Exit now off", () => {
+  it("nothing on an index chart (and on NSE before the instrument list answers), for a viewer, or with the PAPER account and Exit now off", () => {
     const bar = (exchange: string) => renderToStaticMarkup(<ChartTradeBar symbol="DEMO IDX" exchange={exchange} />);
     expect(bar("NSE")).toBe("");
     ctx.role = "VIEWER";
@@ -123,5 +123,64 @@ describe("the bar", () => {
     ctx.flags = ["ui_v2"];
     expect(renderToStaticMarkup(<ChartTradeBar symbol={SPACED_PE} exchange="NFO" />)).toBe("");
     ctx.flags = ["ui_v2", "paper_account"];
+  });
+});
+
+describe("follow-up 15 Nov: an NSE share's chart (equity cash)", () => {
+  const rows = [
+    { tradingsymbol: "DEMOSHARE", exchange: "NSE", instrument_type: "EQ" },
+    { tradingsymbol: "DEMO IDX", exchange: "NSE", instrument_type: "INDEX" },
+    { tradingsymbol: "DEMOSHAREX", exchange: "NSE", instrument_type: "EQ" },
+    { tradingsymbol: "DEMOBSE", exchange: "BSE", instrument_type: "EQ" },
+  ];
+
+  it("only a chart on NSE may be a share; the instrument list decides by the exact symbol and type EQ", () => {
+    expect(maybeShareChart("NSE")).toBe(true);
+    expect(maybeShareChart(" nse ")).toBe(true);
+    expect(maybeShareChart("NFO")).toBe(false);
+    expect(maybeShareChart(null)).toBe(false);
+    expect(isNseShare("demoshare", rows)).toBe(true);
+    expect(isNseShare("DEMO IDX", rows)).toBe(false);    // an index is not tradable: no buttons
+    expect(isNseShare("DEMOSHA", rows)).toBe(false);     // a near name is not the share
+    expect(isNseShare("DEMOBSE", rows)).toBe(false);     // another exchange
+    expect(isNseShare("", rows)).toBe(false);
+    expect(isNseShare("DEMOSHARE", [])).toBe(false);     // a failed read shows nothing
+  });
+
+  it("the equity ticket gets the symbol and the side only - never a price, stop, target or quantity", () => {
+    expect(equityTicketInitial(" demoshare ", "BUY")).toEqual({ symbol: "DEMOSHARE", direction: "LONG" });
+    expect(equityTicketInitial("DEMOSHARE", "SELL")).toEqual({ symbol: "DEMOSHARE", direction: "SHORT" });
+  });
+
+  it("the bar opens the existing equity ticket (PaperTicketCard) in a dialog, behind its own flag", async () => {
+    const src = (await import("./ChartTradeBar.tsx?raw")).default;
+    expect(src).toContain('import("../components/PaperTicketCard")');
+    expect(src).toContain('features.on("risk_by_default")');
+    expect(src).toContain("exchange=NSE&type=EQ");
+  });
+});
+
+describe("follow-up 15 Nov (B1): Exit on a LIVE position for the organisation that may go LIVE through ATP", () => {
+  const LIVE_PE = { ...HELD_PE, id: 21, mode: "LIVE" };
+
+  it("Exit only while his organisation may go LIVE through ATP, and not on a leg of a structure", () => {
+    expect(liveExitOnChart(LIVE_PE, true)).toBe(true);
+    expect(liveExitOnChart(LIVE_PE, false)).toBe(false);
+    expect(liveExitOnChart({ ...LIVE_PE, leg_group_id: "g1" }, true)).toBe(false);
+    expect(liveExitOnChart(HELD_PE, true)).toBe(false);   // a PAPER one keeps its own Exit now
+  });
+
+  it("the LIVE position's Exit is a button like the PAPER one, never disabled, without the broker-app line", () => {
+    const html = renderToStaticMarkup(<ChartTradeButtons chart={SPACED_PE} name="DEMO" entry={false} held={[LIVE_PE]} paperHeld={[LIVE_PE]} liveHeld={false}
+      note={null} onSide={() => undefined} onExit={() => undefined} />);
+    expect(html).toMatch(/<button[^>]*data-chart-trade-action="exit" data-position="21"[^>]*>Exit<\/button>/);
+    expect(html).not.toContain("disabled");
+    expect(html).not.toContain("data-chart-trade-live");
+  });
+
+  it("the bar reads live_allowed from the Terminal status and exits all lots through the existing LIVE exit", async () => {
+    const src = (await import("./ChartTradeBar.tsx?raw")).default;
+    expect(src).toContain("s.mode?.live_allowed === true");
+    expect(src).toContain("positionActionsApi.exitPart(p.id, openLots(p), ref, false)");
   });
 });

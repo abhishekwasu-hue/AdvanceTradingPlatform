@@ -321,3 +321,22 @@ def test_the_server_command_is_one_atp_sh_line():
     assert re.search(r"guest-demo\)\s+cmd_guest_demo \"\$@\"", sh)
     assert "#   /opt/atp/deploy/atp.sh guest-demo --as-of" in sh
     assert "dc exec -T backend python -m app.guest_demo.build \"$@\"" in sh
+
+
+def test_the_recent_window_takes_a_numpy_integer_without_the_generic_unit_warning(monkeypatch):
+    """Follow-up 15 Nov: the dynamic S/R window ("recent" days) may arrive as a NumPy integer; building the zone bands
+    raises no "generic unit for NumPy timedelta" deprecation warning (run under warnings-as-errors)."""
+    import warnings
+
+    import numpy as np
+
+    from app.price_action.zones import store
+
+    real = store.platform_settings()
+    patched = real.model_copy(update={"recent_days_by_tf": {"1d": np.int64(450)}, "dynamic_sr_timeframes": ["1d"]})
+    monkeypatch.setattr(store, "platform_settings", lambda: patched)
+    rows = _series(NIFTY, 24000.0, DAYS)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*generic.*unit.*NumPy timedelta")
+        bands = build.zone_bands(rows, rows[-1].close)
+    assert isinstance(bands, list)

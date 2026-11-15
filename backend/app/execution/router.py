@@ -252,6 +252,7 @@ class OrderRouter:
             product=self.product,
             tag=entry_tag,
             intent=ORDER_INTENT_ENTRY,
+            lot_size=int(contract_spec.lot_size) if contract_spec is not None and contract_spec.lot_size else None,
         )
         if self.order_style == "PROTECTED_LIMIT" and band is not None:
             limit = protected_limit_price(signal.entry, order_request.transaction_type, band)

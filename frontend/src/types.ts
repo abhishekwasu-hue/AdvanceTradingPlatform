@@ -3048,3 +3048,24 @@ export interface CostPeriod {
   trades_with_gross_profit: number; charges_took_whole_profit: number; from_contract_notes: number; estimated: number;
 }
 export interface CostMeter { year_start: string; month_start: string; modes: { mode: string; year: CostPeriod; month: CostPeriod }[] }
+
+/** Owner 14 Nov "Ho" (flags ui_v2 + broker_book): GET /api/me/broker-book - what his own broker reports, read-only. */
+export type BrokerBookPart = "positions" | "holdings" | "orders";
+export interface BrokerBookPosition {
+  symbol: string; exchange: string; product: string; quantity: number; side: "Long" | "Short" | "Closed";
+  average_price: number | null; ltp: number | null; pnl: number | null;
+}
+export interface BrokerBookHolding {
+  symbol: string; exchange: string; quantity: number; average_price: number | null; ltp: number | null; value: number | null; pnl: number | null;
+}
+export interface BrokerBookOrder {
+  symbol: string; exchange: string | null; side: string; quantity: number; filled_quantity: number; order_type: string;
+  product: string | null; status: string; price: number | null; average_price: number | null; placed_at: string | null;
+}
+/** One list of one broker session: its rows, or a plain sentence instead (a static-IP refusal, a session to renew, ...). */
+export interface BrokerBookList<Row> { rows: Row[]; message: string | null }
+export interface BrokerBookAccount {
+  broker: string; broker_label: string; account_label: string | null; age_seconds: number;
+  positions?: BrokerBookList<BrokerBookPosition>; holdings?: BrokerBookList<BrokerBookHolding>; orders?: BrokerBookList<BrokerBookOrder>;
+}
+export interface BrokerBook { parts: BrokerBookPart[]; accounts: BrokerBookAccount[] }

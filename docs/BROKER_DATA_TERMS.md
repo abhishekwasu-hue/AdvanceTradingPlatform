@@ -16,11 +16,11 @@ third-party platforms), **second wave - written confirmation pending**. For link
 
 | Broker | Data terms status (§2) | "Trade in your broker app" link | Notes |
 | --- | --- | --- | --- |
-| Upstox | Launch list | Not verified | Official community reply: market data may be distributed to Upstox users because each call needs that user's own access token; no extra approval. No public pre-filled order link recorded yet. |
-| Dhan | Launch list | Not verified | Algo-platform partner programme (apply as partner); live data needs the user's own Data API subscription. No public pre-filled order link recorded yet. |
+| Upstox | Launch list | Not verified (TradeButton: old blog only, 15 Nov) | Official community reply: market data may be distributed to Upstox users because each call needs that user's own access token; no extra approval. Pre-filled link: see "Other brokers: pre-filled order research". |
+| Dhan | Launch list | Not verified | Algo-platform partner programme (apply as partner); live data needs the user's own Data API subscription. No pre-filled order link in the official docs (15 Nov). |
 | Zerodha | Execution-only (Kite Connect terms forbid display on third-party platforms) | **Kite Publisher basket - verified format, needs the publisher api_key** | See "Zerodha Kite Publisher" below. Users see Tier B/C data in ATP and their own app for live prices. |
-| Angel One (SmartAPI) | Second wave - written confirmation pending | Not verified | |
-| Fyers | Second wave - written confirmation pending | Not verified | API terms allow platforms for other Fyers clients with approvals, but restrict using exchange data to build different charting/technical tools - written consent before enabling charts/screeners on Fyers data. |
+| Angel One (SmartAPI) | Second wave - written confirmation pending | Not verified (Publisher button format not read, 15 Nov) | |
+| Fyers | Second wave - written confirmation pending | Not verified (API Connect buttons: legacy docs not read, 15 Nov) | API terms allow platforms for other Fyers clients with approvals, but restrict using exchange data to build different charting/technical tools - written consent before enabling charts/screeners on Fyers data. |
 | Groww | Second wave - written confirmation pending | Not verified | |
 | Kotak Neo | Second wave - written confirmation pending | Not verified | |
 | ICICI Breeze | Second wave - written confirmation pending | Not verified | |
@@ -135,16 +135,46 @@ side, quantity, order type, product, his own price) - BIZ1-Q3 default, a URL is 
 | Broker | ATP name | Opens (official domain) | Pre-filled format | Source / check |
 |---|---|---|---|---|
 | Zerodha | `zerodha` | https://kite.zerodha.com (Publisher basket POST) | **verified** (Kite Publisher, see above; Market orders only - price / product not used until re-checked) | kite.trade/docs/connect/v3/basket |
-| Angel One | `angel_one` | https://www.angelone.in | not verified | official domain (angelone.in pages in search results 14 Nov); SmartAPI publisher buttons not read |
-| Upstox | `upstox` | https://upstox.com | not verified | official domain; TradeButton doc not found (ROUTE3_AUDIT 1c) |
-| Fyers | `fyers` | https://fyers.in | not verified | official domain; API Connect JS buttons not fetched (ROUTE3_AUDIT 1c) |
-| Dhan | `dhan` | https://dhan.co | not verified (no public pre-fill link found) | official domain |
-| Groww | `groww` | https://groww.in | not verified (none found) | official domain |
-| Kotak Neo | `kotak_neo` | https://www.kotaksecurities.com | not verified (none found) | official domain (kotaksecurities.com support pages, search 14 Nov) |
+| Angel One | `angel_one` | https://www.angelone.in | not verified | see "Other brokers: pre-filled order research" (15 Nov) |
+| Upstox | `upstox` | https://upstox.com | not verified | see "Other brokers: pre-filled order research" (15 Nov) |
+| Fyers | `fyers` | https://fyers.in | not verified | see "Other brokers: pre-filled order research" (15 Nov) |
+| Dhan | `dhan` | https://dhan.co | not verified (none found) | see "Other brokers: pre-filled order research" (15 Nov) |
+| Groww | `groww` | https://groww.in | not verified (none found) | see "Other brokers: pre-filled order research" (15 Nov) |
+| Kotak Neo | `kotak_neo` | https://www.kotaksecurities.com | not verified (none found) | see "Other brokers: pre-filled order research" (15 Nov) |
 
 The session's network blocked every broker host (14 Nov), so the homes are the brokers' company domains only, not a
 deeper web-trading path; re-check each in a browser before turning `broker_app_links` on. A broker not in the table
 (e.g. Shoonya) shows every row's home. To verify a pre-filled format: record it under "Adding a broker's link" first.
+
+### Other brokers: pre-filled order research (owner 15 Nov, checked 2026-11-15)
+
+Owner: "magg copy chi vyavastha aapan itar broker la suddha deu shakat nahi ka" + "ok tar sarv kaam purna kara".
+Rule: a broker gets a pre-filled link only from its **own official documentation, read on the page itself** (title,
+section, format). **Result: no new broker verified** - every broker below keeps the copy sheet (BIZ1-Q3), which already
+works for all of them (the button opens the broker's home; ATP shows symbol, side, quantity, order type, product, his
+own price to copy).
+
+**How it was checked.** The research session's network refuses every broker host (proxy 403 for
+api-connect-docs.fyers.in, smartapi.angelone.in / smartapi.angelbroking.com, upstox.com, dhanhq.co, groww.in,
+kite.trade). What was read: web-search extracts of the URLs below, the brokers' own GitHub repositories (FyersDev
+`fyers-skills` and `fyers-api-sample-code`, `upstox/upstox-skills`, `dhan-oss/dhanhq-skills` - no button, publisher,
+basket-link or deeplink anywhere in them) and the npm package `fyers-web-sdk-v3` 2.2.1 (an access-token API client,
+no order button). A search extract is not the page, so nothing here is "verified".
+
+| Broker | Mechanism found (official source) | What it could pre-fill | Platform key | Cost | Third-party use | Verified? | Source (2026-11-15) |
+|---|---|---|---|---|---|---|---|
+| Angel One | SmartAPI **Publisher** (JS plugin: embedded buttons, basket "in one click"); the extract shows only the login URL (`publisher-login` with `api_key`, `redirect_url`, `state`), not the button markup; a forum reply (user, not Angel) says "JS plugin seems discontinued" | not read (place-order API names: exchange, tradingsymbol, transactiontype) | SmartAPI app api_key (Publisher app) - public / secret not stated in what was read | not read | aimed at advisory sites embedding buttons; terms not read | **no** - button format not read; plugin may be discontinued | smartapi.angelbroking.com/docs/Publisher (blocked); angelone.in/knowledge-center/smartapi/detailed-introduction-to-smartapi; smartapi.angelone.in/smartapi/forum/topic/5456/publisher-login |
+| Upstox | **TradeButton** (JS config with `apiKey` + button names; Upstox logs the user in, then an order-entry window; intraday / delivery, limit / market, stop-loss); only source is an old Upstox blog post (about four years old); not in the current developer docs or `upstox-skills` | per the blog: product, order type, single / basket - exact fields not read | API key of an Upstox app | not stated | not stated | **no** - only an old blog; no current official reference | upstox.com/market-talk/integrate-app-using-tradebutton (blocked) |
+| Fyers | **API Connect JS** branded / custom buttons: `fyers.add({symbol, quantity, order_type, transaction_type, product, price, disclosed_quantity})`, `fyers.link("#button")`, basket up to 10, user reviews and executes; legacy docs site, not in the current v3 docs (the v3 SDK list and `fyers-web-sdk-v3` have no button) | symbol, quantity, order type, side, product, price (extract wording) | Fyers app id (needed by the script - exact field not read) | not read | API terms allow platforms for other Fyers clients with approvals (see the top table) | **no** - script URL / key field not read; legacy, current status unknown | api-connect-docs.fyers.in/docs/order and /docs/custom-page (blocked); fyers.in/api-docs/v3/getting-started/sdks-and-libraries |
+| Dhan | none: DhanHQ v2 has a **partner** programme (partner id + secret, apply by form) for platforms, order APIs need a token; no pre-filled order / basket link in the docs or `dhanhq-skills` | - | partner id + **secret** (server side; never in the browser) | Trading APIs free | partner programme | **no** - no such mechanism | dhanhq.co/docs/v2/authentication, dhanhq.co/docs/v2/order-update |
+| Groww | none found (docs page blocked; no mention in search) | - | - | - | - | **no** - none found | groww.in/trade-api/docs (blocked); search 15 Nov |
+| Kotak Neo | none: Neo trade API = place-order with `jData` and the user's session; baskets exist only inside the Neo app / web (up to 20 orders) | - | - | - | - | **no** - none found | github.com/Kotak-Neo/Kotak-Neo/blob/main/docs/trading-apis.md; kotakneo.com/support/how-can-i-place-a-basket-order |
+
+**To verify one later** (Fyers API Connect and Angel One Publisher are the two candidates): open the official page in a
+browser (or allow its host in the session's network settings), record the script URL, the key field and whether the key
+is a public app id, the exact order fields and the terms for a platform, here under "Adding a broker's link"; then add
+its builder to `brokerLinks.ts` with tests and set its `BROKER_TABLE` row to "verified". A secret (Dhan partner secret,
+any api_secret) never goes to the browser.
 
 ## Adding a broker's link
 

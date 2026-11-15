@@ -41,7 +41,7 @@ export default function ChartPanel({ params, replace }: PanelProps) {
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-space-1 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col">
-      {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart (nothing on an index or a stock) */}
+      {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
       <ChartTradeBar symbol={symbol} exchange={exchange} />
       <EmbeddedChartV2 symbol={symbol} exchange={exchange} timeframe={tf} openLink={false}
         screenId={screenOn && screenIdOf(params.wscreen) ? Number(params.wscreen) : null}

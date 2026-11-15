@@ -44,15 +44,17 @@ def require_server(source: Optional[str], what: str) -> None:
 
 async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *,
                        broker: Optional[str] = None, lookback_days: int = 30, user: Any = None,
-                       own_only: bool = False) -> Tuple[pd.DataFrame, str]:
+                       own_only: bool = False, budgeted: bool = False) -> Tuple[pd.DataFrame, str]:
     """Candles fetched by the server through the tenant's broker session -> (frame, source).
 
     BT1b (flag `byob_data_tier`): only through `user`'s own session at a confirmed broker, cached for that session
     only (never the platform-wide candle key); otherwise 409 with the reason.
     M72 PR-1a (M71Q-2, `own_only` - the Copilot's tools): with the flag off, only a credential `user` linked himself,
-    never a teammate's (409 saying so); a read with no user of this organisation gets none."""
+    never a teammate's (409 saying so); a read with no user of this organisation gets none.
+    `budgeted` (owner 15 Nov, the Copilot's intraday chart read): every broker call takes a token from the credential's
+    API budget first (`api_budget.BudgetedAdapter`, the Charts page's rule); a call that gets none fails the read."""
     from app.brokers.token_lifecycle import build_adapter
-    from app.market_data import intervals, live_access
+    from app.market_data import api_budget, intervals, live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     if await live_access.byob_on(session, tenant_id):
@@ -61,13 +63,16 @@ async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, excha
         if not own.allows(symbol, exchange):
             raise live_access.LiveDataRefused(own.reason(symbol, exchange))
         record = own.record
-        service = own.market_data(lookback_days=lookback_days)
+        paced: Any = api_budget.BudgetedAdapter(own.adapter(), record.id, record.broker_name) if budgeted and record is not None else None
+        service = own.market_data(paced, lookback_days=lookback_days)
     else:
         if own_only and getattr(user, "tenant_id", None) != tenant_id:
             raise live_access.LiveDataRefused(live_access.NO_USER)
         own_scope = {"user_id": int(user.id)} if own_only else {}
         record = await _pick_record(session, tenant_id, broker, "primary", **own_scope)          # 409 when no session today
-        service = MarketDataService(build_adapter(record), lookback_days=lookback_days)
+        inner: Any = build_adapter(record)
+        chosen: Any = api_budget.BudgetedAdapter(inner, record.id, record.broker_name) if budgeted else inner
+        service = MarketDataService(chosen, lookback_days=lookback_days)
     try:
         # SCR-FIX A2: fetched at the broker's native interval and resampled when it does not serve `timeframe` as it is
         bars = await intervals.get_bars(service, symbol.strip().upper(), exchange.strip().upper(), timeframe)

@@ -178,10 +178,13 @@ starts in the safe state by itself (owner decision of 2026-10-12):
   stored flags have no entry for them yet. Each write is in the audit log as `phase0_flag_seeded`.
 - They never overwrite a stored entry. A change you make later in Admin → Controls survives every restart and
   deploy.
-- While `phase0_paper_only` is on:
+- **One live switch (LIVE-1, #1006):** `live_trading` is the only button. `phase0_paper_only` is no longer a switch
+  of its own: it follows `live_trading` (the PAPER-only lock is on while `live_trading` is off) and Admin → Controls
+  refuses to set it. **B1 (#1077):** with `live_trading` ON, LIVE through ATP's server opens for the owner's
+  organisation only (the organisation of `LIVE_OWNER_USER_ID`); every other organisation stays PAPER.
+- While `live_trading` is off (the PAPER-only lock on):
   - new LIVE entries are refused at the entry checks and at the broker-order chokepoint;
-  - the worker does not evaluate LIVE deployments;
-  - Admin → Controls refuses to turn `live_trading` on (audited as `feature_flag_refused`).
+  - the worker does not evaluate LIVE deployments.
 - Exits of any existing LIVE position always run (ADR-0004).
 - `/api/system/health/deep` shows why under `checks.live_paths`.
 
@@ -189,20 +192,22 @@ starts in the safe state by itself (owner decision of 2026-10-12):
 
 - `install` and `health` end with `health: OK` (exit 0), with the line
   `deployment phase: phase0 ... nothing for the owner to set`.
-- They stop with **exit 10** only if someone later turns `live_trading` on, or `phase0_paper_only` off (for
-  example, an owner ending Phase 0).
+- The live switch is your decision, so it is never an "owner action" (owner 15 Nov). With `live_trading` ON,
+  `health` prints a **warning**, not an exit 10:
+  `Live trading is ON - LIVE through ATP is open for the owner's organisation only (B1)`. If `LIVE_OWNER_USER_ID`
+  in `.env` is unset or does not name an active platform administrator, the warning says so instead: LIVE through
+  ATP then stays closed for every organisation. Health never asks you to set `phase0_paper_only`.
 - A deploy compares the stored flags before and after and fails if they changed. The one change it accepts is the
   release's own first-boot seed of an entry that was absent (`live_trading` OFF, `phase0_paper_only` ON).
 
 Leaving Phase 0 is a later owner decision, not an install step:
 
 1. Set `ATP_DEPLOYMENT_PHASE=standard` in `.env`.
-2. Turn `phase0_paper_only` off in Admin → Controls.
-3. Turn `live_trading` on.
+2. Turn `live_trading` on in Admin → Controls (the PAPER-only lock follows it; there is no second switch).
 
 `health` then warns "the Phase 0 defaults are not seeded on this host".
 
-Set both flags explicitly in Admin when you leave Phase 0. If the first-boot seed never stored them (for example, the
+Set `live_trading` explicitly in Admin when you leave Phase 0. If the first-boot seed never stored them (for example, the
 stored flags row was unreadable and the seed skipped it), switching the mode puts any absent entry back on the normal
 default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
 resolved to the safe values only because of the mode.
@@ -702,7 +707,9 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
 - **Encryption key:** the `SECRETS_ENCRYPTION_KEY` fingerprint, and `scripts/check_secrets_key.py` inside the API
   container. That script opens every organisation's data key and prints only counts.
 - **Flags (section 4a):** the deployment phase (`phase0`: the first boot seeded the safe flags, nothing to set), then
-  exit 10 only if `live_trading` is on (for anyone) or `phase0_paper_only` is off. The script never changes a flag.
+  the one live switch: `Live trading is OFF - PAPER only for every organisation`, or a warning while it is ON (open
+  for the owner's organisation only, B1; or closed for everyone when `LIVE_OWNER_USER_ID` does not resolve). Never an
+  exit 10. The script never changes a flag.
 - **Settings:** the LIVE switches, R2 and the HB0 settings.
 - **Backups:** the last good backup, local (`last database backup <time> (N h ago)`) and off-site
   (`last off-site copy (R2) <time> (N h ago)`); either one older than `BACKUP_MAX_AGE_HOURS` (26) is a FAIL here and a
@@ -712,7 +719,7 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
   as one JSON line for an alert.
 - **Host:** public ports and disk use.
 
-It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEEDED` (exit 10). The status page
+It prints `health: OK` (exit 0) or `health: FAILED` (exit 1); warnings (the live switch ON among them) leave it OK. The status page
 (Z10 G7) will read the same endpoints.
 
 ## 10b. Alerts to you (A2): the outside check, Telegram, e-mail and the error tracker
@@ -948,7 +955,8 @@ safety rules, the verdict (API p95 <= 0.5 s, login p95 <= 2 s, zero errors), how
 | You see | Do |
 |---|---|
 | `exit 10 ... fill these in .env` | Fill the named keys (section 4). Only names are printed. |
-| `exit 10 OWNER ACTION NEEDED: turn live_trading OFF / phase0_paper_only ON` | Not expected on a Phase 0 install, which seeds both at first boot. Someone changed a flag afterwards (the audit log says who), or `.env` sets `ATP_DEPLOYMENT_PHASE` to something other than `phase0`. Put the flag back in Admin → Controls (section 4a), then run `atp.sh health`. |
+| `exit 10 OWNER ACTION NEEDED: turn live_trading OFF / phase0_paper_only ON` | Printed only by releases before 15 Nov. Since LIVE-1 / B1 health reports the live switch as a warning (`Live trading is ON - LIVE through ATP is open for the owner's organisation only (B1)`); the switch is your decision and `phase0_paper_only` cannot be set on its own (section 4a). |
+| `WARN Live trading is ON, but LIVE_OWNER_USER_ID ...` | The switch is ON but `LIVE_OWNER_USER_ID` in `.env` is unset or does not name an active platform administrator, so LIVE through ATP is closed for every organisation. Set it with `atp.sh env-set LIVE_OWNER_USER_ID <your account id>` if you want LIVE, or turn the switch off in Admin → Controls. |
 | `exit 20 SECRETS_ENCRYPTION_KEY ... NOT the key` | Put the previous key back in `.env`. Rotating it is a separate procedure (`scripts/reencrypt_secrets.py`, docs/OPERATIONS.md), never part of a deploy. |
 | `exit 3 migration refused: NSE session open` | Nothing was restarted. Run again after the close. |
 | `exit 3 ... session open and N position(s) open` | Run after every open session has closed (NSE 15:30, MCX 23:30 IST), or close the positions. `ATP_ALLOW_SESSION_RESTART=1` overrides for one run. |

@@ -378,3 +378,10 @@ def test_flag_posture_reports_the_seeded_phase0_state(monkeypatch):
     assert posture["deployment_phase"] == "phase0"
     assert posture["live_trading"] == {"on": False, "tenants": 0, "stored": True}
     assert posture["phase0_paper_only"] == {"known": True, "on": True, "stored": True}
+    assert set(posture["live_owner"]) == {"set", "resolved"}                        # owner 15 Nov (B1): health's owner line
+
+
+def test_flag_posture_owner_id_set_is_the_config_rule():
+    import scripts.flag_posture as flag_posture
+    assert flag_posture.owner_id_set("7") and flag_posture.owner_id_set(" 1 ")
+    assert not any(flag_posture.owner_id_set(v) for v in (None, "", "abc", "0", "-3", str(2**31)))

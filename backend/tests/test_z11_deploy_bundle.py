@@ -984,32 +984,53 @@ def test_health_reports_live_and_flags_read_only_and_fails_on_an_extra_public_po
     before = len(host.state["calls"])
     res = host.run("health")
     assert res.returncode == 0, res.all
-    assert "live_trading is off" in res.stdout and "phase0_paper_only is on" in res.stdout
+    assert "Live trading is OFF - PAPER only for every organisation" in res.stdout and "PAPER-only lock: on" in res.stdout
     assert "LIVE switches set in .env: LIVE_EXIT_IF_NO_STOP" in res.stdout and "flags stored on: phase0_paper_only" in res.stdout
     assert host.mutating(before) == []
     res = host.run("health", extra_env={"FAKE_SS": "LISTEN 0 4096 0.0.0.0:5432 0.0.0.0:*"})
     assert res.returncode == 1 and "public TCP ports besides 22/80/443: 5432" in res.stdout
 
 
-def test_live_reachable_is_an_owner_action_never_changed_by_the_script(host):
+def test_the_live_switch_is_reported_as_a_warning_never_an_owner_action(host):
+    """Owner 15 Nov: LIVE-1 (#1006) made live_trading the ONE live switch (phase0_paper_only follows it and the API refuses
+    to set it) and B1 (#1077) opens LIVE through ATP for the owner's organisation only. Health reports the switch - a
+    warning while it is ON, never "OWNER ACTION NEEDED", never "set phase0_paper_only" - and says so plainly when it is ON
+    but LIVE_OWNER_USER_ID does not resolve to the owner account. Read-only: no flag is written."""
     assert host.run("deploy").returncode == 0
-    host.state["posture"] = {"live_trading": {"on": True, "tenants": 0, "stored": False},
-                             "phase0_paper_only": {"known": True, "on": False, "stored": False}, "stored_on": []}
+    host.state["posture"] = {"live_trading": {"on": True, "tenants": 0, "stored": True},
+                             "phase0_paper_only": {"known": True, "on": False, "stored": False}, "stored_on": ["live_trading"],
+                             "live_owner": {"set": True, "resolved": True}}
     host.save()
     before = len(host.state["calls"])
     res = host.run("health")
-    assert res.returncode == 10, res.all
-    assert "OWNER ACTION NEEDED" in res.stdout and "turn live_trading OFF" in res.stdout and "turn phase0_paper_only ON" in res.stdout
+    assert res.returncode == 0, res.all
+    assert "Live trading is ON - LIVE through ATP is open for the owner's organisation only (B1)" in res.stdout
+    assert "OWNER ACTION" not in res.all and "turn phase0_paper_only" not in res.all and "turn live_trading" not in res.all
+    assert "PAPER-only lock: off (it follows the live switch" in res.stdout
     assert host.mutating(before) == [] and not host.state.get("unexpected_sql")       # read-only: no flag written
-    host.state["posture"]["live_trading"] = {"on": False, "tenants": 2, "stored": True}
-    host.state["posture"]["phase0_paper_only"] = {"known": True, "on": True, "stored": True}
+    host.state["posture"]["live_owner"] = {"set": True, "resolved": False}
     host.save()
     res = host.run("health")
-    assert res.returncode == 10 and "for 2 organisation(s)" in res.stdout
-    host.state["posture"]["live_trading"]["tenants"] = 0
-    host.state["posture"]["phase0_paper_only"] = {"known": False, "on": False, "stored": False}   # a release without Z10-c
+    assert res.returncode == 0 and "LIVE_OWNER_USER_ID in .env does not name an active platform administrator" in res.stdout
+    assert "stays closed for every organisation (B1)" in res.stdout and "OWNER ACTION" not in res.all
+    host.state["posture"]["live_owner"] = {"set": False, "resolved": False}
     host.save()
-    assert host.run("health").returncode == 0
+    res = host.run("health")
+    assert res.returncode == 0 and "LIVE_OWNER_USER_ID is not set to a valid account id" in res.stdout
+    host.state["posture"]["live_owner"] = {"set": False, "resolved": True}
+    host.save()
+    res = host.run("health")
+    assert "open for the owner's organisation only" in res.stdout and "the owner account is the default account 1" in res.stdout
+    # switch OFF: PAPER only; an old organisation list is only noted (LIVE-1: only the switch decides)
+    host.state["posture"]["live_trading"] = {"on": False, "tenants": 2, "stored": True}
+    host.state["posture"]["phase0_paper_only"] = {"known": True, "on": True, "stored": False}
+    host.save()
+    res = host.run("health")
+    assert res.returncode == 0 and "Live trading is OFF" in res.stdout and "organisation list (2) is not used since LIVE-1" in res.stdout
+    host.state["posture"] = None                                       # the posture could not be read: a warning only
+    host.save()
+    res = host.run("health")
+    assert res.returncode == 0 and "flag posture unknown" in res.stdout and "OWNER ACTION" not in res.all
 
 
 def test_flags_changed_during_a_deploy_fail_the_run(host):

@@ -62,6 +62,9 @@ async function open(page: Page, { theme = "light", byok = true }: { theme?: "lig
   });
   await page.goto("/settings#ai");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+  // Wait for the v2 Settings → AI page: while the flags read is still unanswered, today's Settings page (which shows
+  // the same card) is on screen at /settings, and the v2 shell replaces it once `ui_v2` arrives.
+  await expect(page).toHaveURL(/\/settings\/ai$/);
   await expect(page.locator("[data-key-guides]")).toBeVisible();
   return calls;
 }

@@ -56,8 +56,9 @@ async def square_off_due(
         if families is not None and family not in families:
             continue
         if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
-            if (settle is None or family in settle) and held_spread_expires(trade, today):
-                expiring.setdefault(trade.leg_group_id, []).append(trade)   # M55 T1: settles on its expiry day
+            group_id = trade.leg_group_id      # held_spread_expires is False without a group, so None never lands here
+            if group_id and (settle is None or family in settle) and held_spread_expires(trade, today):
+                expiring.setdefault(group_id, []).append(trade)   # M55 T1: settles on its expiry day
             continue   # Phase AS: a swing position is held overnight by design
         if trade.user_id not in own:
             own[trade.user_id] = await exit_settings.load(session, tenant_id=tenant_id, user_id=trade.user_id)

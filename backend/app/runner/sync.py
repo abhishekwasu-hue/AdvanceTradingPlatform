@@ -78,19 +78,19 @@ async def apply_rules(session: AsyncSession, snapshot: dict[str, Any]) -> dict[s
     for row in snapshot.get("deployments") or []:
         dep_id = int(row["id"])
         seen.add(dep_id)
-        record = await session.get(StrategyDeploymentRecord, dep_id)
-        if record is None:
-            record = StrategyDeploymentRecord(id=dep_id, tenant_id=tenant_id, created_by=user_id, strategy_id=row["strategy_id"],
-                                              symbol=row["symbol"])
-            session.add(record)
+        deployment = await session.get(StrategyDeploymentRecord, dep_id)
+        if deployment is None:
+            deployment = StrategyDeploymentRecord(id=dep_id, tenant_id=tenant_id, created_by=user_id,
+                                                  strategy_id=row["strategy_id"], symbol=row["symbol"])
+            session.add(deployment)
         for name in rule_columns & set(row):                      # a column a newer ATP adds is ignored here
-            setattr(record, name, row[name])
+            setattr(deployment, name, row[name])
         counts["deployments"] += 1
     gone = await session.scalars(select(StrategyDeploymentRecord).where(
         StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.status.in_(("ACTIVE", "PAUSED"))))
-    for record in gone:
-        if record.id not in seen:
-            record.status, record.pause_reason = "STOPPED", STOPPED_IN_ATP
+    for running in gone:
+        if running.id not in seen:
+            running.status, running.pause_reason = "STOPPED", STOPPED_IN_ATP
             counts["stopped"] += 1
 
     settings = snapshot.get("settings") or {}
@@ -98,15 +98,15 @@ async def apply_rules(session: AsyncSession, snapshot: dict[str, Any]) -> dict[s
     stored = {r.namespace: r for r in await session.scalars(select(UserPrefsRecord).where(
         UserPrefsRecord.tenant_id == tenant_id, UserPrefsRecord.user_id == user_id))}
     for namespace, value in prefs.items():
-        record = stored.get(namespace)
-        if record is None:
+        pref = stored.get(namespace)
+        if pref is None:
             session.add(UserPrefsRecord(tenant_id=tenant_id, user_id=user_id, namespace=namespace, value_json=value))
         else:
-            record.value_json = value
+            pref.value_json = value
         counts["settings"] += 1
-    for namespace, record in stored.items():
+    for namespace, stale in stored.items():
         if namespace not in prefs:
-            await session.delete(record)                          # not set in ATP: the defaults, as there
+            await session.delete(stale)                            # not set in ATP: the defaults, as there
     risk = settings.get("risk")
     local = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant_id))
     if risk is None:

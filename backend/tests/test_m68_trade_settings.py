@@ -131,11 +131,14 @@ def test_the_namespace_is_read_by_one_order_path_reader():
     # order (ADR-0006; the planner modules are checked in tests/test_m72_pr1c_planner.py).
     # M76 MP-11: app/charts/workspace_watch.py reads his own square-off time for the "N minutes before square-off" watch
     # card - read-only, a notification only; it places, blocks or changes nothing.
+    # Runner S4: app/runner_link/service.py names the namespace only to copy his own stored rows, as stored (never parsed
+    # or interpreted), to HIS paired runner (GET /api/runner/device/rules); on the runner the same one readers above
+    # read them. It places, blocks or changes no order on the server and reads no value to trade.
     assert sorted(out.split()) == ["app/ai/copilot_chat.py", "app/ai/tools/my_data.py", "app/ai/tools/options_kit.py", "app/ai/watch.py",
                                    "app/charts/workspace_watch.py", "app/execution/automation.py", "app/execution/exit_settings.py", "app/execution/order_defaults.py",
                                    "app/execution/position_size.py", "app/instruments/option_defaults.py", "app/main.py", "app/me/prefs.py",
                                    "app/me/trade_settings.py", "app/options_builder/routes.py", "app/paper/paper_settings.py",
-                                   "app/paper/pretrade_warnings.py", "app/risk_engine/own_risk.py"]
+                                   "app/paper/pretrade_warnings.py", "app/risk_engine/own_risk.py", "app/runner_link/service.py"]
     # PR-2 / PR-3 / PR-4 / PR-5 / PR-6 / PR-7: one reader each; M76: app/paper/pretrade_warnings.py (the warnings reader)
 
 

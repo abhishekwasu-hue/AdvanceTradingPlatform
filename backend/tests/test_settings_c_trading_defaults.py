@@ -149,7 +149,11 @@ def test_the_server_never_reads_it_to_trade():
     # M68 PR-2: the Position size reader keeps his "Lots for a new bot" (`max_lots`) the same way (TS-6); M68 PR-4: the
     # Options reader too; M68 PR-6: the Automation reader keeps an entry mode he saved there (TS-6) the same way.
     # M68 PR-9 TS-6: the one-time notice reads only whether he ever saved a value there (an existing user) - never a value.
+    # Runner S4: app/runner_link/service.py names it only to copy his own stored row, as stored (never parsed), to HIS
+    # paired runner, where the same readers above read it - the server never reads a value from it to trade.
     allowed = {"prefs.py", "trade_settings.py", "order_defaults.py", "position_size.py", "option_defaults.py", "automation.py",
                "notices.py"}
-    readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed]
+    allowed_paths = {"runner_link/service.py"}
+    readers = [p for p in app_dir.rglob("*.py") if "trading_defaults" in p.read_text(encoding="utf-8") and p.name not in allowed
+               and p.relative_to(app_dir).as_posix() not in allowed_paths]
     assert readers == [], readers

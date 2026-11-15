@@ -48,7 +48,7 @@ class LegSpec:
     index: int = 0                 # the leg's place in the structure (its order row `:L<index>`)
     instrument_key: Optional[str] = None
     ratio: int = 1
-    lot_size: Optional[int] = None     # the platform's lot (never sent; the strict contract match checks it on entry)
+    lot_size: int | None = None     # the platform's lot (never sent; the strict contract match checks it on entry)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"key": self.key, "exchange": self.exchange, "side": self.side, "role": self.role, "quantity": self.quantity,

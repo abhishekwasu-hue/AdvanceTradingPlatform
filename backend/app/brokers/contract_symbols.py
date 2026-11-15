@@ -39,7 +39,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError
@@ -182,7 +182,7 @@ class ContractMatchError(BrokerAPIError):
     """No single broker instrument is this contract, or its lot size differs from the platform's: nothing was sent."""
 
 
-def _lot(value: Any) -> Optional[int]:
+def _lot(value: Any) -> int | None:
     try:
         lot = int(float(value))
     except (TypeError, ValueError):
@@ -195,7 +195,7 @@ def match_instrument(candidates: Sequence[Instrument], key: ContractKey, *, lot_
     """The ONE instrument among `candidates` that is the contract `key` (underlying, expiry, strike, right - see
     `contract_keys`), else ContractMatchError in plain words: none, more than one, or (with `lot_size`, the platform's
     lot) a different lot size at the broker. A broker row without a lot size is not a mismatch."""
-    found: List[Instrument] = []
+    found: list[Instrument] = []
     for instrument in candidates:
         if key in contract_keys(instrument) and not any(instrument is f for f in found):
             found.append(instrument)
@@ -215,7 +215,7 @@ class _Index:
         self.source = instruments
         self.forward: Dict[ContractKey, Instrument] = {}
         self.reverse: Dict[str, ContractKey] = {}
-        self.matches: Dict[ContractKey, List[Instrument]] = {}     # every instrument per key (the strict matcher's view)
+        self.matches: dict[ContractKey, list[Instrument]] = {}     # every instrument per key (the strict matcher's view)
         for instrument in instruments:
             keys = contract_keys(instrument)
             for key in keys:
@@ -229,23 +229,23 @@ class _Index:
 
 # Unmatched exits already notified in this process (tenant, broker account, contract) and the notices still being sent
 # (kept so a task is not collected half way; tests await them). The database marker below dedupes across processes.
-_NOTIFIED_EXITS: Set[Tuple[int, Any, str]] = set()
-_NOTICE_TASKS: Set["asyncio.Task[None]"] = set()
+_NOTIFIED_EXITS: set[tuple[int, Any, str]] = set()
+_NOTICE_TASKS: set[asyncio.Task[None]] = set()
 UNMATCHED_EXIT_KIND = "contract_unmatched_exit"
 
 
-def unmatched_exit_marker(key: Tuple[int, Any, str]) -> str:
+def unmatched_exit_marker(key: tuple[int, Any, str]) -> str:
     """The notification's `metadata_json`: one per position (contract on a broker account), so a retried exit, another
     worker or a restart never sends the same notice twice."""
     return json.dumps({"kind": UNMATCHED_EXIT_KIND, "account": key[1], "contract": key[2]}, sort_keys=True)
 
 
 def _session_factory() -> Any:
-    from app.db.session import _session_factory as factory   # the app's own engine (tests point this at theirs)
+    from app.db.session import _session_factory as factory  # the app's own engine (tests point this at theirs)
     return factory
 
 
-async def _send_unmatched_exit_notice(tenant_id: int, user_id: Optional[int], key: Tuple[int, Any, str], broker: str,
+async def _send_unmatched_exit_notice(tenant_id: int, user_id: int | None, key: tuple[int, Any, str], broker: str,
                                       symbol: str) -> None:
     from sqlalchemy import select
 
@@ -284,7 +284,7 @@ class ContractSymbolBroker(BrokerInterface):
         self._indexes: Dict[str, _Index] = {}
         self.translations = 0
         self.strict = (getattr(inner, "name", "") or "").lower() in STRICT_BROKERS
-        self.unmatched_exits: List[str] = []       # strict brokers: the alert lines of exits sent under the stored name
+        self.unmatched_exits: list[str] = []       # strict brokers: the alert lines of exits sent under the stored name
 
     def __getattr__(self, item: str) -> Any:          # adapter-specific attributes (streams read them)
         return getattr(self.inner, item)
@@ -317,7 +317,7 @@ class ContractSymbolBroker(BrokerInterface):
         self.translations += 1
         return hit.tradingsymbol
 
-    async def _strict_match(self, key: ContractKey, exchange: Optional[str], lot_size: Any = None) -> Instrument:
+    async def _strict_match(self, key: ContractKey, exchange: str | None, lot_size: Any = None) -> Instrument:
         exch = (exchange or derivatives_exchange(key.underlying)).upper()
         from app.brokers.catalog import display_name
         label = display_name(self.name)
@@ -327,7 +327,7 @@ class ContractSymbolBroker(BrokerInterface):
             return match_instrument((await self._index(exch, refresh=True)).matches.get(key, []), key, lot_size=lot_size,
                                     broker_label=label)
 
-    async def _exit_symbol(self, symbol: str, exchange: Optional[str]) -> str:
+    async def _exit_symbol(self, symbol: str, exchange: str | None) -> str:
         """Strict brokers, an order that is not an entry: the broker's spelling when exactly one instrument matches;
         otherwise the symbol as stored on the position, sent all the same, with an ERROR alert (never blocked here)."""
         key = parse_contract(symbol)

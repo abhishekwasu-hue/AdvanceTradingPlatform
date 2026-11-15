@@ -7,7 +7,7 @@
 - only get_positions / get_holdings / get_order_book are ever called (no order, modify or cancel);
 - the answer is kept briefly: a second request inside the window makes no broker call.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -58,9 +58,9 @@ class FakeAdapter:
     async def get_order_book(self):
         return await self._answer("get_order_book", [
             BrokerOrderStatus(order_id="1", symbol="INFY", transaction_type=OrderSide.BUY, quantity=10, filled_quantity=10, order_type="MARKET",
-                              status="complete", average_price=1500, placed_at=datetime(2026, 11, 14, 4, 0, tzinfo=timezone.utc), product="CNC", exchange="NSE"),
+                              status="complete", average_price=1500, placed_at=datetime(2026, 11, 14, 4, 0, tzinfo=UTC), product="CNC", exchange="NSE"),
             BrokerOrderStatus(order_id="2", symbol="TCS", transaction_type=OrderSide.SELL, quantity=5, order_type="LIMIT", status="OPEN", price=3600,
-                              placed_at=datetime(2026, 11, 14, 5, 0, tzinfo=timezone.utc)),
+                              placed_at=datetime(2026, 11, 14, 5, 0, tzinfo=UTC)),
         ])
 
 

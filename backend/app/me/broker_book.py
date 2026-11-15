@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/api/me", tags=["me"])
 
 FLAG = "broker_book"
 PAGE_FLAG = "ui_v2"
-PARTS: Tuple[str, ...] = ("positions", "holdings", "orders")
+PARTS: tuple[str, ...] = ("positions", "holdings", "orders")
 _READ = {"positions": "get_positions", "holdings": "get_holdings", "orders": "get_order_book"}
 _WHAT = {"positions": "positions", "holdings": "holdings", "orders": "order list"}
 CACHE_SECONDS = 20.0
@@ -44,7 +45,7 @@ _CACHE_MAX = 2000
 
 # docs/brokers/EASIEST_LOGIN.md (unverified): the brokers whose READ calls need ATP's static IP registered with them -
 # Upstox lists Portfolio (positions / holdings), Shoonya every call. A 403 from these lists reads as that refusal.
-STATIC_IP_READS: Dict[str, frozenset] = {
+STATIC_IP_READS: dict[str, frozenset] = {
     "upstox": frozenset({"positions", "holdings"}),
     "shoonya": frozenset(PARTS),
 }
@@ -53,8 +54,8 @@ _STATIC_IP_WORDS = re.compile(r"static\s*ip|white-?list|ip\s*(address)?\s*(is\s*
 
 # Kept between requests (per server process): (credential id, list) -> (when read, the list's answer), and one rate
 # budget per credential.
-_CACHE: Dict[Tuple[int, str], Tuple[float, Dict[str, Any]]] = {}
-_BUDGETS: Dict[int, Any] = {}
+_CACHE: dict[tuple[int, str], tuple[float, dict[str, Any]]] = {}
+_BUDGETS: dict[int, Any] = {}
 _clock: Callable[[], float] = time.monotonic
 
 
@@ -72,7 +73,7 @@ def _budgeted(record: BrokerCredentialRecord, adapter: Any) -> Any:
     return RateLimitedBroker(adapter, budget, tenant_id=record.tenant_id)
 
 
-def _f(value: Any) -> Optional[float]:
+def _f(value: Any) -> float | None:
     try:
         return None if value is None else round(float(value), 2)
     except (TypeError, ValueError):
@@ -84,27 +85,27 @@ def _side(value: Any) -> str:
     return "Buy" if text == "BUY" else "Sell" if text == "SELL" else text.title()
 
 
-def position_row(p: Any) -> Dict[str, Any]:
+def position_row(p: Any) -> dict[str, Any]:
     qty = float(p.quantity or 0)
     return {"symbol": p.symbol, "exchange": p.exchange, "product": p.product, "quantity": qty,
             "side": "Long" if qty > 0 else "Short" if qty < 0 else "Closed",
             "average_price": _f(p.average_price), "ltp": _f(p.ltp), "pnl": _f(p.pnl)}
 
 
-def holding_row(h: Any) -> Dict[str, Any]:
+def holding_row(h: Any) -> dict[str, Any]:
     qty = float(h.quantity or 0)
     ltp = _f(h.ltp)
     return {"symbol": h.symbol, "exchange": h.exchange, "quantity": qty, "average_price": _f(h.average_price),
             "ltp": ltp, "value": _f(qty * ltp) if ltp else None, "pnl": _f(h.pnl)}
 
 
-def order_row(o: Any) -> Dict[str, Any]:
+def order_row(o: Any) -> dict[str, Any]:
     placed = getattr(o, "placed_at", None)
     return {"symbol": o.symbol, "exchange": getattr(o, "exchange", None), "side": _side(o.transaction_type),
             "quantity": float(o.quantity or 0), "filled_quantity": float(o.filled_quantity or 0),
             "order_type": o.order_type, "product": getattr(o, "product", None), "status": str(o.status or "").upper(),
             "price": _f(o.price), "average_price": _f(o.average_price),
-            "placed_at": placed.astimezone(timezone.utc).isoformat() if isinstance(placed, datetime) and placed.tzinfo else None}
+            "placed_at": placed.astimezone(UTC).isoformat() if isinstance(placed, datetime) and placed.tzinfo else None}
 
 
 _ROW = {"positions": position_row, "holdings": holding_row, "orders": order_row}
@@ -126,7 +127,7 @@ def refusal_message(broker: str, part: str, exc: BaseException) -> str:
     return f"{name} did not send your {_WHAT[part]} just now. Try again in a minute."
 
 
-async def _read(record: BrokerCredentialRecord, part: str, adapter: Any) -> Dict[str, Any]:
+async def _read(record: BrokerCredentialRecord, part: str, adapter: Any) -> dict[str, Any]:
     try:
         items = await getattr(adapter, _READ[part])()
         rows = [_ROW[part](i) for i in items or []]
@@ -147,15 +148,15 @@ def _prune(now: float) -> None:
             _CACHE.pop(key, None)
 
 
-async def account_book(record: BrokerCredentialRecord, parts: List[str], refresh: bool = False) -> Dict[str, Any]:
+async def account_book(record: BrokerCredentialRecord, parts: list[str], refresh: bool = False) -> dict[str, Any]:
     """One linked broker session's lists (read, or kept from a read moments ago)."""
     from app.brokers.token_lifecycle import token_is_usable
     name = catalog.display_name(record.broker_name)
-    out: Dict[str, Any] = {"broker": record.broker_name, "broker_label": name,
+    out: dict[str, Any] = {"broker": record.broker_name, "broker_label": name,
                            "account_label": None if record.account_label == "primary" else record.account_label}
     now = _clock()
     adapter: Any = None
-    oldest: Optional[float] = None
+    oldest: float | None = None
     for part in parts:
         kept = _CACHE.get((record.id, part))
         if kept is not None and now - kept[0] < (REFRESH_MIN_SECONDS if refresh else CACHE_SECONDS):
@@ -184,7 +185,7 @@ async def _flags(session: AsyncSession, user: User) -> None:
             raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": name})
 
 
-def _parts(value: Optional[str]) -> List[str]:
+def _parts(value: str | None) -> list[str]:
     if not value:
         return list(PARTS)
     wanted = [p.strip().lower() for p in value.split(",") if p.strip()]
@@ -195,8 +196,8 @@ def _parts(value: Optional[str]) -> List[str]:
 
 
 @router.get("/broker-book")
-async def broker_book(parts: Optional[str] = Query(default=None, max_length=40), refresh: bool = False,
-                      user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def broker_book(parts: str | None = Query(default=None, max_length=40), refresh: bool = False,
+                      user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     await _flags(session, user)
     from app.market_data import entitlement
     wanted = _parts(parts)

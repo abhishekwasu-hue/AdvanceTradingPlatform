@@ -6,8 +6,7 @@ Upstox and the other brokers keep their behaviour."""
 import asyncio
 import json
 import logging
-from datetime import date, datetime, timezone
-from typing import List
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -56,7 +55,7 @@ class _SmartAPI:
 
     def __init__(self, master=None):
         self.master = master or MASTER
-        self.orders: List[dict] = []
+        self.orders: list[dict] = []
         self.master_downloads = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -162,7 +161,7 @@ class _AngelLike(BrokerInterface):
         self._access_token = "tok"
         self.instruments = instruments or []
         self.fail_list = fail_list
-        self.orders: List[BrokerOrderRequest] = []
+        self.orders: list[BrokerOrderRequest] = []
 
     async def get_instruments(self, exchange=None):
         if self.fail_list:
@@ -244,7 +243,7 @@ def test_leg_spec_carries_the_lot_and_reads_old_rows():
 
 def _contract_signal() -> Signal:
     return Signal(symbol="NIFTY 26000 CE 24 NOV 26", strategy_id="s1", strategy_name="S1", direction=SignalDirection.LONG,
-                  timestamp=datetime.now(timezone.utc), entry=100.0, stop_loss=95.0, target1=110.0, target2=None, risk_reward=2.0,
+                  timestamp=datetime.now(UTC), entry=100.0, stop_loss=95.0, target1=110.0, target2=None, risk_reward=2.0,
                   score=80, grade=SignalGrade.HIGH_QUALITY, reasons=["test"], timeframe_combo="5min")
 
 

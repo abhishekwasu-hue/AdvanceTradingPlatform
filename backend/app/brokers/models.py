@@ -172,7 +172,7 @@ class BrokerOrderRequest(BaseModel):
     after_market: bool = False
     # The platform's lot size of the contract an F&O entry is for (its instrument master). Never sent to a broker: the
     # strict contract match (brokers/contract_symbols.STRICT_BROKERS, Angel One) refuses an entry whose broker lot differs.
-    lot_size: Optional[int] = None
+    lot_size: int | None = None
 
 
 class GttRequest(BaseModel):

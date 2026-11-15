@@ -160,6 +160,10 @@ def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncCl
         # M71 PL-2: the credential whose published broker windows a RateLimitedBroker around it shares (broker_limits).
         with contextlib.suppress(AttributeError):
             wrapped.atp_credential_id = record.id   # type: ignore[attr-defined]
+    if isinstance(getattr(record, "tenant_id", None), int):
+        # 15 Nov: whose organisation an unmatched Angel One exit is notified to (contract_symbols, bell + Telegram).
+        with contextlib.suppress(AttributeError):
+            wrapped.atp_tenant_id = record.tenant_id   # type: ignore[attr-defined]
     if isinstance(getattr(record, "user_id", None), int):
         # M86 D4: whose session this is - every live / intraday cache it fills is keyed by it (market_data.feed_scope).
         with contextlib.suppress(AttributeError):

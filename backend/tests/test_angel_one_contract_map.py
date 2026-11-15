@@ -285,3 +285,115 @@ def test_other_brokers_keep_the_lenient_lookup_and_upstox_is_never_wrapped():
     assert inner.orders[0].symbol == "NIFTY24NOV26000CE"
     with pytest.raises(BrokerAPIError, match="lists no instrument"):       # unchanged: an unknown contract raises
         run(broker.place_order(_order("NIFTY 99000 CE 24 NOV 26", entry=False)))
+
+
+# --- owner default 15 Nov: ONE user notification per unmatched exit position (bell + Telegram, deduped) -----------------
+
+def _notice_setup(email, monkeypatch):
+    from app.brokers import contract_symbols
+    from app.db.models import AlertChannelRecord
+    from tests.test_auth_api import _session_factory
+    from tests.test_phase_l_ai import _owner
+    _, me = _owner(email)
+
+    async def channel():
+        async with _session_factory() as session:
+            session.add(AlertChannelRecord(tenant_id=me["tenant_id"], channel_type="telegram", enabled=True, min_severity="WARNING",
+                                           encrypted_config="x"))
+            await session.commit()
+    run(channel())
+    monkeypatch.setattr(contract_symbols, "_session_factory", lambda: _session_factory)
+    contract_symbols._NOTIFIED_EXITS.clear()
+    return me, _session_factory
+
+
+def _owned(inner, me, credential_id=7):
+    broker = wrap_contract_symbols(inner)
+    broker.atp_tenant_id, broker.atp_user_id, broker.atp_credential_id = me["tenant_id"], me["id"], credential_id
+    return broker
+
+
+async def _exits(broker, symbols):
+    from app.brokers import contract_symbols
+    for symbol in symbols:
+        await broker.exit_position(symbol, "NFO", 75, OrderSide.BUY)
+    await asyncio.gather(*list(contract_symbols._NOTICE_TASKS))
+
+
+def _notices(factory, tenant_id):
+    from sqlalchemy import select
+
+    from app.db.models import AlertDeliveryRecord, NotificationRecord
+
+    async def go():
+        async with factory() as session:
+            rows = list(await session.scalars(select(NotificationRecord).where(NotificationRecord.tenant_id == tenant_id,
+                                                                                NotificationRecord.event_type == "EXIT")))
+            sent = list(await session.scalars(select(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == tenant_id)))
+            return rows, sent
+    return run(go())
+
+
+def test_unmatched_exit_notifies_the_user_once_in_the_bell_and_on_telegram(monkeypatch, caplog):
+    me, factory = _notice_setup("contract-notice@example.com", monkeypatch)
+    inner = _AngelLike(fail_list=True)
+    with caplog.at_level(logging.ERROR, logger="app.brokers.contract_symbols"):
+        run(_exits(_owned(inner, me), ["NIFTY FUT 24 NOV 26"]))
+    assert [o.symbol for o in inner.orders] == ["NIFTY FUT 24 NOV 26"]                  # the exit itself went out
+    assert any("ALERT contract_unmatched_exit" in r.getMessage() for r in caplog.records)   # the log line stays
+    rows, sent = _notices(factory, me["tenant_id"])
+    assert len(rows) == 1 and rows[0].user_id == me["id"] and rows[0].severity == "CRITICAL"
+    assert rows[0].message == ("Exit for NIFTY FUT 24 NOV 26 was sent under ATP's name because Angel One's list didn't match "
+                               "it - check it in your Angel One app.")
+    assert [d.notification_id for d in sent] == [rows[0].id]                              # queued for Telegram
+
+
+def test_unmatched_exit_notice_is_deduped_per_position_across_retries_and_processes(monkeypatch):
+    from app.brokers import contract_symbols
+    me, factory = _notice_setup("contract-dedupe@example.com", monkeypatch)
+    broker = _owned(_AngelLike(fail_list=True), me)
+    run(_exits(broker, ["NIFTY FUT 24 NOV 26", "NIFTY FUT 24 NOV 26", "NIFTY FUT 24 NOV 26"]))     # a retried exit
+    contract_symbols._NOTIFIED_EXITS.clear()                                                         # a restart / another worker
+    run(_exits(_owned(_AngelLike(fail_list=True), me), ["NIFTY FUT 24 NOV 26"]))
+    rows, _ = _notices(factory, me["tenant_id"])
+    assert len(rows) == 1
+    run(_exits(broker, ["NIFTY 26000 CE 24 NOV 26"]))                                                # another position
+    run(_exits(_owned(_AngelLike(fail_list=True), me, credential_id=8), ["NIFTY FUT 24 NOV 26"]))    # another account
+    rows, _ = _notices(factory, me["tenant_id"])
+    assert sorted(r.title for r in rows) == ["Exit sent under ATP's name: NIFTY 26000 CE 24 NOV 26",
+                                              "Exit sent under ATP's name: NIFTY FUT 24 NOV 26",
+                                              "Exit sent under ATP's name: NIFTY FUT 24 NOV 26"]
+
+
+def test_a_matched_exit_or_an_adapter_without_an_owner_sends_no_notice(monkeypatch):
+    me, factory = _notice_setup("contract-quiet@example.com", monkeypatch)
+    run(_exits(_owned(_angel(_SmartAPI()), me), ["NIFTY FUT 24 NOV 26"]))       # matched: Angel One's own name, no notice
+    run(_exits(wrap_contract_symbols(_AngelLike(fail_list=True)), ["NIFTY FUT 24 NOV 26"]))   # no credential row: log only
+    rows, _ = _notices(factory, me["tenant_id"])
+    assert rows == []
+
+
+def test_a_failing_notice_never_stops_the_exit(monkeypatch):
+    from app.brokers import contract_symbols
+    me, _ = _notice_setup("contract-dbdown@example.com", monkeypatch)
+
+    def broken():
+        raise RuntimeError("database down")
+    monkeypatch.setattr(contract_symbols, "_session_factory", broken)
+    inner = _AngelLike(fail_list=True)
+    run(_exits(_owned(inner, me), ["NIFTY FUT 24 NOV 26"]))
+    assert [o.symbol for o in inner.orders] == ["NIFTY FUT 24 NOV 26"]
+    assert contract_symbols._NOTIFIED_EXITS == set()                    # the next unmatched exit of it tries again
+
+
+def test_build_adapter_states_the_owning_organisation():
+    from types import SimpleNamespace
+
+    from app.brokers import token_lifecycle
+    record = SimpleNamespace(id=3, tenant_id=11, user_id=5, broker_name="angel_one", account_label="primary")
+    adapter = _AngelLike()
+    import unittest.mock as mock
+    with mock.patch.object(token_lifecycle, "get_broker_adapter", return_value=adapter), \
+            mock.patch.object(token_lifecycle, "load_credentials", return_value=None):
+        wrapped = token_lifecycle.build_adapter(record)
+    assert (wrapped.atp_tenant_id, wrapped.atp_user_id, wrapped.atp_credential_id) == (11, 5, 3)

@@ -27,16 +27,19 @@ Angel One (owner, 15 Nov; the runner's S4b finding applied to the server path) -
   answered REJECTED in plain words and nothing is sent.
 - every other order (exits, unwinds, protective stops) is never blocked here (ADR-0004): matched, it goes out in the
   broker's spelling; not matched (or the broker's list could not be read), it is still sent under the position's own
-  stored name and an ERROR alert is logged (`unmatched_exits` keeps the lines for the caller).
+  stored name and an ERROR alert is logged (`unmatched_exits` keeps the lines for the caller), and the account's owner
+  gets ONE notification per position (bell + Telegram, owner default 15 Nov) to check it in the broker's app.
 Quotes, history and margins keep the lookup above unchanged; every other broker keeps it for orders too.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError
@@ -224,6 +227,49 @@ class _Index:
                 self.reverse.setdefault((instrument.tradingsymbol or "").upper(), keys[0])
 
 
+# Unmatched exits already notified in this process (tenant, broker account, contract) and the notices still being sent
+# (kept so a task is not collected half way; tests await them). The database marker below dedupes across processes.
+_NOTIFIED_EXITS: Set[Tuple[int, Any, str]] = set()
+_NOTICE_TASKS: Set["asyncio.Task[None]"] = set()
+UNMATCHED_EXIT_KIND = "contract_unmatched_exit"
+
+
+def unmatched_exit_marker(key: Tuple[int, Any, str]) -> str:
+    """The notification's `metadata_json`: one per position (contract on a broker account), so a retried exit, another
+    worker or a restart never sends the same notice twice."""
+    return json.dumps({"kind": UNMATCHED_EXIT_KIND, "account": key[1], "contract": key[2]}, sort_keys=True)
+
+
+def _session_factory() -> Any:
+    from app.db.session import _session_factory as factory   # the app's own engine (tests point this at theirs)
+    return factory
+
+
+async def _send_unmatched_exit_notice(tenant_id: int, user_id: Optional[int], key: Tuple[int, Any, str], broker: str,
+                                      symbol: str) -> None:
+    from sqlalchemy import select
+
+    from app.brokers.catalog import display_name
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.db.models import NotificationRecord
+    from app.notifications.service import notify
+    marker = unmatched_exit_marker(key)
+    label = display_name(broker)
+    try:
+        async with _session_factory()() as session:
+            seen = await session.scalar(select(NotificationRecord.id).where(
+                NotificationRecord.tenant_id == tenant_id, NotificationRecord.metadata_json == marker).limit(1))
+            if seen is not None:
+                return
+            await notify(session, tenant_id, NotificationType.EXIT, title=f"Exit sent under ATP's name: {symbol}",
+                         message=(f"Exit for {symbol} was sent under ATP's name because {label}'s list didn't match it - "
+                                  f"check it in your {label} app."),
+                         severity=NotificationSeverity.CRITICAL, user_id=user_id, metadata_json=marker)
+    except Exception:  # noqa: BLE001 - a notice never breaks anything; the ERROR log line is already written
+        _NOTIFIED_EXITS.discard(key)              # the next unmatched exit of this position tries again
+        logger.exception("Unmatched-exit notice for %s could not be saved", symbol)
+
+
 class ContractSymbolBroker(BrokerInterface):
     """Transparent wrapper (same interface): contract symbols in the platform's spelling go out in
     the broker's, and come back in the platform's. Everything else is delegated untouched."""
@@ -294,6 +340,7 @@ class ContractSymbolBroker(BrokerInterface):
                     f"instrument ({exc}); sent under the position's own name")
             self.unmatched_exits.append(line)
             logger.error("ALERT contract_unmatched_exit %s", line)
+            self._notify_unmatched_exit(symbol)
             return symbol
         self.translations += 1
         return hit.tradingsymbol
@@ -332,6 +379,28 @@ class ContractSymbolBroker(BrokerInterface):
         return translated, back
 
     # --- outbound --------------------------------------------------------------------------
+    def _notify_unmatched_exit(self, symbol: str) -> None:
+        """Owner default (15 Nov): besides the ERROR log, ONE notification to the account's owner (bell + Telegram, the
+        `notify()` path), deduped per position (this contract on this broker account). Scheduled beside the exit, never
+        awaited by it: a slow or failing database never delays or stops the exit (ADR-0004)."""
+        tenant_id = getattr(self, "atp_tenant_id", None)
+        if not isinstance(tenant_id, int):
+            return                                   # an adapter not built from a credential row: the log line only
+        user_id = getattr(self, "atp_user_id", None)
+        account = getattr(self, "atp_credential_id", None)
+        key = (tenant_id, account if isinstance(account, int) else self.name, symbol)
+        if key in _NOTIFIED_EXITS:
+            return
+        _NOTIFIED_EXITS.add(key)
+        try:
+            task = asyncio.get_running_loop().create_task(
+                _send_unmatched_exit_notice(tenant_id, user_id if isinstance(user_id, int) else None, key, self.name, symbol))
+        except RuntimeError:                         # no running loop (never on the order paths): the log line only
+            _NOTIFIED_EXITS.discard(key)
+            return
+        _NOTICE_TASKS.add(task)
+        task.add_done_callback(_NOTICE_TASKS.discard)
+
     async def place_order(self, order: BrokerOrderRequest):
         if self.strict:
             return await self._place_strict(order)

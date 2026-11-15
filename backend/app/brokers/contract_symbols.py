@@ -19,21 +19,40 @@ whose symbol is one of those instruments come back spelt the platform's way, so 
 monitor, reconciliation and the journal keep matching on one string. A contract the broker does
 not list is refused with a clear error, never guessed. Symbols that are not contracts (RELIANCE,
 NIFTY 50) pass through untouched, so the wrapper is safe on every code path (`build_adapter`).
+
+Angel One (owner, 15 Nov; the runner's S4b finding applied to the server path) - orders are matched strictly
+(`STRICT_BROKERS`), with the one shared matcher `match_instrument` (for the runner's contract binder too):
+- an ENTRY goes out only when exactly ONE of the broker's instruments is the contract (underlying, expiry, strike,
+  right) and, when the order states the platform's lot size, the broker's lot size is the same. Otherwise the order is
+  answered REJECTED in plain words and nothing is sent.
+- every other order (exits, unwinds, protective stops) is never blocked here (ADR-0004): matched, it goes out in the
+  broker's spelling; not matched (or the broker's list could not be read), it is still sent under the position's own
+  stored name and an ERROR alert is logged (`unmatched_exits` keeps the lines for the caller), and the account's owner
+  gets ONE notification per position (bell + Telegram, owner default 15 Nov) to check it in the broker's app.
+Quotes, history and margins keep the lookup above unchanged; every other broker keeps it for orders too.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError
-from app.brokers.models import BrokerOrderRequest, Instrument, Quote
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrderResponse, Instrument, Quote
 from app.core.enums import OrderSide
 from app.instruments.master import derivatives_exchange, normalise_expiry, underlying_of
 
+logger = logging.getLogger(__name__)
+
 UPSTOX = "upstox"
+# Brokers whose orders are matched strictly (see the module docstring): one instrument per contract, lot size checked
+# for an entry, an unmatched exit still sent and alerted.
+STRICT_BROKERS = frozenset({"angel_one"})
 DERIVATIVE_EXCHANGES = ("NFO", "BFO", "MCX", "CDS")
 
 _OPTION_RE = re.compile(r"^(?P<u>.+?) (?P<strike>\d+(?:\.\d+)?) (?P<right>CE|PE) (?P<d>\d{1,2}) (?P<m>[A-Z]{3}) (?P<y>\d{2})$")
@@ -159,17 +178,96 @@ def contract_keys(instrument: Instrument) -> List[ContractKey]:
     return [ContractKey(u, expiry, right, strike) for u in _underlyings_of(instrument)]
 
 
+class ContractMatchError(BrokerAPIError):
+    """No single broker instrument is this contract, or its lot size differs from the platform's: nothing was sent."""
+
+
+def _lot(value: Any) -> int | None:
+    try:
+        lot = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return lot if lot > 0 else None
+
+
+def match_instrument(candidates: Sequence[Instrument], key: ContractKey, *, lot_size: Any = None,
+                     broker_label: str = "your broker") -> Instrument:
+    """The ONE instrument among `candidates` that is the contract `key` (underlying, expiry, strike, right - see
+    `contract_keys`), else ContractMatchError in plain words: none, more than one, or (with `lot_size`, the platform's
+    lot) a different lot size at the broker. A broker row without a lot size is not a mismatch."""
+    found: list[Instrument] = []
+    for instrument in candidates:
+        if key in contract_keys(instrument) and not any(instrument is f for f in found):
+            found.append(instrument)
+    if not found:
+        raise ContractMatchError(f"{broker_label} does not list {key.canonical} - nothing was placed")
+    if len(found) > 1:
+        raise ContractMatchError(f"{broker_label} lists {key.canonical} more than once - nothing was placed")
+    ours, theirs = _lot(lot_size), _lot(found[0].lot_size)
+    if ours is not None and theirs is not None and ours != theirs:
+        raise ContractMatchError(f"{key.canonical}: the lot size here is {ours} and {broker_label}'s is {theirs} - "
+                                 "nothing was placed")
+    return found[0]
+
+
 class _Index:
     def __init__(self, instruments: List[Instrument]) -> None:
         self.source = instruments
         self.forward: Dict[ContractKey, Instrument] = {}
         self.reverse: Dict[str, ContractKey] = {}
+        self.matches: dict[ContractKey, list[Instrument]] = {}     # every instrument per key (the strict matcher's view)
         for instrument in instruments:
             keys = contract_keys(instrument)
             for key in keys:
                 self.forward.setdefault(key, instrument)
+                listed = self.matches.setdefault(key, [])
+                if not any(instrument is i for i in listed):
+                    listed.append(instrument)
             if keys:
                 self.reverse.setdefault((instrument.tradingsymbol or "").upper(), keys[0])
+
+
+# Unmatched exits already notified in this process (tenant, broker account, contract) and the notices still being sent
+# (kept so a task is not collected half way; tests await them). The database marker below dedupes across processes.
+_NOTIFIED_EXITS: set[tuple[int, Any, str]] = set()
+_NOTICE_TASKS: set[asyncio.Task[None]] = set()
+UNMATCHED_EXIT_KIND = "contract_unmatched_exit"
+
+
+def unmatched_exit_marker(key: tuple[int, Any, str]) -> str:
+    """The notification's `metadata_json`: one per position (contract on a broker account), so a retried exit, another
+    worker or a restart never sends the same notice twice."""
+    return json.dumps({"kind": UNMATCHED_EXIT_KIND, "account": key[1], "contract": key[2]}, sort_keys=True)
+
+
+def _session_factory() -> Any:
+    from app.db.session import _session_factory as factory  # the app's own engine (tests point this at theirs)
+    return factory
+
+
+async def _send_unmatched_exit_notice(tenant_id: int, user_id: int | None, key: tuple[int, Any, str], broker: str,
+                                      symbol: str) -> None:
+    from sqlalchemy import select
+
+    from app.brokers.catalog import display_name
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.db.models import NotificationRecord
+    from app.notifications.service import notify
+    marker = unmatched_exit_marker(key)
+    label = display_name(broker)
+    try:
+        async with _session_factory()() as session:
+            seen = await session.scalar(select(NotificationRecord.id).where(
+                NotificationRecord.tenant_id == tenant_id, NotificationRecord.metadata_json == marker).limit(1))
+            if seen is not None:
+                return
+            await notify(session, tenant_id, NotificationType.EXIT, title=f"Exit sent under ATP's name: {symbol}",
+                         message=(f"Exit for {symbol} was sent under ATP's name because {label}'s list didn't match it - "
+                                  f"check it in your {label} app."),
+                         severity=NotificationSeverity.CRITICAL, user_id=user_id, metadata_json=marker)
+    except Exception:  # noqa: BLE001 - a notice never breaks anything; the ERROR log line is already written
+        _NOTIFIED_EXITS.discard(key)              # the next unmatched exit of this position tries again
+        logger.exception("Unmatched-exit notice for %s could not be saved", symbol)
 
 
 class ContractSymbolBroker(BrokerInterface):
@@ -185,6 +283,8 @@ class ContractSymbolBroker(BrokerInterface):
         self.daily_days_per_request = int(getattr(inner, "daily_days_per_request", 365))     # UI2-4a2, the same reason
         self._indexes: Dict[str, _Index] = {}
         self.translations = 0
+        self.strict = (getattr(inner, "name", "") or "").lower() in STRICT_BROKERS
+        self.unmatched_exits: list[str] = []       # strict brokers: the alert lines of exits sent under the stored name
 
     def __getattr__(self, item: str) -> Any:          # adapter-specific attributes (streams read them)
         return getattr(self.inner, item)
@@ -214,6 +314,34 @@ class ContractSymbolBroker(BrokerInterface):
             hit = (await self._index(exch, refresh=True)).forward.get(key)
         if hit is None:
             raise BrokerAPIError(f"{self.name} lists no instrument for {key.canonical} on {exch}")
+        self.translations += 1
+        return hit.tradingsymbol
+
+    async def _strict_match(self, key: ContractKey, exchange: str | None, lot_size: Any = None) -> Instrument:
+        exch = (exchange or derivatives_exchange(key.underlying)).upper()
+        from app.brokers.catalog import display_name
+        label = display_name(self.name)
+        try:
+            return match_instrument((await self._index(exch)).matches.get(key, []), key, lot_size=lot_size, broker_label=label)
+        except ContractMatchError:
+            return match_instrument((await self._index(exch, refresh=True)).matches.get(key, []), key, lot_size=lot_size,
+                                    broker_label=label)
+
+    async def _exit_symbol(self, symbol: str, exchange: str | None) -> str:
+        """Strict brokers, an order that is not an entry: the broker's spelling when exactly one instrument matches;
+        otherwise the symbol as stored on the position, sent all the same, with an ERROR alert (never blocked here)."""
+        key = parse_contract(symbol)
+        if key is None:
+            return symbol
+        try:
+            hit = await self._strict_match(key, exchange)
+        except Exception as exc:  # noqa: BLE001 - an exit is never stopped by the lookup (ADR-0004)
+            line = (f"{self.name}: exit for {symbol} on {(exchange or '').upper() or '-'} could not be matched to one broker "
+                    f"instrument ({exc}); sent under the position's own name")
+            self.unmatched_exits.append(line)
+            logger.error("ALERT contract_unmatched_exit %s", line)
+            self._notify_unmatched_exit(symbol)
+            return symbol
         self.translations += 1
         return hit.tradingsymbol
 
@@ -251,8 +379,48 @@ class ContractSymbolBroker(BrokerInterface):
         return translated, back
 
     # --- outbound --------------------------------------------------------------------------
+    def _notify_unmatched_exit(self, symbol: str) -> None:
+        """Owner default (15 Nov): besides the ERROR log, ONE notification to the account's owner (bell + Telegram, the
+        `notify()` path), deduped per position (this contract on this broker account). Scheduled beside the exit, never
+        awaited by it: a slow or failing database never delays or stops the exit (ADR-0004)."""
+        tenant_id = getattr(self, "atp_tenant_id", None)
+        if not isinstance(tenant_id, int):
+            return                                   # an adapter not built from a credential row: the log line only
+        user_id = getattr(self, "atp_user_id", None)
+        account = getattr(self, "atp_credential_id", None)
+        key = (tenant_id, account if isinstance(account, int) else self.name, symbol)
+        if key in _NOTIFIED_EXITS:
+            return
+        _NOTIFIED_EXITS.add(key)
+        try:
+            task = asyncio.get_running_loop().create_task(
+                _send_unmatched_exit_notice(tenant_id, user_id if isinstance(user_id, int) else None, key, self.name, symbol))
+        except RuntimeError:                         # no running loop (never on the order paths): the log line only
+            _NOTIFIED_EXITS.discard(key)
+            return
+        _NOTICE_TASKS.add(task)
+        task.add_done_callback(_NOTICE_TASKS.discard)
+
     async def place_order(self, order: BrokerOrderRequest):
+        if self.strict:
+            return await self._place_strict(order)
         symbol = await self._out(order.symbol, order.exchange)
+        return await self.inner.place_order(order if symbol == order.symbol else order.model_copy(update={"symbol": symbol}))
+
+    async def _place_strict(self, order: BrokerOrderRequest):
+        key = parse_contract(order.symbol)
+        if key is None:
+            return await self.inner.place_order(order)
+        if order.intent != ORDER_INTENT_ENTRY:
+            symbol = await self._exit_symbol(order.symbol, order.exchange)
+        else:
+            try:
+                symbol = (await self._strict_match(key, order.exchange, order.lot_size)).tradingsymbol
+            except ContractMatchError as exc:
+                # A refusal before anything reached the broker: REJECTED in his words, never a failed call.
+                logger.warning("Entry for %s refused before sending: %s", order.symbol, exc)
+                return BrokerOrderResponse(order_id="", status="REJECTED", message=str(exc))
+            self.translations += 1
         return await self.inner.place_order(order if symbol == order.symbol else order.model_copy(update={"symbol": symbol}))
 
     async def get_order_margin(self, order: BrokerOrderRequest):
@@ -268,7 +436,8 @@ class ContractSymbolBroker(BrokerInterface):
 
     async def place_stop_loss_order(self, symbol, exchange, transaction_type, quantity, trigger_price, product="MIS", tag=None, is_option=None):
         extra = {"is_option": is_option} if is_option is not None else {}
-        return await self.inner.place_stop_loss_order(await self._out(symbol, exchange), exchange, transaction_type, quantity, trigger_price, product, tag, **extra)
+        out = await (self._exit_symbol(symbol, exchange) if self.strict else self._out(symbol, exchange))
+        return await self.inner.place_stop_loss_order(out, exchange, transaction_type, quantity, trigger_price, product, tag, **extra)
 
     @property
     def capabilities(self):          # P0.5 / T2: the wrapped broker's matrix, not the interface default
@@ -278,7 +447,8 @@ class ContractSymbolBroker(BrokerInterface):
         return self.inner.stop_order_params(symbol, transaction_type, trigger_price, is_option=is_option)
 
     async def exit_position(self, symbol, exchange, quantity, side: OrderSide, *, product="MIS", tag=None):
-        return await self.inner.exit_position(await self._out(symbol, exchange), exchange, quantity, side, product=product, tag=tag)
+        out = await (self._exit_symbol(symbol, exchange) if self.strict else self._out(symbol, exchange))
+        return await self.inner.exit_position(out, exchange, quantity, side, product=product, tag=tag)
 
     async def get_ltp_for_symbol(self, symbol, exchange="NSE"):
         return await self.inner.get_ltp_for_symbol(await self._out(symbol, exchange), exchange)

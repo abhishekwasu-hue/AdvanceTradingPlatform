@@ -96,12 +96,12 @@ def bars_to_frame(df: pd.DataFrame, timeframe: str, sess: ExchangeSession) -> pd
         return pd.DataFrame(columns=FRAME_COLUMNS)
     end = pd.to_datetime(df["ts"], utc=True)
     if timeframe in INTRADAY_MINUTES:
-        start = end - pd.Timedelta(minutes=INTRADAY_MINUTES[timeframe])
+        start = end - pd.Timedelta(INTRADAY_MINUTES[timeframe], unit="min")
     elif timeframe == "1d":                                  # a daily bar starts at that session's open
         local = end.dt.tz_convert(IST)
-        start = (local.dt.normalize() + pd.Timedelta(hours=sess.open.hour, minutes=sess.open.minute)).dt.tz_convert("UTC")
+        start = (local.dt.normalize() + pd.Timedelta(sess.open.hour * 60 + sess.open.minute, unit="min")).dt.tz_convert("UTC")
     else:
-        start = end - pd.Timedelta(days=7)
+        start = end - pd.Timedelta(7, unit="D")
     return pd.DataFrame({"timestamp": start.to_numpy(), "open": df["open"].astype(float).to_numpy(), "high": df["high"].astype(float).to_numpy(),
                          "low": df["low"].astype(float).to_numpy(), "close": df["close"].astype(float).to_numpy(),
                          "volume": df["volume"].fillna(0).astype("int64").to_numpy(), "close_at": end.to_numpy()}).assign(

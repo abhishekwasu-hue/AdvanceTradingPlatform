@@ -176,6 +176,8 @@ import type {
   StaticIpOverview,
   WhyRow,
   CostMeter,
+  BrokerBook,
+  BrokerBookPart,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 import type { TelegramConnectState } from "../alerts/telegramConnect";
@@ -918,6 +920,9 @@ export const api = {
 
   /** AUD-T7: the caller's own closed trades' charges vs gross P&L, this year and month (404 while `cost_meter` is off). */
   costMeter: () => request<CostMeter>("/trades/cost-meter"),
+  // Owner 14 Nov "Ho" (flags ui_v2 + broker_book): his own broker's positions / holdings / today's orders, read-only.
+  brokerBook: (parts: readonly BrokerBookPart[], refresh = false) =>
+    request<BrokerBook>(`/me/broker-book?parts=${parts.join(",")}${refresh ? "&refresh=true" : ""}`),
   /** AUD-T4: the caller's own paper report card (closed PAPER trades per bot and per strategy; 404 while `paper_report_card` is off). */
   paperReportCard: () => request<PaperReportCard>("/paper/report-card"),
 

@@ -137,7 +137,7 @@ def zone_bands(rows: Sequence[Any], close: float) -> list[dict[str, Any]]:
     frame = bars_to_frame(raw, "1d", exchange_session("NSE_INDEX:NIFTY50"))
     recent = int(s.recent_days_by_tf.get("1d", 20))
     newest = pd.Timestamp(frame["close_at"].iloc[-1])
-    dyn = {tf: frame[frame["close_at"] > newest - pd.Timedelta(days=recent)].reset_index(drop=True) for tf in s.dynamic_sr_timeframes
+    dyn = {tf: frame[frame["close_at"] > newest - pd.Timedelta(recent, unit="D")].reset_index(drop=True) for tf in s.dynamic_sr_timeframes
            if tf == "1d"}
     frames = {tf: frame for tf in {s.sr_timeframe, s.zone_timeframe, s.gap_timeframe} if tf == "1d"}
     found = build_snapshot(frames, dyn, s, previous=None)

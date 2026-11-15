@@ -216,3 +216,34 @@ deleted; grep by ID. Each move has its own header line below. The answer of each
 | RUN-Q2 | Pilot machine for the runner | a separate small Linux VPS with its own static IP; PAPER only | answered 14 Nov (owner): a separate small VPS; both PAPER and LIVE - PAPER first, then LIVE on his own account with his own settings; the LIVE switches stay his (DECISIONS 14 Nov) |
 | RUN-Q3 | First broker in the runner | Upstox only (the user's own Upstox app and key, never ATP's app) | answered 14 Nov (owner): Angel One (SmartAPI), not Upstox (DECISIONS 14 Nov) |
 | RUN-Q4 | Where a user's PAPER runs | on ATP's server as today; the runner's PAPER mode for the pilot and a pre-LIVE dry run | answered 14 Nov (owner): as the default - users' PAPER on ATP's server, as today (DECISIONS 14 Nov) |
+
+## Moved 2026-11-15 (answered or closed: the row's own status says decided / answered / approved; CTB-Q1, CTB-Q2 answered 15 Nov)
+
+### M72: AI Copilot rebuild review (1 Nov, docs/design/M72_REVIEW.md)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| M72Q-6 | PR-1b: where the platform key sits next to the organisation's own key, and its consent. The plan says "platform after the own key"; an organisation may also have saved its own key (Settings › AI › provider). | Order: the user's own key -> the organisation's own key -> the platform key -> rules. An organisation that saved a key of its own never falls over to the platform key (also when its own budget is spent: rules). The platform key also needs the organisation owner's current data-sharing consent (P0.8-D), like the organisation key. Limits in rupees (UTC day / month, like the other AI caps); a cap of 0 = no AI. | `ai/resolve.py`, `ai/platform_key.py` | decided (owner): never falls back to the platform key |
+
+### M76: Copilot workspace mistake-proofing review (1 Nov, docs/design/M76_REVIEW.md)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| UPX-Q1 | Owner 3 Nov: the Upstox Analytics Token is irritating - remove it? It is the only way ATP reads Upstox market data without a daily login (BRK-1: no Upstox OAuth); under the beta data decision every organisation's prices / candles / chains come from its own broker connection. Choices: (A) keep the token, pasted once a year, and fix why it is asked again; (B) drop Upstox as a data broker - his data then comes from another connected broker with automatic login (Dhan / Zerodha / Fyers / Angel One / Shoonya ...); (C) the Upstox daily login again (every day - more work). | (A) keep; find from `scripts/upstox_token_check.py` on the server why the saved token is not seen; nothing removed until the owner chooses (major change, CLAUDE.md §8). | `brokers/catalog.py`, `brokers/upstox_analytics.py`, `market_data/hub.py` | answered 3 Nov: (A) + the token re-checks itself (DECISIONS) |
+
+### Roadmap truth audit (6 Nov 2026)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| RT6-1 | UI-H: Wave 0 merged (#510) and the page waves were done inside UX-2 / UI-28; mark UI-H superseded? (W0-4 ISO dates has no commit) | Yes, superseded; W0-4 stays a small UI-H-BUG item | docs/ROADMAP.md | decided 6 Nov (default; DECISIONS) |
+| RT6-2 | CP-V: only the spec (#555) merged; `copilot_chart_read` never built. Superseded by M59 CR-4 + M72 PR-5 (chart attach + Advanced analysis)? | Yes, superseded; no new build | docs/ROADMAP.md | decided 6 Nov (default; DECISIONS) |
+| RT6-3 | `chart_contracts` (P2-1 finish): FN1 row 6 needs an option contract chart with OI; option bars download only with `HISTORY_BACKFILL_FO_OPTIONS=true` (code default false; production value not known). Turn it on? | Yes (no migration); work after DATA-H | backend/app/core/config.py | decided 6 Nov (default; DECISIONS) |
+| RT6-4 | `strategy_templates` (P2-3): done without the wave (G) family, which stays hidden with `screener_waves` until P5-1? | Yes | docs/design/P2_1_FLAG_AUDIT.md | decided 6 Nov (default; DECISIONS) |
+| RT6-5 | `chart_analyze` (P2-5): ON as a beta, or hidden with an honest status until P5-1 (FN1 row 31, FN7)? | Hidden until P5-1 | docs/design/P2_1_FLAG_AUDIT.md | decided 6 Nov (default; DECISIONS) |
+
+### CTB-1 chart trading (owner 14 Nov, `claude/chart-buy-sell`)
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| CTB-Q1 | Which charts get Buy / Sell. | Only an F&O contract (NFO / BFO): the ONE order ticket takes an F&O contract. An index chart (not tradable) and a stock chart (the equity ticket is the plan-before-trade form, a different path) show none. The Terminal's chart panels chart NSE symbols today, so none shows there yet (wired: a contract there would fill the order panel). | `chart/chartTrade.ts` `tradableOnChart` | open (default stated) - answered 15 Nov (owner "ok tar sarv kaam purna kara": PR #1072's defaults accepted, with two follow-ups built in `claude/followups-15nov`: Buy / Sell on an NSE share's chart through the equity ticket, an index none; Exit on a LIVE position where the organisation may go LIVE through ATP) |
+| CTB-Q2 | What Exit on a chart does. | The position's existing "Exit now" (its confirm, PAPER, never disabled, ADR-0004) - the same as My trades and the chain's held-strike Exit; the ticket has no single-position exit. A LIVE position: "Close a live position in your broker's app." as on My trades. | `chart/ChartTradeBar.tsx` | open (default stated) - answered 15 Nov (owner "ok tar sarv kaam purna kara": PR #1072's defaults accepted, with two follow-ups built in `claude/followups-15nov`: Buy / Sell on an NSE share's chart through the equity ticket, an index none; Exit on a LIVE position where the organisation may go LIVE through ATP) |

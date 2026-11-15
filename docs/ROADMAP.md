@@ -184,6 +184,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | ID | Item | Source | Done when |
 |---|---|---|---|
 | BIZ-1 | Route 3 for all users (Free / Basic): Paper, signals, scans, Copilot and "Trade in your broker app" on every signal surface; ATP's server sends no other user's LIVE order | DECISIONS 14 Nov; docs/design/ROUTE3_AUDIT.md | B1-B7 merged + flags decided + deployed + checked on production; phone + desktop screenshots; owner ✅ |
+| BIZ-1b | "From your broker": his own broker's positions, holdings and today's orders as read-only lists on Positions / Money / Orders (flag `broker_book`, OFF) | INBOX + DECISIONS 14 Nov ("Ho") | merged + flag decided + deployed + checked on production at 1440 / 390; owner ✅ |
 | BIZ-2 | Route 1 = Pro plan: a runner on the user's own machine; paid "we set up your VPS" service | DECISIONS 14 Nov; design on `claude/design-user-runner` | design ✅, then the same "done" as BIZ-1 |
 | BIZ-3 | Route 2: exchange empanelment as an algo provider | DECISIONS 14 Nov | deferred - only after BIZ-1 / BIZ-2 are done |
 
@@ -327,6 +328,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | ORD-1 | merged (#1030); waits for deploy + ✅ | Orders tab = today only; PAPER expiry settlement | INBOX 12 Nov |
 | PROSE-1 | in progress | root fix + guard, then the inventory per file | claude/prose-hide |
 | BIZ-1 | audit (14 Nov) | docs/design/ROUTE3_AUDIT.md done; BIZ1-Q1 (per-user LIVE gate) needs the owner's ✅ before B1 | claude/route3-audit |
+| BIZ-1b | draft PR (claude/broker-book-readonly); waits for CI + deploy + ✅ | GET /api/me/broker-book + "From your broker" card (flag broker_book OFF) | DECISIONS 14 Nov |
 | BIZ-2 | audit (14 Nov) | runner design in progress | claude/design-user-runner |
 | BIZ-3 | deferred - after BIZ-1 / BIZ-2 are done | nothing until then | - |
 | P4-1 | not started | Terminal T5 + T6 | - |

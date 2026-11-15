@@ -84,6 +84,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "public_status_page": "A public page for visitors, not a trader feature",
     "growth_v2": "Plans, usage and activation: a business feature, not a trading one (unfinished)",
     "alert_webhooks": "For people who run their own tools; turned on after the owner's ✅ (AUD-G2.5)",
+    "broker_book": "Your broker's own lists; turned on after the owner's ✅ on the real site (owner 14 Nov)",
     "support_bot": "Unfinished: the help pages it answers from are not complete",
     "history_import": "Needs the off-site history store, which is not set up",
     "history_intraday": "The owner's own one-minute history through his broker session",

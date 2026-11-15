@@ -123,6 +123,7 @@ from app.marketplace.routes import admin_router as marketplace_admin_router
 from app.marketplace.routes import router as marketplace_router
 from app.markets.routes import router as markets_router
 from app.me.account import router as me_account_router
+from app.me.broker_book import router as me_broker_book_router
 from app.me.nominee import router as me_nominee_router
 from app.me.notices import router as me_notices_router
 from app.me.prefs import router as me_prefs_router
@@ -533,6 +534,7 @@ app.include_router(rhythm_router)     # MO4: the daily rhythm - pre-market brief
 app.include_router(expiry_checklist_router)   # AUD-T2: the expiry-day and margin checklist (flags ui_v2 + expiry_checklist)
 app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(oc_probe_admin_router)  # B2b: the owner's read-only option chain spot probe (SUPER_ADMIN + two-factor)
+app.include_router(me_broker_book_router)  # owner 14 Nov "Ho": From your broker - his own broker's lists, read-only (ui_v2 + broker_book)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
 app.include_router(me_trade_settings_router)  # M68 PR-0: Settings > Trade settings (one registry, every field Not set; per user)
 app.include_router(me_notices_router)  # TT12-1: one-time notices (risk limits now not set; ui_v2; per user)

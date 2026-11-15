@@ -10,3 +10,4 @@ Later (owner, 15 Nov):
 - Watch-screen first check still ~872 Upstox calls: store F&O 1m/30m nightly.
 - Owner: register 187.126.125.208 at Upstox + ATP Static IP card, then STATIC_IP_REQUIRED_FOR_LIVE=true.
 - Paused: runner S9. Flags OFF: broker_app_links, broker_book, user_runner.
+- NEW owner order 15 Nov (M79 scope): port Trade bot "15M SRv2" (strategy_key 15m_dynamic_sr; Trade one_bot.py, dynamic_sr_instant_trader.py, bot_view.py) AS IS with its dashboard settings into ATP (code in atp-private trade_engine, ATP boundary only); settings under a button; modes PAPER + LIVE; on activation its signal charts go to Vision -> Telegram with buttons (human_confirm) -> paper/live entry, exactly as Trade does. No logic change. Audit first.

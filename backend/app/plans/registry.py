@@ -51,8 +51,9 @@ class Plan:
     min_schedule_interval_min: int = 60    # shortest interval a schedule may repeat at (AMW-15)
     lab_strategies: int = 3                # Strategy Lab strategies per user (AMW-19)
     lab_cpu_seconds_per_day: int = 300     # sandbox CPU seconds per user per day (AMW-21)
-    # Route 3 (BIZ-1 B6): Pro may pair the user's own runner (Route 1, design on claude/design-user-runner). Defined only:
-    # nothing reads it yet (no enforcement until the runner is built). False on every other plan (restricted by default).
+    # Route 3 (BIZ-1 B6): Pro may pair the user's own runner (Route 1, docs/design/USER_RUNNER.md). Runner S4c reads it:
+    # ATP's signed state carries it (`plan_runner`); False pauses the runner's new entries, exits continue. False on
+    # every other plan (restricted by default).
     runner: bool = False
 
 

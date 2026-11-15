@@ -51,6 +51,9 @@ def atp_live(monkeypatch):
     async def allowed(session, tenant_id=None):                 # type: ignore[no-untyped-def]
         return tenant_id in open_for
     monkeypatch.setattr(live_switch, "live_allowed", allowed)
+    # B1: the closed reason reads the global switch from the last flag read; with `live_allowed` pinned no read happens,
+    # so pin it too (`live_trading` OFF, the production default; `live_refusal` then answers LIVE_OFF).
+    monkeypatch.setattr(phase0_lock, "switch_locked", lambda: True)
     yield open_for
     runtime_mode.set_live_open(())
 
@@ -71,7 +74,7 @@ def test_the_heartbeat_answer_carries_a_signed_state_for_his_organisation(tmp_pa
     assert state["live_open"] is False and state["live_reason"] == live_switch.LIVE_OFF          # closed: the plain reason
     assert set(state["flags"]) == set(service.RUNNER_FLAGS)
     assert state["flags"]["smart_execution"] is True and state["flags"]["risk_options"] is False
-    assert state["fo_ban_check"] is config.FO_BAN_CHECK_ENABLED and state["plan_runner"] is None
+    assert state["fo_ban_check"] is config.FO_BAN_CHECK_ENABLED and state["plan_runner"] is True   # Route 3: Pro
     # The same answer, read straight from ATP: signed under the state scheme with ATP's command key (not as a command).
     async def answer():
         from tests.test_auth_api import _session_factory

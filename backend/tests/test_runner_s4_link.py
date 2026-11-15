@@ -143,9 +143,21 @@ class Store:
             return list(await session.scalars(select(model)))
 
 
-def _runner(tmp_path, email: str, *, atp: httpx.Client | None = None):
+def _set_plan(tenant_id: int, plan: str) -> None:
+    """Route 3 (BIZ-1 B6): the runner is in the Pro plan (`plans.registry.Plan.runner`); ATP's signed state carries it."""
+    from app.db.models import Tenant
+
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(update(Tenant).where(Tenant.id == tenant_id).values(plan=plan))
+            await session.commit()
+    _run(go())
+
+
+def _runner(tmp_path, email: str, *, atp: httpx.Client | None = None, plan: str = "pro"):
     headers = _auth(email)
     me = _me(headers)
+    _set_plan(me["tenant_id"], plan)
     home = tmp_path / "home"
     settings = RunnerSettings.load(home)
     store = Store(tmp_path / "runner.db")

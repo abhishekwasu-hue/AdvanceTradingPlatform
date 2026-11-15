@@ -119,7 +119,11 @@ def locked(tenant_id: Optional[int]) -> bool:
 
 def reason(tenant_id: int | None) -> str:
     """The plain sentence for a refused LIVE entry, from the last read: the switch is off (`ENTRY_REASON`), else the
-    organisation is not the owner's (`NOT_OWNER_REASON`)."""
+    organisation is not the owner's (`NOT_OWNER_REASON`). Runner S4c: in the runner process the switch is never read
+    here (the lock follows ATP's signed `live_open`), so the lock's own sentence stays `ENTRY_REASON` as before B1; ATP's
+    plain reason for his organisation is shown by the runner loop from the signed state (`live_reason`)."""
+    if runtime_mode.is_runner():
+        return ENTRY_REASON
     return ENTRY_REASON if _state["on"] else NOT_OWNER_REASON
 
 

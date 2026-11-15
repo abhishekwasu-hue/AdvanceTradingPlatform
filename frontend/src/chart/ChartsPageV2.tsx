@@ -366,7 +366,7 @@ export default function ChartsPageV2(_props: PageProps) {
               drawing={{ tools, symbol, hidden: view.drawings_hidden, onHidden: (h) => setView({ drawings_hidden: h }) }}
               settings={{ prefs: prefs.prefs, onChange: prefs.update, error: prefs.error }}
               actions={actions} endActions={endActions} />
-            {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart (nothing on an index or a stock) */}
+            {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
             <ChartTradeBar symbol={symbol} exchange={exchange} ltp={live.ltp?.ltp ?? null} className="border-b border-subtle px-space-3 py-space-1" />
             <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />

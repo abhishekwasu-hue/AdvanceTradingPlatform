@@ -142,7 +142,8 @@ def test_the_users_view_and_the_terminal_line_follow_the_organisation(monkeypatc
 
 def test_the_admin_switch_says_own_organisation_only():
     from app.platform.flag_catalog import info_for
-    assert "Live through ATP: your own organisation only" in info_for("live_trading")["plain"]
+    assert info_for("live_trading")["plain"] == ("Live trading (real money) - through ATP for your own organisation; "
+                                                "each order, basket or bot chooses Paper or Live")
     assert "Live through ATP: your own organisation only" in controls.FEATURE_FLAGS["live_trading"]
 
 

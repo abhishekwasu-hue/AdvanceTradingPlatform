@@ -106,7 +106,7 @@ export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe, onTi
             className="h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-2 text-t13 uppercase text-fg focus:border-brand focus:outline-none lg:h-9" />
         </form>
       )}
-      {/* CTB-1: Buy / Sell / Exit when the chart shows an F&O contract (this panel charts on NSE: the index, a stock - none) */}
+      {/* CTB-1: Buy / Sell / Exit when the chart shows an F&O contract; on NSE a share gets Buy / Sell (the equity ticket, 15 Nov), an index none */}
       <ChartTradeBar symbol={symbol} exchange="NSE" ltp={live?.ltp ?? null} onTicket={onTicket} />
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
         <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} drawing />

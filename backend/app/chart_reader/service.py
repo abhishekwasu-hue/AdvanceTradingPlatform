@@ -222,14 +222,39 @@ def cache_key(*, tenant_id: int, strategy: str, version: str, model: str, effort
     return CACHE_PREFIX + hashlib.sha256(json.dumps(body, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def strategy_labels(reader: loader.Reader) -> list[dict[str, Any]]:
-    """The reader's labels (id, name, book, author, edition, two_chart, sides) - labels only, never a spec."""
+# Owner 15 Nov: the owner's own method is personal - only the platform owner may see or use it, and its label never
+# carries a name. Everyone else sees only the book strategies.
+OWN_METHOD_LABEL = "My method"
+OWN_METHOD_REFUSED = "This reading style is not available."
+
+
+def owns_method(user: User | None) -> bool:
+    """True only for the platform owner (the account `live_owner.is_owner` names)."""
+    from app.platform import live_owner
+    return live_owner.is_owner(user)
+
+
+def strategy_labels(reader: loader.Reader, *, own_method: bool = False) -> list[dict[str, Any]]:
+    """The reader's labels (id, name, book, author, edition, two_chart, sides) - labels only, never a spec. The owner's
+    method is listed only with `own_method` (the platform owner), and then under the generic label."""
     keep = ("id", "name", "book", "author", "edition", "two_chart", "sides")
     out = []
     for s in reader.strategies() or []:
         if isinstance(s, dict) and s.get("id"):
+            if s["id"] == reader.ABHI:
+                if not own_method:
+                    continue
+                s = {**s, "name": OWN_METHOD_LABEL, "book": "", "author": "", "edition": ""}
             out.append({k: s[k] for k in keep if k in s})
     return out
+
+
+def default_strategy(reader: loader.Reader, *, own_method: bool) -> str | None:
+    """The owner's method for the owner; for everyone else the first book strategy (or none)."""
+    if own_method:
+        return reader.ABHI
+    labels = strategy_labels(reader)
+    return labels[0]["id"] if labels else None
 
 
 # --- reads (I/O) --------------------------------------------------------------------------------------------------------
@@ -355,7 +380,10 @@ async def read(session: AsyncSession, user: User, tenant: Tenant, settings: dict
     reader = loader.load()
     if reader is None:
         raise refused(503, "reader_not_installed", loader.NOT_INSTALLED, reason=loader.reason())
-    ids = {s["id"] for s in strategy_labels(reader)} | {reader.ABHI}
+    own_method = owns_method(user)
+    if strategy == reader.ABHI and not own_method:
+        raise refused(403, "strategy_not_available", OWN_METHOD_REFUSED)
+    ids = {s["id"] for s in strategy_labels(reader, own_method=own_method)} | ({reader.ABHI} if own_method else set())
     if strategy not in ids:
         raise refused(422, "unknown_strategy", "Pick one of the listed strategies.")
     key = await own_key(session, user)

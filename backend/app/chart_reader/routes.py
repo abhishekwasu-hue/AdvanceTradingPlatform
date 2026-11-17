@@ -1,7 +1,8 @@
 """M86 W1 / W4: the chart reader's API. Behind the `chart_reader` flag: while it is off for the caller's organisation every
 member route answers the platform's standard 503 with `X-Feature-Disabled: chart_reader`.
 
-- `GET  /api/chart-reader/strategies`      the reader's labels (Abhi's method first), the default, the model and effort,
+- `GET  /api/chart-reader/strategies`      the reader's labels (the owner's own method first, for
+                                           the platform owner only), the default, the model and effort,
                                            the estimate per read, whether it is installed and connected, and the
                                            caller's own daily cap and today's spend
 - `POST /api/chart-reader/read`            {symbol?, strategy, source: "lake" | "upload", item_id?} -> the reader's result,
@@ -61,6 +62,7 @@ async def _tenant(session: AsyncSession, user: User) -> Tenant:
 async def strategies(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     settings = await _gate(session, user)
     reader = loader.load()
+    own = service.owns_method(user)
     connected = await service.own_key_record(session, user) is not None      # owner 7 Nov: the user's own Claude key
     charts = len(settings["timeframes"])
     now = datetime.now(UTC)
@@ -69,8 +71,9 @@ async def strategies(user: User = Depends(get_current_user), session: AsyncSessi
         "installed": reader is not None,
         "connected": connected,
         "message": None if reader is not None and connected else (loader.NOT_INSTALLED if reader is None else service.NOT_CONNECTED),
-        "default": reader.ABHI if reader is not None else None,
-        "strategies": service.strategy_labels(reader) if reader is not None else [],
+        "default": service.default_strategy(reader, own_method=own) if reader is not None else None,
+        "strategies": service.strategy_labels(reader, own_method=own) if reader is not None else [],
+        "own_method": bool(reader is not None and own),          # owner 15 Nov: the owner's own method, his alone
         "model": settings["model"], "effort": settings["effort"],
         "timeframes": list(settings["timeframes"]),
         "estimate_usd": service.estimate_usd(settings, charts),

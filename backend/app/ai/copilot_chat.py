@@ -1065,6 +1065,8 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
         if row is not None and row.get("short"):
             head += f" {row.get('note') or TF_LABELS.get(tf, tf) + ': ' + SHORT_WORDS}."
+            if d.get("intraday_note"):
+                head += f" {d['intraday_note']}."             # owner 15 Nov: why, and which timeframes were read instead
         elif state.get("direction"):
             head += f" On the {TF_LABELS.get(tf, tf).lower()} chart the structure reads {state['direction']}"
             head += f", protected level {_f(state['protected'])}." if state.get("protected") is not None else "."

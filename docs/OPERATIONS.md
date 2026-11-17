@@ -1216,7 +1216,12 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
 - **Why the exception is allowed.** It is the owner's instruction (Admin is unreachable before the app is deployed),
   it applies only in this explicit deployment mode, and both writes are restrictive: they refuse new LIVE entries and
   new LIVE deployments. Neither can enable anything, place an order or block an exit.
-- **Admin refusal (Phase 0 mode).** Turning `live_trading` on, globally or for any organisation, is refused with
+- **Update (LIVE-1 #1006, B1 #1077, owner 15 Nov).** `live_trading` is the ONE live switch; `phase0_paper_only` is
+  derived from it (NOT `live_trading`) and Admin refuses to set it on its own. With the switch ON, LIVE through ATP's
+  server opens for the owner's organisation only. `deploy/atp.sh health` reports the switch as a warning while it is
+  ON (and a clear line when `LIVE_OWNER_USER_ID` does not resolve to the owner account) - never an owner action, never
+  "turn phase0_paper_only ON". The two bullets below describe the lock before LIVE-1 (superseded where they differ).
+- **Admin refusal (Phase 0 mode, before LIVE-1).** Turning `live_trading` on, globally or for any organisation, is refused with
   "live_trading cannot be turned on while phase0_paper_only is on" (HTTP 400, audited as `feature_flag_refused`).
   To leave Phase 0, the owner first sets `ATP_DEPLOYMENT_PHASE=standard` and turns `phase0_paper_only` off
   ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-nothing-to-set)).
@@ -1397,8 +1402,8 @@ Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits a
 |---|---|---|
 | `/status` (`GET /api/status`) | anyone, no login; flag `public_status_page`, off by default | API, trading engine, market data (EOD date, NSE open, number of live sessions through users' own brokers), alert delivery lag, maintenance and incident banner. States and short sentences only. |
 | `GET /api/system/health/deep`, `/health/dependencies` | operator (unauthenticated, no secrets) | database, migrations, worker heartbeat, Redis, broker circuits, broker-uncertain organisations |
-| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)); `OWNER ACTION NEEDED` (exit 10) names a flag to set |
-| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags against the Phase 0 posture ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-nothing-to-set)): `live_trading` off, `phase0_paper_only` on (seeded at first boot in Phase 0 mode), and the deployment phase. Read-only. |
+| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)); the one live switch is reported (a warning while ON: open for the owner's organisation only, B1), never an owner action (owner 15 Nov) |
+| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-nothing-to-set)): `live_trading` (the one live switch; `phase0_paper_only` follows it - LIVE-1), the deployment phase, and `live_owner` (B1: `LIVE_OWNER_USER_ID` set, and resolved to an active platform administrator). Read-only. |
 | `backend/scripts/session_check.py` | owner (run by `atp.sh deploy` / `rollback`) | whether any exchange session is open with open positions; a deploy or restart stops with exit 3 while it is ([runbook section 8](deploy/HOSTINGER_RUNBOOK.md#8-what-deploy-does-step-by-step)) |
 | Prometheus rules `scripts/monitoring/prometheus-alerts.yml` | operator | each rule's `runbook` annotation points to a page below |
 | Admin console | SUPER_ADMIN | incidents, maintenance mode, flags, beta rollout stage |

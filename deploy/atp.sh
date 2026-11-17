@@ -107,7 +107,9 @@
 #     change allowed is the release's own Phase 0 first-boot seed of a flag that had no entry: live_trading OFF,
 #     phase0_paper_only ON); the host runs with ATP_DEPLOYMENT_PHASE=phase0 (default; .env may name another mode only
 #     when the owner ends Phase 0), so a fresh install starts PAPER-only with nothing for the owner to set; `health`
-#     and `install` still ask the owner to act (exit 10) if live_trading is on or phase0_paper_only is off; profiles
+#     and `install` report the ONE live switch (LIVE-1: live_trading; phase0_paper_only follows it) as a warning while
+#     it is ON - LIVE through ATP then opens for the owner's organisation only (B1) - never as an owner action, since
+#     the switch is the owner's decision (owner 15 Nov); profiles
 #     come only from COMPOSE_PROFILES in .env;
 #   * A3 (review R3): `deploy` refuses a commit whose checks did not pass on main - CI lint, backend,
 #     backend-lookahead, frontend and the CI staging stack's acceptance, rollback and offsite, read from the public
@@ -917,37 +919,48 @@ check_key_live() {
   else info "key check script not in this image (older release) - skipped"; fi
 }
 
-# Flags as the running release resolves them (scripts/flag_posture.py, read-only). LIVE reachable = owner action.
+# Flags as the running release resolves them (scripts/flag_posture.py, read-only). LIVE-1: `live_trading` is the ONE live
+# switch (`phase0_paper_only` follows it; the API refuses to set it on its own) and B1: with it ON, LIVE through ATP opens
+# for the owner's organisation only. The switch is the owner's decision (owner 15 Nov): reported, a warning while it is ON,
+# never an owner action - and a clear line when it is ON but LIVE_OWNER_USER_ID does not resolve to the owner account.
 report_flags() {
-  local js live live_tenants po_known po_on stored
+  local js live live_tenants po_known po_on stored phase owner_set owner_ok
   js="$(dc exec -T backend sh -c 'test -f scripts/flag_posture.py && python scripts/flag_posture.py' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
   if [ -z "$js" ]; then
-    warn "flag posture unknown (API not running, or an image without scripts/flag_posture.py) - check Admin > Controls"
-    OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }confirm in Admin > Controls that live_trading is off"
+    warn "flag posture unknown (API not running, or an image without scripts/flag_posture.py) - the live switch is shown in Admin > Controls"
     report_settings; return 0
   fi
-  read -r live live_tenants po_known po_on stored phase < <(printf '%s' "$js" | python3 -c 'import json, sys
+  read -r live live_tenants po_known po_on stored phase owner_set owner_ok < <(printf '%s' "$js" | python3 -c 'import json, sys
 d = json.load(sys.stdin)
-lt, po = d.get("live_trading") or {}, d.get("phase0_paper_only") or {}
+lt, po, lo = d.get("live_trading") or {}, d.get("phase0_paper_only") or {}, d.get("live_owner")
 print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))), ",".join(d.get("stored_on") or []) or "none",
-      "".join(ch for ch in str(d.get("deployment_phase") or "-") if ch.isalnum() or ch in "_-")[:20] or "-")')
+      "".join(ch for ch in str(d.get("deployment_phase") or "-") if ch.isalnum() or ch in "_-")[:20] or "-",
+      "-" if not isinstance(lo, dict) else int(bool(lo.get("set"))), "-" if not isinstance(lo, dict) else int(bool(lo.get("resolved"))))')
   info "flags stored on: $stored"
   case "$phase" in
-    phase0) ok "deployment phase: phase0 (first boot seeds live_trading OFF and phase0_paper_only ON - nothing for the owner to set)" ;;
+    phase0) ok "deployment phase: phase0 (first boot seeds the live switch OFF - nothing for the owner to set)" ;;
     -) info "deployment phase: not reported by this release" ;;
     *) warn "deployment phase: $phase (ATP_DEPLOYMENT_PHASE in .env) - the Phase 0 defaults are not seeded on this host" ;;
   esac
-  if [ "$live" = "1" ] || [ "$live_tenants" != "0" ]; then
-    if [ "$live" = "1" ]; then warn "live_trading is ON for everyone: Phase 0 has no LIVE"; else warn "live_trading is ON for $live_tenants organisation(s): Phase 0 has no LIVE"; fi
-    OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }turn live_trading OFF in Admin > Controls"
-  else ok "live_trading is off"; fi
+  if [ "$live" = "1" ]; then
+    case "$owner_ok" in
+      1) warn "Live trading is ON - LIVE through ATP is open for the owner's organisation only (B1); every other organisation stays PAPER. The switch is the owner's decision (Admin > Controls)." ;;
+      0) if [ "$owner_set" = "1" ]; then
+           warn "Live trading is ON, but LIVE_OWNER_USER_ID in .env does not name an active platform administrator with an organisation - LIVE through ATP stays closed for every organisation (B1)"
+         else
+           warn "Live trading is ON, but LIVE_OWNER_USER_ID is not set to a valid account id in .env (the default account 1 is not an active platform administrator) - LIVE through ATP stays closed for every organisation (B1)"
+         fi ;;
+      *) warn "Live trading is ON - LIVE through ATP is open for the owner's organisation only (B1). The switch is the owner's decision (Admin > Controls)." ;;
+    esac
+    [ "$owner_set" != "0" ] || [ "$owner_ok" != "1" ] || info "LIVE_OWNER_USER_ID is not set in .env: the owner account is the default account 1"
+  else
+    ok "Live trading is OFF - PAPER only for every organisation (new LIVE entries refused at the order chokepoint)"
+  fi
+  [ "$live_tenants" = "0" ] || info "live_trading's stored organisation list ($live_tenants) is not used since LIVE-1 - only the one switch decides"
   if [ "$po_known" = "1" ]; then
-    if [ "$po_on" = "1" ]; then ok "phase0_paper_only is on (new LIVE entries refused at the order chokepoint)"
-    else
-      warn "phase0_paper_only is OFF"
-      OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }turn phase0_paper_only ON in Admin > Controls"
-    fi
-  else info "phase0_paper_only: not in this release"; fi
+    if [ "$po_on" = "1" ]; then info "PAPER-only lock: on (it follows the live switch - LIVE-1)"
+    else info "PAPER-only lock: off (it follows the live switch - LIVE-1)"; fi
+  fi
   report_settings
 }
 

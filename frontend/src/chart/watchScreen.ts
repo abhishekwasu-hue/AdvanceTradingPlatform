@@ -362,6 +362,7 @@ export class ScreenChecker {
     };
     const left = () => run !== this.run;
     this.setBusy(true);
+    // intentional: saved results are optional; a failed read falls back to a full check below
     const begin = this.deps.saved ? this.deps.saved(target).catch(() => null) : Promise.resolve(null);
     begin.then((kept) => {
       if (left()) return undefined;

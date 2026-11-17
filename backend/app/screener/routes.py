@@ -691,7 +691,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         held_service = own.market_data(held_adapter, lookback_days=days)
     attach_today = interval == "day" and not include_forming and await _closed_for_the_day(session, exchange, now_utc)
     futures = await _index_futures(session, user, record, [*symbols, *held], exchange, now_utc, own is not None)
-    daily_store: Dict[str, Any] = {}
+    daily_store: dict[str, Any] = {}
     if lean and attach_daily:                           # the daily context from the NSE daily store, not the broker
         daily_store = await watch_fetch.stored_daily(session, [s for s in [*symbols, *held] if s not in futures], exchange,
                                                      daily_fetch_days(daily_window, "1d"), now_utc)   # an index keeps its future's volume path

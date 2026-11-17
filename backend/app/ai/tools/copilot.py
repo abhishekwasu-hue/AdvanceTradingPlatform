@@ -259,7 +259,7 @@ def _short(bars: Any) -> bool:
     return int(bars or 0) < STRUCTURE_MIN_BARS
 
 
-def _broker_build(frames: Dict[str, pd.DataFrame], rows: List[Dict[str, Any]], tf: str, main: bool, source: str) -> Dict[str, Any]:
+def _broker_build(frames: dict[str, pd.DataFrame], rows: list[dict[str, Any]], tf: str, main: bool, source: str) -> dict[str, Any]:
     """The computing half (pure, in a build slot): the short intraday rows rebuilt from the broker bars (only when
     those hold more bars), and - `main` - the read timeframe's own layer."""
     from app.charts import price_action_concepts as PC
@@ -274,7 +274,7 @@ def _broker_build(frames: Dict[str, pd.DataFrame], rows: List[Dict[str, Any]], t
     return {"mtf": out_rows}
 
 
-async def fill_intraday(ctx: ToolContext, symbol: str, tf: str, layer: Dict[str, Any]) -> tuple[Dict[str, Any], str | None]:
+async def fill_intraday(ctx: ToolContext, symbol: str, tf: str, layer: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
     """Owner 15 Nov: the layer with its short 1-hour / 15-minute reads (fewer than STRUCTURE_MIN_BARS stored bars)
     rebuilt from the asker's own broker bars -> (layer, None); or (the layer unchanged, the plain sentence why) when his
     own broker could not be read. A layer whose intraday reads are all stored comes back as it is, with no broker call."""

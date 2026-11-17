@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -104,15 +105,15 @@ class TailCachedAdapter:
             return datetime.combine(_ist(t).date() - timedelta(days=1), datetime.min.time(), IST)
         return t - timedelta(minutes=1)
 
-    def _slice(self, bars: List[Any], start: datetime, end: datetime) -> List[Any]:
+    def _slice(self, bars: list[Any], start: datetime, end: datetime) -> list[Any]:
         lo, hi = self._pos(start), self._pos(end)
         return [b for b in bars if lo <= self._pos(b.timestamp) <= hi]
 
-    async def _fetch(self, symbol: str, exchange: str, interval: str, start: datetime, end: datetime) -> List[Any]:
+    async def _fetch(self, symbol: str, exchange: str, interval: str, start: datetime, end: datetime) -> list[Any]:
         self.broker_requests += 1
         return list(await self._inner.get_historical_data(symbol, exchange, interval, start, end))
 
-    async def get_historical_data(self, symbol: str, exchange: str, interval: str, start: datetime, end: datetime) -> List[Any]:
+    async def get_historical_data(self, symbol: str, exchange: str, interval: str, start: datetime, end: datetime) -> list[Any]:
         from app.core.models import OHLCVBar
         from app.market_data.service import merge_bars
         today = _ist(datetime.now(UTC)).date()
@@ -120,7 +121,7 @@ class TailCachedAdapter:
             return await self._fetch(symbol, exchange, interval, start, end)       # today's bars are never cached
         key = self._key(symbol, exchange, interval)
         raw, left = await _get(key)
-        entry: Optional[Dict[str, Any]] = None
+        entry: Optional[dict[str, Any]] = None
         if raw:
             try:
                 got = json.loads(raw)
@@ -147,7 +148,7 @@ class TailCachedAdapter:
         await self._store(key, lo, hi, bars)
         return self._slice(bars, start, end)
 
-    async def _store(self, key: str, lo: datetime, hi: datetime, bars: List[Any]) -> None:
+    async def _store(self, key: str, lo: datetime, hi: datetime, bars: list[Any]) -> None:
         value = json.dumps({"lo": lo.isoformat(), "hi": hi.isoformat(), "bars": [b.model_dump(mode="json") for b in bars]})
         await _set(key, value, tail_ttl())
 
@@ -155,12 +156,12 @@ class TailCachedAdapter:
 # ----------------------------------------------------------------------------------------- coarse timeframes from 30m
 @dataclass(frozen=True)
 class CoarsePlan:
-    fine: Dict[str, int]                # the lookback the 1-minute window is sized by
-    coarse: Dict[str, int]              # timeframe -> bars read from 30-minute history
+    fine: dict[str, int]                # the lookback the 1-minute window is sized by
+    coarse: dict[str, int]              # timeframe -> bars read from 30-minute history
     days: int                           # calendar days of 30-minute history
 
 
-def coarse_plan(window: Dict[str, int], base_tf: str, interval: str, adapter: Any, fetch_days: Any) -> Optional[CoarsePlan]:
+def coarse_plan(window: dict[str, int], base_tf: str, interval: str, adapter: Any, fetch_days: Any) -> Optional[CoarsePlan]:
     """The split, or None (nothing to change): only for a screen fetched at 1-minute bars whose broker serves 30-minute
     bars natively, when an intraday timeframe that 30-minute bars build (30m, 1h, 2h...) needs a longer window than the
     finer ones."""
@@ -221,7 +222,7 @@ def coarse_frame(thirty: pd.DataFrame, base: pd.DataFrame, base_tf: str, tf: str
     return older
 
 
-async def attach_coarse(universe: List[Any], service_of: Any, plan: CoarsePlan, base_tf: str, exchange: str, now: datetime,
+async def attach_coarse(universe: list[Any], service_of: Any, plan: CoarsePlan, base_tf: str, exchange: str, now: datetime,
                         skip: set[str]) -> int:
     """Each symbol's coarser frames (see `coarse_frame`) from its own service's 30-minute history (`service_of(data)`).
     A symbol whose 30-minute history fails keeps the runtime's own build from the base frame (shorter). Returns how many
@@ -255,7 +256,7 @@ async def attach_coarse(universe: List[Any], service_of: Any, plan: CoarsePlan, 
     return done
 
 
-async def stored_daily(session: Any, symbols: List[str], exchange: str, days: int, now: datetime) -> Dict[str, pd.DataFrame]:
+async def stored_daily(session: Any, symbols: list[str], exchange: str, days: int, now: datetime) -> dict[str, pd.DataFrame]:
     """The NSE daily store's closed sessions for the symbols it holds (no broker call); {} without a database."""
     if session is None or not symbols:
         return {}

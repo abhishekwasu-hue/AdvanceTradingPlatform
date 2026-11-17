@@ -92,6 +92,7 @@ export interface WatchlistPanelProps {
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 /** M91 W2: "Matches only" and no row meets the screen at the last check. */
 const NONE_MATCH = "No stock in this list meets the screen just now. Turn off Matches only to see them all.";
+const NOT_CHECKED = "Not checked - the broker limit held it back; it is checked again at the next bar.";
 
 /** The prices of every row (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). M90 B5: a
  * row a slowed or budget-used reply did not fetch keeps its last price, and `slowed` says the broker's limit slowed it. */
@@ -409,6 +410,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
     ? { symbol: item.symbol, exchange: item.exchange, screenId: screen.id, screenName: screen.name, listKey } : undefined);
   const openRow = (item: WatchItem) => onOpen(item, from(item));
   const isMatch = (item: WatchItem) => watch.matched.has(itemKey(item));
+  const isHeld = (item: WatchItem) => !!watch.held?.has(itemKey(item));
   const ownRows = screenOn ? shownRows(shown, watch.matched, choice.matches_only) : shown;
   const sysRows = screenOn ? shownRows(systemRows, watch.matched, choice.matches_only) : systemRows;
   // Compact: the Screen row opens by itself for a list with a screen chosen (on a list change and once the choices are read).
@@ -570,7 +572,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
           query={rowQuery} onQuery={setRowQuery} sort={sort} onSort={setSort} quotes={priced} quotesFailed={quotes.failed}
           current={(i) => i.symbol === symbol && i.exchange === exchange} onOpen={openRow} onCopy={() => void copyList()} copying={copying}
           onRetry={() => sys.retry(systemSummary.key)} touch={touch} field={field} textBtn={textBtn} narrow={narrow} compact={compact}
-          screen={screenOn ? { isMatch, only: choice.matches_only } : undefined} />
+          screen={screenOn ? { isMatch, isHeld, only: choice.matches_only } : undefined} />
       )}
 
       {list && !state.off && !browsing && (
@@ -589,11 +591,13 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
                 const index = live.indexOf(item);
                 const q = quotes.rows.get(itemKey(item));
                 const current = item.symbol === symbol && item.exchange === exchange;
-                const match = screenOn ? isMatch(item) : undefined;
+                const held = screenOn && isHeld(item);
+                const match = screenOn && !held ? isMatch(item) : undefined;
                 return (
-                  <li key={itemKey(item)} data-row data-match={match === undefined ? undefined : match ? "yes" : "no"}
+                  <li key={itemKey(item)} data-row data-match={held ? "unchecked" : match === undefined ? undefined : match ? "yes" : "no"}
+                    title={held ? NOT_CHECKED : undefined}
                     className={cx("flex items-center rounded-control", current && "bg-surface-2", drag && live[drag.from] === item && "opacity-60",
-                      match === true && "border-l-2 border-up", match === false && "opacity-60")}
+                      match === true && "border-l-2 border-up", match === false && "opacity-60", held && "border-l-2 border-dashed border-warn")}
                     onKeyDown={(e) => { if (!screenOn) keyMove(e, index); }}>
                     <button type="button" data-handle aria-label={`Move ${item.symbol}`} disabled={screenOn}
                       title={screenOn ? "Choose Screen: None to reorder the list" : "Drag, or use the arrow keys, to move"}
@@ -605,6 +609,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
                       className={cx("flex min-w-0 flex-1 rounded-control px-space-1 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
                         narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
                       <RowName item={item} facts={facts.get(itemKey(item))} q={q} narrow={narrow} />
+                      {held && <span className="shrink-0 whitespace-nowrap text-t12 text-warn" data-not-checked>Not checked</span>}
                       <Price q={q} inline={narrow} />
                     </button>
                     <button type="button" aria-label={`Remove ${item.symbol}`} title="Remove from this list" className={iconBtn}
@@ -654,7 +659,7 @@ export interface SystemListViewProps {
   /** Owner 14 Nov: the panel's compact header shows read-only, Copy, the search and the sort (none here). */
   compact?: boolean;
   /** M91 W2: a screen is chosen - its matches are marked, the rest dimmed (the rows come ordered). */
-  screen?: { isMatch: (item: WatchItem) => boolean; only: boolean };
+  screen?: { isMatch: (item: WatchItem) => boolean; isHeld?: (item: WatchItem) => boolean; only: boolean };
 }
 
 /** WL1: a system list's search (symbol or company) and sort. Owner 14 Nov, `compact`: a short search beside the sort,
@@ -707,10 +712,13 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
           {rows.map((item) => {
             const q = quotes.get(itemKey(item));
             const on = current(item);
-            const match = screen ? screen.isMatch(item) : undefined;
+            const held = !!screen?.isHeld?.(item);
+            const match = screen && !held ? screen.isMatch(item) : undefined;
             return (
-              <li key={itemKey(item)} data-row data-match={match === undefined ? undefined : match ? "yes" : "no"}
-                className={cx("flex items-center rounded-control", on && "bg-surface-2", match === true && "border-l-2 border-up", match === false && "opacity-60")}>
+              <li key={itemKey(item)} data-row data-match={held ? "unchecked" : match === undefined ? undefined : match ? "yes" : "no"}
+                title={held ? NOT_CHECKED : undefined}
+                className={cx("flex items-center rounded-control", on && "bg-surface-2", match === true && "border-l-2 border-up", match === false && "opacity-60",
+                  held && "border-l-2 border-dashed border-warn")}>
                 <button type="button" aria-current={on ? "true" : undefined} onClick={() => onOpen({ symbol: item.symbol, exchange: item.exchange })}
                   className={cx("flex min-w-0 flex-1 rounded-control px-space-2 text-left hover:bg-surface-2", touch ? "min-h-11" : "min-h-11 md:min-h-9",
                     narrow ? "flex-col justify-center gap-px py-space-1" : "items-center gap-space-2", focus)}>
@@ -720,6 +728,7 @@ export function SystemListView({ summary, list, rows, total, matching, query, on
                       <span className="block truncate text-t12 text-fg-muted">{item.name ? `${item.exchange} · ${item.name}` : item.exchange}</span>
                     </span>
                   )}
+                  {held && <span className="shrink-0 whitespace-nowrap text-t12 text-warn" data-not-checked>Not checked</span>}
                   <Price q={q} inline={narrow} />
                 </button>
               </li>

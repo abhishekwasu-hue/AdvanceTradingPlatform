@@ -37,7 +37,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import bands as band_gate
 from app.screener import chains as chain_gate
-from app.screener import compile_screen, fib_ew_gate, m99_gate, nodes, pa_gate, reasons, sd_gate, vsa_gate, wyckoff_gate
+from app.screener import compile_screen, fib_ew_gate, m99_gate, nodes, pa_gate, reasons, sd_gate, vsa_gate, watch_fetch, wyckoff_gate
 from app.screener import fib_ew_scanners as fes  # registers the `fib_ew` template source (M99 P5)
 from app.screener import fundamentals as fundamentals_gate
 from app.screener import intraday as itd  # registers the `intraday` template source (M94 PR-2)
@@ -675,7 +675,13 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     if budget_out is not None:
         adapter = api_budget.BudgetedAdapter(adapter, record.id, record.broker_name,
                                              wait_seconds=batch_wait_seconds(record.broker_name, len(symbols) + len(held)))
+    lean = watch_fetch.active() and want != "day"     # owner 15 Nov: a watchlist Screen check (watch_fetch)
+    if lean:
+        adapter = watch_fetch.TailCachedAdapter(adapter)
     interval = screen_interval(adapter, base_tf)
+    coarse = watch_fetch.coarse_plan(window or {base_tf: 1}, base_tf, interval, adapter, fetch_days) if lean else None
+    if coarse is not None:
+        days = fetch_days(coarse.fine, base_tf)        # the 1-minute window: what the finer timeframes need
     service = own.market_data(adapter, lookback_days=days) if own is not None else MarketDataService(adapter, lookback_days=days)
     held_adapter: Any = None
     held_service: Any = None
@@ -685,6 +691,10 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         held_service = own.market_data(held_adapter, lookback_days=days)
     attach_today = interval == "day" and not include_forming and await _closed_for_the_day(session, exchange, now_utc)
     futures = await _index_futures(session, user, record, [*symbols, *held], exchange, now_utc, own is not None)
+    daily_store: Dict[str, Any] = {}
+    if lean and attach_daily:                           # the daily context from the NSE daily store, not the broker
+        daily_store = await watch_fetch.stored_daily(session, [s for s in [*symbols, *held] if s not in futures], exchange,
+                                                     daily_fetch_days(daily_window, "1d"), now_utc)   # an index keeps its future's volume path
     if release:
         await release_connection(session)
     universe: List[SymbolData] = []
@@ -732,8 +742,18 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         if held_service is not None and svc is held_service:
             held_data.append(data)
         newest.append(df.index[-1].to_pydatetime())
+    if coarse is not None and universe:
+        def coarse_service(data: SymbolData) -> Any:
+            src = held_adapter if any(data is h for h in held_data) else adapter
+            return own.market_data(src, lookback_days=coarse.days) if own is not None else MarketDataService(src, lookback_days=coarse.days)
+        await watch_fetch.attach_coarse(universe, coarse_service, coarse, base_tf, exchange, now_utc, skip=set(futures))
+    for data in universe:
+        if data.symbol in daily_store:
+            data.frames["1d"] = daily_store[data.symbol]
     if attach_daily and universe:
-        live_data = [d for d in universe if all(d is not h for h in held_data)]
+        need_broker = [d for d in universe if d.symbol not in daily_store]
+        held_data = [h for h in held_data if h.symbol not in daily_store]
+        live_data = [d for d in need_broker if all(d is not h for h in held_data)]
         daily_days = daily_fetch_days(daily_window, "1d")
         if live_data:
             daily_adapter = adapter if budget_out is not None else (own.adapter() if own is not None else build_adapter(record))

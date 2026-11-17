@@ -2,7 +2,7 @@ import { Bell, Filter } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import {
-  NO_CHOICE, ScreenChecker, checkList, countText, watchScreenApi,
+  NO_CHOICE, ScreenChecker, checkList, closeLabel, countText, progressText, savedList, tally, watchScreenApi,
   type CheckOutcome, type ListChoice, type OwnScreen, type WatchScreenApi,
 } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
@@ -53,6 +53,8 @@ export interface WatchScreenState {
   screen: OwnScreen | null;
   /** Item keys (EXCHANGE:SYMBOL) that meet the screen at the last check. */
   matched: ReadonlySet<string>;
+  /** Owner 15 Nov: item keys the broker's limit held back - shown as "not checked", never as not matched. */
+  held?: ReadonlySet<string>;
   outcome: CheckOutcome | null;
   checking: boolean;
   failed: boolean;
@@ -64,14 +66,15 @@ export interface WatchScreenState {
  * list is not on screen); a check due while the tab is hidden waits for it to show.
  */
 export function useWatchScreen(args: { listKey: string; listName: string; items: readonly WatchItem[]; choice: ListChoice; screen: OwnScreen | null; active: boolean },
-  api: Pick<WatchScreenApi, "check"> = watchScreenApi): WatchScreenState {
+  api: Pick<WatchScreenApi, "check"> & Partial<Pick<WatchScreenApi, "saved">> = watchScreenApi): WatchScreenState {
   const { listKey, listName, items, choice, screen, active } = args;
   const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
   const [checking, setChecking] = useState(false);
   const [failed, setFailed] = useState(false);
   const checker = useMemo(() => new ScreenChecker({
-    check: (t, stopped, onProgress) => checkList(api, t, { stopped, onProgress: (o) => onProgress({ ...o, matched: new Set(o.matched) }) })
+    check: (t, stopped, onProgress, resume) => checkList(api, t, { stopped, onProgress: (o) => onProgress({ ...o, matched: new Set(o.matched) }), ...resume })
       .then((o) => ({ ...o, matched: new Set(o.matched) })),
+    saved: api.saved ? (t) => savedList({ saved: api.saved! }, t) : undefined,
     onOutcome: setOutcome, onBusy: setChecking, onFailed: setFailed, hidden: tabHidden, now: () => Date.now(),
     setTimer: (fn, ms) => window.setTimeout(fn, ms), clearTimer: (t) => window.clearTimeout(t as number),
   }), [api]);
@@ -85,7 +88,8 @@ export function useWatchScreen(args: { listKey: string; listName: string; items:
   useEffect(() => {
     checker.update(active && screenId != null && items.length > 0, screenId != null ? { listKey, listName, screenId, items } : null);
   }, [checker, active, screenId, listKey, listName, items]);
-  return { choice, screen, matched: (screenId != null ? outcome?.matched : undefined) ?? EMPTY_SET, outcome, checking, failed };
+  return { choice, screen, matched: (screenId != null ? outcome?.matched : undefined) ?? EMPTY_SET,
+    held: (screenId != null ? outcome?.held : undefined) ?? EMPTY_SET, outcome, checking, failed };
 }
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -109,6 +113,7 @@ export function WatchScreenBar({ listKey, screens, choice, onChoose, state, item
   const id = `watch-screen-${listKey.replace(/[^a-z0-9]/gi, "-")}`;
   const chosen = choice.screen_id != null;
   const unusable = state.screen && !state.screen.usable ? state.screen.why : null;
+  const held = tally(state.outcome, items.length).held;
   return (
     <div data-watch-screen={listKey} className="space-y-space-1 border-b border-subtle px-space-2 py-space-2">
       <div className="flex items-center gap-space-1">
@@ -122,9 +127,20 @@ export function WatchScreenBar({ listKey, screens, choice, onChoose, state, item
       {chosen && !unusable && (
         <div className="flex flex-wrap items-center gap-space-1">
           <p className="flex min-w-0 flex-1 flex-wrap items-center gap-x-space-2 px-space-1 text-t12 text-fg-muted" role="status" data-testid="watch-screen-count">
-            <span className="whitespace-nowrap font-semibold text-fg tabular-nums">{countText(items, state.matched)}</span>
+            <span className="whitespace-nowrap font-semibold text-fg tabular-nums" data-testid="watch-screen-progress">
+              {state.outcome ? progressText(state.outcome, items.length, state.checking) : countText(items, state.matched)}
+            </span>
             {state.checking && <span>Checking…</span>}
-            {state.outcome?.slowed && <span className="text-warn">Slowed by broker limit</span>}
+            {state.checking && state.outcome?.slowed && <span className="text-warn">Slowed by broker limit</span>}
+            {!state.checking && state.outcome?.closedSince !== undefined && (
+              <span data-testid="watch-screen-closed">Market closed - result from {closeLabel(state.outcome.closedSince)}</span>
+            )}
+            {!state.checking && held > 0 && (
+              <span className="text-warn" data-testid="watch-screen-held">Some stocks held back by the broker limit - they are retried at the next bar</span>
+            )}
+            {!state.checking && held === 0 && state.outcome?.timedOut && (
+              <span className="text-warn">Not every stock could be checked in time - the rest are checked at the next bar</span>
+            )}
             {state.failed && <span className="text-fg">Could not be checked just now. It tries again at the next bar.</span>}
           </p>
           <button type="button" aria-pressed={choice.matches_only} onClick={() => onChoose({ ...choice, matches_only: !choice.matches_only })}

@@ -154,7 +154,9 @@ def summarise_structure(layer: Dict[str, Any]) -> Dict[str, Any]:
                              str(layer.get("instrument") or "")) if short else None
         rows.append({"tf": row.get("tf"), "direction": row.get("direction"), "protected": row.get("protected"), "bars": bars,
                      "needed": STRUCTURE_MIN_BARS, "short": short, "note": note, "source": row.get("source"),
-                     "as_of": row.get("as_of"), "last_event": last.get("name"), "last_event_price": last.get("price")})
+                     "as_of": row.get("as_of"), "last_event": last.get("name"), "last_event_price": last.get("price"),
+                     # owner 15 Nov: the break's own bar (epoch seconds) and direction, so the answer chart marks it there
+                     "last_event_time": last.get("time"), "last_event_direction": last.get("direction")})
     state = layer.get("structure_state") or {}
     levels = [{"kind": lv.get("kind"), "price": lv.get("price"), "degree": lv.get("degree"), "status": lv.get("status")}
               for lv in (layer.get("levels") or [])[:MAX_LEVELS]]

@@ -116,8 +116,12 @@ function Flow({ onAdvanced }: { onAdvanced: () => void }) {
 
       {step !== "result" && (
         <div className="space-y-space-2">
-          {touched && problems.length > 0 && (
-            <ul role="status" data-step-problems className="space-y-space-1 text-t13 text-warn">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+          {/* owner 18 Nov ("pudhe jat nahi"): what this step still needs is listed BEFORE Next is pressed, not only after */}
+          {problems.length > 0 && (
+            <div role="status" data-step-problems className={`text-t13 ${touched ? "text-warn" : "text-fg-muted"}`}>
+              <p className="font-semibold">Still needed on this step:</p>
+              <ul className="mt-space-1 list-disc space-y-space-1 pl-space-5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+            </div>
           )}
           <div className="flex flex-wrap items-center gap-space-2">
             <button type="button" className={BUTTON_PRIMARY} onClick={next} data-flow-next>Next: {STEPS[index + 1].label}</button>
@@ -514,28 +518,41 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
   const options = optionBacktest(flow.options, flow.timeframe);
   const symbol = flow.symbol.trim().toUpperCase();
 
+  /** Saves the strategy (a template: adopts it) and remembers its id - the test on past prices is a separate, optional
+   * step (owner 18 Nov: "backtest nahi kelyas pudhe jat nahi"). */
+  async function save(): Promise<{ id: string; tf: string }> {
+    let id: string;
+    let tf: string;
+    if (flow.engine === "template") {
+      if (!template || !flow.timeframe || !flow.side) throw new Error("This template cannot be saved here.");
+      const a = await templatesApi.adopt(template.id, { timeframe: flow.timeframe, sides: flow.side });
+      id = a.strategy_id; tf = a.deployment.timeframe;
+    } else {
+      if (!config) throw new Error("A step is not complete yet: go back and finish it.");
+      // Save once; a later run with changed rules saves a new version of the same strategy.
+      const key = JSON.stringify(config);
+      const s = saved && savedFor === key ? saved : saved ? await api.updateCustomStrategy(saved.id, config) : await api.createCustomStrategy(config);
+      setSaved(s); setSavedFor(key);
+      id = s.strategy_id; tf = config.timeframe;
+    }
+    setStrategyId(id);
+    return { id, tf };
+  }
+
+  async function saveOnly() {
+    setBusy(true); setError(null);
+    try { await save(); } catch (e) { setError(errorSentence(e)); } finally { setBusy(false); }
+  }
+
   async function saveAndTest() {
     setBusy(true); setError(null);
     try {
-      let id: string;
-      let tf: string;
-      if (flow.engine === "template") {
-        if (!template || !flow.timeframe || !flow.side) throw new Error("This template cannot be tested here.");
-        const a = await templatesApi.adopt(template.id, { timeframe: flow.timeframe, sides: flow.side });
-        id = a.strategy_id; tf = a.deployment.timeframe;
-      } else {
-        if (!config) throw new Error("A step is not complete yet: go back and finish it.");
-        // Save once; a later run with changed rules saves a new version of the same strategy.
-        const key = JSON.stringify(config);
-        const s = saved && savedFor === key ? saved : saved ? await api.updateCustomStrategy(saved.id, config) : await api.createCustomStrategy(config);
-        setSaved(s); setSavedFor(key);
-        id = s.strategy_id; tf = config.timeframe;
-      }
+      const { id, tf } = await save();
       const fetched = await source.fetch([symbol], tf, { count: 600, seedFor: () => 11 });
       const bars = fetched.candles[symbol];
       if (!bars?.length) throw new Error(`No candles for ${symbol}.`);
       const res = await api.backtest(id, symbol, tf, bars, null, fetched.label, options, fetched.request);   // M55 T3
-      setResult(res); setStrategyId(id); setRanTf(tf); setCandles(bars); setPricesFrom(fetched.line);
+      setResult(res); setRanTf(tf); setCandles(bars); setPricesFrom(fetched.line);
     } catch (e) {
       setError(errorSentence(e));
     } finally {
@@ -577,11 +594,25 @@ function ResultStep({ flow, template }: { flow: FlowState; template: StrategyTem
           {flow.engine === "template" && template && <li><Chip tone="neutral">{template.name}</Chip></li>}
         </ul>
         {!result && (
-          <button type="button" className={`${BUTTON_PRIMARY} mt-space-3`} disabled={busy} onClick={() => void saveAndTest()} data-save-test>
-            {busy ? "Testing…" : flow.engine === "custom" ? "Save and test on past prices" : "Test on past prices"}
-          </button>
+          <div className="mt-space-3 flex flex-wrap items-center gap-space-2">
+            <button type="button" className={BUTTON_PRIMARY} disabled={busy} onClick={() => void saveAndTest()} data-save-test>
+              {busy ? "Working…" : flow.engine === "custom" ? "Save and test on past prices" : "Test on past prices"}
+            </button>
+            {!strategyId && (
+              <button type="button" className={BUTTON_SECONDARY} disabled={busy} onClick={() => void saveOnly()} data-save-only>
+                Save without testing
+              </button>
+            )}
+          </div>
         )}
         {error && <div className="mt-space-2"><NoteV2 kind="warn">{error}</NoteV2></div>}
+        {!result && strategyId && (
+          <div className="mt-space-3 border-t border-subtle pt-space-3" data-saved-untested>
+            <p className="text-t13 text-fg">Saved. Not tested on past prices yet.</p>
+            <button type="button" className={`${BUTTON_PRIMARY} mt-space-2`} onClick={startOnPaper} data-start-paper>Start on paper</button>
+            <p className="mt-space-1 text-t12 text-fg-muted">Opens the Trading bot with this strategy picked. Nothing starts until you press Start on paper there.</p>
+          </div>
+        )}
       </CardV2>
 
       {result && sum && (

@@ -431,6 +431,8 @@ class RateLimitedBroker(BrokerInterface):
     async def get_historical_data(self, symbol, exchange, interval, from_date, to_date):
         return await self._call("get_historical_data", symbol, exchange, interval, from_date, to_date)
     async def get_option_chain(self, underlying, expiry=None): return await self._call("get_option_chain", underlying, expiry)
+    async def get_option_chain_raw(self, underlying, expiry): return await self._call("get_option_chain_raw", underlying, expiry)
+    async def get_ltp_by_key(self, instrument_keys): return await self._call("get_ltp_by_key", instrument_keys)
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
         # Z10-c: the broker-order chokepoint of the Phase 0 PAPER-only lock. A new entry is refused before it costs a
         # token or reaches the broker; exits, stops, modifies and cancels always pass (ADR-0004). B1: the lock also holds

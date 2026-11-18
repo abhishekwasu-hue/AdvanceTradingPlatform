@@ -176,7 +176,7 @@ ORDER_METHODS = frozenset({"place_order", "modify_order", "cancel_order", "place
                            "place_gtt", "modify_gtt", "cancel_gtt"})          # M75 W-10: a GTT call is an order call
 HISTORY_METHODS = frozenset({"get_historical_data", "get_intraday_candles"})
 QUOTE_METHODS = frozenset({"get_ltp", "get_quote", "get_quote_for_symbol", "get_ltp_for_symbol", "get_option_chain",
-                           "get_quotes_batch"})
+                           "get_quotes_batch", "get_option_chain_raw", "get_ltp_by_key"})
 
 
 def endpoint_kind(method: str) -> str:

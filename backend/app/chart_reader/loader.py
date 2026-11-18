@@ -93,7 +93,7 @@ def load() -> Optional[Reader]:
     return _cached
 
 
-def rules(strategy: str) -> Optional[dict[str, Any]]:
+def rules(strategy: str) -> dict[str, Any] | None:
     """Owner 18 Nov: a book strategy's own rules, shown to the trader as bullets (summary, conditions S1..Sn, the book's
     own signal, invalidation, what is not checked). The reader's `strategy_rules()` when it has one, else the book's
     section-8 spec through the private package's own `load_strategy`. None for Abhi's method, when the reader is off, or

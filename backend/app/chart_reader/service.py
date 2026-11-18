@@ -26,6 +26,7 @@ reader's text is logged.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import inspect
 import json
@@ -257,6 +258,50 @@ def default_strategy(reader: loader.Reader, *, own_method: bool) -> str | None:
     return labels[0]["id"] if labels else None
 
 
+RULE_TEXT_MAX = 600
+RULES_MAX = 30
+
+
+def _rule_text(value: Any) -> str:
+    return " ".join(str(value or "").split())[:RULE_TEXT_MAX]
+
+
+def _page(item: Any) -> str:
+    return _rule_text(item.get("source")) if isinstance(item, dict) else ""
+
+
+def public_rules(spec: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The book's own rules in the shape the page shows (owner 18 Nov: "rules as bullet points"): plain text with the
+    book's page numbers, no prompt, no schema. None when the spec has no conditions."""
+    if not isinstance(spec, dict):
+        return None
+    conditions = [{"id": _rule_text(c.get("id"))[:12], "text": _rule_text(c.get("text")), "page": _page(c),
+                   "two_chart": "two" in str(c.get("needs", "")).lower()}
+                  for c in (spec.get("conditions") or [])[:RULES_MAX] if isinstance(c, dict) and c.get("id") and c.get("text")]
+    if not conditions:
+        return None
+    raw_trigger = spec.get("trigger")
+    trigger: dict[str, Any] = raw_trigger if isinstance(raw_trigger, dict) else {}
+    return {
+        "summary": _rule_text(spec.get("summary")),
+        "sides": [str(x) for x in spec.get("sides") or [] if x in ("long", "short")],
+        "conditions": conditions,
+        "trigger": {"text": _rule_text(trigger.get("text")), "page": _page(trigger), "stated": trigger.get("stated", True) is not False},
+        "invalidation": [{"text": _rule_text(i.get("text")), "page": _page(i)}
+                         for i in (spec.get("invalidation") or [])[:RULES_MAX] if isinstance(i, dict) and i.get("text")],
+        "not_checked": [_rule_text(x) for x in (spec.get("not_coded") or [])[:RULES_MAX] if x],
+    }
+
+
+def strategy_list(reader: loader.Reader) -> list[dict[str, Any]]:
+    """The labels plus, for each book strategy, its own rules (`rules`, absent when they cannot be read)."""
+    out = []
+    for label in strategy_labels(reader):
+        rules = public_rules(loader.rules(label["id"])) if label["id"] != reader.ABHI else None
+        out.append({**label, "rules": rules} if rules else label)
+    return out
+
+
 # --- reads (I/O) --------------------------------------------------------------------------------------------------------
 
 async def own_cap_usd(session: AsyncSession, user: User) -> float | None:
@@ -333,6 +378,45 @@ async def upload_chart(session: AsyncSession, user: User, item_id: int) -> tuple
     chart = Chart(label=stored_symbol or UPLOAD_INSTRUMENT, symbol=stored_symbol, timeframe=pick.get("timeframe"), paired=False,
                   png=data, fingerprint=hashlib.sha256(data).hexdigest(), facts=None)
     return chart, stored_symbol
+
+
+BOOK_CAPTION = "BOOK LEVELS FROM THIS READ"
+BANDS_MAX = 8
+
+
+def book_bands(read: Any) -> list[dict[str, Any]]:
+    """A book read's levels as numbered bands (L1, L2 ... in the order the read lists them; the page's legend uses the
+    same numbers). A level of the paired chart, or one without any price, is listed on the page but not drawn."""
+    out: list[dict[str, Any]] = []
+    levels = read.get("levels") if isinstance(read, dict) else None
+    for i, lv in enumerate(levels or []):
+        if not isinstance(lv, dict) or "paired" in str(lv.get("chart") or "").lower():
+            continue
+        prices = [float(p) for p in (lv.get("price_low"), lv.get("price_high"))
+                  if isinstance(p, (int, float)) and not isinstance(p, bool) and p > 0]
+        if prices:
+            out.append({"tag": f"L{i + 1}", "low": min(prices), "high": max(prices)})
+    return out[:BANDS_MAX]
+
+
+def book_chart(result: dict[str, Any], charts: list[Chart], strategy: str, abhi: str) -> dict[str, Any] | None:
+    """Owner 18 Nov: the book read's levels drawn on ATP's own chart of the stored candles (the main timeframe, the
+    same bars the read saw). Only for a stored-candles book read with at least one level; None otherwise."""
+    if strategy == abhi or result.get("status") != "ok":
+        return None
+    main = next((c for c in charts if not c.paired and c.facts and c.facts.get("bars")), None)
+    bands = book_bands(result.get("read"))
+    if main is None or not bands:
+        return None
+    facts = main.facts or {}
+    reading = {"symbol": main.symbol, "timeframe": main.timeframe, "timeframe_label": hybrid.tf_label(str(main.timeframe or "")),
+               "bars": facts.get("bars"), "last_close": facts.get("last_close")}
+    try:
+        png = reading_png.render(reading, bands=bands, caption=BOOK_CAPTION)
+    except (ValueError, KeyError, TypeError):
+        return None
+    return {"png_base64": base64.b64encode(png).decode("ascii"), "width": reading_png.WIDTH, "height": reading_png.HEIGHT,
+            "label": main.label, "tags": [b["tag"] for b in bands]}
 
 
 def _public_charts(charts: list[Chart]) -> list[dict[str, Any]]:
@@ -414,7 +498,7 @@ async def read(session: AsyncSession, user: User, tenant: Tenant, settings: dict
             except ValueError:
                 stored = None
             if isinstance(stored, dict):
-                return {**stored, **extras, "cached": True, "cost_usd": 0.0}
+                return {**stored, **extras, "book_chart": book_chart(stored, charts, strategy, reader.ABHI), "cached": True, "cost_usd": 0.0}
 
     await check_cap(session, user, float(extras["estimate_usd"]), now)
     try:
@@ -434,9 +518,9 @@ async def read(session: AsyncSession, user: User, tenant: Tenant, settings: dict
     logger.info("chart read: tenant %s user %s status %s cost_usd %.6f", user.tenant_id, user.id, status[:20], cost)
     if ttl > 0 and status == "ok":
         await cache_client.cache_set(ckey, json.dumps(result, default=str), ttl)
-    return {**result, **extras, "cached": False, "cost_usd": cost}
+    return {**result, **extras, "book_chart": book_chart(result, charts, strategy, reader.ABHI), "cached": False, "cost_usd": cost}
 
 
 __all__ = ["FEATURE", "PLACEHOLDER", "LABEL_LAKE", "LABEL_UPLOAD", "Chart", "api_key", "make_client", "estimate_usd", "cost_usd",
-           "canonical", "pair_for", "structure_fingerprint", "facts_text", "cache_key", "strategy_labels", "own_cap_usd",
+           "canonical", "pair_for", "structure_fingerprint", "facts_text", "cache_key", "strategy_labels", "public_rules", "strategy_list", "book_bands", "book_chart", "own_cap_usd",
            "spent_today_usd", "check_cap", "lake_charts", "upload_chart", "read"]

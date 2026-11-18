@@ -45,8 +45,22 @@ def _outline(canvas: _Canvas, x0: int, y0: int, x1: int, y1: int, color: Color, 
         canvas.vline(x1 + t, y0 - t, y1 + t, color)
 
 
-def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT) -> bytes:
-    """The PNG bytes of ATP's reading. Raises ValueError without candles."""
+def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT,
+           bands: list[dict[str, Any]] | None = None, caption: str = "ATP READING OF THE STORED CANDLES") -> bytes:
+    """The PNG bytes of ATP's reading. Raises ValueError without candles.
+
+    `bands` (owner 18 Nov, a book strategy's levels on the chart): when given, ONLY these are drawn - each a dict with
+    `low`, `high` and a short `tag` ("L1") - coloured by where they sit against the last close (above red, below green,
+    at the price amber); ATP's own areas, lines and trigger box are left out, so a book read never mixes with ATP's
+    reading."""
+    if bands is not None:
+        last = float(reading.get("last_close") or 0) or None
+        def where(b: dict[str, Any]) -> str:
+            if last is None or b["low"] <= last <= b["high"]:
+                return "inside"
+            return "above" if b["low"] > last else "below"
+        reading = {k: reading.get(k) for k in ("symbol", "timeframe", "timeframe_label", "bars")}
+        reading["areas"] = [{"low": b["low"], "high": b["high"], "where": where(b), "tag": b.get("tag")} for b in bands]
     bars = [b for b in reading.get("bars") or [] if min(b["o"], b["h"], b["l"], b["c"]) > 0]
     if not bars:
         raise ValueError("no candles to draw")
@@ -75,7 +89,7 @@ def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT)
 
     title = f"{reading.get('symbol') or ''} {reading.get('timeframe_label') or reading.get('timeframe') or ''}"
     canvas.text(left, 12, title, TITLE)
-    canvas.text(left + 8 * SCALE * (len(title) + 2), 12, "ATP READING OF THE STORED CANDLES", MUTED)
+    canvas.text(left + 8 * SCALE * (len(title) + 2), 12, caption, MUTED)
     for i in range(1, 6):
         gy = top + (bottom - top) * i // 6
         canvas.hline(left, right, gy, GRID)
@@ -90,7 +104,7 @@ def render(reading: dict[str, Any], *, width: int = WIDTH, height: int = HEIGHT)
         canvas.hline(left, right, y_hi, edge, dash=4)
         canvas.hline(left, right, y_lo, edge, dash=4)
         band = _fmt(a["low"]) if _fmt(a["low"]) == _fmt(a["high"]) else f"{_fmt(a['low'])}-{_fmt(a['high'])}"
-        labels.append(((y_hi + y_lo) // 2, f"AREA {band}", edge))
+        labels.append(((y_hi + y_lo) // 2, f"{a.get('tag') or 'AREA'} {band}", edge))
     canvas.vline(right, top, bottom, AXIS)
     canvas.hline(left, right, bottom, AXIS)
 

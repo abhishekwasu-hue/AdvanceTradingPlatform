@@ -93,6 +93,28 @@ def load() -> Optional[Reader]:
     return _cached
 
 
+def rules(strategy: str) -> dict[str, Any] | None:
+    """Owner 18 Nov: a book strategy's own rules, shown to the trader as bullets (summary, conditions S1..Sn, the book's
+    own signal, invalidation, what is not checked). The reader's `strategy_rules()` when it has one, else the book's
+    section-8 spec through the private package's own `load_strategy`. None for Abhi's method, when the reader is off, or
+    when the spec cannot be read. The text is served to signed-in users at run time only; it is never stored here."""
+    reader = load()
+    if reader is None or strategy == reader.ABHI:
+        return None
+    try:
+        own = getattr(reader, "strategy_rules", None)
+        if callable(own):
+            spec = own(strategy)
+        elif _override is not _UNSET:
+            return None                                      # tests: a fake reader without rules
+        else:
+            spec = importlib.import_module(MODULE + ".chart_read").load_strategy(strategy)
+    except Exception as exc:  # noqa: BLE001 - a missing or broken spec only hides the rules list
+        logger.warning("%s: rules of a strategy could not be read (%s)", MODULE, exc.__class__.__name__)
+        return None
+    return spec if isinstance(spec, dict) else None
+
+
 def available() -> bool:
     return load() is not None
 

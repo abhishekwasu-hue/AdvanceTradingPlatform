@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixtureStatus } from "../src/chartAnalyze/fixtures";
 import { fixtureAbhiResult, fixtureBookResult, fixtureStrategies } from "../src/chartReader/fixtures";
@@ -51,7 +52,11 @@ async function open(page: Page, { options = ON, list = fixtureStrategies(), mode
       const repeat = calls.reads.filter((r) => r.strategy === "ABHI").length > 1;
       return route.fulfill({ json: fixtureAbhiResult(cachedRepeat && repeat ? { cached: true, cost_usd: 0 } : {}) });
     }
-    return route.fulfill({ json: fixtureBookResult(body.strategy) });
+    // owner 18 Nov: the read's levels on a chart - a made-up DEMO picture (synthetic candles, invented bands)
+    const bookChart = body.strategy === "DEMO_ONE"
+      ? { png_base64: readFileSync(new URL("./fixtures/book-chart-demo.png", import.meta.url)).toString("base64"), width: 960, height: 540, label: "DEMO Daily", tags: ["L1"] }
+      : null;
+    return route.fulfill({ json: fixtureBookResult(body.strategy, { book_chart: bookChart }) });
   });
   return calls;
 }
@@ -137,6 +142,14 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await expectNoSidewaysScroll(page);
       if (size.phone) await expectPhoneLayout(page);
       await shot(page, `m86-chart-reader-${size.width}-dark.png`);
+
+      // owner 18 Nov: the picked book's rules as bullets, each condition's rule in the card, the levels on a chart
+      await pickOption(page, page.getByTestId("reader-book-pick"), "DEMO_ONE");
+      await expect(page.getByTestId("reader-book-rules").getByTestId("rules-conditions").locator("li")).toHaveCount(3);
+      await expect(page.getByTestId("reader-book").first().getByTestId("book-chart")).toBeVisible();
+      await expect(page.getByTestId("reader-book").first().getByTestId("condition-rule")).toHaveCount(3);
+      await expectNoSidewaysScroll(page);
+      await shot(page, `m86-book-rules-${size.width}-dark.png`);
 
       // each book card closes on its own; the owner's card stays
       await page.getByRole("button", { name: "Close A. Writer, Example Book One (1901) strategy" }).click();

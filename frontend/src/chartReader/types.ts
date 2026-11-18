@@ -3,6 +3,25 @@
  * reading method itself is not in this repository.
  */
 
+/** Owner 18 Nov: a book strategy's own rules, shown as bullets (the book's text with its page numbers). */
+export interface StrategyRules {
+  summary: string;
+  sides: string[];
+  conditions: { id: string; text: string; page: string; two_chart: boolean }[];
+  trigger: { text: string; page: string; stated: boolean };
+  invalidation: { text: string; page: string }[];
+  not_checked: string[];
+}
+
+/** Owner 18 Nov: the book read's levels drawn on ATP's chart of the stored candles (bands tagged L1, L2 ...). */
+export interface BookChart {
+  png_base64: string;
+  width: number;
+  height: number;
+  label: string;
+  tags: string[];
+}
+
 export interface ReaderStrategy {
   id: string;
   name: string;
@@ -11,6 +30,7 @@ export interface ReaderStrategy {
   edition: string;
   two_chart: boolean;
   sides: string[];
+  rules?: StrategyRules;
 }
 
 /** GET /api/chart-reader/strategies. For the platform owner `own_method` is true and `default` is his own method (listed
@@ -98,6 +118,7 @@ export interface ReaderResult<R = AbhiRead | BookRead> {
   estimate_usd: number;
   cost_usd: number;
   label: "Advanced analysis (code + AI)" | "AI only" | string;
+  book_chart?: BookChart | null;
   error?: string;
   category?: string;
 }

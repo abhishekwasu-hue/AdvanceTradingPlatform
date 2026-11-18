@@ -1,4 +1,4 @@
-import type { AbhiRead, BookRead, ReaderResult, ReaderStrategies } from "./types";
+import type { AbhiRead, BookRead, ReaderResult, ReaderStrategies, StrategyRules } from "./types";
 
 /**
  * M86 W3: MADE-UP answers for the tests, the e2e mocks and the screenshots (public repository). The symbol, prices,
@@ -7,13 +7,29 @@ import type { AbhiRead, BookRead, ReaderResult, ReaderStrategies } from "./types
 
 export const DEMO_SYMBOL = "DEMO";
 
+export function fixtureRules(): StrategyRules {
+  return {
+    summary: "Placeholder summary: an invented example idea in one line.",
+    sides: ["long"],
+    conditions: [
+      { id: "c1_example_trend", text: "Placeholder rule: the example swings keep rising.", page: "p.1", two_chart: false },
+      { id: "c2_example_range", text: "Placeholder rule: the example range stays narrow.", page: "p.2", two_chart: false },
+      { id: "c3_example_pair", text: "Placeholder rule: the example second chart agrees.", page: "p.3", two_chart: true },
+    ],
+    trigger: { text: "Placeholder: the example shape closes outside the example range.", page: "p.4", stated: true },
+    invalidation: [{ text: "Placeholder: the example low gives way.", page: "p.5" }],
+    not_checked: ["Placeholder: example time statements"],
+  };
+}
+
 export function fixtureStrategies(over: Partial<ReaderStrategies> = {}): ReaderStrategies {
   return {
     available: true, message: null, default: "ABHI", own_method: true, model: "demo-model", effort: "high", estimate_usd: 0.07,
     estimate_usd_two_chart: 0.08, estimate_usd_upload: 0.06,
     strategies: [
       { id: "ABHI", name: "My method", book: "", author: "", edition: "", two_chart: false, sides: ["buyer", "seller"] },
-      { id: "DEMO_ONE", name: "Example strategy one", book: "Example Book One", author: "A. Writer", edition: "1901", two_chart: false, sides: ["long"] },
+      { id: "DEMO_ONE", name: "Example strategy one", book: "Example Book One", author: "A. Writer", edition: "1901", two_chart: false, sides: ["long"],
+        rules: fixtureRules() },
       { id: "DEMO_TWO", name: "Example strategy two", book: "Example Book Two", author: "B. Author", edition: "1902", two_chart: true, sides: ["long", "short"] },
     ],
     ...over,

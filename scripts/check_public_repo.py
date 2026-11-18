@@ -112,6 +112,8 @@ PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 # no real data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here
 # (docs/PUBLIC_REPO_POLICY.md 5).
 ALLOWED_TEST_DATA: Dict[str, str] = {
+    # owner 18 Nov (M86-BR): a synthetic DEMO chart (random-walk candles, invented bands) for the book-levels e2e
+    "frontend/e2e/fixtures/book-chart-demo.png": "a5b727fd10916194e0798c16f1ebd459775b30b9a7c054efdcb5a974f0bcfa23",
     # M55 Q1: the moved and scanner routes (paths, dependencies, schema hashes) - generated from the code, no data;
     # re-pin after regenerating it (tests/route_table_snapshot.py)
     "backend/tests/fixtures/route_table.json": "244a170f6e38ca7f874c31ded240005f4bac7cbab7aa515c722a5f07b97f6077",

@@ -72,7 +72,7 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
           ))}
           {trades.some((t) => t.setup_time) && (
             <li className="inline-flex items-center gap-space-1">
-              <span aria-hidden className="inline-block h-2 w-2" style={{ backgroundColor: "#7c3aed" }} />Setup: where the idea began
+              <span aria-hidden className="inline-block h-2 w-2 bg-ai" />Setup: where the idea began
             </li>
           )}
           {trades.length > 0 && (

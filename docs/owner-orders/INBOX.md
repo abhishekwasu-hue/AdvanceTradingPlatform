@@ -463,3 +463,8 @@ Note: runner release PR #1100 merged; 15M SRv2 audit done (atp-private PR #18, d
 > "analyze chart and chart reader yachyat difference ky ahe full confusion" (Analyze a chart page: "Analyze a chart" box and "Chart reader" box)
 
 Note: fixes in PR claude/pwa-install-topbar (install as one top-bar button in v2; a Screen's chart opens with that screen on its timeframe from the Terminal watchlist, side chart and main chart; the server's own reason, e.g. no broker session, shown instead of "could not be checked"). The Analyze-a-chart / Chart reader confusion is the redesign plan (HANDOVER_NOW, ~11-12 lakh) that waits for the owner's ok.
+## 18 Nov - owner (on the 15M SRv2 audit report: plan P1-P5, three defaults)
+
+> "Default yes"
+
+Note: SRV2 approved with the defaults: build P1-P5; LIVE mode built on the same code path but OFF until the owner's words; Trade's next-level exit for engine positions kept AS IS (noted); the owner's current settings copied with a read-only command on the Trade VPS.

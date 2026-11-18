@@ -92,6 +92,13 @@ def fake_cache(monkeypatch):
         store[key] = value
     monkeypatch.setattr(WF, "_get", get)
     monkeypatch.setattr(WF, "_set", put)
+    # Redis (present in CI, shared by the whole suite) holds candle and daily-context copies: keep it out so the broker
+    # calls are counted the same everywhere (the cache client fails open, as when Redis is down)
+    from app.cache import client as cache_client
+
+    def no_redis():
+        raise ConnectionError("no Redis in this test")
+    monkeypatch.setattr(cache_client, "_get_client", no_redis)
     shared_candles.reset()
     yield store
     shared_candles.reset()

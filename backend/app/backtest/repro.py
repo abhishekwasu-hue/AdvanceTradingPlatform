@@ -75,12 +75,20 @@ def config_hash(**parts: Any) -> str:
     return _sha256(canonical_json(parts).encode())
 
 
+DISPLAY_TRADE_FIELDS = ("entry_reasons", "setup_time")
+
+
 def result_hash(result: Any) -> str:
     skip = {"run_id", "reproducibility", "data_source"} | ({"execution"} if getattr(result, "execution", None) is None else set())
     if getattr(result, "loss_streak", None) is None:
         skip.add("loss_streak")     # CP6-15: a run whose pause never engaged hashes as before
     skip.add("history")             # REV-S3: words about the history the run had (the data hash already covers its bars)
     payload = result.model_dump(mode="json", exclude=skip)
+    # BT-DRAW: words and the setup time shown with each trade (the engine never reads them back) - a run hashes as before
+    for trade in payload.get("trades") or []:
+        if isinstance(trade, dict):
+            for key in DISPLAY_TRADE_FIELDS:
+                trade.pop(key, None)
     return _sha256(canonical_json(payload).encode())
 
 

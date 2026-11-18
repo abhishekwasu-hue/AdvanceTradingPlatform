@@ -19,6 +19,9 @@ import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
+import { exitMarkerText, templateLines, templateParams } from "../chart/templateLines";
+
+const SETUP_COLOR = "#7c3aed";
 import { Database } from "lucide-react";
 import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { OptimiserFields } from "../backtest/OptimiserFields";
@@ -84,6 +87,8 @@ export default function BacktestPage() {
   const [link] = useState<TemplateLink | null>(() => { try { return templateLinkFromSearch(address.search); } catch { return null; } });
   const [tplTimeframe, setTplTimeframe] = useState("");
   const [ranWith, setRanWith] = useState<{ id: string; timeframe: string } | null>(null);
+  // BT-DRAW: the template a run tested and its settings, so the chart draws that template's own lines only.
+  const [ranTemplate, setRanTemplate] = useState<{ id: string; params: Record<string, unknown> } | null>(null);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +295,7 @@ export default function BacktestPage() {
       setResult(res);
       setRanOnSample(fetched.label === "sample");
       setRanWith(target);
+      setRanTemplate(picked ? { id: picked.id, params: templateParams(picked.params, link?.template === picked.id ? typedSettings(picked, link.params) : {}) } : null);
       setPricesFrom(fetched.line);
       setChartCandles(candles);
       setMonteCarlo(null);
@@ -302,11 +308,18 @@ export default function BacktestPage() {
     }
   }
 
-  // One entry marker (direction-coded arrow) and one exit marker (P&L-coded circle) per trade.
+  const templateLinesShown = useMemo(() => (ranTemplate ? templateLines(ranTemplate.id, ranTemplate.params, chartCandles) : null), [ranTemplate, chartCandles]);
+
+  // One entry marker (direction-coded arrow) and one exit marker (P&L-coded circle) per trade. BT-DRAW: the exit
+  // marker says why the trade closed (the engine's own reason) beside its result.
   const tradeMarkers: ChartMarker[] = useMemo(() => {
     if (!result) return [];
     const markers: ChartMarker[] = [];
     for (const t of result.trades) {
+      // BT-DRAW: where the template's setup began (a visit to its area, a break ...), before the entry candle
+      if (t.setup_time && t.setup_time !== t.entry_time) {
+        markers.push({ timestamp: t.setup_time, position: t.direction === "LONG" ? "belowBar" : "aboveBar", color: SETUP_COLOR, shape: "square", text: "Setup" });
+      }
       markers.push(directionMarker(t.entry_time, t.direction as "LONG" | "SHORT", `Entry ${t.direction}`));
       if (t.exit_time) {
         const won = (t.pnl ?? 0) >= 0;
@@ -315,11 +328,11 @@ export default function BacktestPage() {
           position: t.direction === "LONG" ? "aboveBar" : "belowBar",
           color: won ? "up" : "down",
           shape: "circle",
-          text: `Exit ${t.pnl == null ? "" : formatNumber(t.pnl, 0)}`,
+          text: exitMarkerText(t.exit_reason, t.pnl == null ? "" : formatNumber(t.pnl, 0)),
         });
       }
     }
-    return markers;
+    return markers.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   }, [result]);
 
   // The premium model, IV, lot / strike step, expiry calendar and the chain CSV: in place with the flag off, under
@@ -650,7 +663,8 @@ export default function BacktestPage() {
             {ranOnSample && <SampleChip className="mb-2" />}
             {/* Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays without it. */}
             {uiV2
-              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
+              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params}
+                  lines={templateLinesShown} trades={result.trades} />
               : <ProChart candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />}
           </Card>
 
@@ -828,7 +842,8 @@ export default function BacktestPage() {
                     <th className="py-1 pr-3">Entry</th>
                     <th className="py-1 pr-3">Exit</th>
                     <th className="py-1 pr-3">Qty</th>
-                    <th className="py-1 pr-3">Reason</th>
+                    <th className="py-1 pr-3">Why it entered</th>
+                    <th className="py-1 pr-3">Why it closed</th>
                     <th className="py-1 pr-3">P&amp;L</th>
                   </tr>
                 </thead>
@@ -839,7 +854,8 @@ export default function BacktestPage() {
                       <td className="py-1 pr-3">{formatNumber(t.entry_price, 2)}</td>
                       <td className="py-1 pr-3">{num(t.exit_price, 2)}</td>
                       <td className="py-1 pr-3">{t.quantity}</td>
-                      <td className="py-1 pr-3">{t.exit_reason ?? "-"}</td>
+                      <td className="min-w-[14rem] py-1 pr-3 normal-case" data-entry-why>{t.entry_reasons?.length ? t.entry_reasons.join(" ") : "-"}</td>
+                      <td className="py-1 pr-3" data-exit-why>{t.exit_reason ?? "-"}</td>
                       <td className={`py-1 pr-3 ${signClass(t.pnl)}`}>
                         {num(t.pnl, 2)}
                       </td>
@@ -847,7 +863,7 @@ export default function BacktestPage() {
                   ))}
                   {result.trades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-3 text-center text-fg-muted">
+                      <td colSpan={7} className="py-3 text-center text-fg-muted">
                         {source.sampleHidden ? "No trades were triggered in this period." : "No trades were triggered on this sample dataset."}
                       </td>
                     </tr>

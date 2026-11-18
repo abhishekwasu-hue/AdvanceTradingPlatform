@@ -193,7 +193,9 @@ class TemplateStrategy(BaseStrategy):
         # Section 5: the user's target rule (none chosen: no target, risk_reward None - exactly as before). The signal's
         # reasons never carry it (policy 11l): the level lives on the order / position record.
         target1, risk_reward = self.target_at(series, t, d, entry, stop)
-        return Signal(provenance=provenance, symbol=symbol, strategy_id=self.id, strategy_name=self.name,
+        sb = int(series.setup_bar[t])
+        setup_time = pd.Timestamp(series.index[sb]).to_pydatetime() if 0 <= sb <= t else None   # BT-DRAW: drawn, never read back
+        return Signal(provenance=provenance, setup_time=setup_time, symbol=symbol, strategy_id=self.id, strategy_name=self.name,
                       direction=SignalDirection.LONG if d > 0 else SignalDirection.SHORT, timestamp=timestamp,
                       entry=entry, stop_loss=stop, target1=target1, target2=None,
                       risk_reward=risk_reward, score=TEMPLATE_SCORE, grade=grade_from_score(TEMPLATE_SCORE), reasons=reasons,

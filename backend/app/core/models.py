@@ -88,6 +88,9 @@ class Signal(BaseModel):
     # and the setup instance - for the server only. Never serialised (`exclude`): no API answer, stored row, alert or
     # notification carries it, so a user never sees an internal id; the reasons hold only the structure-word sentence.
     provenance: Optional[Dict[str, str]] = Field(default=None, exclude=True)
+    # BT-DRAW (owner 18 Nov): the bar where the template's setup began (a visit to its area, a break ...), so a chart can
+    # mark it next to the entry. A time only, never an id; None for strategies without a setup bar.
+    setup_time: datetime | None = None
 
     @property
     def is_tradeable(self) -> bool:
@@ -236,6 +239,11 @@ class Trade(BaseModel):
     # long the entry took. None for backtest trades.
     expected_price: Optional[float] = None
     entry_latency_ms: Optional[int] = None
+    # BT-DRAW (owner 18 Nov): why the trade entered - the signal's own structure-word sentences (Signal.reasons),
+    # shown with the trade so every test trade explains itself. Never the internal provenance.
+    entry_reasons: list[str] = Field(default_factory=list)
+    # BT-DRAW: the bar where the signal's setup began (Signal.setup_time), None when the strategy has none.
+    setup_time: datetime | None = None
 
 
 class BacktestResult(BaseModel):

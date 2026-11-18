@@ -83,7 +83,8 @@ async function mockWorld(page: Page) {
     const trade = (i: number, pnl: number) => ({ symbol: b.symbol, strategy_id: b.strategy_id, direction: "LONG", entry_time: bars[i].timestamp,
       entry_price: bars[i].close, quantity: 10, stop_loss: bars[i].low, target1: null, target2: null, exit_time: bars[i + 6].timestamp,
       exit_price: bars[i + 6].close, exit_reason: "SIGNAL", pnl, charges: 12,
-      entry_reasons: ["Example: a level broke and the price came back to it and held."], setup_time: bars[i - 4].timestamp });
+      entry_reasons: ["Example: a level broke and the price came back to it and held."], setup_time: bars[i - 4].timestamp,
+      setup_area_low: bars[i].low - 1, setup_area_high: bars[i].low });
     const trades = [trade(40, 180), trade(95, -120), trade(150, 240)];
     return route.fulfill({ json: { ...(S.backtest as object), strategy_id: b.strategy_id, symbol: b.symbol, total_trades: 3, winning_trades: 2, losing_trades: 1,
       win_rate: 66.7, net_pnl: 300, gross_profit: 420, gross_loss: -120, profit_factor: 3.5, max_drawdown: 120, avg_win: 210, avg_loss: -120, expectancy: 100,
@@ -154,6 +155,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await expect(panel.locator("[data-entry-why]").first()).toHaveText("Example: a level broke and the price came back to it and held.");
         await expect(panel.locator("[data-exit-why]").first()).toHaveText("SIGNAL");
         await expect(panel.locator("[data-backtest-legend]")).toContainText("Setup: where the idea began");
+        await expect(panel.locator("[data-backtest-legend]")).toContainText("Area the setup came from");
         await panel.locator("[data-backtest-chart]").scrollIntoViewIfNeeded();
         await shot("03b-template-chart");
         await panel.getByTestId("prices-from").scrollIntoViewIfNeeded();

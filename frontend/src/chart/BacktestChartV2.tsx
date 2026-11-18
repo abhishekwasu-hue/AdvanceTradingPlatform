@@ -21,6 +21,16 @@ export function tradeLayer(trades: readonly Trade[]): LayerData {
     if (!Number.isFinite(t1) || !Number.isFinite(t2) || !(t.stop_loss > 0)) continue;
     segments.push({ t1, p1: t.stop_loss, t2, p2: t.stop_loss, color: INVALIDATION_COLOR, width: 1, style: "dashed" });
   }
+  // BT-DRAW 2c: the area a level-gate template entered from, boxed from its setup bar (else the entry) to the exit
+  for (const t of trades) {
+    const lo = t.setup_area_low, hi = t.setup_area_high;
+    const a = sec(t.setup_time ?? t.entry_time), b = sec(t.exit_time);
+    if (lo == null || hi == null || !(hi >= lo) || !Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const role = t.direction === "LONG" ? "demand" : "supply";
+    for (const [t1, p1, t2, p2] of [[a, hi, b, hi], [a, lo, b, lo], [a, lo, a, hi], [b, lo, b, hi]] as const) {
+      segments.push({ t1, p1, t2, p2, role, width: 1, style: "solid" });
+    }
+  }
   return { segments };
 }
 
@@ -70,6 +80,11 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
               <span aria-hidden className="inline-block h-0.5 w-4" style={{ backgroundColor: st.line.color }} />{st.line.title}{st.line.pane === "own" ? " (own pane)" : ""}
             </li>
           ))}
+          {trades.some((t) => t.setup_area_low != null) && (
+            <li className="inline-flex items-center gap-space-1">
+              <span aria-hidden className="inline-block h-2 w-4 border border-up" />Area the setup came from
+            </li>
+          )}
           {trades.some((t) => t.setup_time) && (
             <li className="inline-flex items-center gap-space-1">
               <span aria-hidden className="inline-block h-2 w-2 bg-ai" />Setup: where the idea began

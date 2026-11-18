@@ -87,6 +87,8 @@ class PaperBroker:
             target2=signal.target2,
             entry_reasons=[r for r in signal.reasons if isinstance(r, str) and r.strip()][:4],
             setup_time=signal.setup_time,
+            setup_area_low=signal.setup_area_low,
+            setup_area_high=signal.setup_area_high,
         )
 
     def close_trade(self, trade: Trade, exit_price: float, exit_time: datetime, reason: str) -> Trade:

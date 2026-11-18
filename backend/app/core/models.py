@@ -91,6 +91,9 @@ class Signal(BaseModel):
     # BT-DRAW (owner 18 Nov): the bar where the template's setup began (a visit to its area, a break ...), so a chart can
     # mark it next to the entry. A time only, never an id; None for strategies without a setup bar.
     setup_time: datetime | None = None
+    # BT-DRAW 2c: the area (low / high) a level-gate template entered from - display only, None for other strategies.
+    setup_area_low: float | None = None
+    setup_area_high: float | None = None
 
     @property
     def is_tradeable(self) -> bool:
@@ -244,6 +247,9 @@ class Trade(BaseModel):
     entry_reasons: list[str] = Field(default_factory=list)
     # BT-DRAW: the bar where the signal's setup began (Signal.setup_time), None when the strategy has none.
     setup_time: datetime | None = None
+    # BT-DRAW 2c: the area (low / high) a level-gate template entered from - display only, None for other strategies.
+    setup_area_low: float | None = None
+    setup_area_high: float | None = None
 
 
 class BacktestResult(BaseModel):

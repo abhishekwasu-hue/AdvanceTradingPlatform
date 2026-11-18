@@ -191,6 +191,9 @@ export interface Trade {
   entry_reasons?: string[];
   /** BT-DRAW: the bar where the template's setup began (null / absent: none). */
   setup_time?: string | null;
+  /** BT-DRAW 2c: the area (low / high) a level-gate template entered from (null / absent: none). */
+  setup_area_low?: number | null;
+  setup_area_high?: number | null;
 }
 
 /** Phase AO: a strategy walked over the candles a chart is showing (POST /strategies/{id}/chart-run). */

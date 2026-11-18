@@ -57,4 +57,14 @@ describe("trades on the chart say why they closed and where each idea was wrong"
     expect(layer.segments).toHaveLength(1);
     expect(layer.segments?.[0]).toMatchObject({ p1: 99, p2: 99, style: "dashed" });
   });
+  it("a level-gate trade's area is boxed from its setup to its exit, in the side's colour (BT-DRAW 2c)", () => {
+    const t: Trade = { symbol: "DEMO", strategy_id: "x", direction: "SHORT", entry_time: bars[10].timestamp, entry_price: 101, quantity: 1,
+      stop_loss: 103, target1: 0, target2: null, exit_time: bars[20].timestamp, exit_price: 100, exit_reason: "x", pnl: 1, charges: 0,
+      setup_time: bars[7].timestamp, setup_area_low: 101.5, setup_area_high: 102.5 };
+    const box = (tradeLayer([t]).segments ?? []).filter((x) => x.role);
+    expect(box).toHaveLength(4);
+    expect(box.every((x) => x.role === "supply")).toBe(true);
+    expect(box[0]).toMatchObject({ p1: 102.5, p2: 102.5, t1: Math.floor(Date.parse(bars[7].timestamp) / 1000) });
+    expect((tradeLayer([{ ...t, setup_area_low: null }]).segments ?? []).filter((x) => x.role)).toHaveLength(0);
+  });
 });

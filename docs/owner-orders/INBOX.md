@@ -435,3 +435,9 @@ file / DECISIONS.md / the README status). Keep the newest at the bottom.
 > "Runner flag ali aahe me ti on keli"
 
 Note: owner turned user_runner ON. No runner-v* release tag exists yet, so the image / install.sh are not published; release needs owner ok.
+
+## 18 Nov - owner
+
+> "Runner release kra"
+
+Note: tag push from the session is refused (403); release.yml now accepts a release published on the GitHub page (tag runner-v0.1.0 on main).

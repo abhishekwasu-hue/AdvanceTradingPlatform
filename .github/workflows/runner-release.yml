@@ -79,6 +79,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/install.sh dist/install.sh.sha256 \
-            --title "ATP runner ${GITHUB_REF_NAME#runner-}" \
-            --notes "Image: ${IMAGE,,}@${DIGEST} (signed keyless by this workflow). Install: docs/RUNNER_INSTALL.md"
+          notes="Image: ${IMAGE,,}@${DIGEST} (signed keyless by this workflow). Install: docs/RUNNER_INSTALL.md"
+          # The tag may come from a release the owner published on the GitHub page (sessions cannot push tags):
+          # then this run attaches its files to that release instead of creating a second one.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/install.sh dist/install.sh.sha256 --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "ATP runner ${GITHUB_REF_NAME#runner-}" --notes "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/install.sh dist/install.sh.sha256 \
+              --title "ATP runner ${GITHUB_REF_NAME#runner-}" --notes "$notes"
+          fi

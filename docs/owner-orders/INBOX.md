@@ -485,3 +485,9 @@ Note: root cause - the sheet's Import button stays disabled until a chosen file 
 > "strategy nusarindicator sudha drwa jhale pahije"
 
 Note: new item BT-DRAW - the backtest chart draws what the selected strategy itself uses (its areas / levels / structure and its own indicators only, never a default EMA pair) and every trade carries a plain explanation of why it entered and exited.
+
+## 18 Nov - owner (on the report's one open decision, CA-CHAT-Q1)
+
+> "default yes"
+
+Note: CA-CHAT approved with the default (OPEN_QUESTIONS CA-CHAT-Q1): one Setup dropdown (My method for the owner only, the book strategies, "My own conditions"); a chat on the same chart where the trader writes his conditions and the AI answers each as met / not met / unclear with evidence and marks it on the chart; the user's own AI key; cost per message shown; signal-language guard; one thread per analysis kept in My analyses.

@@ -329,7 +329,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | WS-FAST | draft PR (claude/watch-screen-fast); waits for CI + deploy + owner ✅ on the real 218-stock list | behind the existing watchlist_screen flag; no new flag | DECISIONS 15 Nov (WS-FAST) |
 | SRV2 | in progress (approved 18 Nov "Default yes"): audit done (atp-private #18); P1 next | one PR per part; parity tests + screenshots; owner ✅ | DECISIONS 18 Nov (SRV2) |
 | M86-BR | in progress (owner 18 Nov) | Book strategies: each book's own rules as bullets (conditions with pages, the book's own signal, what proves it wrong, not checked) under the picker and beside each condition; the read's levels as numbered bands on ATP's chart of the stored candles | INBOX 18 Nov |
-| CA-CHAT | not started (owner 18 Nov) | Analyze a chart: setup dropdown + AI chat window for the trader's own conditions (design default OPEN_QUESTIONS CA-CHAT-Q1) | INBOX 18 Nov |
+| CA-CHAT | approved 18 Nov ("default yes"); queued after SF-UNBLOCK, M88-IMP, BT-DRAW | Analyze a chart: setup dropdown + AI chat window for the trader's own conditions (design default OPEN_QUESTIONS CA-CHAT-Q1) | INBOX 18 Nov |
 | SF-UNBLOCK | in progress (owner 18 Nov) | Strategy Build: show what each step still needs before Next; save and Start on paper without a backtest; a failed backtest is no dead end | INBOX 18 Nov |
 | M88-IMP | in progress (owner 18 Nov) | Journal import: the disabled Import button says why (choose a file / no new trades / already imported) | INBOX 18 Nov |
 | BT-DRAW | in progress (owner 18 Nov) | Strategy test chart: draw exactly what the selected strategy uses (areas / levels / structure, its own indicators only) and a plain why-entered / why-exited explanation on every trade | INBOX 18 Nov |

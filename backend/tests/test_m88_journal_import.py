@@ -88,11 +88,11 @@ FYERS_ORDERS = (
     'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:01:52,SELL,Overnight,Executed,Market,50,82.65,0.00,Mobile,"=""3""","=""13"""\n'
     'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:08:18,BUY,Overnight,Executed,Limit,50,96.65,106.25,Mobile,"=""4""","=""14"""\n'
     'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:09:00,BUY,Overnight,Rejected,Limit,50,0.00,90.00,Mobile,"=""5""","=""15"""\n'
-).encode()
+)
 
 
 def test_fyers_order_book_with_report_rows_above_the_header():
-    r = read_file("FYERS_orderbook.csv", FYERS_ORDERS, now=NOW)
+    r = read_file("FYERS_orderbook.csv", FYERS_ORDERS.encode(), now=NOW)
     assert r.layout == "fyers_orders" and r.mapping["symbol"] == "Symbol name" and r.mapping["time"] == "Date & Time"
     long_leg, short_leg = sorted(r.trades, key=lambda t: t.direction)
     assert (long_leg.symbol, long_leg.direction, long_leg.quantity, long_leg.entry_price, long_leg.exit_price) == \

@@ -26,7 +26,7 @@ jobs:
       COSIGN_SHA256: 8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b
     steps:
       # P0.7: pinned to a commit SHA (the tag in the comment), as in ci.yml
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build context from the runner manifest (and check the runner lock is current)
         run: python3 deploy/runner/build_context.py --check --out "$RUNNER_TEMP/runner-ctx"

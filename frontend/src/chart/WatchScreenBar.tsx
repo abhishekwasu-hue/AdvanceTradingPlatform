@@ -1,6 +1,8 @@
 import { Bell, Filter } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { cx } from "../components/primitives/cx";
+import { ApiError } from "../api/errors";
+import { InPlaceLink } from "../inplace/InPlaceLink";
 import {
   NO_CHOICE, ScreenChecker, checkList, closeLabel, countText, progressText, savedList, tally, watchScreenApi,
   type CheckOutcome, type ListChoice, type OwnScreen, type WatchScreenApi,
@@ -58,6 +60,8 @@ export interface WatchScreenState {
   outcome: CheckOutcome | null;
   checking: boolean;
   failed: boolean;
+  /** Owner 18 Nov: the server's plain reason when it refused the check (409: e.g. no broker session today), else null. */
+  failedWhy?: string | null;
 }
 
 /**
@@ -70,14 +74,19 @@ export function useWatchScreen(args: { listKey: string; listName: string; items:
   const { listKey, listName, items, choice, screen, active } = args;
   const [outcome, setOutcome] = useState<CheckOutcome | null>(null);
   const [checking, setChecking] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailedState] = useState(false);
+  const [failedWhy, setFailedWhy] = useState<string | null>(null);
+  const setFailed = useCallback((f: boolean, err?: unknown) => {
+    setFailedState(f);
+    setFailedWhy(f && err instanceof ApiError && err.status === 409 && err.detail ? err.detail : null);
+  }, []);
   const checker = useMemo(() => new ScreenChecker({
     check: (t, stopped, onProgress, resume) => checkList(api, t, { stopped, onProgress: (o) => onProgress({ ...o, matched: new Set(o.matched) }), ...resume })
       .then((o) => ({ ...o, matched: new Set(o.matched) })),
     saved: api.saved ? (t) => savedList({ saved: api.saved! }, t) : undefined,
     onOutcome: setOutcome, onBusy: setChecking, onFailed: setFailed, hidden: tabHidden, now: () => Date.now(),
     setTimer: (fn, ms) => window.setTimeout(fn, ms), clearTimer: (t) => window.clearTimeout(t as number),
-  }), [api]);
+  }), [api, setFailed]);
   useEffect(() => () => checker.close(), [checker]);
   useEffect(() => {
     const shown = () => checker.visible();
@@ -89,7 +98,7 @@ export function useWatchScreen(args: { listKey: string; listName: string; items:
     checker.update(active && screenId != null && items.length > 0, screenId != null ? { listKey, listName, screenId, items } : null);
   }, [checker, active, screenId, listKey, listName, items]);
   return { choice, screen, matched: (screenId != null ? outcome?.matched : undefined) ?? EMPTY_SET,
-    held: (screenId != null ? outcome?.held : undefined) ?? EMPTY_SET, outcome, checking, failed };
+    held: (screenId != null ? outcome?.held : undefined) ?? EMPTY_SET, outcome, checking, failed, failedWhy };
 }
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -141,7 +150,13 @@ export function WatchScreenBar({ listKey, screens, choice, onChoose, state, item
             {!state.checking && held === 0 && state.outcome?.timedOut && (
               <span className="text-warn">Not every stock could be checked in time - the rest are checked at the next bar</span>
             )}
-            {state.failed && <span className="text-fg">Could not be checked just now. It tries again at the next bar.</span>}
+            {state.failed && !state.failedWhy && <span className="text-fg">Could not be checked just now. It tries again at the next bar.</span>}
+            {state.failed && state.failedWhy && (
+              <span className="text-warn" data-testid="watch-screen-why">
+                {state.failedWhy}{" "}
+                {/broker/i.test(state.failedWhy) && <InPlaceLink to="/broker" className="font-semibold text-brand hover:underline">Open Broker</InPlaceLink>}
+              </span>
+            )}
           </p>
           <button type="button" aria-pressed={choice.matches_only} onClick={() => onChoose({ ...choice, matches_only: !choice.matches_only })}
             className={chip(choice.matches_only)} data-testid="watch-screen-only">

@@ -40,6 +40,7 @@ import {
 } from "./PanelsV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { TerminalWatchlistV2 } from "./TerminalWatchlistV2";
+import type { ScreenFrom } from "../chart/watchScreen";
 import { chartLiveOf, useTerminalSpot } from "./spot";
 import BasketPanelV2 from "../fno/BasketPanelV2";
 import IncompleteOrdersV2 from "../fno/IncompleteOrdersV2";
@@ -184,6 +185,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const strip = useStripFigures(underlying, signedIn);
   // T1-3: one spot for the chain and the chart (the same read, the same time).
   const spotSymbol = spotSymbolOf(underlying);
+  // Owner 18 Nov: the watchlist Screen the active symbol was picked from (its conditions drawn on the main chart).
+  const [screenFrom, setScreenFrom] = useState<ScreenFrom | null>(null);
   // AN-1: the shell's Ask AI offers "Analyze this chart" for the Terminal's main chart (its symbol; the timeframe is
   // picked on Analyze a chart). Outside the shell nothing is registered.
   const shellAsk = useHasAskAiEntry();
@@ -243,7 +246,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         return <ChartPanelV2 symbol={main ? spotSymbol : sym} onSymbol={main || narrow ? undefined : (s) => setChartSymbol(id, s)}
           live={(main ? spotSymbol : sym).toUpperCase() === spotSymbol.toUpperCase() ? chartLiveOf(spot, live?.market_open === true) : undefined}
           levels={main ? levels : undefined} onTimeframe={main ? (tf) => setMainTf(analyzeTimeframe(tf)) : undefined}
-          onTicket={orderPanelShown ? (t) => setTicket(t) : undefined} />;
+          onTicket={orderPanelShown ? (t) => setTicket(t) : undefined}
+          screenId={main && screenFrom && screenFrom.symbol.toUpperCase() === spotSymbol.toUpperCase() ? screenFrom.screenId : null} />;
       }
       // Owner 9 Nov: the Terminal's chain IS the Option chain page (summary, futures / IV / expiry / OI walls, Chain · Charts ·
       // OI, analysis, Ask AI) on the Terminal's one symbol and its chain - the page itself, not a copy.
@@ -269,7 +273,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         strategies={strategiesFor(working.preset)} chain={{ symbol: underlying, live, expiries: expiryList, loadChain: (e) => api.optionChainLive(underlying, e) }} />;
       // UX-3: the Charts watchlist panel as it is; a row with options becomes the active symbol (on a phone: the Chart tab).
       case "watchlist": return <TerminalWatchlistV2 underlying={underlying} spotSymbol={spotSymbol} touch={narrow} liveTicks={features.on("data_hub")}
-        onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} />;
+        onUnderlying={(v) => { setUnderlying(v); if (narrow) setTab("chart"); }} onScreen={setScreenFrom} />;
       // M63 I-5: his bots and waiting signals; the payoff of his positions and basket on the one symbol + expiry (read only).
       case "bots": return <BotsPanelV2 enabled={signedIn} />;
       case "payoff": return <PayoffPanelV2 underlying={underlying} expiry={live?.expiry ?? chain.expiry ?? null} positions={dataOf(positionsL) ?? null}

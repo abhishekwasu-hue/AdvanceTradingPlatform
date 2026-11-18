@@ -265,7 +265,7 @@ export default function AppShellV2() {
             menu={{ mode: sidebar.mode, onToggle: toggleSidebar, onOpenSheet: openMenuSheet, sheetOpen: moreOpen && sheetAll }} />
           {/* CH-1 (owner 5 Nov): the Copilot's chat on every page, from a round button in the corner. */}
           <ChatBubbleV2 on={features.on} signedIn={!!user} section={key} />
-          <PwaBanners />
+          <PwaBanners installOffer={false} />
           <LegalAcceptanceBanner />
           {/* TT12-1: one-time notices (the server decides who; seen once per user, stored in his prefs). */}
           <OneTimeNoticesV2 />

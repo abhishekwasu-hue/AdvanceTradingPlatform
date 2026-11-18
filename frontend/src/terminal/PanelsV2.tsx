@@ -79,8 +79,10 @@ export function EmptyText({ children, testId }: { children: ReactNode; testId?: 
 
 // --- Chart ---------------------------------------------------------------------------------------------------------------
 
-export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe, onTicket }: {
+export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe, onTicket, screenId = null }: {
   symbol: string; onSymbol?: (symbol: string | null) => void;
+  /** Owner 18 Nov: the watchlist Screen this symbol was picked from - its conditions and marks drawn on the chart. */
+  screenId?: number | null;
   /** CTB-1 (owner 14 Nov): the chart's Buy / Sell fill the order panel where it is open (the chain's same ticket state). */
   onTicket?: (t: ChartTicket) => void;
   /** AN-1: the chart's timeframe as the trader changes it (the Terminal hands it to Ask AI's "Analyze this chart"). */
@@ -109,7 +111,7 @@ export function ChartPanelV2({ symbol, onSymbol, live, levels, onTimeframe, onTi
       {/* CTB-1: Buy / Sell / Exit when the chart shows an F&O contract; on NSE a share gets Buy / Sell (the equity ticket, 15 Nov), an index none */}
       <ChartTradeBar symbol={symbol} exchange="NSE" ltp={live?.ltp ?? null} onTicket={onTicket} />
       <div className="min-h-0 flex-1 [&>section]:flex [&>section]:h-full [&>section]:flex-col">
-        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} drawing />
+        <EmbeddedChartV2 symbol={symbol} className="min-h-[12rem] flex-1" live={live} levels={levels} onTimeframe={onTimeframe} screenId={screenId} drawing />
       </div>
     </div>
   );

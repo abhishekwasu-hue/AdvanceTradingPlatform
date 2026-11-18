@@ -14,6 +14,7 @@ import { sectionChipClass, sectionTintOf } from "../ui/accents";
 import { useColourV2 } from "../ui/colourV2";
 import { useFeatures } from "../ui/useFeatures";
 import { FeedDot } from "./FeedDot";
+import { InstallAppButton } from "../pwa/InstallAppButton";
 import { SIDEBAR_SHORTCUT, type SidebarMode } from "./sidebarPrefs";
 
 /**
@@ -251,6 +252,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
               <MessageSquarePlus size={18} aria-hidden />
             </button>
           )}
+          <InstallAppButton />
           <FeedDot enabled={liveOn} status={status} />
           <span className="hidden md:contents"><ThemeToggle /></span>
           <InPlaceLink to="/notifications" title="Notifications" aria-label="Notifications" aria-current={notificationsActive ? "page" : undefined}

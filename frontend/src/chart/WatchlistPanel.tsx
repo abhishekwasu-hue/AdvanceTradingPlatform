@@ -407,7 +407,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sys
   const watch = useWatchScreen({ listKey: listKey ?? "", listName: currentName, items: screenRows, choice, screen, active: screenShown });
   const screenOn = screenShown && !!screen?.usable;
   const from = (item: WatchItem): ScreenFrom | undefined => (screenOn && screen && listKey
-    ? { symbol: item.symbol, exchange: item.exchange, screenId: screen.id, screenName: screen.name, listKey } : undefined);
+    ? { symbol: item.symbol, exchange: item.exchange, screenId: screen.id, screenName: screen.name, listKey, baseTf: screen.base_tf } : undefined);
   const openRow = (item: WatchItem) => onOpen(item, from(item));
   const isMatch = (item: WatchItem) => watch.matched.has(itemKey(item));
   const isHeld = (item: WatchItem) => !!watch.held?.has(itemKey(item));

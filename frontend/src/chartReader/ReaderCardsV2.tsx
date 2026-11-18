@@ -302,7 +302,7 @@ export function BookChartImage({ chart, title }: { chart: BookChart; title: stri
           alt={`${chart.label}: the levels of the ${title} read`} className="block h-auto w-full min-w-[640px]"
           onLoad={(e) => { const frame = e.currentTarget.parentElement; if (frame) frame.scrollLeft = frame.scrollWidth; }} />
       </div>
-      <figcaption className="mt-space-1 text-t12 text-fg-muted">{chart.label} · bands are the levels below (L1, L2 …); red above the last close, green below, amber at it.</figcaption>
+      <figcaption className="mt-space-1 text-t12 text-fg-muted">{chart.label} · L1, L2 … match the Levels list</figcaption>
     </figure>
   );
 }

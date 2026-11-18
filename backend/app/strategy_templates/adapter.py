@@ -66,6 +66,8 @@ class TemplateStrategy(BaseStrategy):
             raise ValueError(f"timeframe {settings.timeframe} is not available to the backtest / worker (scans only)")
         self.template, self.settings = template, settings
         self.recipe = compile_recipe(template, settings)
+        # BT-DRAW 2c: a level-gate template (its setup / trigger reads AreaGate) can show the area it entered from
+        self._uses_area_gate = "AreaGate(" in template.model_dump_json()
         try:
             self.id = ids.encode(template, settings)          # the same id the deployment / order / trade records carry
         except TemplateError:
@@ -193,13 +195,27 @@ class TemplateStrategy(BaseStrategy):
         # Section 5: the user's target rule (none chosen: no target, risk_reward None - exactly as before). The signal's
         # reasons never carry it (policy 11l): the level lives on the order / position record.
         target1, risk_reward = self.target_at(series, t, d, entry, stop)
+        area = self._gate_area(df, t)
         sb = int(series.setup_bar[t])
         setup_time = pd.Timestamp(series.index[sb]).to_pydatetime() if 0 <= sb <= t else None   # BT-DRAW: drawn, never read back
-        return Signal(provenance=provenance, setup_time=setup_time, symbol=symbol, strategy_id=self.id, strategy_name=self.name,
+        return Signal(provenance=provenance, setup_time=setup_time,
+                      setup_area_low=area[0] if area else None, setup_area_high=area[1] if area else None, symbol=symbol, strategy_id=self.id, strategy_name=self.name,
                       direction=SignalDirection.LONG if d > 0 else SignalDirection.SHORT, timestamp=timestamp,
                       entry=entry, stop_loss=stop, target1=target1, target2=None,
                       risk_reward=risk_reward, score=TEMPLATE_SCORE, grade=grade_from_score(TEMPLATE_SCORE), reasons=reasons,
                       timeframe_combo=self.label)
+
+    def _gate_area(self, df: pd.DataFrame, t: int) -> tuple[float, float] | None:
+        """BT-DRAW 2c: the area (low, high) a level-gate template (AreaGate) entered from on bar t, read from the same gate
+        run (the same bars, timeframe and settings, so its cache answers) - display only, never read back."""
+        if not self._uses_area_gate:
+            return None
+        from app.strategy_templates import area_gate
+        params = {k: v for k, v in self.settings.params.items() if k in area_gate.SETTING_KEYS}
+        try:
+            return area_gate.gate_series(df, self.settings.timeframe, params).areas.get(t)
+        except ValueError:
+            return None
 
     def target_at(self, series: engine.SignalSeries, t: int, direction: int, entry: float, stop: float) -> Tuple[Optional[float], Optional[float]]:
         """(target1, risk_reward) of the signal on bar t by the user's target rule - the scan side of the parity reads the

@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -55,12 +55,14 @@ CACHE_ON = True                         # tests turn it off to check the uncache
 
 @dataclass(frozen=True)
 class GateSeries:
-    """Per bar: a long / short entry on that candle, and its invalidation level (NaN elsewhere)."""
+    """Per bar: a long / short entry on that candle, and its invalidation level (NaN elsewhere). BT-DRAW: `areas` holds
+    the area (low, high) the gate entered from, per entry bar - display only, never read back by any decision."""
     index: pd.Index
     long: np.ndarray
     short: np.ndarray
     long_stop: np.ndarray
     short_stop: np.ndarray
+    areas: dict[int, tuple[float, float]] = field(default_factory=dict)
 
 
 def clear_cache() -> None:
@@ -194,8 +196,8 @@ def _margin(gs: Mapping[str, Any], s3: Mapping[str, Any], es: Mapping[str, Any])
 
 
 def _day_entries(bars: pd.DataFrame, s0: int, e: int, areas: list[tuple[float, float]], ctx: Mapping[str, Any],
-                 gs: Mapping[str, Any], s3: Mapping[str, Any], es: Mapping[str, Any]) -> list[tuple[int, int, float]]:
-    """(bar, +1 / -1, invalidation) for every entry candle of one day - the runner's per-bar loop, replayed on the closed
+                 gs: Mapping[str, Any], s3: Mapping[str, Any], es: Mapping[str, Any]) -> list[tuple[int, int, float, float, float]]:
+    """(bar, +1 / -1, invalidation, area low, area high) for every entry candle of one day - the runner's per-bar loop, replayed on the closed
     bars up to each bar. A bar is evaluated for an area only when the gate could enter there (the close beyond the area's
     inner edge on a side the trend allows, and a visit within the armed window); every other bar cannot be an entry."""
     from app.screener.then.runner import _pick
@@ -207,7 +209,7 @@ def _day_entries(bars: pd.DataFrame, s0: int, e: int, areas: list[tuple[float, f
     start = s0 - cut
     reach = int(gs["max_armed_bars"]) + 1
     allowed = {(side, a): G.side_allowed(ctx, side, a) for a in areas for side in (G.BULL, G.BEAR)}
-    out: list[tuple[int, int, float]] = []
+    out: list[tuple[int, int, float, float, float]] = []
     for t in range(start, len(sub)):
         entries: dict[str, list[tuple[tuple[float, float], dict[str, Any]]]] = {}
         w0 = max(start, t - reach)
@@ -225,8 +227,8 @@ def _day_entries(bars: pd.DataFrame, s0: int, e: int, areas: list[tuple[float, f
         if len(entries) != 1:
             continue                                                       # none, or long and short on one candle
         side, found = next(iter(entries.items()))
-        _, r = _pick(found)
-        out.append((cut + t, 1 if side == G.BULL else -1, float(r["sl"])))
+        picked_area, r = _pick(found)
+        out.append((cut + t, 1 if side == G.BULL else -1, float(r["sl"]), float(picked_area[0]), float(picked_area[1])))
     return out
 
 
@@ -258,6 +260,7 @@ def gate_series(f: pd.DataFrame, tf: str, over: Mapping[str, Any] | None = None)
     contexts = _contexts(bars, days, gs)
     frames: dict[str, pd.DataFrame] | None = None
     skey = _settings_key(gs, s3, es)
+    areas_at: dict[int, tuple[float, float]] = {}
     for k, (s0, day) in enumerate(zip(starts, days)):
         e = starts[k + 1] if k + 1 < len(starts) else n_bars
         ctx = contexts[day]
@@ -273,12 +276,13 @@ def gate_series(f: pd.DataFrame, tf: str, over: Mapping[str, Any] | None = None)
         areas = _cached(("areas", tf, hashes[k], str(as_of)), make_areas)
         found = _cached(("day", tf, hashes[k + 1], s0, e, tuple(areas), _ctx_key(ctx), skey),
                         lambda: _day_entries(bars, s0, e, areas, ctx, gs, s3, es))
-        for t, d, stop in found:
+        for t, d, stop, area_lo, area_hi in found:
+            areas_at[t] = (area_lo, area_hi)
             if d > 0:
                 long_[t], lstop[t] = True, stop
             else:
                 short_[t], sstop[t] = True, stop
-    return GateSeries(f.index, long_, short_, lstop, sstop)
+    return GateSeries(f.index, long_, short_, lstop, sstop, areas_at)
 
 
 __all__ = ["GateSeries", "gate_series", "split_settings", "clear_cache", "SETTING_KEYS", "GATE_KEYS", "METHOD_KEYS", "BREAK_KEYS",

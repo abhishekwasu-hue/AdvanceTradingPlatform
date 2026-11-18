@@ -75,7 +75,7 @@ def _hash(result) -> str:
     if isinstance(data.get("options"), dict) and data["options"].get("engine_version") in ("9-options", "10-options"):
         data["options"]["engine_version"] = "8-options"      # P1-2b / M68 PR-3 bumped the label; the pins were recorded under 8
     for t in data.get("trades") or []:                        # BT-DRAW added display-only fields (never read by the engine)
-        for key in ("entry_reasons", "setup_time"):
+        for key in ("entry_reasons", "setup_time", "setup_area_low", "setup_area_high"):
             t.pop(key, None)
     return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 

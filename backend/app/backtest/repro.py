@@ -75,7 +75,7 @@ def config_hash(**parts: Any) -> str:
     return _sha256(canonical_json(parts).encode())
 
 
-DISPLAY_TRADE_FIELDS = ("entry_reasons", "setup_time")
+DISPLAY_TRADE_FIELDS = ("entry_reasons", "setup_time", "setup_area_low", "setup_area_high")
 
 
 def result_hash(result: Any) -> str:

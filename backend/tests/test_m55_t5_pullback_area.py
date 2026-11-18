@@ -231,3 +231,29 @@ def test_the_registry_names_every_setting_with_its_type():
         assert arg.type == want and arg.default is None, arg.name
         if arg.type == R.STR:
             assert d in arg.choices
+
+
+def test_bt_draw_every_entry_carries_the_area_it_came_from():
+    """BT-DRAW 2c (owner 18 Nov): the gate keeps the area (low, high) it entered from, for the chart only - one per entry
+    bar, the invalidation beyond its far edge, and the entries / stops unchanged."""
+    bars = bars_of(LONG_SEED)
+    s = S.gate_series(bars, "15m")
+    entries = {int(t) for t in np.flatnonzero(s.long | s.short)}
+    assert entries and set(s.areas) == entries
+    for t, (lo, hi) in s.areas.items():
+        assert lo <= hi
+        stop = s.long_stop[t] if s.long[t] else s.short_stop[t]
+        assert (stop <= lo) if s.long[t] else (stop >= hi)          # the idea is wrong beyond the area's far edge
+    assert LONG_BAR in s.areas and round(float(s.long_stop[LONG_BAR]), 2) == LONG_STOP
+
+
+def test_bt_draw_the_signal_names_its_area_and_only_a1_does():
+    bars = bars_of(LONG_SEED)
+    strat = TemplateStrategy(A1, C.resolve_settings(A1, "15m"))
+    sig = strat.analyze({strat.label: bars.iloc[:LONG_BAR + 1]}, "S")
+    lo, hi = S.gate_series(bars.iloc[:LONG_BAR + 1], "15m").areas[LONG_BAR]
+    assert (sig.setup_area_low, sig.setup_area_high) == (lo, hi)
+    assert sig.setup_area_low is not None and sig.stop_loss <= sig.setup_area_low
+    other = library.get("D2")
+    d2 = TemplateStrategy(other, C.resolve_settings(other, "15m"))
+    assert d2._uses_area_gate is False and strat._uses_area_gate is True

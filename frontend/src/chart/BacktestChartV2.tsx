@@ -70,6 +70,11 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
               <span aria-hidden className="inline-block h-0.5 w-4" style={{ backgroundColor: st.line.color }} />{st.line.title}{st.line.pane === "own" ? " (own pane)" : ""}
             </li>
           ))}
+          {trades.some((t) => t.setup_time) && (
+            <li className="inline-flex items-center gap-space-1">
+              <span aria-hidden className="inline-block h-2 w-2" style={{ backgroundColor: "#7c3aed" }} />Setup: where the idea began
+            </li>
+          )}
           {trades.length > 0 && (
             <li className="inline-flex items-center gap-space-1">
               <span aria-hidden className="inline-block w-4 border-t border-dashed" style={{ borderColor: INVALIDATION_COLOR }} />Each trade&apos;s stop, from entry to exit

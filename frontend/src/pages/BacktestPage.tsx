@@ -20,6 +20,8 @@ import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
 import { exitMarkerText, templateLines, templateParams } from "../chart/templateLines";
+
+const SETUP_COLOR = "#7c3aed";
 import { Database } from "lucide-react";
 import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { OptimiserFields } from "../backtest/OptimiserFields";
@@ -314,6 +316,10 @@ export default function BacktestPage() {
     if (!result) return [];
     const markers: ChartMarker[] = [];
     for (const t of result.trades) {
+      // BT-DRAW: where the template's setup began (a visit to its area, a break ...), before the entry candle
+      if (t.setup_time && t.setup_time !== t.entry_time) {
+        markers.push({ timestamp: t.setup_time, position: t.direction === "LONG" ? "belowBar" : "aboveBar", color: SETUP_COLOR, shape: "square", text: "Setup" });
+      }
       markers.push(directionMarker(t.entry_time, t.direction as "LONG" | "SHORT", `Entry ${t.direction}`));
       if (t.exit_time) {
         const won = (t.pnl ?? 0) >= 0;
@@ -326,7 +332,7 @@ export default function BacktestPage() {
         });
       }
     }
-    return markers;
+    return markers.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
   }, [result]);
 
   // The premium model, IV, lot / strike step, expiry calendar and the chain CSV: in place with the flag off, under

@@ -6,7 +6,7 @@ import { Chip, type ChipTone } from "../ui/Chip";
 import { HelpPopover } from "../ui/HelpPopover";
 import { formatNumber, formatPrice } from "../ui/format";
 import { TrendChip } from "../ui/TrendChip";
-import type { AbhiRead, BookRead, ConditionStatus, ReaderResult, ReaderStrategy, Tri } from "./types";
+import type { AbhiRead, BookChart, BookRead, ConditionStatus, ReaderResult, ReaderStrategy, StrategyRules, Tri } from "./types";
 
 /**
  * M86 W3: the chart reader's cards in the Analyze-a-chart panel (docs/design/M86_PLAN.md "UI (W3)"). "My method" (the
@@ -241,7 +241,75 @@ export function AbhiCard({ state, estimateUsd, symbol, onRead, disabled, disable
 
 // --- a book strategy ---------------------------------------------------------------------------------------------------
 
-export function BookReadBody({ result, read }: { result: ReaderResult; read: BookRead }) {
+function Page({ text }: { text: string }) {
+  return text ? <span className="whitespace-nowrap text-t12 text-fg-muted"> ({text})</span> : null;
+}
+
+/** Owner 18 Nov ("rules as bullet points, the trader must understand them"): the book's own rules, as the book states
+ * them, with its page numbers. Information only: the reader scores these; nothing here is a call. */
+export function RulesList({ rules, compact = false }: { rules: StrategyRules; compact?: boolean }) {
+  return (
+    <div className="space-y-space-3 text-t14 text-fg" data-testid="strategy-rules">
+      {rules.summary && !compact ? <p className="text-fg-muted" data-testid="rules-summary">{guardText(rules.summary)}</p> : null}
+      <div>
+        <h4 className="text-t14 font-semibold">Setup conditions</h4>
+        <ul className="mt-space-1 space-y-space-1" data-testid="rules-conditions">
+          {rules.conditions.map((c) => (
+            <li key={c.id} className="flex gap-space-2">
+              <span className="mt-0.5 h-fit shrink-0 self-start rounded-control bg-surface-2 px-space-1 font-mono text-t12 text-fg-muted">{c.id}</span>
+              <span className="min-w-0 break-words">{guardText(c.text)}{c.two_chart ? <span className="text-t12 text-fg-muted"> · needs a second chart</span> : null}<Page text={c.page} /></span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {rules.trigger.text ? (
+        <div>
+          <h4 className="text-t14 font-semibold">The book&apos;s own signal</h4>
+          {!rules.trigger.stated ? <p className="text-t12 text-fg-muted">The book states no signal of its own; this is its nearest description.</p> : null}
+          <ul className="mt-space-1 list-disc space-y-space-1 pl-space-5" data-testid="rules-trigger">
+            <li className="break-words">{guardText(rules.trigger.text)}<Page text={rules.trigger.page} /></li>
+          </ul>
+        </div>
+      ) : null}
+      {rules.invalidation.length ? (
+        <div>
+          <h4 className="text-t14 font-semibold">What proves the read wrong</h4>
+          <ul className="mt-space-1 list-disc space-y-space-1 pl-space-5" data-testid="rules-invalidation">
+            {rules.invalidation.map((i, n) => <li key={n} className="break-words">{guardText(i.text)}<Page text={i.page} /></li>)}
+          </ul>
+        </div>
+      ) : null}
+      {rules.not_checked.length && !compact ? (
+        <details className="text-t12 text-fg-muted" data-testid="rules-not-checked">
+          <summary className="min-h-11 cursor-pointer py-space-2 md:min-h-0">Not checked on the chart ({rules.not_checked.length})</summary>
+          <ul className="list-disc space-y-space-1 pl-space-5">
+            {rules.not_checked.map((t, n) => <li key={n} className="break-words">{guardText(t)}</li>)}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+/** Owner 18 Nov: the read's levels on ATP's chart of the stored candles; the tags (L1 ...) match the Levels list. */
+export function BookChartImage({ chart, title }: { chart: BookChart; title: string }) {
+  return (
+    <figure className="py-space-3" data-testid="book-chart">
+      {/* a phone keeps the price labels readable: the picture stays at least 640 px wide and scrolls inside its frame,
+          opened at its right end (the latest candles and the L1, L2 ... labels) */}
+      <div className="overflow-x-auto rounded-control border border-subtle" data-testid="book-chart-frame">
+        <img src={`data:image/png;base64,${chart.png_base64}`} width={chart.width} height={chart.height}
+          alt={`${chart.label}: the levels of the ${title} read`} className="block h-auto w-full min-w-[640px]"
+          onLoad={(e) => { const frame = e.currentTarget.parentElement; if (frame) frame.scrollLeft = frame.scrollWidth; }} />
+      </div>
+      <figcaption className="mt-space-1 text-t12 text-fg-muted">{chart.label} · bands are the levels below (L1, L2 …); red above the last close, green below, amber at it.</figcaption>
+    </figure>
+  );
+}
+
+export function BookReadBody({ result, read, rules }: { result: ReaderResult; read: BookRead; rules?: StrategyRules }) {
+  const ruleText = new Map((rules?.conditions ?? []).map((c) => [c.id, c.text]));
+  const tags = new Set(result.book_chart?.tags ?? []);
   const counts = { met: 0, not_met: 0, unclear: 0 } as Record<ConditionStatus, number>;
   for (const c of read.conditions ?? []) counts[c.status in counts ? c.status : "unclear"] += 1;
   return (
@@ -261,6 +329,7 @@ export function BookReadBody({ result, read }: { result: ReaderResult; read: Boo
                 <Chip tone={m.tone} variant="meaning" icon={m.mark} name={`condition-${c.status}`}>{STATUS_WORD[c.status] ?? "Unclear"}</Chip>
                 <span className="min-w-0 break-all font-mono text-t12 text-fg">{c.id}</span>
                 <Evidence title={c.id} text={c.evidence} />
+                {ruleText.get(c.id) ? <span className="w-full min-w-0 break-words pb-space-1 text-t14 text-fg-muted" data-testid="condition-rule">{guardText(ruleText.get(c.id) ?? "")}</span> : null}
               </li>
             );
           })}
@@ -275,11 +344,13 @@ export function BookReadBody({ result, read }: { result: ReaderResult; read: Boo
         <TriChip value={read.invalidated?.status ?? "unclear"} name="invalidated" />
         <Evidence title="Invalidated" text={read.invalidated?.evidence} />
       </Row>
+      {result.book_chart ? <BookChartImage chart={result.book_chart} title={result.strategy?.name ?? "book"} /> : null}
       {read.levels?.length ? (
         <Row label="Levels" testid="levels">
           <ul className="flex w-full flex-col gap-space-1">
             {read.levels.map((l, i) => (
               <li key={i} className="flex min-h-11 flex-wrap items-center gap-space-2">
+                {tags.has(`L${i + 1}`) ? <span className="rounded-control bg-surface-2 px-space-1 font-mono text-t12 text-fg" data-testid="level-tag">L{i + 1}</span> : null}
                 <span className="font-tabular text-t14 font-semibold text-fg">{range(l.price_low, l.price_high)}</span>
                 <span className="text-t12 text-fg-muted">{l.kind}{l.chart ? ` · ${l.chart}` : ""}</span>
                 <Evidence title={l.kind || "Level"} text={l.evidence} />
@@ -297,8 +368,8 @@ export function BookReadBody({ result, read }: { result: ReaderResult; read: Boo
   );
 }
 
-export function BookCard({ title, state, symbol, onClose, onRetry }: {
-  title: string; state: ReadState; symbol?: string; onClose: () => void; onRetry: () => void;
+export function BookCard({ title, state, symbol, rules, onClose, onRetry }: {
+  title: string; state: ReadState; symbol?: string; rules?: StrategyRules; onClose: () => void; onRetry: () => void;
 }) {
   const ok = okRead<BookRead>(state);
   return (
@@ -311,7 +382,7 @@ export function BookCard({ title, state, symbol, onClose, onRetry }: {
         </button>
       </div>
       {state.phase === "done" ? <div className="mt-space-1 flex flex-wrap items-center gap-space-2"><ResultChips result={state.result} symbol={symbol} /></div> : null}
-      {ok ? <BookReadBody result={ok.result} read={ok.read} /> : <NotOk state={state} onRetry={state.phase === "loading" ? undefined : onRetry} />}
+      {ok ? <BookReadBody result={ok.result} read={ok.read} rules={rules} /> : <NotOk state={state} onRetry={state.phase === "loading" ? undefined : onRetry} />}
       {state.phase === "done" ? <CostLine result={guardDeep(state.result)} /> : null}
     </section>
   );

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { fixtureAbhiRead, fixtureAbhiResult, fixtureBookRead, fixtureBookResult, fixtureStrategies } from "./fixtures";
-import { AbhiCard, BookCard, bookTitle, ERROR_TEXT, estimateText, LOADING_TEXT, range, REFUSED_TEXT, TWO_CHART_NOTE, usd, type ReadState } from "./ReaderCardsV2";
+import { fixtureAbhiRead, fixtureAbhiResult, fixtureBookRead, fixtureBookResult, fixtureRules, fixtureStrategies } from "./fixtures";
+import { AbhiCard, BookCard, RulesList, bookTitle, ERROR_TEXT, estimateText, LOADING_TEXT, range, REFUSED_TEXT, TWO_CHART_NOTE, usd, type ReadState } from "./ReaderCardsV2";
 import { WITHHELD } from "../chartAnalyze/signalLanguage";
 import { bookOptionsFor, ownMethodShown } from "./ChartReaderSectionV2";
 
@@ -139,5 +139,42 @@ describe("a book strategy card", () => {
   it("loading and refused states", () => {
     expect(book({ phase: "loading" })).toContain(LOADING_TEXT);
     expect(book({ phase: "done", result: fixtureBookResult("DEMO_ONE", { status: "refused", read: null }) })).toContain(REFUSED_TEXT);
+  });
+});
+
+describe("a book strategy's rules and its levels on the chart (owner 18 Nov)", () => {
+  const rules = fixtureRules();
+  it("the rules as bullets: conditions with pages, the book's own signal, what proves it wrong, what is not checked", () => {
+    const html = renderToStaticMarkup(<RulesList rules={rules} />);
+    const t = text(html);
+    expect(html).toContain('data-testid="rules-conditions"');
+    for (const c of rules.conditions) expect(t).toContain(c.text);
+    expect(t).toContain("(p.1)");
+    expect(t).toContain("needs a second chart");
+    expect(t).toContain("The book's own signal");
+    expect(t).toContain("What proves the read wrong");
+    expect(t).toContain("Not checked on the chart (1)");
+    expect(t).not.toMatch(BANNED);
+  });
+
+  it("a book that states no signal says so", () => {
+    const t = text(renderToStaticMarkup(<RulesList rules={{ ...rules, trigger: { ...rules.trigger, stated: false } }} />));
+    expect(t).toContain("The book states no signal of its own");
+  });
+
+  it("the read card shows each condition's rule and the chart with tagged levels", () => {
+    const result = fixtureBookResult("DEMO_ONE", { book_chart: { png_base64: "AAAA", width: 960, height: 540, label: "DEMO Daily", tags: ["L1"] } });
+    const html = renderToStaticMarkup(<BookCard title="T" state={{ phase: "done", result }} symbol="DEMO" rules={rules} onClose={noop} onRetry={noop} />);
+    expect(html).toContain('data-testid="book-chart"');
+    expect(html).toContain("data:image/png;base64,AAAA");
+    expect(html.match(/data-testid="condition-rule"/g)?.length).toBe(3);
+    expect(html).toContain('data-testid="level-tag"');
+  });
+
+  it("without rules or a chart (an older server, an uploaded picture) the card reads as before", () => {
+    const html = book({ phase: "done", result: fixtureBookResult() });
+    expect(html).not.toContain('data-testid="book-chart"');
+    expect(html).not.toContain('data-testid="condition-rule"');
+    expect(html).not.toContain('data-testid="level-tag"');
   });
 });

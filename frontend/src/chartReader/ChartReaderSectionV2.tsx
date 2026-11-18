@@ -8,7 +8,7 @@ import { Combobox } from "../ui/Combobox";
 import { HelpPopover } from "../ui/HelpPopover";
 import { useFeatures } from "../ui/useFeatures";
 import { chartReaderApi } from "./api";
-import { AbhiCard, BookCard, bookTitle, card, estimateText, type ReadState } from "./ReaderCardsV2";
+import { AbhiCard, BookCard, RulesList, bookTitle, card, estimateText, type ReadState } from "./ReaderCardsV2";
 import type { ReaderRequest, ReaderSource, ReaderStrategies } from "./types";
 
 /**
@@ -210,11 +210,17 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
               onClick={readBook} data-testid="reader-book-read">Read this strategy</Button>
           </div>
           <p className="mt-space-2 font-tabular text-t12 text-fg-muted">{estimateText(estimateFor(Boolean(picked?.two_chart)))}</p>
+          {picked?.rules ? (
+            <div className="mt-space-3 border-t border-subtle pt-space-3" data-testid="reader-book-rules">
+              <h4 className="mb-space-2 text-t14 font-semibold text-fg">Rules of this strategy</h4>
+              <RulesList rules={picked.rules} />
+            </div>
+          ) : null}
         </section>
       )}
 
       {books.map((b) => (
-        <BookCard key={b.key} title={b.title} state={b.state} symbol={b.symbol}
+        <BookCard key={b.key} title={b.title} state={b.state} symbol={b.symbol} rules={list.strategies.find((s) => s.id === b.strategy)?.rules}
           onClose={() => setBooks((x) => x.filter((y) => y.key !== b.key))} onRetry={() => void runBook(b.key, b.request)} />
       ))}
     </div>

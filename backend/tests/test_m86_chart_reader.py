@@ -309,7 +309,7 @@ def test_result_shape_passes_through_unchanged(_reader):
                                  model="claude-opus-5-5", effort="high", client=FakeClient())
     for key, value in expected.items():
         assert got[key] == value, key
-    assert set(got) == set(expected) | {"cached", "estimate_usd", "cost_usd", "label", "source", "charts", "pair_attached"}
+    assert set(got) == set(expected) | {"cached", "estimate_usd", "cost_usd", "label", "source", "charts", "pair_attached", "book_chart"}
 
 
 # --- W2: the paired chart ---------------------------------------------------------------------------------------------------

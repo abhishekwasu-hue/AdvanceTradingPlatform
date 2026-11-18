@@ -453,3 +453,27 @@ Note: runner release PR #1100 merged; 15M SRv2 audit done (atp-private PR #18, d
 > "Default yes"
 
 Note: SRV2 approved with the defaults: build P1-P5; LIVE mode built on the same code path but OFF until the owner's words; Trade's next-level exit for engine positions kept AS IS (noted); the owner's current settings copied with a read-only command on the Trade VPS.
+
+## 18 Nov - owner (screenshot: Copilot > Analyze a chart > Book strategies card, conditions shown only as S1..S5)
+
+> "ya book strategy ky aahet te suddha bullet point mdhe dakhwa, trader la rules smjayla pahije, tyanusar chart warti anotations suddha lagel"
+
+Note: build - each book strategy's own rules as bullets (conditions with book pages, the book's own signal, what proves it wrong, what is not checked) under the picker and beside each condition in the read card; the read's levels drawn as numbered bands on ATP's chart of the stored candles (branch claude/book-rules-chart).
+
+## 18 Nov - owner (screenshot: Analyze a chart page)
+
+> "trader chart analyaze krayla sangnar tewha tyala vividh setup nivdayla dropdown list tasech ai chat window suddha asli pahije jenekarun to tyachya condition put up karu shakel ani ai tyanusar tyala answer deil"
+
+Note: new item - on Analyze a chart, a setup dropdown and an AI chat window where the trader states his own conditions and the AI answers against the chart. Design with defaults in OPEN_QUESTIONS CA-CHAT-Q1; build after the open bug fixes.
+
+## 18 Nov - owner (screenshot: Strategies > Build, step 1 Start)
+
+> "not functioning properly, backtest nahi kelyas pudhe jat nahi"
+
+Note: root cause - Next is never disabled and lists the missing items only after a click; saving and Start on paper happen only after a successful backtest (a failed candle fetch is a dead end). Fix branch claude/strategy-flow-unblock.
+
+## 18 Nov - owner
+
+> "journal mdhe import button active nahi"
+
+Note: root cause - the sheet's Import button stays disabled until a chosen file previews with at least one new trade, with no reason shown. Fix branch claude/journal-import-reason.

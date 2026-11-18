@@ -4,8 +4,11 @@ import { applyUpdate, dismissInstall, promptInstall, usePwa } from "./pwa";
 
 /** PW1: the two app-level notices - a waiting new version ("Reload") and the install offer. Both sit above the page
  * content, never cover it, and are announced politely to screen readers. Touch targets are 44 px on phones. */
-export default function PwaBanners() {
-  const { updateReady, install } = usePwa();
+export default function PwaBanners({ installOffer = true }: { installOffer?: boolean } = {}) {
+  const pwa = usePwa();
+  const updateReady = pwa.updateReady;
+  // Owner 18 Nov: the v2 shell offers the install as a small top-bar button (InstallAppButton), not a banner row.
+  const install = installOffer ? pwa.install : null;
   if (!updateReady && !install) return null;
   return (
     <div className="space-y-2 px-3 pt-3 md:px-6" role="status" aria-live="polite">

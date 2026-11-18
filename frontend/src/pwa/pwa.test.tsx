@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import PwaBanners from "./PwaBanners";
+import { InstallAppButton } from "./InstallAppButton";
 import {
   INSTALL_DONE, INSTALL_IOS, INSTALL_NEEDS_BROWSER, INSTALL_NEEDS_HTTPS, INSTALL_NOT_OFFERED, _setPwaState, initialInstall,
   installBlockReason, installHelp, isIosSafari, isStandalone,
@@ -74,5 +75,13 @@ describe("D3: install on the production domain", () => {
     const none = renderToStaticMarkup(<PwaBanners />);
     expect(none).toBe("");
     expect(none).not.toMatch(/domain/i);
+  });
+
+  it("owner 18 Nov: the v2 shell shows the install offer as one top-bar button, not a banner row", () => {
+    _setPwaState({ install: "prompt" });
+    expect(renderToStaticMarkup(<PwaBanners installOffer={false} />)).toBe("");
+    expect(renderToStaticMarkup(<InstallAppButton />)).toContain('aria-label="Install the app"');
+    _setPwaState({ install: null, blocked: null });
+    expect(renderToStaticMarkup(<InstallAppButton />)).toBe("");
   });
 });

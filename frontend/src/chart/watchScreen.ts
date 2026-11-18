@@ -269,7 +269,11 @@ export function markOf(state: RowState): { sign: string; label: string; tone: "u
 }
 
 /** C1: the screen chosen for the list a chart was opened from (null: none, nothing drawn). */
-export interface ScreenFrom { symbol: string; exchange: string; screenId: number; screenName: string; listKey: string }
+export interface ScreenFrom {
+  symbol: string; exchange: string; screenId: number; screenName: string; listKey: string;
+  /** Owner 18 Nov: the screen's own timeframe (its `base_tf`), so the chart opens where the conditions and marks are drawn. */
+  baseTf?: string;
+}
 
 export { SCREEN_PARAM, screenIdOf, screenParam, withScreen } from "./screenParam";
 
@@ -288,7 +292,8 @@ export interface CheckerDeps {
   limitMs?: number;
   onOutcome: (o: CheckOutcome | null) => void;
   onBusy: (busy: boolean) => void;
-  onFailed: (failed: boolean) => void;
+  /** `error`: what the failed check threw (owner 18 Nov: the server's own reason is shown, e.g. no broker session). */
+  onFailed: (failed: boolean, error?: unknown) => void;
   hidden: () => boolean;
   now: () => number;
   setTimer: (fn: () => void, ms: number) => unknown;
@@ -385,9 +390,9 @@ export class ScreenChecker {
         this.setBusy(false);
         this.schedule(out.nextAt);
       });
-    }).catch(() => {
+    }).catch((err: unknown) => {
       if (left()) return;
-      this.deps.onFailed(true);
+      this.deps.onFailed(true, err);
       this.setBusy(false);
       // owner 15 Nov: a failed check is tried again - at the next bar close when it is still ahead, else a little later
       const next = this.lastNext != null && this.lastNext > this.deps.now() ? this.lastNext : this.deps.now() + RETRY_AFTER_ERROR_MS;

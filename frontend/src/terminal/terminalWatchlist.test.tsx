@@ -93,6 +93,16 @@ describe("UX-3: a row drives the Terminal's one active symbol", () => {
     expect(watchlistTarget({ symbol: "NIFTY26NOV24500CE", exchange: "NFO" })).toMatchObject({ kind: "chart" });
   });
 
+  it("owner 18 Nov: a row from a list with a Screen opens its chart with that screen on the screen's timeframe", () => {
+    const from = { symbol: "GMRP&UI", exchange: "NSE", screenId: 7, screenName: "NR7", listKey: "own:3", baseTf: "15m" };
+    const to = watchlistTarget({ symbol: "GMRP&UI", exchange: "NSE" }, from);
+    expect(to.kind).toBe("chart");
+    const path = to.kind === "chart" ? to.path : "";
+    expect(path).toContain("wscreen=7");
+    expect(path).toContain("tf=15min");
+    expect(watchlistTarget({ symbol: "GMRP&UI", exchange: "NSE" })).toEqual({ kind: "chart", path: expect.not.stringContaining("wscreen") });
+  });
+
   it("the marked row: the one he opened while it is the active symbol, else the active symbol's spot", () => {
     const picked = { symbol: "NIFTY 50", exchange: "NSE_INDEX" };
     expect(markedItem(picked, "NIFTY", "NIFTY 50")).toBe(picked);

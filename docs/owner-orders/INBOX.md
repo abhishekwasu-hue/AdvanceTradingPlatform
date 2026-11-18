@@ -447,3 +447,19 @@ Note: tag push from the session is refused (403); release.yml now accepts a rele
 > "credits vadhle aahet tyamule tumhi tumcha kaam purna kara" (transliterated from Devanagari)
 
 Note: runner release PR #1100 merged; 15M SRv2 audit done (atp-private PR #18, docs/SRV2_PORT_AUDIT.md); plan + estimate sent, build waits for owner ok.
+
+## 18 Nov - owner (evening, screenshots of the Terminal, the watchlist Screen and the Copilot)
+
+> "tumhi pudhil kam purna kara" (transliterated from Devanagari: "finish the next work")
+
+> "waste of space" (the "Install AiAlgoDesk on this device" banner row above the Terminal)
+
+> "screener condtion chart war plot jhalya nahit , anotation suddha nahi" (a Screen match opened from the Terminal watchlist: no conditions and no marks on its chart)
+
+> "screener not working" (Terminal watchlist, Telecom list: "Checked 0 of 10 - Could not be checked just now")
+
+> "ya page war konte kam chalte ani trader chya faydyache ky, trader yacha ksa upyog krnar" (AI Copilot > Market today)
+
+> "analyze chart and chart reader yachyat difference ky ahe full confusion" (Analyze a chart page: "Analyze a chart" box and "Chart reader" box)
+
+Note: fixes in PR claude/pwa-install-topbar (install as one top-bar button in v2; a Screen's chart opens with that screen on its timeframe from the Terminal watchlist, side chart and main chart; the server's own reason, e.g. no broker session, shown instead of "could not be checked"). The Analyze-a-chart / Chart reader confusion is the redesign plan (HANDOVER_NOW, ~11-12 lakh) that waits for the owner's ok.

@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { readView, saveView, type ChartsView } from "../chart/chartsPage";
 import { WatchlistPanel } from "../chart/WatchlistPanel";
+import { withScreen, type ScreenFrom } from "../chart/watchScreen";
+import { chartTimeframe } from "../screener/evidence";
 import type { WatchItem } from "../chart/watchlistsV2";
 import { rootOf } from "../copilot/workspace/positionCards";
 import { useInPlace } from "../inplace/context";
@@ -24,9 +26,13 @@ import { isOptionable } from "../ui/symbolUniverse";
 export type WatchlistTarget = { kind: "underlying"; underlying: string } | { kind: "chart"; path: string };
 
 /** Where a row of the watchlist takes the Terminal. Pure. */
-export function watchlistTarget(item: WatchItem): WatchlistTarget {
+export function watchlistTarget(item: WatchItem, from?: ScreenFrom): WatchlistTarget {
   const root = rootOf(item.symbol);
-  return isOptionable(root) ? { kind: "underlying", underlying: root } : { kind: "chart", path: chartTabPath(item.symbol, item.exchange) };
+  if (isOptionable(root)) return { kind: "underlying", underlying: root };
+  // Owner 18 Nov: a row opened from a list with a Screen opens its chart with that screen (conditions + marks drawn) on the
+  // screen's own timeframe, as on the Watchlist page.
+  const tf = from?.baseTf ? chartTimeframe(from.baseTf) : null;
+  return { kind: "chart", path: withScreen(chartTabPath(item.symbol, item.exchange, tf), from ?? null) };
 }
 
 /** The row to mark: the one he opened while it is still the active symbol, else the active symbol's spot. Pure. */
@@ -35,10 +41,12 @@ export function markedItem(picked: WatchItem | null, underlying: string, spotSym
   return { symbol: spotSymbol, exchange: underlying === "SENSEX" ? "BSE" : "NSE" };
 }
 
-export function TerminalWatchlistV2({ underlying, spotSymbol, onUnderlying, touch = false, liveTicks = false }: {
+export function TerminalWatchlistV2({ underlying, spotSymbol, onUnderlying, onScreen, touch = false, liveTicks = false }: {
   underlying: string;
   spotSymbol: string;
   onUnderlying: (underlying: string) => void;
+  /** Owner 18 Nov: the Screen a symbol with options was picked from (null: none), so the main chart draws it. */
+  onScreen?: (from: ScreenFrom | null) => void;
   /** The phone tab: 44 px targets everywhere. */
   touch?: boolean;
   liveTicks?: boolean;
@@ -56,9 +64,9 @@ export function TerminalWatchlistV2({ underlying, spotSymbol, onUnderlying, touc
     return next;
   }), [userId]);
   const [picked, setPicked] = useState<WatchItem | null>(null);
-  const open = (item: WatchItem) => {
-    const to = watchlistTarget(item);
-    if (to.kind === "underlying") { setPicked(item); onUnderlying(to.underlying); } else inPlace.open(to.path);
+  const open = (item: WatchItem, from?: ScreenFrom) => {
+    const to = watchlistTarget(item, from);
+    if (to.kind === "underlying") { setPicked(item); onScreen?.(from ?? null); onUnderlying(to.underlying); } else inPlace.open(to.path);
   };
   const mark = markedItem(picked, underlying, spotSymbol);
   return (

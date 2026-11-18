@@ -146,6 +146,12 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
           data_source: "lake:daily" });
         // Nothing starts: no deployment is created from the test page.
         expect(posts.some((p) => p.url.startsWith("/deployments"))).toBe(false);
+        // BT-DRAW (owner 18 Nov): a price-structure template draws no default EMA pair; each trade's stop and why it closed
+        await expect(panel.locator("[data-backtest-structure]")).toHaveText("This strategy reads price structure only; no indicator lines are drawn.");
+        await expect(panel.locator("[data-backtest-legend]")).toContainText("Each trade's stop, from entry to exit");
+        await expect(panel.locator("[data-backtest-named]")).toHaveCount(0);
+        await panel.locator("[data-backtest-chart]").scrollIntoViewIfNeeded();
+        await shot("03b-template-chart");
         await panel.getByTestId("prices-from").scrollIntoViewIfNeeded();
         await shot("03-template-backtest");
 

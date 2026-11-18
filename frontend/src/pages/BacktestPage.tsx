@@ -19,6 +19,7 @@ import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
+import { exitMarkerText, templateLines, templateParams } from "../chart/templateLines";
 import { Database } from "lucide-react";
 import { formatDateTimeIST, formatNumber } from "../ui/format";
 import { OptimiserFields } from "../backtest/OptimiserFields";
@@ -84,6 +85,8 @@ export default function BacktestPage() {
   const [link] = useState<TemplateLink | null>(() => { try { return templateLinkFromSearch(address.search); } catch { return null; } });
   const [tplTimeframe, setTplTimeframe] = useState("");
   const [ranWith, setRanWith] = useState<{ id: string; timeframe: string } | null>(null);
+  // BT-DRAW: the template a run tested and its settings, so the chart draws that template's own lines only.
+  const [ranTemplate, setRanTemplate] = useState<{ id: string; params: Record<string, unknown> } | null>(null);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +293,7 @@ export default function BacktestPage() {
       setResult(res);
       setRanOnSample(fetched.label === "sample");
       setRanWith(target);
+      setRanTemplate(picked ? { id: picked.id, params: templateParams(picked.params, link?.template === picked.id ? typedSettings(picked, link.params) : {}) } : null);
       setPricesFrom(fetched.line);
       setChartCandles(candles);
       setMonteCarlo(null);
@@ -302,7 +306,10 @@ export default function BacktestPage() {
     }
   }
 
-  // One entry marker (direction-coded arrow) and one exit marker (P&L-coded circle) per trade.
+  const templateLinesShown = useMemo(() => (ranTemplate ? templateLines(ranTemplate.id, ranTemplate.params, chartCandles) : null), [ranTemplate, chartCandles]);
+
+  // One entry marker (direction-coded arrow) and one exit marker (P&L-coded circle) per trade. BT-DRAW: the exit
+  // marker says why the trade closed (the engine's own reason) beside its result.
   const tradeMarkers: ChartMarker[] = useMemo(() => {
     if (!result) return [];
     const markers: ChartMarker[] = [];
@@ -315,7 +322,7 @@ export default function BacktestPage() {
           position: t.direction === "LONG" ? "aboveBar" : "belowBar",
           color: won ? "up" : "down",
           shape: "circle",
-          text: `Exit ${t.pnl == null ? "" : formatNumber(t.pnl, 0)}`,
+          text: exitMarkerText(t.exit_reason, t.pnl == null ? "" : formatNumber(t.pnl, 0)),
         });
       }
     }
@@ -650,7 +657,8 @@ export default function BacktestPage() {
             {ranOnSample && <SampleChip className="mb-2" />}
             {/* Chart review PR 3 (CC-5): under ui_v2 the trades show on the v2 chart; ProChart stays without it. */}
             {uiV2
-              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
+              ? <BacktestChartV2 candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params}
+                  lines={templateLinesShown} trades={result.trades} />
               : <ProChart candles={chartCandles} symbol={symbol} timeframe={ranWith?.timeframe ?? selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />}
           </Card>
 

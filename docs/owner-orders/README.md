@@ -91,6 +91,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Business model: Route 3 for all users now (signals, orders on the broker's own page), Route 1 runner = Pro, paid VPS set-up; Route 2 deferred (14 Nov) | DECISIONS.md 14 Nov (BIZ-1..3), ../design/ROUTE3_AUDIT.md | BIZ-1, BIZ-2, BIZ-3 | audit |
 | - | "From your broker": read-only broker positions / holdings / orders (14 Nov "Ho") | INBOX.md + DECISIONS.md 14 Nov (BIZ-1b) | BIZ-1b | draft PR |
 | - | Watchlist screens: saved results, no re-check while the market is closed, fewer broker calls, progress (15 Nov) | DECISIONS.md 15 Nov (WS-FAST) | WS-FAST | in progress |
+| - | Port the Trade bot "15M SRv2" AS IS, owner-only (15 + 18 Nov) | DECISIONS.md 18 Nov (SRV2) | SRV2 | in progress |
 | - | Other projects on the ATP host share its Caddy (5 Nov) | ../deploy/HOSTINGER_RUNBOOK.md 5a | OPS-SHARE | done |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

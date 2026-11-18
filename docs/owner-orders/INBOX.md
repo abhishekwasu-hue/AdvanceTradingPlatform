@@ -447,3 +447,9 @@ Note: tag push from the session is refused (403); release.yml now accepts a rele
 > "credits vadhle aahet tyamule tumhi tumcha kaam purna kara" (transliterated from Devanagari)
 
 Note: runner release PR #1100 merged; 15M SRv2 audit done (atp-private PR #18, docs/SRV2_PORT_AUDIT.md); plan + estimate sent, build waits for owner ok.
+
+## 18 Nov - owner (on the 15M SRv2 audit report: plan P1-P5, three defaults)
+
+> "Default yes"
+
+Note: SRV2 approved with the defaults: build P1-P5; LIVE mode built on the same code path but OFF until the owner's words; Trade's next-level exit for engine positions kept AS IS (noted); the owner's current settings copied with a read-only command on the Trade VPS.

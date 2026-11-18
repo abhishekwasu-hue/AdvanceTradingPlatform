@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable, Optional
+from typing import Any
 
 from app.srv2bot import io as bot_io
 from app.srv2bot import loader
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 FLAG = "srv2_bot"
 
 
-async def owner(session) -> Optional[bot_io.Owner]:
+async def owner(session) -> bot_io.Owner | None:
     from app.db.models import User
     from app.platform import live_owner, phase0_lock
     tid = await phase0_lock.owner_tenant_id(session)
@@ -43,7 +44,7 @@ async def calendar_for(session, now: datetime) -> Any:
     return _cal["cal"]
 
 
-async def run_once(session_factory: Callable, usable_adapter: Callable, now: Optional[datetime] = None) -> Optional[list]:
+async def run_once(session_factory: Callable, usable_adapter: Callable, now: datetime | None = None) -> list | None:
     """One step. Returns what ran (None when the bot is off / not installed / no owner)."""
     from app.platform.controls import flag_enabled
     bot = loader.load()

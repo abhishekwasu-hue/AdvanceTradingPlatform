@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from app.srv2bot import store
 
@@ -29,7 +30,7 @@ class Owner:
 
 
 def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Owner,
-          usable_adapter: Callable) -> Dict[str, Callable]:
+          usable_adapter: Callable) -> dict[str, Callable]:
     """The callables for the private host's register(...). `usable_adapter(session, tenant_id, broker, user_id, now)` is the
     worker's own (token check + rate budget)."""
 
@@ -43,13 +44,13 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             raise RuntimeError("the owner's Upstox session is not usable (log in again)")
         return broker
 
-    def settings(strategy: str, symbol: str) -> Optional[dict]:
+    def settings(strategy: str, symbol: str) -> dict | None:
         async def go():
             async with session_factory() as s:
                 return await store.get_row(s, strategy, symbol)
         return call(go)
 
-    def token() -> Optional[str]:
+    def token() -> str | None:
         async def go():
             from app.brokers.token_lifecycle import get_credential_record, load_credentials, token_is_usable
             async with session_factory() as s:
@@ -64,20 +65,20 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             logger.info("srv2 bot: no usable Upstox token (%s)", type(exc).__name__)
             return None
 
-    async def _expiries(s, symbol: str) -> List[str]:
+    async def _expiries(s, symbol: str) -> list[str]:
         from app.instruments import master
         from app.market_data.calendar import IST
         today = datetime.now(IST).date()
         days = await master.expiries(s, UNDERLYING.get(symbol, symbol), on_or_after=today)
         return [d.isoformat() for d in days]
 
-    def option_expiries(tok: str, symbol: str) -> List[str]:
+    def option_expiries(tok: str, symbol: str) -> list[str]:
         async def go():
             async with session_factory() as s:
                 return await _expiries(s, symbol)
         return call(go)
 
-    def option_chain(tok: str, symbol: str, expiry_index: int) -> Tuple[Optional[list], str]:
+    def option_chain(tok: str, symbol: str, expiry_index: int) -> tuple[list | None, str]:
         async def go():
             from datetime import date
             async with session_factory() as s:
@@ -91,7 +92,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
         except Exception as exc:  # noqa: BLE001 - Trade: (None, reason) -> no entry this cycle
             return None, f"{type(exc).__name__}: {exc}"
 
-    def ltp(tok: str, keys: List[str]) -> Tuple[Dict[str, float], Optional[str]]:
+    def ltp(tok: str, keys: list[str]) -> tuple[dict[str, float], str | None]:
         async def go():
             async with session_factory() as s:
                 broker = await _broker(s)
@@ -101,7 +102,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
         except Exception as exc:  # noqa: BLE001 - Trade: ({}, detail) -> that check waits for the next cycle
             return {}, f"{type(exc).__name__}: {exc}"
 
-    def funds(tok: str) -> Optional[dict]:
+    def funds(tok: str) -> dict | None:
         async def go():
             async with session_factory() as s:
                 broker = await _broker(s)
@@ -113,7 +114,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             logger.info("srv2 bot: funds unreadable (%s)", type(exc).__name__)
             return None
 
-    def send(text: str, silent: bool = False, kind: Optional[str] = None) -> bool:
+    def send(text: str, silent: bool = False, kind: str | None = None) -> bool:
         async def go():
             from app.alerts.channels import TelegramConfig
             from app.alerts.dispatcher import send_telegram

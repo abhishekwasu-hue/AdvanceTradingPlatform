@@ -333,7 +333,7 @@ class TradingWorker:
         self._engine_task: Optional[asyncio.Task[None]] = None
         self._preopen_task: Optional[asyncio.Task[None]] = None
         # SRV2 (owner 18 Nov, flag srv2_bot, owner only): the owner's 15M SRv2 bot - its own loop (2 s steps), PAPER, own store.
-        self._srv2_task: Optional[asyncio.Task[None]] = None
+        self._srv2_task: asyncio.Task[None] | None = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -2187,7 +2187,7 @@ class TradingWorker:
             return
         from app.srv2bot import job as srv2_job
 
-        async def usable(session: AsyncSession, tenant_id: int, broker: str, user_id: Optional[int], at: datetime) -> Optional[BrokerInterface]:
+        async def usable(session: AsyncSession, tenant_id: int, broker: str, user_id: int | None, at: datetime) -> BrokerInterface | None:
             return await self._usable_adapter(session, tenant_id, broker, user_id, at)
 
         try:

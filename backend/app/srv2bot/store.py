@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +17,7 @@ def _key(strategy: str, symbol: str) -> str:
     return f"{strategy}|{symbol}"
 
 
-async def rows(session: AsyncSession) -> Dict[str, Dict[str, Any]]:
+async def rows(session: AsyncSession) -> dict[str, dict[str, Any]]:
     rec = await session.get(PlatformControlRecord, KEY)
     if rec is None or not rec.value_json:
         return {}
@@ -25,12 +25,12 @@ async def rows(session: AsyncSession) -> Dict[str, Dict[str, Any]]:
     return dict(data.get("rows") or {}) if isinstance(data, dict) else {}
 
 
-async def get_row(session: AsyncSession, strategy: str, symbol: str) -> Optional[Dict[str, Any]]:
+async def get_row(session: AsyncSession, strategy: str, symbol: str) -> dict[str, Any] | None:
     return (await rows(session)).get(_key(strategy, symbol))
 
 
-async def save_row(session: AsyncSession, strategy: str, symbol: str, values: Dict[str, Any], *, by: Optional[int] = None,
-                   merge: bool = True) -> Dict[str, Any]:
+async def save_row(session: AsyncSession, strategy: str, symbol: str, values: dict[str, Any], *, by: int | None = None,
+                   merge: bool = True) -> dict[str, Any]:
     """Trade's save_strategy_settings: a JSON merge into the stored row (merge=False replaces it). The caller commits."""
     all_rows = await rows(session)
     k = _key(strategy, symbol)

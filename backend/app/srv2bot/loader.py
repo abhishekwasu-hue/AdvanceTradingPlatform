@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ _cached: Any = _UNSET
 _reason = REASON_ABSENT
 
 
-def load() -> Optional[Any]:
+def load() -> Any | None:
     """The private bot's namespace: an object with `host` and `runner`, or None."""
     global _cached, _reason
     if _cached is not _UNSET:

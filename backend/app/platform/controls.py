@@ -237,6 +237,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Owner 4 Nov (app/workers/preopen_charts.py): ATP's job sends the Daily / 1H / 15M pre-open charts of the engine runner's
     # symbols to the runner user's own Telegram chat, once a trading day. Admin / owner only; needs the private package.
     "preopen_charts": "Pre-open charts on Telegram (admin / owner only): Daily / 1H / 15M of the signal engine's symbols, once a trading day; places no orders",
+    # SRV2 (owner 18 Nov, app/srv2bot): the owner's own Trade bot "15M SRv2" ported AS IS into the private package - the engine at
+    # each 5M close, the entry with Vision / Telegram approval, Trade's own PAPER positions and exits in the bot's own store. Owner
+    # only (his own method); needs the private package. OFF by default, not in the trader pack. ATP orders untouched; PAPER.
+    "srv2_bot": "The owner's 15M SRv2 bot (owner only): needs the private package; PAPER in its own store, places no ATP orders",
     # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
     # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
     # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
@@ -791,6 +795,8 @@ ENGINE_MISSING_REASON = "The chart analysis engine (private package) is not inst
 # M66 EN-1: the signal engine of the private package (app/engine_provider/loader.py); without it `trade_engine` is
 # unavailable whatever its stored state (admin / owner only; OFF by default).
 TRADE_ENGINE_FLAGS = ("trade_engine", "preopen_charts")
+SRV2_BOT_FLAGS = ("srv2_bot",)
+SRV2_BOT_MISSING_REASON = "The 15M SRv2 bot (private package) is not installed on this server, so this feature is unavailable."
 TRADE_ENGINE_MISSING_REASON = "The signal engine (private package) is not installed on this server, so this feature is unavailable."
 # M86 W1: the chart reader of the private package (app/chart_reader/loader.py); without it `chart_reader` is unavailable.
 CHART_READER_FLAGS = ("chart_reader",)
@@ -824,6 +830,13 @@ def engine_missing_flags() -> Dict[str, str]:
         reader_loaded = False
     if not reader_loaded:
         missing.update({name: CHART_READER_MISSING_REASON for name in CHART_READER_FLAGS})
+    try:
+        from app.srv2bot import loader as srv2_bot
+        bot_loaded = srv2_bot.load() is not None
+    except ImportError:
+        bot_loaded = False
+    if not bot_loaded:
+        missing.update({name: SRV2_BOT_MISSING_REASON for name in SRV2_BOT_FLAGS})
     return missing
 
 

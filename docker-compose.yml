@@ -221,8 +221,14 @@ services:
       STOP_LIMIT_BAND_PCT: ${STOP_LIMIT_BAND_PCT:-}
       APP_VERSION: ${APP_VERSION:-1.0.0}
       EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
+      # SRV2 (owner 18 Nov, flag srv2_bot, owner only): the owner's 15M SRv2 bot keeps Trade's own stores (engine signals, PAPER
+      # positions, journal, locks) in its folder on the private data volume; unused while the flag is OFF.
+      SRV2_DATA_DIR: /data/private/srv2
+      PAPER_DATA_DIR: /data/private/srv2/paper
+      ENGINE_SIGNAL_DB: /data/private/srv2/engine_signals.db
+      ENGINE3_CACHE_DIR: /data/private/srv2/engine3_cache
     volumes:
-      - private_data:/data/private      # Analyze a chart: the daily retention job deletes expired images here
+      - private_data:/data/private      # Analyze a chart: the daily retention job deletes expired images here (chart_analyze/ only)
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"

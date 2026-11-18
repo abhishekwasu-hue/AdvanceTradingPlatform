@@ -476,6 +476,29 @@ class UpstoxBroker(BrokerInterface):
             rows=sorted(rows, key=lambda r: r.strike),
         )
 
+    async def get_option_chain_raw(self, underlying: str, expiry: date) -> List[dict]:
+        """SRV2 (owner 18 Nov): Upstox's own /option/chain rows for one expiry, unchanged (strike_price, underlying_spot_price,
+        call_options / put_options with instrument_key, market_data, option_greeks) - the shape the 15M SRv2 bot's copied
+        code reads (it picks its strikes from them). The same request as get_option_chain; a read only."""
+        instruments = await self.get_instruments("BSE" if " ".join(underlying.split()).upper() in BSE_INDICES else "NSE")
+        underlying_match = find_instrument(instruments, underlying)
+        instrument_key = underlying_match.instrument_token if underlying_match else underlying
+        data = await self._request("GET", "/option/chain", params={"instrument_key": instrument_key, "expiry_date": expiry.isoformat()})
+        return list(data or [])
+
+    async def get_ltp_by_key(self, instrument_keys: List[str]) -> Dict[str, float]:
+        """SRV2: last prices keyed by the Upstox instrument key that was asked for (each response entry carries its
+        `instrument_token`); a key without a price is left out, never 0. A read only."""
+        if not instrument_keys:
+            return {}
+        data = await self._request("GET", "/market-quote/ltp", params={"instrument_key": ",".join(instrument_keys)})
+        out: Dict[str, float] = {}
+        for entry in (data or {}).values():
+            token, price = entry.get("instrument_token"), entry.get("last_price")
+            if token and price is not None:
+                out[token] = float(price)
+        return out
+
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
         # BrokerOrderRequest.symbol is a plain trading symbol (the same contract every other
         # adapter uses) - Upstox's own API needs its "instrument_key" format instead

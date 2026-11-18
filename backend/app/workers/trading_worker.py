@@ -332,6 +332,8 @@ class TradingWorker:
         # M66 EN-3a: the signal engine runner (signals only) as one background task per worker, its own session.
         self._engine_task: Optional[asyncio.Task[None]] = None
         self._preopen_task: Optional[asyncio.Task[None]] = None
+        # SRV2 (owner 18 Nov, flag srv2_bot, owner only): the owner's 15M SRv2 bot - its own loop (2 s steps), PAPER, own store.
+        self._srv2_task: Optional[asyncio.Task[None]] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -436,6 +438,8 @@ class TradingWorker:
             self._engine_task.cancel()               # M66 EN-3a: an unfinished bar is retried within its grace window
         if self._preopen_task is not None and not self._preopen_task.done():
             self._preopen_task.cancel()              # the day's claimed row stays "running"; the next day sends again
+        if self._srv2_task is not None and not self._srv2_task.done():
+            self._srv2_task.cancel()                 # SRV2: the bot's own store keeps its state; the next worker carries on
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
         if self._daily_report_task is not None and not self._daily_report_task.done():
@@ -687,6 +691,8 @@ class TradingWorker:
                 self._spawn_engine_runner(now)
                 # Pre-open charts (owner 4 Nov, flag preopen_charts, owner only): once a trading day inside the send window.
                 self._spawn_preopen_charts(now)
+                # SRV2 (owner 18 Nov, flag srv2_bot, owner only): the owner's 15M SRv2 bot runs in its own loop task.
+                self._spawn_srv2_bot()
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:
@@ -2173,6 +2179,21 @@ class TradingWorker:
             self._preopen_task = asyncio.get_running_loop().create_task(run())
         except RuntimeError:
             self._preopen_task = None
+
+    def _spawn_srv2_bot(self) -> None:
+        """SRV2: start the 15M SRv2 bot's loop task once (app/srv2bot/job.py); it checks the flag and the owner itself on every
+        step, so OFF means each step returns at once. PAPER, its own store: no ATP order, position or exit."""
+        if self._srv2_task is not None and not self._srv2_task.done():
+            return
+        from app.srv2bot import job as srv2_job
+
+        async def usable(session: AsyncSession, tenant_id: int, broker: str, user_id: Optional[int], at: datetime) -> Optional[BrokerInterface]:
+            return await self._usable_adapter(session, tenant_id, broker, user_id, at)
+
+        try:
+            self._srv2_task = asyncio.get_running_loop().create_task(srv2_job.loop_forever(self.session_factory, usable))
+        except RuntimeError:
+            self._srv2_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

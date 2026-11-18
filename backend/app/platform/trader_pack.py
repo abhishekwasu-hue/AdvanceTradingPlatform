@@ -114,6 +114,7 @@ EXCLUDED_REASONS: Dict[str, str] = {
     "terminal": "ON by default for everyone (owner ✅ 25 Oct, T-D1), so the pack does not need it",
     "trade_engine": "Admin / owner only: needs the private engine package; the owner turns it on for his organisation after parity (M66)",
     "preopen_charts": "Admin / owner only: the owner's pre-open charts on his own Telegram (needs the private package)",
+    "srv2_bot": "Owner only: the owner's own 15M SRv2 bot (his method; needs the private package)",
 }
 
 

@@ -196,6 +196,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "terminal": _ready(),
     "trade_engine": _setup("Private package on the server", HOST, ("signal_engine",)),
     "preopen_charts": _setup("Private package on the server and the signal engine runner settings", HOST),
+    "srv2_bot": _setup("Private package on the server and the owner's bot settings", HOST),
     "strategy_templates": _ready(),
     "screener_rankings": _ready(),
     "screener_backtest": _ready(),

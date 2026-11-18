@@ -187,6 +187,8 @@ export interface Trade {
   exit_reason: string | null;
   pnl: number | null;
   charges: number;
+  /** BT-DRAW: why it entered - the signal's own sentences (absent from an older server). */
+  entry_reasons?: string[];
 }
 
 /** Phase AO: a strategy walked over the candles a chart is showing (POST /strategies/{id}/chart-run). */

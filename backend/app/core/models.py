@@ -236,6 +236,9 @@ class Trade(BaseModel):
     # long the entry took. None for backtest trades.
     expected_price: Optional[float] = None
     entry_latency_ms: Optional[int] = None
+    # BT-DRAW (owner 18 Nov): why the trade entered - the signal's own structure-word sentences (Signal.reasons),
+    # shown with the trade so every test trade explains itself. Never the internal provenance.
+    entry_reasons: list[str] = Field(default_factory=list)
 
 
 class BacktestResult(BaseModel):

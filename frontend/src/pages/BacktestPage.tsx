@@ -836,7 +836,8 @@ export default function BacktestPage() {
                     <th className="py-1 pr-3">Entry</th>
                     <th className="py-1 pr-3">Exit</th>
                     <th className="py-1 pr-3">Qty</th>
-                    <th className="py-1 pr-3">Reason</th>
+                    <th className="py-1 pr-3">Why it entered</th>
+                    <th className="py-1 pr-3">Why it closed</th>
                     <th className="py-1 pr-3">P&amp;L</th>
                   </tr>
                 </thead>
@@ -847,7 +848,8 @@ export default function BacktestPage() {
                       <td className="py-1 pr-3">{formatNumber(t.entry_price, 2)}</td>
                       <td className="py-1 pr-3">{num(t.exit_price, 2)}</td>
                       <td className="py-1 pr-3">{t.quantity}</td>
-                      <td className="py-1 pr-3">{t.exit_reason ?? "-"}</td>
+                      <td className="min-w-[14rem] py-1 pr-3 normal-case" data-entry-why>{t.entry_reasons?.length ? t.entry_reasons.join(" ") : "-"}</td>
+                      <td className="py-1 pr-3" data-exit-why>{t.exit_reason ?? "-"}</td>
                       <td className={`py-1 pr-3 ${signClass(t.pnl)}`}>
                         {num(t.pnl, 2)}
                       </td>
@@ -855,7 +857,7 @@ export default function BacktestPage() {
                   ))}
                   {result.trades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-3 text-center text-fg-muted">
+                      <td colSpan={7} className="py-3 text-center text-fg-muted">
                         {source.sampleHidden ? "No trades were triggered in this period." : "No trades were triggered on this sample dataset."}
                       </td>
                     </tr>

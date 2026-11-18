@@ -24,11 +24,23 @@ export type ImportApi = Pick<JournalApi, "importPreview" | "importFile">;
 export const ACCEPT = ".csv,.xlsx,.xls";
 const NOT_IN_FILE = "";
 
-type State =
+export type State =
   | { status: "idle" }
   | { status: "reading"; file: File }
   | { status: "error"; file: File | null; error: unknown }
   | { status: "ok"; file: File; preview: ImportPreview };
+
+/** Owner 18 Nov: why there is nothing to import yet, in one plain line (null when the Import button is live). */
+export function importWhy(state: State): string | null {
+  if (state.status === "idle") return "Choose your broker's tradebook file first.";
+  if (state.status === "reading") return null;
+  if (state.status === "error") return "This file could not be read. Choose another file.";
+  const p = state.preview;
+  if (p.counts.to_import > 0) return null;
+  if (p.already_imported) return "This file is already in your journal.";
+  if (p.counts.trades > 0 && p.counts.duplicates >= p.counts.trades) return "Every trade in this file is already in your journal.";
+  return "No complete trades found in this file. See the rows with a problem above.";
+}
 
 /** Reads the file again under the chosen columns (the server is the one parser; nothing is stored). */
 export async function previewFile(api: ImportApi, file: File, mapping?: ImportMapping): Promise<ImportPreview> {
@@ -161,12 +173,17 @@ export function ImportTradesFormV2({ api, onImported, onCancel }: { api: ImportA
   }
 
   const p = state.status === "ok" ? state.preview : null;
+  const why = importWhy(state);
+  const choose = () => fileRef.current?.click();
+  // owner 18 Nov ("import button active nahi"): before a file is read the main button opens the file picker, and when
+  // there is nothing to import it says why beside the button instead of sitting greyed out.
+  const pickFirst = state.status === "idle" || state.status === "error";
   return (
     <div className="space-y-space-4" data-import-form>
       <input ref={fileRef} type="file" accept={ACCEPT} className="sr-only" aria-label="Choose a file to import" data-import-file
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void read(f); e.target.value = ""; }} />
       <div className="space-y-space-2">
-        <button type="button" className={BUTTON_SECONDARY} onClick={() => fileRef.current?.click()} disabled={state.status === "reading"} data-import-choose>
+        <button type="button" className={BUTTON_SECONDARY} onClick={choose} disabled={state.status === "reading"} data-import-choose>
           <FileUp size={16} aria-hidden />{state.status === "idle" ? "Choose a file" : "Choose another file"}
         </button>
         <p className="text-t13 text-fg-muted">CSV or Excel, up to 5 MB.</p>
@@ -185,9 +202,17 @@ export function ImportTradesFormV2({ api, onImported, onCancel }: { api: ImportA
 
       <div className="flex flex-wrap justify-end gap-space-2 border-t border-subtle pt-space-3">
         <button type="button" className={BUTTON_SECONDARY} onClick={onCancel}>Cancel</button>
-        <button type="button" className={BUTTON_PRIMARY} disabled={!p || p.counts.to_import === 0 || busy} onClick={() => void save()} data-import-save>
-          {busy ? "Importing…" : p && p.counts.to_import > 0 ? `Import ${formatNumber(p.counts.to_import)} ${p.counts.to_import === 1 ? "trade" : "trades"}` : "Import"}
-        </button>
+        {why && <p className="mr-auto self-center text-t13 text-fg-muted" id="import-why" data-import-why>{why}</p>}
+        {pickFirst ? (
+          <button type="button" className={BUTTON_PRIMARY} onClick={choose} data-import-pick>
+            <FileUp size={16} aria-hidden />{state.status === "idle" ? "Choose a file" : "Choose another file"}
+          </button>
+        ) : (
+          <button type="button" className={BUTTON_PRIMARY} disabled={!p || p.counts.to_import === 0 || busy} onClick={() => void save()} data-import-save
+            aria-describedby={why ? "import-why" : undefined}>
+            {busy ? "Importing…" : p && p.counts.to_import > 0 ? `Import ${formatNumber(p.counts.to_import)} ${p.counts.to_import === 1 ? "trade" : "trades"}` : "Import"}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -129,7 +129,8 @@ for (const size of SIZES) {
       await page.locator("[data-import-trades]").click();
       const form = page.locator("[data-import-form]");
       await expect(form).toBeVisible();
-      await expect(page.locator("[data-import-save]")).toBeDisabled();
+      await expect(page.locator("[data-import-pick]")).toBeEnabled();                      // owner 18 Nov: never a dead Import
+      await expect(page.locator("[data-import-why]")).toContainText("Choose your broker's tradebook file first.");
       await page.locator("[data-import-file]").setInputFiles({ name: "tradebook.csv", mimeType: "text/csv", buffer: Buffer.from(CSV) });
       await expect(form.locator("[data-import-layout='zerodha']")).toBeVisible();
       await expect(form.locator("[data-import-counts]")).toContainText("Rows read");

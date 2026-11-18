@@ -73,7 +73,7 @@ class Field:
 
 
 FIELDS: tuple[Field, ...] = (
-    Field("symbol", "Symbol", ("symbol", "tradingsymbol", "trading symbol", "scrip", "scrip name", "script name", "stock name",
+    Field("symbol", "Symbol", ("symbol", "symbol name", "tradingsymbol", "trading symbol", "scrip", "scrip name", "script name", "stock name",
                               "stock", "instrument", "security", "security name", "company", "name", "contract", "contract name")),
     Field("side", "Side", ("trade type", "transaction type", "buy sell", "side", "type", "action",
                                                  "buy or sell", "txn type", "b s", "direction", "position", "long short")),
@@ -111,6 +111,8 @@ LAYOUTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("angel", "Angel One tradebook", ("buy sell", "trade price", "order no", "trade no")),
     ("dhan", "Dhan tradebook", ("buy sell", "quantity lot", "trade value", "name")),
     ("fyers", "Fyers tradebook", ("transaction type", "trade value", "order id", "trade id")),
+    # owner 18 Nov: the Fyers order book export (report rows above the header; "Symbol name" NSE:...; executed orders only)
+    ("fyers_orders", "Fyers order book", ("symbol name", "symbol code", "oms order id")),
 )
 LAYOUT_LABELS = {key: label for key, label, _ in LAYOUTS} | {"trades": "Your own sheet of trades", "fills": "A sheet of buys and sells"}
 

@@ -77,6 +77,31 @@ def test_zerodha_tradebook_is_detected_and_paired_fifo():
     assert (b.symbol, b.direction, b.entry_price, b.exit_price) == ("BBBB", "SHORT", 200.0, 190.0)      # a sell first opens a short
 
 
+# owner 18 Nov: the Fyers order book export - report rows above the header, "Symbol name" with the exchange prefix,
+# Excel-quoted ids, rows out of time order. Made-up client, ids and prices.
+FYERS_ORDERS = (
+    "Report Title,Orderbook report\nDate Range,From 05/10/2026 to 05/10/2026\nClient Name,DEMO CLIENT\nClient ID,XX00000\n"
+    "PAN,XXXXX0000X\nDownload Timestamp,06/10/2026 20:00:00 IST\n\n"
+    "Symbol name,Symbol code,Date & Time,Side,Product type,Status,Order type,Qty,Traded price,Limit price,Source,Exchange order ID,OMS order ID\n"
+    'NSE:DEMO26N0910000CE,DEMO 10000 CE,05-10-2026 10:08:19,SELL,Overnight,Executed,Limit,50,55.00,49.25,Mobile,"=""1""","=""11"""\n'
+    'NSE:DEMO26N0910000CE,DEMO 10000 CE,05-10-2026 10:01:51,BUY,Overnight,Executed,Market,50,46.70,0.00,Mobile,"=""2""","=""12"""\n'
+    'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:01:52,SELL,Overnight,Executed,Market,50,82.65,0.00,Mobile,"=""3""","=""13"""\n'
+    'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:08:18,BUY,Overnight,Executed,Limit,50,96.65,106.25,Mobile,"=""4""","=""14"""\n'
+    'NSE:DEMO26N0910100CE,DEMO 10100 CE,05-10-2026 10:09:00,BUY,Overnight,Rejected,Limit,50,0.00,90.00,Mobile,"=""5""","=""15"""\n'
+)
+
+
+def test_fyers_order_book_with_report_rows_above_the_header():
+    r = read_file("FYERS_orderbook.csv", FYERS_ORDERS.encode(), now=NOW)
+    assert r.layout == "fyers_orders" and r.mapping["symbol"] == "Symbol name" and r.mapping["time"] == "Date & Time"
+    long_leg, short_leg = sorted(r.trades, key=lambda t: t.direction)
+    assert (long_leg.symbol, long_leg.direction, long_leg.quantity, long_leg.entry_price, long_leg.exit_price) == \
+        ("DEMO26N0910000CE", "LONG", 50.0, 46.7, 55.0)
+    assert long_leg.entry_time == datetime(2026, 10, 5, 10, 1, 51, tzinfo=IST)
+    assert (short_leg.symbol, short_leg.direction, short_leg.entry_price, short_leg.exit_price) == ("DEMO26N0910100CE", "SHORT", 82.65, 96.65)
+    assert [p.reason for p in r.problems] == ["Not a filled trade (status: Rejected)."]
+
+
 def test_upstox_xlsx_date_and_time_columns():
     data = _xlsx([
         ["Trade report"], [],

@@ -332,6 +332,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | CA-CHAT | not started (owner 18 Nov) | Analyze a chart: setup dropdown + AI chat window for the trader's own conditions (design default OPEN_QUESTIONS CA-CHAT-Q1) | INBOX 18 Nov |
 | SF-UNBLOCK | in progress (owner 18 Nov) | Strategy Build: show what each step still needs before Next; save and Start on paper without a backtest; a failed backtest is no dead end | INBOX 18 Nov |
 | M88-IMP | in progress (owner 18 Nov) | Journal import: the disabled Import button says why (choose a file / no new trades / already imported) | INBOX 18 Nov |
+| BT-DRAW | in progress (owner 18 Nov) | Strategy test chart: draw exactly what the selected strategy uses (areas / levels / structure, its own indicators only) and a plain why-entered / why-exited explanation on every trade | INBOX 18 Nov |
 | PHONE-1 | merged (#1027); waits for deploy + ✅ | the phone layout guard misses sideways scroll inside <main>; fix the 20 pages it finds (Test a strategy, positions, settings, alerts, dashboard, front-page card) and extend the guard in one PR | M99 proof page finding |
 | LIVE-2 | merged (#1032); waits for deploy + ✅ | basket + Reverse LIVE on the one switch (same code path as the ticket) | DECISIONS 11 Nov (LIVE-1) |
 | B1 (LIVE-1 amended) | draft PR (claude/live-owner-only); waits for CI + deploy + ✅ | server LIVE only for the owner's organisation; others PAPER + broker-app link (B2) | DECISIONS 14 Nov |

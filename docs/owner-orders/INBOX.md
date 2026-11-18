@@ -477,3 +477,11 @@ Note: root cause - Next is never disabled and lists the missing items only after
 > "journal mdhe import button active nahi"
 
 Note: root cause - the sheet's Import button stays disabled until a chosen file previews with at least one new trade, with no reason shown. Fix branch claude/journal-import-reason.
+
+## 18 Nov - owner (screenshot: Strategies > Templates > "Test a strategy" for Pullback to a demand / supply area; the chart shows EMA 9 / EMA 21 and bare Entry / Exit marks)
+
+> "selected strategy backtest krtani chart war as it is draw hone awashyak aahe, tyache explanation udha awashyak aahe, smjayla sope jhale pahije"
+
+> "strategy nusarindicator sudha drwa jhale pahije"
+
+Note: new item BT-DRAW - the backtest chart draws what the selected strategy itself uses (its areas / levels / structure and its own indicators only, never a default EMA pair) and every trade carries a plain explanation of why it entered and exited.

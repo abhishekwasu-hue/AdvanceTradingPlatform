@@ -158,6 +158,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
 
         await page.locator("[data-flow-next]").click();
         await expect(page.locator("[data-structure='BULL_PUT_SPREAD'] input")).toBeChecked();
+        // owner 18 Nov: what the step still needs shows before Next is pressed
+        await expect(page.locator("[data-step-problems]")).toContainText("Still needed on this step:");
+        await expect(page.locator("[data-step-problems]")).toContainText("Pick your strikes.");
         // DEF-0: nothing is picked for him - Next says what is still his to choose
         await page.locator("[data-flow-next]").click();
         await expect(page.locator("[data-step-problems]")).toContainText("Pick your strikes.");
@@ -175,6 +178,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         await shot("04-exit");
 
         await page.locator("[data-flow-next]").click();
+        await expect(page.locator("[data-save-only]")).toBeVisible();          // owner 18 Nov: a test on past prices is optional
         await page.locator("[data-save-test]").click();
         await expect(page.locator("[data-result-numbers]")).toContainText("₹", { timeout: 15_000 });
         await expect(page.locator("[data-result-numbers]")).toContainText("% from the peak");

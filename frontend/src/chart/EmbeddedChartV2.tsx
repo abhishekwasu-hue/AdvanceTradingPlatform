@@ -1,4 +1,4 @@
-import { ExternalLink, Filter } from "lucide-react";
+import { ExternalLink, Filter, Layers } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useLiveLtp } from "../components/chartHelpers";
@@ -24,6 +24,8 @@ import type { SymbolUniverse } from "../ui/symbolUniverse";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import { CollapsibleDrawingRail, DrawingMenu } from "./DrawingRail";
+import { readingIsEmpty, type AtpReading } from "./atpReading";
+import { ReadingLegend } from "./ReadingLegend";
 
 type DrawingTools = ReturnType<typeof useDrawingTools>;
 
@@ -91,11 +93,15 @@ export interface EmbeddedChartV2Props {
    * chart that is not a window of its own (a chat answer's preview, a reading figure). Without the control bar
    * (`toolbar={false}`, the lower chart of a CE / PE pair) the phone's Draw menu sits over this chart itself. */
   drawing?: boolean;
+  /** Owner 15 Nov: ATP's own reading of a Copilot answer (its protected levels, last breaks, areas and trends), drawn
+   * read-only on the chart's level / band / marker layers - never on the user's drawings - with one "ATP reading"
+   * toggle (on by default) and a small trend legend. */
+  reading?: AtpReading | null;
 }
 
 export default function EmbeddedChartV2({
   symbol, exchange = "NSE", levels, areas, timeframe: given, onTimeframe, openLink = true, className = "h-64", live: hostLive, onSymbol, symbolUniverse,
-  onEngine, emptyNote, screenId = null, drawing = true, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead,
+  onEngine, emptyNote, screenId = null, drawing = true, toolbar = true, overlays: hostOverlays, onOverlays, onCandles, onRead, reading = null,
 }: EmbeddedChartV2Props) {
   const { user } = useAuth();
   const [ownOverlays, setOwnOverlays] = useState<OverlayId[]>([]);
@@ -147,7 +153,18 @@ export default function EmbeddedChartV2({
   const takeEngine = useCallback((e: LightweightEngine | null) => { setEngine(e); onEngine?.(e); }, [onEngine]);
   const [screenShown, setScreenShown] = useState(true);
   const screen = useScreenOverlay(engine, { screenId, symbol: sym, exchange, timeframe, candles: data.candles, on: screenShown && screenId != null });
-  const allLevels = useMemo(() => (screenId != null && screen.levels.length ? [...(levels ?? []), ...screen.levels] : levels), [levels, screen.levels, screenId]);
+  const [readingShown, setReadingShown] = useState(true);
+  const hasReading = !readingIsEmpty(reading);
+  const readingOn = hasReading && readingShown;
+  const allLevels = useMemo(() => {
+    const own = screenId != null && screen.levels.length ? [...(levels ?? []), ...screen.levels] : levels;
+    return readingOn && reading!.levels.length ? [...(own ?? []), ...reading!.levels] : own;
+  }, [levels, screen.levels, screenId, readingOn, reading]);
+  const allAreas = useMemo(() => (readingOn && reading!.areas.length ? [...(areas ?? []), ...reading!.areas] : areas), [areas, readingOn, reading]);
+  const allMarkers = useMemo(() => {
+    const own = screenId != null ? screen.markers : undefined;
+    return readingOn && reading!.markers.length ? [...(own ?? []), ...reading!.markers] : own;
+  }, [screenId, screen.markers, readingOn, reading]);
   const [tools, setTools] = useState<DrawingTools | null>(null);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
   const drawingProps = drawing ? { tools, symbol: sym, hidden: drawingsHidden, onHidden: setDrawingsHidden } : undefined;
@@ -166,6 +183,9 @@ export default function EmbeddedChartV2({
           ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
             moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
             icon: <Filter size={16} aria-hidden />, onClick: () => setScreenShown((v) => !v) }] : []),
+          ...(hasReading ? [{ id: "atp-reading", label: "ATP reading", title: readingShown ? "Hide ATP reading" : "Show ATP reading",
+            moreLabel: readingShown ? "Hide ATP reading" : "Show ATP reading", pressed: readingShown, testId: "atp-reading-button",
+            icon: <Layers size={16} aria-hidden />, onClick: () => setReadingShown((v) => !v) }] : []),
           ...(openLink ? [{ id: "open", label: openLabel, icon: <ExternalLink size={16} aria-hidden />, to: openTo }] : []),
         ]} />}
       {!toolbar && drawingProps && (
@@ -179,7 +199,7 @@ export default function EmbeddedChartV2({
       <div ref={box} data-chart-active={activation.active ? "on" : "off"} {...activation.handlers}
            className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <ChartV2 candles={data.candles} timeframe={timeframe} symbol={sym} exchange={exchange} prefs={shown} overlays={overlays} live={live.ltp} marketOpen={marketOpen}
-          levels={allLevels} areas={areas} markers={screenId != null ? screen.markers : undefined} onLoadOlder={data.loadOlder} drawingTools={drawing && !drawingsHidden}
+          levels={allLevels} areas={allAreas} markers={allMarkers} onLoadOlder={data.loadOlder} drawingTools={drawing && !drawingsHidden}
           onTools={drawing ? setTools : undefined} emptyText={emptyText} onEngine={takeEngine}
           captureTouch={activation.active} className={className} />
         {/* the outline over the canvases (an inset ring on this box would sit under the chart's own background) */}
@@ -191,6 +211,7 @@ export default function EmbeddedChartV2({
         )}
       </div>
       </div>
+      {readingOn && <ReadingLegend reading={reading!} />}
       {screenId != null && screenShown && <ScreenLegend state={screen} onShowTf={setTimeframe} />}
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-3 py-space-1 text-t13 text-fg">

@@ -960,6 +960,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/watchlist-screen/settings"): "member: the caller's own list choices only (tenant and user)",
     ("PUT", "/api/screener/watchlist-screen/settings/{list_key}"): S_OWN_PREFS,
     ("POST", "/api/screener/watchlist-screen/check"): "trader",
+    ("POST", "/api/screener/watchlist-screen/saved"): "trader",
     ("POST", "/api/screener/watchlist-screen/overlay"): "trader",
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger

@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { useLocation } from "react-router";
+import { asAtpReading, ATP_READING_STATE } from "../../chart/atpReading";
 import ChartTradeBar from "../../chart/ChartTradeBar";
 import EmbeddedChartV2 from "../../chart/EmbeddedChartV2";
 import OptionPairChartV2 from "../../chart/OptionPairChartV2";
@@ -17,6 +20,10 @@ import type { PanelProps } from "../registry";
  * Owner bug report 13 Nov: `position` - a position's Chart button: the contract held, with its lines and the switch to
  * its underlying (src/chart/PositionChartV2.tsx), filling the panel's height as well; it comes before the CE / PE pair. */
 export default function ChartPanel({ params, replace }: PanelProps) {
+  // owner 15 Nov: a Copilot answer's "Open chart" hands its reading over; kept for the panel's life (a timeframe change
+  // replaces the address, the reading stays)
+  const handed = useLocation().state as Record<string, unknown> | null;
+  const [reading] = useState(() => asAtpReading(handed?.[ATP_READING_STATE]));
   const tf = isTimeframe(params.tf) ? params.tf : undefined;
   const screenOn = useFeatures().on("watchlist_screen");
   const symbol = params.symbol ?? "";
@@ -43,7 +50,7 @@ export default function ChartPanel({ params, replace }: PanelProps) {
     <div className="flex min-h-0 flex-1 flex-col gap-space-1 [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col">
       {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
       <ChartTradeBar symbol={symbol} exchange={exchange} />
-      <EmbeddedChartV2 symbol={symbol} exchange={exchange} timeframe={tf} openLink={false}
+      <EmbeddedChartV2 symbol={symbol} exchange={exchange} timeframe={tf} openLink={false} reading={reading}
         screenId={screenOn && screenIdOf(params.wscreen) ? Number(params.wscreen) : null}
         onTimeframe={(next) => replace({ ...params, tf: next })} className="min-h-[18rem] flex-1" />
     </div>

@@ -1,15 +1,15 @@
 import { Check, CircleHelp, Copy, History, LineChart, ListChecks, Sparkles } from "lucide-react";
-import { lazy, Suspense, useId, useState } from "react";
+import { lazy, Suspense, useId, useMemo, useState } from "react";
 import { InPlaceLink } from "../../inplace/InPlaceLink";
 import { chartTabPath } from "../../shell/shellRoutes";
 import { isTimeframe } from "../../chart/timeframes";
 import { Details } from "../../ui/Details";
-import { EMPTY, formatChange, formatPrice, formatTimeIST } from "../../ui/format";
+import { formatChange, formatPrice, formatTimeIST } from "../../ui/format";
 import { AnalysisTableView, MiniChart } from "../../optionChain/AnalysisTabsV2";
 import { useCopilotT } from "../i18n";
 import { cx } from "../../components/primitives/cx";
 import {
-  actionState, answerParts, answerRow, cardTrendText, areaText, chipPath, distanceText, headlineAreas, notSetUpLine, stampText, toolsUsedLine, workedLine,
+  actionState, answerParts, answerRow, cardTrendText, areaText, chipPath, distanceText, noAreaText, notSetUpLine, stampText, toolsUsedLine, workedLine,
   type AnswerBlock, type AnswerChip, type AnswerHeadline, type ChatAnswer,
 } from "./model";
 import CostChip from "../components/CostChip";
@@ -17,6 +17,8 @@ import { RichText, headingId } from "./RichText";
 import { DraftCardsV2 } from "./DraftCardV2";
 import { draftStartReady, START_LABEL } from "../strategyDraft";
 import { StructureCardV2 } from "./StructureCardV2";
+import { readingOverlay } from "./readingOverlay";
+import { ATP_READING_STATE, readingIsEmpty } from "../../chart/atpReading";
 
 /** CU3: the answer's ONE action (and the strategy card's second, outlined, "test it" button). */
 const PRIMARY = "inline-flex min-h-11 w-full items-center justify-center py-space-2 text-center gap-space-2 rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand transition-colors duration-fast hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto";
@@ -144,7 +146,7 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
             <span className="font-semibold">{areaText(h.area, (v) => formatPrice(v))}</span>
             <span className="block text-t13 text-fg-muted">{distanceText(h.area, (v) => formatPrice(v))}</span>
           </dd>
-        ) : <dd className="text-t14 text-fg-muted" data-headline-area="none">{EMPTY}</dd>}
+        ) : <dd className="text-t14 text-fg-muted" data-headline-area="none">{noAreaText(h.timeframe)}</dd>}
       </div>
     </dl>
   );
@@ -202,6 +204,9 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
   // M59 CR-1: the chart reading as a card - its free-text words (the AI wording or the rule sentence) move behind Details
   const card = answer.structure_card ?? null;
   const chart = h?.chart ?? null;
+  // owner 15 Nov: the answer's own reading drawn on its chart (and on the larger chart "Open chart" opens)
+  const reading = useMemo(() => (chart ? readingOverlay(card, h) : null), [chart, card, h]);
+  const handed = reading && !readingIsEmpty(reading) ? { [ATP_READING_STATE]: reading } : undefined;
   const worked = answer.job !== "refuse" && answer.job !== "help";
   const hasDetails = worked || Boolean(card) || parts.folded.length > 0 || parts.blocksFolded.length > 0 || answer.unknowns.length > 0 || answer.notes.length > 0;
   return (
@@ -229,7 +234,7 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
         <div data-mini-chart={chart.symbol}>
           <Suspense fallback={<div aria-busy="true" className="h-48 rounded-panel border border-subtle" />}>
             <EmbeddedChartV2 symbol={chart.symbol} exchange={chart.exchange} timeframe={isTimeframe(chart.timeframe) ? chart.timeframe : "day"}
-              areas={headlineAreas(h)} openLink={false} className="h-48" drawing={false} />
+              reading={reading} openLink={false} className={handed ? "h-64" : "h-48"} drawing={false} />
           </Suspense>
         </div>
       )}
@@ -259,7 +264,7 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
               {draftStartReady(answer.draft) ? START_LABEL : answer.action.label}
             </InPlaceLink>
           ) : chart ? (
-            <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} data-action="chart" className={PRIMARY}>
+            <InPlaceLink to={chartTabPath(chart.symbol, chart.exchange, chart.timeframe)} state={handed} data-action="chart" className={PRIMARY}>
               <LineChart size={16} aria-hidden />{t("chat.openChart")}
             </InPlaceLink>
           ) : null}

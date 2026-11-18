@@ -139,7 +139,7 @@ test.describe("v2 copilot chat 1440 desktop", () => {
     await expect(head.locator("[data-headline-area='above']")).toContainText("750.50 (0.92%) above");
     expect((await head.boundingBox())!.y).toBeLessThan((await answer.locator("[data-summary]").boundingBox())!.y);
     await expect(answer.locator("[data-mini-chart='SENSEX'] [data-embedded-chart='SENSEX']")).toBeVisible();
-    await expect(answer.locator("[data-action]")).toHaveCount(1);
+    await expect(answer.locator("[data-actions] [data-action]")).toHaveCount(1);   // the mini chart's own "ATP reading" toggle is not an answer action
     await expect(answer.locator("a[data-action='chart']")).toHaveAttribute("href", "/charts/SENSEX?tf=day&exchange=BSE");
     await expect(answer.locator("[data-worked]")).toBeHidden();
     await expect(answer.locator("[data-unknowns], [data-block='table']").first()).toBeHidden();

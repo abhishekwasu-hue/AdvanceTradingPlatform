@@ -125,6 +125,7 @@ def _set_reader_settings(**values) -> None:
 
 
 _REAL_OWN_KEY_RECORD = service.own_key_record
+_REAL_OWNS_METHOD = service.owns_method
 
 
 @pytest.fixture(autouse=True)
@@ -148,12 +149,15 @@ def _reader(monkeypatch):
         return "test-key-not-real" if own["on"] else None
     monkeypatch.setattr(service, "own_key_record", key_record)
     monkeypatch.setattr(service, "own_key", key)
+    # owner 15 Nov: the owner's own method is his alone - the reads below stand in as the owner unless a test says not
+    owner = {"on": True}
+    monkeypatch.setattr(service, "owns_method", lambda user: owner["on"])
     fake_client = FakeClient()
     monkeypatch.setattr(service, "make_client", lambda key: fake_client)
     reader = FakeReader()
     loader.set_for_tests(reader)
     _set_reader_settings(timeframes=["15m", "1h"], pair={SYMBOL: PAIR_SYMBOL})
-    yield {"reader": reader, "client": fake_client, "cache": store, "own": own}
+    yield {"reader": reader, "client": fake_client, "cache": store, "own": own, "owner": owner}
     loader.reset_for_tests()
     _set_reader_settings()
 
@@ -231,9 +235,53 @@ def test_strategies_labels_estimate_and_cap_off_by_default():
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["available"] is True and body["default"] == "ABHI" and [s["id"] for s in body["strategies"]] == ["ABHI", "BOOK_ONE", "BOOK_TWO"]
+    assert body["own_method"] is True and body["strategies"][0]["name"] == "My method"
+    assert "Abhi" not in got.text
     assert body["model"] == "claude-opus-5-5" and body["effort"] == "high"
     assert body["estimate_usd"] == service.estimate_usd(settings_mod.merge({}), 2) > 0
     assert body["daily_cap_usd"] is None and body["spent_today_usd"] == 0.0           # the cap is OFF by default
+
+
+def test_non_owner_neither_sees_nor_reads_the_owners_method(_reader, monkeypatch):
+    """Owner 15 Nov: his method is personal. The real check (live_owner.is_owner): an ordinary member is not the owner."""
+    monkeypatch.setattr(service, "owns_method", _REAL_OWNS_METHOD)
+    who = _user("not-owner")
+    got = client.get(f"{BASE}/strategies", headers=who["headers"])
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["own_method"] is False and body["default"] == "BOOK_ONE"
+    assert [s["id"] for s in body["strategies"]] == ["BOOK_ONE", "BOOK_TWO"] and "Abhi" not in got.text
+    refused = _read(who)
+    assert refused.status_code == 403 and "This reading style is not available" in refused.text and "Abhi" not in refused.text
+    assert _reader["reader"].calls == [] and _rows(who["user_id"]) == []
+    ok = _read(who, strategy="BOOK_ONE")
+    assert ok.status_code == 200, ok.text
+
+
+def test_only_the_platform_owner_account_may_use_it(_reader, monkeypatch):
+    from app.core import config
+    from app.core.enums import UserRole
+    from app.db.models import User
+    monkeypatch.setattr(service, "owns_method", _REAL_OWNS_METHOD)
+    who = _user("the-owner")
+
+    async def promote():
+        async with _session_factory() as session:
+            user = await session.get(User, who["user_id"])
+            user.role = UserRole.SUPER_ADMIN.value
+            await session.commit()
+    _run(promote())
+    monkeypatch.setattr(config, "LIVE_OWNER_USER_ID", who["user_id"])
+    body = client.get(f"{BASE}/strategies", headers=who["headers"]).json()
+    assert body["own_method"] is True and body["default"] == "ABHI" and body["strategies"][0]["name"] == "My method"
+    assert _read(who).status_code == 200
+
+
+def test_no_book_strategy_means_no_default_for_a_non_owner(_reader):
+    _reader["owner"]["on"] = False
+    _reader["reader"].strategies = lambda: [{"id": "ABHI", "name": "x"}]
+    body = client.get(f"{BASE}/strategies", headers=_user("no-books")["headers"]).json()
+    assert body["own_method"] is False and body["default"] is None and body["strategies"] == []
 
 
 # --- the lake path ----------------------------------------------------------------------------------------------------------

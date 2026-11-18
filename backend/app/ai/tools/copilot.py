@@ -22,9 +22,11 @@ All four are `read` tools: none writes, none places / blocks / changes an order 
 """
 from __future__ import annotations
 
-from datetime import date
+import re
+from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional
 
+import pandas as pd
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -154,7 +156,9 @@ def summarise_structure(layer: Dict[str, Any]) -> Dict[str, Any]:
                              str(layer.get("instrument") or "")) if short else None
         rows.append({"tf": row.get("tf"), "direction": row.get("direction"), "protected": row.get("protected"), "bars": bars,
                      "needed": STRUCTURE_MIN_BARS, "short": short, "note": note, "source": row.get("source"),
-                     "as_of": row.get("as_of"), "last_event": last.get("name"), "last_event_price": last.get("price")})
+                     "as_of": row.get("as_of"), "last_event": last.get("name"), "last_event_price": last.get("price"),
+                     # owner 15 Nov: the break's own bar (epoch seconds) and direction, so the answer chart marks it there
+                     "last_event_time": last.get("time"), "last_event_direction": last.get("direction")})
     state = layer.get("structure_state") or {}
     levels = [{"kind": lv.get("kind"), "price": lv.get("price"), "degree": lv.get("degree"), "status": lv.get("status")}
               for lv in (layer.get("levels") or [])[:MAX_LEVELS]]
@@ -182,6 +186,7 @@ async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
                                              mtf=True, user=ctx.user, session=ctx.session)
     except HTTPException as exc:
         return _refused("price_action_layer", exc)
+    layer, broker_note = await fill_intraday(ctx, args.symbol, tf, layer)
     data = summarise_structure(layer)
     data["timeframe"] = tf                            # owner 13 Nov: the timeframe this read used (asked / open chart / daily)
     if args.timeframe is None and tf == "1d" and not CONTEXT_TIMEFRAME.get():
@@ -190,10 +195,116 @@ async def get_chart_structure(ctx: ToolContext, args: _ChartArgs) -> ToolResult:
     # never a strike, a chain's spot or a placeholder.
     data["official_close"] = await own_bars.official_close(ctx.session, key, await own_bars.scope_for(ctx.session, ctx.user, key))
     if not data["bars"]:
+        error = short_history(0, STRUCTURE_MIN_BARS, f"{TF_WORDS.get(tf, tf)} bars", key)
         return ToolResult(False, None, None, "price_action_layer",
-                          error=short_history(0, STRUCTURE_MIN_BARS, f"{TF_WORDS.get(args.timeframe, args.timeframe)} bars", key))
+                          error=f"{error}. {broker_note}. {ASK_DAILY}" if broker_note else error)
+    if broker_note:
+        data["intraday_note"] = f"{broker_note}. {READ_INSTEAD}"
     return ToolResult(True, {"symbol": args.symbol.upper(), **data}, data["as_of"], f"price_action_layer:{layer.get('source') or 'lake'}",
                       {"last_bar": data["as_of"]})
+
+
+# owner 15 Nov ("Copilot mnto 1 hr data nahi", a stock chart on 1H): ATP's server stores intraday bars only for indices
+# (the history owner's own index rows); a stock's 1-hour / 15-minute structure is read from the asker's OWN broker
+# session (Tier A, his own credential only - M71Q-2 / M86 D4), as the Charts page reads that chart: 1-minute bars over the
+# Charts page's intraday window, built into the timeframe with the lake's one resampler, CLOSED buckets only (nothing
+# after the read time - no look-ahead), every broker call inside the credential's API budget. Nothing is stored.
+INTRADAY_READS = ("1h", "15m")
+NO_BROKER_INTRADAY = ("{tf} bars of {symbol} are not stored on ATP's server (it stores intraday history for indices) and "
+                      "could not be read from your own broker: {reason}")
+READ_INSTEAD = "The daily and weekly structure is read from the stored daily bars"
+ASK_DAILY = "The daily chart can be read from the stored daily bars"
+
+
+def broker_frame(minutes: pd.DataFrame, tf: str, now: datetime, exchange: str = "NSE") -> pd.DataFrame:
+    """1-minute START-stamped broker bars (UTC index, OHLCV) -> the CLOSED `tf` bars the chart layer reads (timestamp =
+    start, bar_end, OHLCV): only minutes inside the regular session that ended by `now`, bucketed from the session open
+    by the market-zones job's resampler (`job.resample_closed`, the one `price_action_layer` rebuilds 1-minute bars with).
+    Pure."""
+    from app.charts.price_action_layer import FRAME_COLS, INTRADAY_MINUTES
+    from app.market_data.calendar import EXCHANGE_SESSIONS, IST, session_family
+    from app.price_action.zones import job
+    if minutes is None or not len(minutes):
+        return pd.DataFrame(columns=FRAME_COLS)
+    sess = EXCHANGE_SESSIONS[session_family(exchange)]
+    start = pd.DatetimeIndex(pd.to_datetime(minutes.index, utc=True))
+    df1 = pd.DataFrame({"timestamp": start, **{c: minutes[c].astype(float).to_numpy() for c in ("open", "high", "low", "close")},
+                        "volume": (minutes["volume"].astype(float).to_numpy() if "volume" in minutes else float("nan")),
+                        "close_at": start + pd.Timedelta(minutes=1)})
+    local = start.tz_convert(IST)
+    inside = [sess.always_open or (sess.open <= t.time() < sess.close) for t in local]
+    end = pd.Timestamp(now).tz_convert("UTC")
+    df1 = df1[pd.Series(inside, index=df1.index) & (df1["close_at"] <= end)].drop_duplicates("timestamp", keep="last")
+    df1 = df1.sort_values("timestamp").reset_index(drop=True)
+    if not len(df1):
+        return pd.DataFrame(columns=FRAME_COLS)
+    df = job.resample_closed(df1, INTRADAY_MINUTES[tf], end, sess).rename(columns={"close_at": "bar_end"})
+    df = df[pd.to_datetime(df["bar_end"], utc=True) <= end]
+    return df[FRAME_COLS].reset_index(drop=True)
+
+
+async def own_minute_bars(ctx: ToolContext, symbol: str) -> tuple[pd.DataFrame, str]:
+    """The asker's own broker 1-minute bars of `symbol` over the Charts page's intraday window -> (frame, source).
+    Only a credential he linked himself (`own_only`), inside its API budget (`budgeted`); HTTPException (409 / 502)
+    with the plain reason when there is none or the broker refused."""
+    from app.ai import evidence
+    from app.ai.copilot_chat import exchange_of
+    from app.market_data.candles_routes import INTRADAY_MAX_LOOKBACK_DAYS
+    sym = symbol.strip().upper()
+    return await evidence.server_frame(ctx.session, ctx.tenant_id, sym, exchange_of(sym), "1min", lookback_days=INTRADAY_MAX_LOOKBACK_DAYS,
+                                       user=ctx.user, own_only=True, budgeted=True)
+
+
+def _short(bars: Any) -> bool:
+    return int(bars or 0) < STRUCTURE_MIN_BARS
+
+
+def _broker_build(frames: dict[str, pd.DataFrame], rows: list[dict[str, Any]], tf: str, main: bool, source: str) -> dict[str, Any]:
+    """The computing half (pure, in a build slot): the short intraday rows rebuilt from the broker bars (only when
+    those hold more bars), and - `main` - the read timeframe's own layer."""
+    from app.charts import price_action_concepts as PC
+    from app.charts import price_action_layer as pal
+    out_rows = []
+    for r in rows:
+        t = str(r.get("tf"))
+        rebuilt = t in frames and _short(r.get("bars")) and len(frames[t]) > int(r.get("bars") or 0)
+        out_rows.append(PC.mtf_row(frames[t], t, source) if rebuilt else r)
+    if main:
+        return pal.build(frames[tf], tf, pal.DEFAULT_DEGREE, False, out_rows)
+    return {"mtf": out_rows}
+
+
+async def fill_intraday(ctx: ToolContext, symbol: str, tf: str, layer: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Owner 15 Nov: the layer with its short 1-hour / 15-minute reads (fewer than STRUCTURE_MIN_BARS stored bars)
+    rebuilt from the asker's own broker bars -> (layer, None); or (the layer unchanged, the plain sentence why) when his
+    own broker could not be read. A layer whose intraday reads are all stored comes back as it is, with no broker call."""
+    from app.ai.copilot_chat import exchange_of
+    from app.charts import price_action_layer as pal
+    rows = list(layer.get("mtf") or [])
+    wanted = {str(r.get("tf")) for r in rows if r.get("tf") in INTRADAY_READS and _short(r.get("bars"))}
+    main = tf in INTRADAY_READS and _short(layer.get("bars"))
+    if main:
+        wanted.add(tf)
+    if not wanted:
+        return layer, None
+    try:
+        minutes, source = await own_minute_bars(ctx, symbol)
+    except HTTPException as exc:
+        words = " / ".join(TF_WORDS.get(t, t) for t in INTRADAY_READS if t in wanted)
+        reason = str(exc.detail).strip().rstrip(".")[:200]
+        if re.search(r"[A-Za-z]+Error\b|BudgetUsed|Traceback", reason):
+            reason = "your broker did not answer just now"   # never an exception class in the answer (plain_reason's rule)
+        return layer, NO_BROKER_INTRADAY.format(tf=words[:1].upper() + words[1:], symbol=symbol.strip().upper(), reason=reason)
+    exchange = exchange_of(symbol.strip().upper())
+    frames = {t: broker_frame(minutes, t, ctx.now, exchange) for t in wanted}
+    if main and len(frames[tf]) <= int(layer.get("bars") or 0):
+        main = False                                   # the broker holds no more bars than the store: the stored read stays
+    if len(frames.get(tf, ())) > pal.MAX_BARS:
+        main = False
+    content = await pal._in_slot(ctx.session, getattr(ctx.user, "id", None), _broker_build, frames, rows, tf, main, source)
+    if main:
+        return {**layer, **content, "source": source, "reason": None}, None
+    return {**layer, **content}, None
 
 
 def _band(b: dict[str, Any], context: bool = False) -> dict[str, Any]:
@@ -339,6 +450,7 @@ for _tool in (
 ):
     register(_tool)
 
-__all__ = ["get_market_context", "get_chart_structure", "get_market_zones", "get_sd_zones", "get_option_chain_analyses", "lake_key",
+__all__ = ["broker_frame", "own_minute_bars", "fill_intraday", "INTRADAY_READS", "NO_BROKER_INTRADAY",
+           "get_market_context", "get_chart_structure", "get_market_zones", "get_sd_zones", "get_option_chain_analyses", "lake_key",
            "summarise_sd", "sd_overlay_on", "SD_OFF",
            "summarise_context", "summarise_structure", "summarise_zones", "summarise_analyses", "read_timeframe"]

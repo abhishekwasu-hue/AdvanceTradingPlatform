@@ -167,6 +167,26 @@ def test_m59_a_short_history_is_data_not_ready_on_the_card_never_a_bar_count():
     assert chat.structure_card("NIFTY", "1d", ToolResult(False, None, None, "x", error="boom"), ToolResult(False, None, None, "y", error="no")) is None
 
 
+def test_owner_15nov_the_last_break_carries_its_bar_and_direction_for_the_answer_chart():
+    """Owner 15 Nov ("Copilot must annotate its analysis on the chart"): the reader's last break keeps its own bar (epoch
+    seconds) and direction through the tool summary into the card, so the answer chart marks it at that bar; a row
+    without them (an older read) keeps the label and price only - nothing is made up."""
+    from app.ai.tools import copilot as copilot_tools
+    ev = {"name": "CHoCH", "price": 130.0, "time": 1762300800, "direction": "down"}
+    layer = {"instrument": "NSE_EQ:X", "tf": "1d", "as_of": None, "bars": 40, "last_close": 124.15,
+             "mtf": [{"tf": "1w", "direction": "down (weak)", "bars": 40, "protected": 130.0, "last_event": ev},
+                     {"tf": "1d", "direction": "range", "bars": 40, "protected": None, "last_event": None}]}
+    data = copilot_tools.summarise_structure(layer)
+    assert data["timeframes"][0]["last_event_time"] == 1762300800 and data["timeframes"][0]["last_event_direction"] == "down"
+    res = ToolResult(True, {"symbol": "X", **data, "official_close": None}, None, "price_action_layer")
+    card = chat.structure_card("X", "1d", res, ToolResult(False, None, None, "market_zones", error="no zones"))
+    weekly, daily = card["timeframes"][0], card["timeframes"][1]
+    assert weekly["protected"] == 130.0 and weekly["last_break"] == {"label": "Break against the trend", "price": 130.0, "time": 1762300800, "direction": "down"}
+    assert daily["last_break"] is None
+    old = {"tf": "1w", "direction": "down", "protected": 130.0, "last_event": "BOS", "last_event_price": 130.0}
+    assert chat._break_bar(old) == {} and chat._break_bar({**old, "last_event_time": True, "last_event_direction": "flat"}) == {}
+
+
 COUNT_WORDS = re.compile(r"of the \d+ .*bars|bars needed|\d+ of \d+ bars|only \d+ of", re.I)
 
 

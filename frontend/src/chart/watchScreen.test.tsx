@@ -5,8 +5,9 @@ import { CHART_PANEL } from "../inplace/panels";
 import { WatchScreenBar, type WatchScreenState } from "./WatchScreenBar";
 import { SystemListView } from "./WatchlistPanel";
 import {
-  NO_CHOICE, ScreenChecker, byExchange, checkList, countText, listKeyOf, markOf, onCandles, orderByMatch, screenParam, shownRows, waitUntil, withScreen,
-  type CheckOutcome, type CheckReply, type CheckerTarget, type OverlayReply,
+  MAX_WAIT_MS, NO_CHOICE, RETRY_AFTER_ERROR_MS, ScreenChecker, byExchange, checkList, countText, listKeyOf, markOf, onCandles, orderByMatch, progressText,
+  savedList, screenParam, shownRows, waitUntil, withScreen,
+  type CheckOutcome, type CheckReply, type CheckerDeps, type CheckerTarget, type OverlayReply, type SavedReply, type SavedState,
 } from "./watchScreen";
 import type { WatchItem } from "./watchlistsV2";
 
@@ -150,6 +151,112 @@ describe("W3 checked store-first, on bar close only, only for the list on screen
     expect(waitUntil(1_000_500, 1_000_000)).toBe(1_000);
     expect(waitUntil(1_000_000 + 3 * 86_400_000, 1_000_000)).toBe(86_400_000);
     expect(waitUntil(null, 0)).toBeNull();
+  });
+});
+
+describe("owner 15 Nov: kept results, the market closed, progress, the time limit, held-back rows", () => {
+  const T: CheckerTarget = { listKey: "o:1", listName: "L", screenId: 4, items: rows("AAA", "BBB", "CCC") };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const outcome = (over: Partial<CheckOutcome> = {}): CheckOutcome => ({ matched: new Set(), results: new Map(), nextAt: 1_060_000, alerted: [], slowed: false, bar: null, ...over });
+  function rig(over: Partial<CheckerDeps> = {}, clock = { t: 1_000_000 }) {
+    const timers: { fn: () => void; ms: number }[] = [];
+    const busy: boolean[] = [];
+    const failed: boolean[] = [];
+    const outcomes: (CheckOutcome | null)[] = [];
+    const checks: { skip?: ReadonlySet<string> }[] = [];
+    const deps: CheckerDeps = {
+      check: async (_t, _s, _p, resume) => { checks.push({ skip: resume?.skip }); return outcome(); },
+      onOutcome: (o) => outcomes.push(o), onBusy: (b) => busy.push(b), onFailed: (f) => failed.push(f), hidden: () => false, now: () => clock.t,
+      setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimer: (t) => { timers[(t as number) - 1].fn = () => {}; }, ...over,
+    };
+    return { checker: new ScreenChecker(deps), timers, busy, failed, outcomes, checks, clock };
+  }
+
+  it("the market closed and every row kept on the newest bar: the kept result shows, the broker is not asked", async () => {
+    const kept: SavedState = { outcome: outcome({ matched: new Set(["NSE:BBB"]), closedSince: "2026-11-13T10:00:00+00:00", nextAt: 1_000_000 + 2 * 86_400_000 }),
+      fresh: new Set(["NSE:AAA", "NSE:BBB", "NSE:CCC"]), closed: true };
+    const h = rig({ saved: async () => kept });
+    h.checker.update(true, T);
+    await flush();
+    expect(h.checks).toHaveLength(0);
+    expect(h.outcomes[h.outcomes.length - 1]).toBe(kept.outcome);
+    expect(h.busy).toEqual([true, false]);
+    // a weekend is longer than one timer: the timer is set again, the list is not checked before the bar closes
+    expect(h.timers.map((t) => t.ms)).toEqual([MAX_WAIT_MS]);
+    h.timers[0].fn();
+    await flush();
+    expect(h.checks).toHaveLength(0);
+    expect(h.timers).toHaveLength(2);
+  });
+  it("resumes: only the rows not read on the newest bar are sent", async () => {
+    const api = { check: vi.fn(async (b: { symbols: string[] }) => reply({ scanned: b.symbols.length, results: b.symbols.map((s) => ({ symbol: s, matched: s === "CCC", reason: null })),
+      funnel: { universe: b.symbols.length, with_data: b.symbols.length, stages: [] } })) };
+    const start = outcome({ matched: new Set(["NSE:AAA"]), results: new Map([["NSE:AAA", { symbol: "AAA", matched: true, reason: null }]]) });
+    const seen: (string | undefined)[] = [];
+    const out = await checkList(api, T, { start, skip: new Set(["NSE:AAA"]), sleep: async () => {}, onProgress: (o) => seen.push(progressText(o, 3, true)) });
+    expect(api.check.mock.calls.map((c) => c[0].symbols)).toEqual([["BBB", "CCC"]]);
+    expect([...out.matched].sort()).toEqual(["NSE:AAA", "NSE:CCC"]);
+    expect(seen[seen.length - 1]).toBe("Checked 3 of 3");
+    expect(progressText(out, 3, false)).toBe("Checked 3 of 3 · 2 match");
+  });
+  it("a held-back row is not checked, not a non-match; the final state says so", async () => {
+    const api = { check: vi.fn(async (b: { symbols: string[] }) => reply({ scanned: b.symbols.length,
+      results: b.symbols.map((s) => (s === "BBB" ? { symbol: s, matched: false, reason: "held", code: "rate_limited", action: "retry" as const } : { symbol: s, matched: true, reason: null })),
+      funnel: { universe: b.symbols.length, with_data: b.symbols.length, stages: [] } })) };
+    const out = await checkList(api, T, { sleep: async () => {} });
+    expect([...(out.held ?? [])]).toEqual(["NSE:BBB"]);
+    expect(out.matched.has("NSE:BBB")).toBe(false);
+    expect(progressText(out, 3, false)).toBe("Checked 2 of 3 · 2 match");
+    const state: WatchScreenState = { choice: { ...NO_CHOICE, screen_id: 4 }, screen: SCREENS[0], matched: out.matched, held: out.held, outcome: out, checking: false, failed: false };
+    const html = renderToStaticMarkup(<WatchScreenBar listKey="o:1" screens={SCREENS} choice={state.choice} onChoose={() => {}} state={state} items={T.items} />);
+    expect(html).toContain("Checked 2 of 3 · 2 match");
+    expect(html).toContain("Some stocks held back by the broker limit - they are retried at the next bar");
+    expect(html).not.toContain("Checking…");
+  });
+  it("the market-closed line shows the last close", () => {
+    const o = outcome({ matched: new Set(["NSE:AAA"]), results: new Map([["NSE:AAA", { symbol: "AAA", matched: true, reason: null }]]), checked: 1, total: 3,
+      closedSince: "2026-11-13T10:00:00+00:00" });
+    const state: WatchScreenState = { choice: { ...NO_CHOICE, screen_id: 4 }, screen: SCREENS[0], matched: o.matched, outcome: o, checking: false, failed: false };
+    const html = renderToStaticMarkup(<WatchScreenBar listKey="o:1" screens={SCREENS} choice={state.choice} onChoose={() => {}} state={state} items={T.items} />);
+    expect(html).toContain("Market closed - result from 13 Nov, 15:30");
+  });
+  it("savedList reads each market once and keeps the earliest next close; a failed read checks everything", async () => {
+    const r: SavedReply = { results: [{ symbol: "AAA", matched: true, reason: null }], fresh: ["AAA"], bar: "b", market_open: false,
+      last_close: "2026-11-13T10:00:00+00:00", checked_at: null, next_check_at: 7_000 };
+    const got = await savedList({ saved: vi.fn(async () => r) }, T);
+    expect(got?.closed).toBe(true);
+    expect([...(got?.fresh ?? [])]).toEqual(["NSE:AAA"]);
+    expect(got?.outcome.nextAt).toBe(7_000);
+    expect(await savedList({ saved: vi.fn(async () => { throw new Error("x"); }) }, T)).toBeNull();
+  });
+  it("leaving the screen mid-check clears Checking…", async () => {
+    let finish: (o: CheckOutcome) => void = () => {};
+    const h = rig({ check: () => new Promise<CheckOutcome>((res) => { finish = res; }) });
+    h.checker.update(true, T);
+    await flush();
+    expect(h.busy).toEqual([true]);
+    h.checker.close();
+    expect(h.busy).toEqual([true, false]);
+    finish(outcome());
+    await flush();
+    expect(h.busy).toEqual([true, false]);
+  });
+  it("a check that fails outright is tried again (at the next close, else a little later)", async () => {
+    const h = rig({ check: async () => { throw new Error("down"); } });
+    h.checker.update(true, T);
+    await flush();
+    expect(h.failed[h.failed.length - 1]).toBe(true);
+    expect(h.busy).toEqual([true, false]);
+    expect(h.timers.map((t) => t.ms)).toEqual([RETRY_AFTER_ERROR_MS]);
+  });
+  it("a check that runs past its time limit stops, keeps what it read and waits for the next bar", async () => {
+    const clock = { t: 1_000_000 };
+    const h = rig({ limitMs: 1_000, check: async (_t, stopped) => { clock.t += 5_000; expect(stopped()).toBe(true); return outcome({ nextAt: 1_100_000 }); } }, clock);
+    h.checker.update(true, T);
+    await flush();
+    expect(h.outcomes[h.outcomes.length - 1]?.timedOut).toBe(true);
+    expect(h.busy).toEqual([true, false]);
+    expect(h.timers.map((t) => t.ms)).toEqual([95_000]);
   });
 });
 

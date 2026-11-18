@@ -62,7 +62,9 @@ export interface CardArea {
 /** M59 CR-1: one timeframe row of the structure card; `ready` false = that timeframe's history is not stored yet. */
 export interface CardTimeframe {
   tf: string; label: string; ready: boolean; trend: "up" | "down" | "sideways" | null; weak: boolean; protected: number | null;
-  last_break: { label: string; price: number } | null;
+  /** Owner 15 Nov: `time` - the break's own bar (epoch seconds) and `direction`, when the server sends them (the answer
+   * chart marks the break there). */
+  last_break: { label: string; price: number; time?: number; direction?: "up" | "down" } | null;
 }
 /** M59 CR-1: the chart reader's structure answer as data (backend copilot_chat.structure_card) - the card draws it. */
 export interface StructureCard {
@@ -460,6 +462,13 @@ export function headlineAreas(h: AnswerHeadline | null | undefined): LayerBand[]
   const label = areaLabelText({ role: a.side, timeframe: a.timeframe, state: a.state });   // M78 (F3): the one band-label text
   return [{ low: Math.min(a.from, a.to), high: Math.max(a.from, a.to), role, color: a.side ? ZONE_COLORS[a.side] : undefined, opacity: 0.18,
             style: "solid", label }];
+}
+
+/** Owner 15 Nov: the headline's nearest area when the answer found none - a plain line, never a bare dash
+ * ("No area found on the daily chart yet"). */
+export function noAreaText(timeframe: string | null | undefined): string {
+  const tf = (timeframe ?? "").trim().toLowerCase();
+  return tf ? `No area found on the ${tf} chart yet` : "No area found on this chart yet";
 }
 
 /** M59 CR-1: a timeframe whose history is not stored yet - "1-hour: data not ready", never a bar count. */

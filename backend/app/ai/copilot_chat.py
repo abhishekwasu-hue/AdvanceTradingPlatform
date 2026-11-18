@@ -988,6 +988,14 @@ def _card_item(b: dict[str, Any], price: float) -> tuple[bool, dict[str, Any]]:
     return where == "above" or (where == "inside" and side == "supply"), item
 
 
+def _break_bar(row: dict[str, Any]) -> dict[str, Any]:
+    """Owner 15 Nov ("Copilot must annotate its analysis on the chart"): the last break's own bar (epoch seconds) and its
+    direction ("up" / "down"), as the reader gave them - left out when the row has none (an older read)."""
+    t, d = row.get("last_event_time"), row.get("last_event_direction")
+    return {**({"time": int(t)} if isinstance(t, (int, float)) and not isinstance(t, bool) else {}),
+            **({"direction": d} if d in ("up", "down") else {})}
+
+
 def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult, live: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """M59 CR-1: the chart reader's structure answer as data for a card - per timeframe (Weekly, Daily, 1-hour,
     15-minute; always all four, in that order) the trend word, weak or not, the protected level and the last break, or
@@ -1011,7 +1019,7 @@ def structure_card(symbol: str, tf: str, res: ToolResult, zones: ToolResult, liv
             continue
         trend, weak = _card_trend(r.get("direction"))
         name, at = r.get("last_event"), r.get("last_event_price")
-        last = ({"label": BREAK_WORDS.get(str(name).upper(), str(name)), "price": at}
+        last = ({"label": BREAK_WORDS.get(str(name).upper(), str(name)), "price": at, **_break_bar(r)}
                 if name and isinstance(at, (int, float)) else None)
         timeframes.append({"tf": key, "label": label, "ready": True, "trend": trend, "weak": weak,
                            "protected": r.get("protected") if isinstance(r.get("protected"), (int, float)) else None, "last_break": last})
@@ -1057,6 +1065,8 @@ async def chart_reader(answer: Answer, run: Runner, message: str) -> None:
         row = next((r for r in _structure_rows(res) if r.get("tf") == tf), None)
         if row is not None and row.get("short"):
             head += f" {row.get('note') or TF_LABELS.get(tf, tf) + ': ' + SHORT_WORDS}."
+            if d.get("intraday_note"):
+                head += f" {d['intraday_note']}."             # owner 15 Nov: why, and which timeframes were read instead
         elif state.get("direction"):
             head += f" On the {TF_LABELS.get(tf, tf).lower()} chart the structure reads {state['direction']}"
             head += f", protected level {_f(state['protected'])}." if state.get("protected") is not None else "."

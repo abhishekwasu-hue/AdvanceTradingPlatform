@@ -441,3 +441,9 @@ Note: owner turned user_runner ON. No runner-v* release tag exists yet, so the i
 > "Runner release kra"
 
 Note: tag push from the session is refused (403); release.yml now accepts a release published on the GitHub page (tag runner-v0.1.0 on main).
+
+## 18 Nov - owner
+
+> "credits vadhle aahet tyamule tumhi tumcha kaam purna kara" (transliterated from Devanagari)
+
+Note: runner release PR #1100 merged; 15M SRv2 audit done (atp-private PR #18, docs/SRV2_PORT_AUDIT.md); plan + estimate sent, build waits for owner ok.

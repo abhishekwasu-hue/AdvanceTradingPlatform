@@ -134,3 +134,9 @@ RUN-Q2, RUN-Q3, RUN-Q4 answered by the owner on 14 Nov: moved to docs/archive/OP
 | RUN-S8-1 | Index strategies on the runner read the index's own volume; ATP's worker replaces it with the near-month future's (docs/design/RUNNER_PARITY.md D3). | add the future-volume step to the runner feed in a later step; until then it matters only for an index strategy that reads volume | open (default stated) |
 | RUN-S8-2 | The VIX gate's readings are captured by ATP's worker only; on the runner a user who set his own VIX numbers gets the gate's fail-safe (bullish index entries paused) (RUNNER_PARITY.md D4). | capture the reading on the runner from his own broker in a later step | open (default stated) |
 | BIZ1-Q4 | Angel One Publisher / Fyers API Connect buttons: formats seen only in search extracts (broker hosts blocked for the research session, 15 Nov). | Not built; copy sheet. Re-check on the official pages (browser or allowed host), then add the builder + tests. | BROKER_DATA_TERMS "Other brokers: pre-filled order research" | open |
+
+## SRV2: 15M SRv2 port (18 Nov, DECISIONS 18 Nov SRV2)
+| ID | Question | Default | Where | Status |
+|---|---|---|---|---|
+| SRV2-Q1 | Where do the bot's PAPER positions and exits run? A = Trade's own PAPER engine (open_multi_leg_trade, manage_open_trades, trade_monitor, its own trades store) inside ATP's worker, shown read-only in ATP; B = ATP's trades table with Trade's exit rules rewritten for it | A (AS IS: the exits stay Trade's code; B rewrites them) | atp-private docs/SRV2_PORT_DESIGN.md | open (default; build continues on A) |
+| SRV2-Q2 | atp-private CI fails within seconds on main since 9 Nov with no log (likely Actions minutes / billing on the private repo) | owner checks GitHub Billing -> Actions; atp-private PRs #18 / #19 wait (merge only on green) | atp-private | open (owner) |

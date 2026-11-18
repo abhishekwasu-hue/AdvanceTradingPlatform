@@ -90,7 +90,7 @@ class Signal(BaseModel):
     provenance: Optional[Dict[str, str]] = Field(default=None, exclude=True)
     # BT-DRAW (owner 18 Nov): the bar where the template's setup began (a visit to its area, a break ...), so a chart can
     # mark it next to the entry. A time only, never an id; None for strategies without a setup bar.
-    setup_time: Optional[datetime] = None
+    setup_time: datetime | None = None
 
     @property
     def is_tradeable(self) -> bool:
@@ -243,7 +243,7 @@ class Trade(BaseModel):
     # shown with the trade so every test trade explains itself. Never the internal provenance.
     entry_reasons: list[str] = Field(default_factory=list)
     # BT-DRAW: the bar where the signal's setup began (Signal.setup_time), None when the strategy has none.
-    setup_time: Optional[datetime] = None
+    setup_time: datetime | None = None
 
 
 class BacktestResult(BaseModel):

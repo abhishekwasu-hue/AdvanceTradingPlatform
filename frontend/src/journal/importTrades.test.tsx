@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { journalApi } from "./api";
 import { EntryEditorV2 } from "./EntrySheetV2";
-import { ACCEPT, ImportPreviewV2, ImportTradesFormV2, previewFile } from "./ImportTradesV2";
+import { ACCEPT, ImportPreviewV2, ImportTradesFormV2, importWhy, previewFile } from "./ImportTradesV2";
 import { JournalListV2 } from "./JournalListV2";
 import { DEMO_ENTRY, DEMO_LIST } from "./journal.fixture";
 import { TradeChartV2, chartMarks } from "./TradeChartV2";
@@ -59,8 +59,24 @@ describe("M88 import from a file", () => {
     expect(out).toContain(`accept="${ACCEPT}"`);
     expect(ACCEPT).toBe(".csv,.xlsx,.xls");
     expect(text(out)).toContain("Zerodha, Upstox, Angel One, Dhan, Groww or Fyers");
-    expect(out).toMatch(/data-import-save[^>]*disabled|disabled[^>]*data-import-save/);
+    // owner 18 Nov: no greyed-out Import before a file; the main button opens the file picker and says why
+    expect(out).not.toContain("data-import-save");
+    expect(out).toContain("data-import-pick");
+    expect(text(out)).toContain("Choose your broker's tradebook file first.");
     expect(api.importPreview).not.toHaveBeenCalled();
+  });
+
+  it("says why there is nothing to import (owner 18 Nov)", () => {
+    const file = new File(["x"], "t.csv");
+    const preview = (counts: Partial<ImportPreview["counts"]>, already: ImportPreview["already_imported"] = null) => ({
+      status: "ok" as const, file, preview: { already_imported: already, counts: { rows: 3, trades: 2, duplicates: 0, problems: 0, to_import: 2, date_only: 0, ...counts } } as unknown as ImportPreview });
+    expect(importWhy({ status: "idle" })).toMatch(/Choose/);
+    expect(importWhy({ status: "reading", file })).toBeNull();
+    expect(importWhy({ status: "error", file, error: new Error("x") })).toMatch(/could not be read/);
+    expect(importWhy(preview({}))).toBeNull();
+    expect(importWhy(preview({ to_import: 0 }, { at: "2026-11-01T00:00:00Z" } as ImportPreview["already_imported"]))).toBe("This file is already in your journal.");
+    expect(importWhy(preview({ to_import: 0, duplicates: 2 }))).toMatch(/Every trade/);
+    expect(importWhy(preview({ to_import: 0, trades: 0, problems: 3 }))).toMatch(/No complete trades/);
   });
 
   it("the preview shows the layout, the counts, the pairing method, every column choice, the problems and the trades", () => {

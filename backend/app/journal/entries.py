@@ -545,6 +545,13 @@ def chart_plan(ref: Ref, at: str, *, timeframe: str | None, greeks: dict[str, An
     when = _utc(m.entry_time if at == "entry" else m.exit_time)
     if when is None:
         raise EntryError("The trade is still open - there is no exit snapshot yet", 404)
+    from app.paper.fno_contracts import parse_symbol
+    contract = parse_symbol(m.symbol)
+    if contract is not None:
+        # owner 19 Nov: an outside F&O trade (a broker's compact symbol) is drawn on its underlying, like an ATP option
+        # trade - its prices are premiums, so none is drawn on the underlying's scale
+        from app.instruments.master import INDEX_EXCHANGE
+        return ChartPlan(INDEX_EXCHANGE.get(contract.underlying, "NSE"), contract.underlying, m.timeframe or "1m", when, {})
     levels = {"ENTRY": m.entry_price, "SL": m.stop_loss, "TGT": m.target}
     if at == "exit":
         levels["EXIT"] = m.exit_price

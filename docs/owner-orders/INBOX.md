@@ -591,3 +591,25 @@ Note: the SPEC the PLAN task refers to; the plan (docs/plans/strategy-first-char
 > "es pack madhlya baryach goshti already aaplyakade astil" (transliterated from Devanagari)
 
 Note: the plan reuses what exists (inventory decides reuse / modify / replace per module); only the true gaps are new.
+## 19 Nov - owner (phone screenshots: Journal, an imported Fyers option "NIFTY26N0924950CE", Charts -> "No daily candles are stored ... cannot be drawn")
+
+> "Journal mdhe trade import jhale aahet, but daily candle error mule chart tayar jhala nahi"
+
+Note: root cause - the imported option kept the broker's compact symbol and the trade chart looked it up as a cash share (a key never stored). Fix: an F&O contract is drawn on its own daily candles when stored, else on its underlying index's daily candles (marks on their days, the premium in words, never a price line on the index scale); the contract named in plain words; the At entry / At exit snapshots on the underlying too. Branch claude/journal-option-chart.
+
+## 19 Nov - owner (on the journal option-chart fix: daily candles)
+
+> "aho pan to daily candle varcha chart var kasa disnar te pandhra minitachya chart var disayla pahije mi journal madhlya chart baddal bolat aahe" (transliterated from Devanagari)
+
+Note: the journal trade chart must be a 15-minute chart, not Daily. Sources and the M86 rule (no other user's data) being checked before the build.
+
+## 19 Nov - owner
+
+> "15 minute chart lavkar kar aur userla time frame nivadnyachi sandhi pahije" (transliterated from Devanagari)
+
+Note: the journal trade chart on 15 minutes by default, with a timeframe choice for the user.
+## 19 Nov - owner
+
+> "CA chat suru kr"
+
+Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.

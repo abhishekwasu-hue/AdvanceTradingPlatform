@@ -482,6 +482,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chart-reader/strategies"): "member: the reader's strategy labels, the platform's model / effort / estimate and the caller's own cap and spend today (M86)",
     ("POST", "/api/chart-reader/read"): ("self: one read of ATP's chart of the shared lake (or his own private bars) or of the caller's own uploaded "
                                          "chart item (tenant and user); writes only his own usage row and a cache entry; read-only (M86)"),
+    ("GET", "/api/chart-reader/items/{item_id}/chat"): "member: the caller's own chat on his own analysis (tenant and user; 404 otherwise); read-only (CA-CHAT)",
+    ("POST", "/api/chart-reader/items/{item_id}/chat"): "self: his conditions checked on his own analysis with his own key and cap; writes only the chat on his own item and his own usage row (CA-CHAT)",
+    ("DELETE", "/api/chart-reader/items/{item_id}/chat"): "self: clears the chat on his own analysis only (CA-CHAT)",
     ("POST", "/api/chart-analyze/workspace"): "self: his own workspace analyses only (the caller's items, his plan limits and AI key); the shared lake or his own private bars; read-only (M75 W-4)",
     ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,

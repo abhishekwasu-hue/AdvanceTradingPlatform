@@ -1,5 +1,6 @@
 import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
 import { ComingSoon } from "../ui/ComingSoon";
+import type { LayerBand } from "../charting/engine";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "react-router";
 import { useOptionalAuth } from "../auth/AuthContext";
@@ -152,6 +153,8 @@ export default function ChartAnalyzePageV2() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [problem, setProblem] = useState<Problem | null>(null);
   const [current, setCurrent] = useState<AnalysisItem | null>(null);
+  // CA-CHAT: the price areas the trader's own condition answers point at (drawn on the live chart of a hybrid result)
+  const [chatAreas, setChatAreas] = useState<LayerBand[]>([]);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [imageNote, setImageNote] = useState<string | null>(null);
   const [history, setHistory] = useState<AnalysisItem[]>([]);
@@ -547,7 +550,7 @@ export default function ChartAnalyzePageV2() {
       </section>
 
       {current && current.mode === "hybrid" && current.hybrid && (
-        <HybridResultV2 liveChart result={current.hybrid} userImageSrc={imageSrc} readingSrc={readingSrc} imageNote={imageNote}
+        <HybridResultV2 liveChart result={current.hybrid} extraAreas={chatAreas} userImageSrc={imageSrc} readingSrc={readingSrc} imageNote={imageNote}
           readLine={<ChartReadLine key={current.id} result={current.hybrid} timeframes={timeframes} running={phase === "analysing"} onRun={(c) => void retry(c)} />}
           onDownload={() => void downloadReading()} onDelete={() => setConfirmDelete(true)} downloading={busy === "export"} deleting={busy === "delete"} />
       )}
@@ -573,7 +576,7 @@ export default function ChartAnalyzePageV2() {
       )}
 
       {/* M86 W3: the chart reader (flag chart_reader; nothing shows while it is off). Reads only on the user's action. */}
-      <ChartReaderSectionV2 itemId={current?.id ?? null} symbol={current?.hybrid?.pick?.symbol ?? current?.pick?.symbol ?? current?.summary?.symbol ?? null} />
+      <ChartReaderSectionV2 onMarks={setChatAreas} itemId={current?.id ?? null} symbol={current?.hybrid?.pick?.symbol ?? current?.pick?.symbol ?? current?.summary?.symbol ?? null} />
 
       <section className={card} aria-labelledby="ca-history">
         <h2 id="ca-history" className="text-t15 font-semibold text-fg">Your analyses</h2>

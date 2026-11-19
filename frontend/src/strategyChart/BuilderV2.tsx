@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { Combobox, type ComboOption } from "../ui/Combobox";
+import { useConfirm } from "../ui/ConfirmDialog";
 import {
   CMP_LABEL, MAX_DEPTH, blankSettings, PRICE_FIELDS, TIMEFRAMES, TWO_SIDED, builderApi, depthOf, emptyDraft, exportFile, newCondition, nextId, numberOrNull,
   operandKind, parseImport, serialize, toDraft, type Block, type BlockArg, type Cmp, type Cond, type Draft, type Group,
@@ -26,6 +28,14 @@ function Field({ label, children, className }: { label: string; children: ReactN
   );
 }
 
+/** The shared Combobox (UI-28 U3.3: never the browser's own select); "" = nothing chosen. */
+function Pick({ label, value, options, onChange, placeholder = "Choose…", data, className }: { label: string; value: string; options: ComboOption[];
+  onChange: (v: string) => void; placeholder?: string; data?: Record<string, string>; className?: string }) {
+  return <Combobox label={label} value={value} options={options} onChange={onChange} placeholder={placeholder} searchable={options.length > 12}
+    dataAttrs={data} className={className} />;
+}
+const opts = (rows: readonly (readonly [string, string])[], group?: string): ComboOption[] => rows.map(([value, label]) => ({ value, label, group }));
+
 function NumberBox({ value, onChange, label, step = "any", min }: { value: number | null | undefined; onChange: (v: number | null) => void; label: string;
   step?: string; min?: number }) {
   return (
@@ -43,12 +53,9 @@ function ArgBox({ arg, value, onChange }: { arg: BlockArg; value: unknown; onCha
     const isField = typeof value === "string" && (PRICE_FIELDS as readonly string[]).includes(value);
     return (
       <span className="inline-flex items-center gap-space-1">
-        <select aria-label={label} value={isField ? String(value) : typeof value === "number" ? "__num" : ""} className={FIELD}
-          onChange={(e) => onChange(e.target.value === "" ? "" : e.target.value === "__num" ? (typeof value === "number" ? value : "") : e.target.value)}>
-          <option value="">{arg.name}…</option>
-          {PRICE_FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
-          <option value="__num">a number</option>
-        </select>
+        <Pick label={label} placeholder={`${arg.name}…`} value={isField ? String(value) : typeof value === "number" ? "__num" : ""}
+          options={[...opts(PRICE_FIELDS.map((f) => [f, f] as const)), { value: "__num", label: "a number" }]}
+          onChange={(v) => onChange(v === "__num" ? (typeof value === "number" ? value : 0) : v)} />
         {typeof value === "number" && <input type="number" aria-label={`${label} number`} value={value} className={cx(FIELD, "w-20")}
           onChange={(e) => { const n = numberOrNull(e.target.value); onChange(n === null ? "" : n); }} />}
       </span>
@@ -56,17 +63,14 @@ function ArgBox({ arg, value, onChange }: { arg: BlockArg; value: unknown; onCha
   }
   if (arg.choices.length) {
     return (
-      <select aria-label={label} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value)} className={FIELD}>
-        <option value="">{arg.name}…</option>
-        {arg.choices.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
+      <Pick label={label} placeholder={`${arg.name}…`} value={value === undefined ? "" : String(value)} onChange={(v) => onChange(v)}
+        options={opts(arg.choices.map((c) => [c, c] as const))} />
     );
   }
   if (arg.type === "bool") {
     return (
-      <select aria-label={label} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? "" : e.target.value === "true")} className={FIELD}>
-        <option value="">{arg.name}…</option><option value="true">yes</option><option value="false">no</option>
-      </select>
+      <Pick label={label} placeholder={`${arg.name}…`} value={value === undefined ? "" : String(value)} onChange={(v) => onChange(v === "true")}
+        options={opts([["true", "yes"], ["false", "no"]])} />
     );
   }
   if (arg.type === "num" || arg.type === "window") {
@@ -92,14 +96,11 @@ function OperandEditor({ value, onChange, blocks, want, label }: { value: Operan
   };
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-space-1" data-operand={label}>
-      <select aria-label={label} value={pick} onChange={(e) => choose(e.target.value)} className={cx(FIELD, "max-w-[14rem]")}>
-        <option value="">Choose…</option>
-        {want === "number" && <option value="__value">A number</option>}
-        {want === "number" && <optgroup label="Price">{PRICE_FIELDS.map((f) => <option key={f} value={`__price:${f}`}>{f}</option>)}</optgroup>}
-        <optgroup label={want === "flag" ? "Price action and events" : "Indicators"}>
-          {options.map((b) => <option key={b.block} value={b.block} title={b.doc}>{b.block}</option>)}
-        </optgroup>
-      </select>
+      <Pick label={label} value={pick} onChange={choose} className="max-w-[14rem]" options={[
+        ...(want === "number" ? [{ value: "__value", label: "A number" }, ...opts(PRICE_FIELDS.map((f) => [`__price:${f}`, f] as const), "Price")] : []),
+        ...options.map((b) => ({ value: b.block, label: b.block, hint: b.doc ? b.doc.slice(0, 60) : undefined,
+          group: want === "flag" ? "Price action and events" : "Indicators" })),
+      ]} />
       {value?.kind === "value" && <NumberBox label={`${label} number`} value={value.value} onChange={(n) => onChange({ kind: "value", value: n })} />}
       {spec && value && (value.kind === "indicator" || value.kind === "pa") && [...spec.args, ...spec.kwargs].map((a) => (
         <ArgBox key={a.name} arg={a} value={value.params[a.name]} onChange={(v) => {
@@ -123,10 +124,8 @@ function CondEditor({ cond, onChange, onRemove, blocks, timeframe }: { cond: Con
       <OperandEditor label={`${cond.id} left`} value={cond.left} blocks={blocks} want={cond.cmp === "is_true" || flagLeft ? "flag" : "number"}
         onChange={(left) => onChange({ ...cond, left, cmp: left?.kind === "pa" ? "is_true" : cond.cmp === "is_true" ? null : cond.cmp })} />
       {!flagLeft && (
-        <select aria-label={`${cond.id} comparison`} value={cond.cmp ?? ""} onChange={(e) => onChange({ ...cond, cmp: (e.target.value || null) as Cmp | null })} className={FIELD}>
-          <option value="">compare…</option>
-          {cmps.map((c) => <option key={c} value={c}>{CMP_LABEL[c]}</option>)}
-        </select>
+        <Pick label={`${cond.id} comparison`} placeholder="compare…" value={cond.cmp ?? ""} onChange={(v) => onChange({ ...cond, cmp: (v || null) as Cmp | null })}
+          options={opts(cmps.map((c) => [c, CMP_LABEL[c]] as const))} />
       )}
       {flagLeft && <span className="text-t13 text-fg-muted">{CMP_LABEL.is_true}</span>}
       {cond.cmp && TWO_SIDED.includes(cond.cmp) && <OperandEditor label={`${cond.id} right`} value={cond.right} blocks={blocks} want="number" onChange={(right) => onChange({ ...cond, right })} />}
@@ -138,10 +137,8 @@ function CondEditor({ cond, onChange, onRemove, blocks, timeframe }: { cond: Con
       {(cond.cmp === "rising" || cond.cmp === "falling") && <><NumberBox label={`${cond.id} bars`} value={cond.bars} min={1} step="1" onChange={(bars) => onChange({ ...cond, bars })} /><span className="text-t13 text-fg-muted">bars</span></>}
       <Field label="within bars" className="w-24"><NumberBox label={`${cond.id} within bars`} value={cond.within_bars} min={1} step="1" onChange={(within_bars) => onChange({ ...cond, within_bars })} /></Field>
       <Field label="on timeframe" className="w-28">
-        <select aria-label={`${cond.id} timeframe`} value={cond.timeframe ?? ""} onChange={(e) => onChange({ ...cond, timeframe: e.target.value || null })} className={FIELD}>
-          <option value="">{timeframe ? `Same (${timeframe})` : "Same"}</option>
-          {TIMEFRAMES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
+        <Pick label={`${cond.id} timeframe`} value={cond.timeframe ?? ""} onChange={(v) => onChange({ ...cond, timeframe: v || null })}
+          options={[{ value: "", label: timeframe ? `Same (${timeframe})` : "Same" }, ...opts(TIMEFRAMES.map((t) => [t.value, t.label] as const))]} />
       </Field>
       <button type="button" onClick={onRemove} aria-label={`Remove condition ${cond.id}`} className={cx(SMALL_BTN, "ml-auto text-fg-muted hover:bg-surface-1")}>×</button>
     </div>
@@ -194,19 +191,16 @@ function LevelEditor({ label, value, onChange, trailing = false }: { label: stri
   return (
     <div className="flex flex-wrap items-end gap-space-2" data-exit={label}>
       <Field label={label} className="w-32">
-        <select aria-label={label} value={v?.kind ?? ""} onChange={(e) => onChange(e.target.value ? { kind: e.target.value as LevelRule["kind"] } : null)} className={FIELD}>
-          <option value="">Off</option>
-          {kinds.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-        </select>
+        <Pick label={label} value={v?.kind ?? ""} onChange={(k) => onChange(k ? { kind: k as LevelRule["kind"] } : null)}
+          options={[{ value: "", label: "Off" }, ...kinds]} />
       </Field>
       {v && ["points", "pct", "atr", "premium"].includes(v.kind) && <Field label="value"><NumberBox label={`${label} value`} value={v.value} onChange={(value) => onChange({ ...v, value })} /></Field>}
       {v?.kind === "atr" && <Field label="ATR length"><NumberBox label={`${label} ATR length`} step="1" min={1} value={v.atr_period} onChange={(atr_period) => onChange({ ...v, atr_period })} /></Field>}
       {v?.kind === "swing" && <Field label="swing degree (0-3)"><NumberBox label={`${label} swing degree`} step="1" min={0} value={v.swing_degree} onChange={(swing_degree) => onChange({ ...v, swing_degree })} /></Field>}
       {v?.kind === "candle" && (
         <Field label="candle">
-          <select aria-label={`${label} candle`} value={v.candle ?? ""} onChange={(e) => onChange({ ...v, candle: (e.target.value || null) as LevelRule["candle"] })} className={FIELD}>
-            <option value="">Choose…</option><option value="entry">entry candle</option><option value="signal">signal candle</option><option value="previous">previous candle</option>
-          </select>
+          <Pick label={`${label} candle`} value={v.candle ?? ""} onChange={(c) => onChange({ ...v, candle: (c || null) as LevelRule["candle"] })}
+            options={opts([["entry", "entry candle"], ["signal", "signal candle"], ["previous", "previous candle"]])} />
         </Field>
       )}
     </div>
@@ -237,6 +231,7 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
   const [note, setNote] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState("");
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (!open || blocks.length) return;
@@ -278,7 +273,7 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
     } finally { setBusy(false); }
   };
   const remove = async () => {
-    if (recordId === null || !window.confirm(`Delete "${draft.name}"? This cannot be undone.`)) return;
+    if (recordId === null || !(await confirm.ask(`Delete "${draft.name}"?`, "It is removed for good.", "Delete"))) return;
     setBusy(true);
     try { await api.remove(recordId); onDeleted(`custom:${recordId}`); onOpenChange(false); }
     catch (e) { setNote((e as Error).message || "It could not be deleted."); }
@@ -329,8 +324,9 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
   return (
     <Sheet open={open} onOpenChange={onOpenChange} side={phone ? "bottom" : "right"} wide tall={phone}
       title={recordId !== null ? `Edit: ${draft.name || "strategy"}` : "New strategy"}
-      description="Your own rules. Blank = off; nothing is filled in for you. Saving runs nothing - it only draws on the chart."
+      description="Blank = off. Saving only draws it on the chart."
       footer={footer}>
+      {confirm.dialog}
       <div className="space-y-space-3" data-strategy-builder>
         {importing && (
           <div className="space-y-space-2 rounded-control border border-subtle p-space-2" data-builder-import>
@@ -344,10 +340,8 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
             <input type="text" value={draft.name} onChange={(e) => set({ name: e.target.value })} maxLength={80} className={FIELD} data-builder-name />
           </Field>
           <Field label="Timeframe">
-            <select value={draft.timeframe ?? ""} onChange={(e) => set({ timeframe: e.target.value || null })} className={FIELD} data-builder-timeframe>
-              <option value="">Choose…</option>
-              {TIMEFRAMES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
+            <Pick label="Timeframe" value={draft.timeframe ?? ""} onChange={(t) => set({ timeframe: t || null })} data={{ "data-builder-timeframe": "" }}
+              options={opts(TIMEFRAMES.map((t) => [t.value, t.label] as const))} />
           </Field>
           <div role="radiogroup" aria-label="Sides" className="inline-flex rounded-control border border-subtle">
             {(["long", "short", "both"] as const).map((s) => (
@@ -411,14 +405,10 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
         <Section title="Options legs (optional)" testId="options">
           {(draft.options?.legs ?? []).map((leg, i) => (
             <div key={i} className="flex flex-wrap items-center gap-space-2" data-option-leg={i}>
-              <select aria-label={`Leg ${i + 1} action`} value={leg.action} className={FIELD}
-                onChange={(e) => set({ options: { ...draft.options!, legs: draft.options!.legs.map((l, k) => (k === i ? { ...l, action: e.target.value as "buy" | "sell" } : l)) } })}>
-                <option value="buy">Buy</option><option value="sell">Sell</option>
-              </select>
-              <select aria-label={`Leg ${i + 1} right`} value={leg.right} className={FIELD}
-                onChange={(e) => set({ options: { ...draft.options!, legs: draft.options!.legs.map((l, k) => (k === i ? { ...l, right: e.target.value as "CE" | "PE" } : l)) } })}>
-                <option value="CE">CE</option><option value="PE">PE</option>
-              </select>
+              <Pick label={`Leg ${i + 1} action`} placeholder="Buy / Sell…" value={leg.action ?? ""} options={opts([["buy", "Buy"], ["sell", "Sell"]])}
+                onChange={(a) => set({ options: { ...draft.options!, legs: draft.options!.legs.map((l, k) => (k === i ? { ...l, action: (a || null) as "buy" | "sell" | null } : l)) } })} />
+              <Pick label={`Leg ${i + 1} right`} placeholder="CE / PE…" value={leg.right ?? ""} options={opts([["CE", "CE"], ["PE", "PE"]])}
+                onChange={(r) => set({ options: { ...draft.options!, legs: draft.options!.legs.map((l, k) => (k === i ? { ...l, right: (r || null) as "CE" | "PE" | null } : l)) } })} />
               <Field label="× lots ratio"><NumberBox label={`Leg ${i + 1} ratio`} step="1" min={1} value={leg.ratio}
                 onChange={(ratio) => set({ options: { ...draft.options!, legs: draft.options!.legs.map((l, k) => (k === i ? { ...l, ratio } : l)) } })} /></Field>
               <Field label="strike steps from the chosen strike"><NumberBox label={`Leg ${i + 1} strike offset`} step="1" value={leg.strike_offset}
@@ -429,17 +419,15 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
           ))}
           {(draft.options?.legs.length ?? 0) < 4 && (
             <button type="button" className={cx(SMALL_BTN, "text-brand hover:bg-surface-2")}
-              onClick={() => set({ options: { legs: [...(draft.options?.legs ?? []), { action: "buy", right: "CE", ratio: null, strike_offset: null }],
+              onClick={() => set({ options: { legs: [...(draft.options?.legs ?? []), { action: null, right: null, ratio: null, strike_offset: null }],
                 strike: draft.options?.strike ?? null, expiry: draft.options?.expiry ?? null } })}>+ Option leg</button>
           )}
           {draft.options && (
             <div className="flex flex-wrap items-end gap-space-3">
               <Field label="Strike">
-                <select aria-label="Strike rule" value={draft.options.strike?.rule ?? ""} className={FIELD}
-                  onChange={(e) => set({ options: { ...draft.options!, strike: e.target.value ? { rule: e.target.value as "atm" } : null } })}>
-                  <option value="">Choose…</option><option value="atm">ATM</option><option value="itm">ITM by steps</option><option value="otm">OTM by steps</option>
-                  <option value="delta">By delta</option><option value="premium">By premium</option>
-                </select>
+                <Pick label="Strike rule" value={draft.options.strike?.rule ?? ""}
+                  options={opts([["atm", "ATM"], ["itm", "ITM by steps"], ["otm", "OTM by steps"], ["delta", "By delta"], ["premium", "By premium"]])}
+                  onChange={(r) => set({ options: { ...draft.options!, strike: r ? { rule: r as "atm" } : null } })} />
               </Field>
               {(draft.options.strike?.rule === "itm" || draft.options.strike?.rule === "otm") && <Field label="steps"><NumberBox label="Strike steps" step="1" min={0}
                 value={draft.options.strike.steps} onChange={(steps) => set({ options: { ...draft.options!, strike: { ...draft.options!.strike!, steps } } })} /></Field>}
@@ -448,11 +436,9 @@ export function StrategyBuilderV2({ open, onOpenChange, editId, onSaved, onDelet
               {draft.options.strike?.rule === "premium" && <Field label="premium"><NumberBox label="Strike premium" value={draft.options.strike.premium}
                 onChange={(premium) => set({ options: { ...draft.options!, strike: { ...draft.options!.strike!, premium } } })} /></Field>}
               <Field label="Expiry">
-                <select aria-label="Expiry" value={draft.options.expiry?.rule ?? ""} className={FIELD}
-                  onChange={(e) => set({ options: { ...draft.options!, expiry: e.target.value ? { rule: e.target.value as "current_week" } : null } })}>
-                  <option value="">Choose…</option><option value="current_week">Current week</option><option value="next_week">Next week</option>
-                  <option value="current_month">Current month</option><option value="next_month">Next month</option>
-                </select>
+                <Pick label="Expiry" value={draft.options.expiry?.rule ?? ""}
+                  options={opts([["current_week", "Current week"], ["next_week", "Next week"], ["current_month", "Current month"], ["next_month", "Next month"]])}
+                  onChange={(r) => set({ options: { ...draft.options!, expiry: r ? { rule: r as "current_week" } : null } })} />
               </Field>
             </div>
           )}

@@ -24,7 +24,7 @@ export interface Group { op: "AND" | "OR"; items: (Cond | Group)[] }
 export interface LevelRule { kind: "points" | "pct" | "atr" | "swing" | "candle" | "premium"; value?: number | null; atr_period?: number | null;
   swing_degree?: number | null; candle?: "entry" | "signal" | "previous" | null }
 export interface Trailing { kind: "points" | "pct" | "atr" | "swing"; value?: number | null; atr_period?: number | null; swing_degree?: number | null }
-export interface OptionLeg { action: "buy" | "sell"; right: "CE" | "PE"; ratio: number | null; strike_offset: number | null }
+export interface OptionLeg { action: "buy" | "sell" | null; right: "CE" | "PE" | null; ratio: number | null; strike_offset: number | null }
 export interface Draft {
   schema: "atp.strategy/2"; version: number; name: string; notes?: string | null; timeframe: string | null;
   entry: { sides: "long" | "short" | "both"; long: Group | null; short: Group | null; window: { from: string; to: string } | null;

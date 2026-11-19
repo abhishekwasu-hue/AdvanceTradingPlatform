@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { api, madeUpBars, mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
+import { choose } from "./combobox";
 
 /**
  * SFC P1 (owner APPROVED 19 Nov, docs/plans/strategy-first-chart-PLAN.md; flag `strategy_chart`): his own strategy from
@@ -300,21 +301,21 @@ test.describe("SFC P5: build a strategy in the chart's drawer", () => {
       const b = page.locator("[data-strategy-builder]");
       await expect(b).toBeVisible();
       await expect(b.locator("[data-builder-name]")).toHaveValue("");                         // DEF-0
-      await expect(b.locator("[data-builder-timeframe]")).toHaveValue("");
+      await expect(b.locator("[data-builder-timeframe]")).toHaveAttribute("data-combobox", "");
       await expect(page.locator("[data-builder-save]")).toBeDisabled();
       await b.locator("[data-builder-name]").fill("My EMA");
-      await b.locator("[data-builder-timeframe]").selectOption("5m");
+      await choose(page, b.locator("[data-builder-timeframe]"), "5m");
       await b.locator("[data-add-condition='Long entry']").click();
       const c1 = b.locator("[data-condition='c1']");
-      await c1.getByLabel("c1 left", { exact: true }).selectOption("EMA");
-      await c1.getByLabel("x", { exact: true }).selectOption("close");
-      await c1.getByLabel("c1 comparison").selectOption("gt");
-      await c1.getByLabel("c1 right", { exact: true }).selectOption("RSI");
+      await choose(page, c1.getByRole("combobox", { name: "c1 left", exact: true }), "EMA");
+      await choose(page, c1.getByRole("combobox", { name: "x", exact: true }), "close");
+      await choose(page, c1.getByRole("combobox", { name: "c1 comparison" }), "gt");
+      await choose(page, c1.getByRole("combobox", { name: "c1 right", exact: true }), "RSI");
       await expect(page.locator("[data-builder-problems]")).toContainText("EMA needs its 'n' setting");
       await expect(page.locator("[data-builder-problems]")).toContainText("RSI needs its 'n' setting");   // never the engine's 14
       await expect(page.locator("[data-builder-save]")).toBeDisabled();
-      await c1.getByLabel("n", { exact: true }).first().fill("20");
-      await c1.getByLabel("n", { exact: true }).last().fill("14");
+      await c1.getByRole("spinbutton", { name: "n", exact: true }).first().fill("20");
+      await c1.getByRole("spinbutton", { name: "n", exact: true }).last().fill("14");
       await expect(page.locator("[data-builder-problems]")).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p5-builder-${label}.png` });

@@ -79,7 +79,7 @@ def test_plan_exit_resend_stops_on_unknown_state():
 
 
 # --- Upstox market protection (operator setting, off by default) ---------------------------------------------------------
-def _upstox_payloads(monkeypatch, pct, order_type="MARKET"):
+def _upstox_payloads(monkeypatch, pct, order_type="MARKET", **extra):
     monkeypatch.setattr(config, "ORDER_MARKET_PROTECTION_PCT", pct)
     master = gzip.compress(json.dumps([{"instrument_key": "NSE_EQ|INE002A01018", "exchange": "NSE", "trading_symbol": "RELIANCE",
                                         "instrument_type": "EQ"}]).encode())
@@ -94,7 +94,7 @@ def _upstox_payloads(monkeypatch, pct, order_type="MARKET"):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=UpstoxBroker.BASE_URL)
     broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=client)
     _run(broker.place_order(BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.SELL, quantity=5,
-                                               order_type=order_type, trigger_price=99.0 if order_type == "SL-M" else None)))
+                                               order_type=order_type, trigger_price=99.0 if order_type == "SL-M" else None, **extra)))
     return seen[0]
 
 
@@ -104,6 +104,15 @@ def test_upstox_sends_market_protection_only_when_the_operator_sets_it(monkeypat
     assert _upstox_payloads(monkeypatch, "3")["market_protection"] == 3
     assert _upstox_payloads(monkeypatch, "3", "SL-M")["market_protection"] == 3
     assert "market_protection" not in _upstox_payloads(monkeypatch, "3", "LIMIT")
+
+
+def test_upstox_gets_its_own_product_code_never_atps_word(monkeypatch):
+    """Owner 19 Nov: a LIVE NRML option order came back "The 'product' is invalid" - Upstox takes I / D / MTF only."""
+    from app.brokers.upstox import upstox_product
+    assert _upstox_payloads(monkeypatch, None, product="NRML")["product"] == "D"
+    assert _upstox_payloads(monkeypatch, None, product="MIS")["product"] == "I"
+    assert _upstox_payloads(monkeypatch, None, product="CNC")["product"] == "D"
+    assert [upstox_product(p) for p in ("nrml", "I", "D", "MTF", None, "")] == ["D", "I", "D", "MTF", "D", "D"]
 
 
 # --- ATP LIVE-path audit --------------------------------------------------------------------------------------------------

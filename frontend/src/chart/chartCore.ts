@@ -159,6 +159,7 @@ export class ChartCore {
   private readonly volumeLabel = new PaneLabel("Volume", "");
   private readonly rsiLabel = new PaneLabel(`RSI ${DEFAULT_SETTINGS.rsiPeriod}`, "");
   private readonly studyLines = new Set<ISeriesApi<"Line">>();
+  private readonly studyGroups = new Map<ISeriesApi<"Line">, string>();
   private levels: LevelLine[] = [];
   private levelLines: IPriceLine[] = [];
   /** Review PR 3: the markers, on the candle series (it always holds the bars, transparent for Bars and Line). */
@@ -219,7 +220,7 @@ export class ChartCore {
       color: p.ov[i], lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
     }));
     this.engine = new LightweightEngine(this.chart, this.candles, (y) => this.candles.coordinateToPrice(y),
-                                        { add: (pane, color, title) => this.addStudyLine(pane, color, title), remove: (s) => this.removeStudyLine(s) },
+                                        { add: (pane, color, title, group) => this.addStudyLine(pane, color, title, group), remove: (s) => this.removeStudyLine(s) },
                                         (enabled) => this.setInteraction({ suspended: !enabled }));
     this.engine.setDefaultDrawingColor(p.drawing);
     this.engine.setZoneColors(zoneColors(p));
@@ -624,18 +625,24 @@ export class ChartCore {
     if (this.markers.length > 0) this.paintMarkers();                   // the bars' times may have changed
   }
 
-  /** CH6 study lines: on the price pane, or all together in one pane under volume and RSI. */
-  private addStudyLine(pane: number, color: string, title: string): LineSeriesLike {
-    const [existing] = this.studyLines;
+  /** CH6 study lines: on the price pane, or under volume and RSI - one pane per group (SFC P1: RSI and MACD each in
+   *  its own pane; studies without a group share the one "own" pane, as before). */
+  private addStudyLine(pane: number, color: string, title: string, group = "own"): LineSeriesLike {
+    const existing = [...this.studyLines].find((s) => this.studyGroups.get(s) === group);
     const index = pane === 0 ? 0 : existing ? existing.getPane().paneIndex() : this.chart.panes().length;
     const series = this.chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, title, crosshairMarkerVisible: false }, index);
-    if (pane !== 0) this.studyLines.add(series);
+    if (pane !== 0) {
+      this.studyLines.add(series);
+      this.studyGroups.set(series, group);
+      if (!existing) series.getPane().setStretchFactor(LOWER_PANE_STRETCH);     // a new study pane is as tall as Volume / RSI
+    }
     return series as unknown as LineSeriesLike;
   }
 
   private removeStudyLine(line: LineSeriesLike): void {
     const series = line as unknown as ISeriesApi<"Line">;
     this.studyLines.delete(series);
+    this.studyGroups.delete(series);
     this.chart.removeSeries(series);
   }
 

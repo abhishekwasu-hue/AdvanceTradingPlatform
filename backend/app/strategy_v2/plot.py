@@ -26,6 +26,7 @@ from app.strategy_v2.adapter import StrategyV2Strategy
 from app.strategy_v2.evaluate import Evaluation
 
 MAX_BARS = 3000
+END_OF_DATA = "End of backtest"           # the backtest closes a trade still open on its last bar - on the chart it is open
 MAX_SERIES = 12
 
 
@@ -102,14 +103,14 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
         markers.append({"id": mid, "t": _iso(ts), "kind": kind, "side": side})
         why[mid] = why_at(strategy, ev, t)
     for tr in trades:
-        if tr.exit_time is None:
-            continue
+        if tr.exit_time is None or tr.exit_reason == END_OF_DATA:
+            continue                                           # still open on the last bar: no exit is drawn
         mid = f"m{len(markers) + 1}"
         side = "long" if tr.direction == SignalDirection.LONG else "short"
         markers.append({"id": mid, "t": _iso(tr.exit_time), "kind": "exit", "side": side, "rule": tr.exit_reason or "",
                         "pnl": _round(float(tr.pnl)) if tr.pnl is not None else None})
     markers.sort(key=lambda m: m["t"])
-    open_trade = next((tr for tr in reversed(trades) if tr.exit_time is None), None)
+    open_trade = next((tr for tr in reversed(trades) if tr.exit_time is None or tr.exit_reason == END_OF_DATA), None)
     last = trades[-1] if trades else None
     state = "warming" if not ev.warm.any() else "in_trade" if open_trade is not None else "exited" if last is not None else "waiting"
     last_signal = None
@@ -121,8 +122,10 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
         "warmup_bars": ev.warmup_bars, "bars": len(df),
         "trades": [{"entry_time": _iso(tr.entry_time), "entry": _round(tr.entry_price), "side": "long" if tr.direction == SignalDirection.LONG else "short",
                     "stop": _round(tr.stop_loss) if tr.stop_loss is not None else None, "target": _round(tr.target1) if tr.target1 is not None else None,
-                    "exit_time": _iso(tr.exit_time) if tr.exit_time else None, "exit": _round(tr.exit_price) if tr.exit_price is not None else None,
-                    "exit_rule": tr.exit_reason, "pnl": _round(tr.pnl) if tr.pnl is not None else None} for tr in trades],
+                    "exit_time": _iso(tr.exit_time) if tr.exit_time and tr.exit_reason != END_OF_DATA else None,
+                    "exit": _round(tr.exit_price) if tr.exit_price is not None and tr.exit_reason != END_OF_DATA else None,
+                    "exit_rule": None if tr.exit_reason == END_OF_DATA else tr.exit_reason,
+                    "pnl": _round(tr.pnl) if tr.pnl is not None and tr.exit_reason != END_OF_DATA else None} for tr in trades],
     }
 
 

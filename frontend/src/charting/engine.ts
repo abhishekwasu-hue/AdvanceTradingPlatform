@@ -48,7 +48,9 @@ export interface LayerMark { time: number; end?: number; low: number; high: numb
 export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[]; marks?: LayerMark[] }
 
 /** N4 CH6: a study line from the server (ScreenQL via the screener runtime): on the price pane or in its own pane. */
-export interface StudyLine { data: { time: number; value: number }[]; color?: string; pane: "price" | "own"; title?: string }
+export interface StudyLine { data: { time: number; value: number }[]; color?: string; pane: "price" | "own"; title?: string;
+  /** SFC P1: "own" studies of one group share a pane; another group gets a pane of its own (RSI and MACD never stack). */
+  group?: string }
 
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 

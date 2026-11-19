@@ -742,12 +742,12 @@ function MoreV2({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     let open = false;
-    try { open = localStorage.getItem(MORE_KEY) === "open"; } catch { /* private window */ }
+    try { open = localStorage.getItem(MORE_KEY) === "open"; } catch { /* intentional: storage throws in a private window; the fold then starts closed */ }
     const el = ref.current;
     if (!el) return undefined;
     el.open = open;
     // The native toggle event (React's onToggle did not reach this element in the browser test): his click is saved.
-    const save = () => { try { localStorage.setItem(MORE_KEY, el.open ? "open" : "closed"); } catch { /* private window */ } };
+    const save = () => { try { localStorage.setItem(MORE_KEY, el.open ? "open" : "closed"); } catch { /* intentional: storage throws in a private window; the fold then starts closed */ } };
     el.addEventListener("toggle", save);
     return () => el.removeEventListener("toggle", save);
   }, []);

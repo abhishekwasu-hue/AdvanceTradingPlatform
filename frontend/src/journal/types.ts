@@ -360,10 +360,16 @@ export interface ImportPreview {
 export interface ImportResult { imported: number; duplicates: number; problems: number; import_id: number; already_imported: boolean; entry_ids: number[] }
 
 /** M88: GET /journal/manual/{id}/trade-chart - the candles around his outside trade with its entry and exit marked. */
-export interface TradeChartMark { kind: "entry" | "exit"; label: string; at: string; price: number; side: "BUY" | "SELL"; bar: string | null }
+export interface TradeChartMark {
+  kind: "entry" | "exit"; label: string; at: string; price: number; side: "BUY" | "SELL"; bar: string | null;
+  /** Journal option chart: false when the chart is the contract's underlying - the price is the contract's premium, not a price on this chart. */
+  on_chart?: boolean;
+}
 export interface TradeChart {
   symbol: string; exchange: string; direction: "LONG" | "SHORT"; timeframe: string; timeframe_label: string; note: string;
   candles: { timestamp: string; open: number; high: number; low: number; close: number; volume: number }[];
   marks: TradeChartMark[]; levels: { kind: string; label: string; price: number }[];
+  /** Owner 19 Nov: the timeframe answered and the ones he may pick (absent from an older server: Daily). */
+  tf?: string; timeframes?: string[];
   missing: boolean; missing_text: string | null; image: string;
 }

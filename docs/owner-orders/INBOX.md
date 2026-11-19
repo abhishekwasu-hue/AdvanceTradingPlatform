@@ -507,6 +507,23 @@ Note: new item BT-DRAW - the backtest chart draws what the selected strategy its
 
 Note: CA-CHAT approved with the default (OPEN_QUESTIONS CA-CHAT-Q1): one Setup dropdown (My method for the owner only, the book strategies, "My own conditions"); a chat on the same chart where the trader writes his conditions and the AI answers each as met / not met / unclear with evidence and marks it on the chart; the user's own AI key; cost per message shown; signal-language guard; one thread per analysis kept in My analyses.
 
+## 19 Nov - owner (phone screenshots: Journal, an imported Fyers option "NIFTY26N0924950CE", Charts -> "No daily candles are stored ... cannot be drawn")
+
+> "Journal mdhe trade import jhale aahet, but daily candle error mule chart tayar jhala nahi"
+
+Note: root cause - the imported option kept the broker's compact symbol and the trade chart looked it up as a cash share (a key never stored). Fix: an F&O contract is drawn on its own daily candles when stored, else on its underlying index's daily candles (marks on their days, the premium in words, never a price line on the index scale); the contract named in plain words; the At entry / At exit snapshots on the underlying too. Branch claude/journal-option-chart.
+
+## 19 Nov - owner (on the journal option-chart fix: daily candles)
+
+> "aho pan to daily candle varcha chart var kasa disnar te pandhra minitachya chart var disayla pahije mi journal madhlya chart baddal bolat aahe" (transliterated from Devanagari)
+
+Note: the journal trade chart must be a 15-minute chart, not Daily. Sources and the M86 rule (no other user's data) being checked before the build.
+
+## 19 Nov - owner
+
+> "15 minute chart lavkar kar aur userla time frame nivadnyachi sandhi pahije" (transliterated from Devanagari)
+
+Note: the journal trade chart on 15 minutes by default, with a timeframe choice for the user.
 ## 19 Nov - owner
 
 > "CA chat suru kr"

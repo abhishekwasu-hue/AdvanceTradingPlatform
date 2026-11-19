@@ -144,6 +144,13 @@ describe("M88 show on chart", () => {
     expect([short.position, short.color, short.shape]).toEqual(["aboveBar", "down", "arrowDown"]);
   });
 
+  it("an option on its underlying's chart: the mark names the premium and draws no price line (owner 19 Nov)", () => {
+    const onIndex = { ...CHART, marks: CHART.marks.map((m) => ({ ...m, on_chart: false })), levels: [] };
+    const { markers, lines } = chartMarks(onIndex);
+    expect(markers[0].text).toBe("Entry (premium 105.00)");
+    expect(lines).toEqual([]);
+  });
+
   it("an outside-ATP entry has 'Show on chart' in its Charts section; an ATP trade does not", () => {
     const charts = { ...DEMO_ENTRY.charts, trade: "/api/journal/manual/9/trade-chart", trade_image: "/api/journal/manual/9/trade-chart.png" };
     const manual = html(<EntryEditorV2 entry={{ ...DEMO_ENTRY, kind: "manual", manual: true, imported: true, id: 9, charts }} api={journalApi}
@@ -160,5 +167,15 @@ describe("M88 show on chart", () => {
     expect(out).toContain("data-show-on-chart");
     expect(out).not.toMatch(/href=/);                      // in place: no navigation away
     expect(api.tradeChart).not.toHaveBeenCalled();
+  });
+});
+
+describe("the journal chart's timeframe (owner 19 Nov)", () => {
+  it("15 minutes first, his choice of 5m / 1h / Daily, the path carries it", async () => {
+    const { DEFAULT_TRADE_TF, TRADE_CHART_TFS, withTf } = await import("./TradeChartV2");
+    expect(DEFAULT_TRADE_TF).toBe("15m");
+    expect(TRADE_CHART_TFS.map((t) => t.key)).toEqual(["5m", "15m", "1h", "1d"]);
+    expect(withTf("/api/journal/manual/9/trade-chart", "1h")).toBe("/api/journal/manual/9/trade-chart?tf=1h");
+    expect(withTf("/api/journal/manual/9/trade-chart.png?tf=1d&cvd=true", "15m")).toBe("/api/journal/manual/9/trade-chart.png?tf=15m&cvd=true");
   });
 });

@@ -57,7 +57,6 @@ from app.charts.read_chart import router as chart_read_router
 from app.charts.sd_zones_layer import router as chart_sd_zones_layer_router
 from app.charts.studies import router as chart_studies_router
 from app.charts.trades_layer import router as chart_trades_layer_router
-from app.strategy_v2.routes import router as strategy_v2_router
 from app.charts.vsa_layer import router as chart_vsa_layer_router
 from app.charts.workspace_events import router as workspace_events_router
 from app.charts.workspace_recall import router as workspace_recall_router
@@ -195,6 +194,7 @@ from app.signals_feed.routes import router as signals_feed_router
 from app.strategy_engine.chart_routes import router as strategy_chart_router
 from app.strategy_engine.console_routes import router as strategy_console_router
 from app.strategy_templates.routes import router as strategy_templates_router
+from app.strategy_v2.routes import router as strategy_v2_router
 from app.study.routes import router as study_router
 from app.support.desk_routes import admin_router as support_desk_admin_router
 from app.support.desk_routes import router as support_desk_router

@@ -11,7 +11,7 @@ export interface ChartStrategy { id: string; name: string; timeframe: string | n
 
 export interface PlotSeries { id: string; label: string; pane: string; points: { t: string; v: number | null }[] }
 export interface PlotMarker { id: string; t: string; kind: "entry" | "skipped" | "exit"; side: "long" | "short"; rule?: string; pnl?: number | null }
-export interface WhyRow { id: string; held: boolean; text: string; values: Record<string, number | null>; timeframe: string }
+export interface WhyRow { id: string; held: boolean; optional?: boolean; text: string; values: Record<string, number | null>; timeframe: string }
 export interface PlotTrade { entry_time: string; entry: number | null; side: "long" | "short"; stop: number | null; target: number | null;
   exit_time: string | null; exit: number | null; exit_rule: string | null; pnl: number | null }
 /** P2: a fixed number his condition compares a series with (a flat line in that series' pane). */
@@ -130,3 +130,23 @@ export function exitWord(rule: string | undefined): string {
 export const STATE_WORDS: Record<NonNullable<PlotReply["state"]>, string> = {
   warming: "Warming up", waiting: "Waiting", in_trade: "In trade", exited: "Exited",
 };
+
+/** P3: one marker's "why": its title and, for a signal, the conditions of the rule that fired (held / not needed in an
+ * OR group) with their values; for an exit, the rule that closed it and the result. */
+export interface WhyCard { id: string; t: string; title: string; tone: "up" | "down" | "muted"; rows: WhyRow[]; rule?: string; pnl?: number | null }
+
+const SIDE = (side: "long" | "short") => (side === "long" ? "Long" : "Short");
+
+export function whyAt(reply: PlotReply | null, time: number | null): WhyCard[] {
+  if (!reply || time === null) return [];
+  return (reply.markers ?? []).filter((m) => unix(m.t) === time).map((m): WhyCard => {
+    if (m.kind === "exit") {
+      const won = (m.pnl ?? 0) >= 0;
+      return { id: m.id, t: m.t, title: `${SIDE(m.side)} exit · ${exitWord(m.rule)}`, tone: won ? "up" : "down", rows: [], rule: m.rule, pnl: m.pnl ?? null };
+    }
+    const rows = reply.why?.[m.id] ?? [];
+    return m.kind === "skipped"
+      ? { id: m.id, t: m.t, title: `${SIDE(m.side)} signal · not taken (already in a trade)`, tone: "muted", rows }
+      : { id: m.id, t: m.t, title: `${SIDE(m.side)} entry`, tone: m.side === "long" ? "up" : "down", rows };
+  });
+}

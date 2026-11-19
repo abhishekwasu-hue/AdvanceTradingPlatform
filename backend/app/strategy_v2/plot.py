@@ -156,25 +156,55 @@ def pending_of(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, form
     return {"t": _iso(t), "side": side} if side else None
 
 
-def why_at(strategy: StrategyV2Strategy, ev: Evaluation, t: int) -> list[dict[str, Any]]:
-    """Each condition on bar t: held or not, with its values (the marker's hover)."""
+CMP_WORDS = {"crosses_above": "crossed above", "crosses_below": "crossed below", "gt": ">", "lt": "<", "gte": "≥", "lte": "≤"}
+
+
+def leaves_of(node: Any) -> list[str]:
+    """The condition ids an AND / OR tree reads, in order."""
+    if isinstance(node, str):
+        return [node]
+    return [x for item in node.items for x in leaves_of(item)]
+
+
+def why_at(strategy: StrategyV2Strategy, ev: Evaluation, t: int, role: str | None = None) -> list[dict[str, Any]]:
+    """P3: the conditions of the rule that fired on bar t (`role`: entry_long / entry_short; None: every condition), each
+    with whether it held and its values. A condition that did not hold while the rule fired sits in an OR group the bar
+    met another way (`optional`)."""
+    tree = strategy.compiled.trees.get(role) if role else None
+    ids = list(dict.fromkeys(leaves_of(tree))) if tree is not None else list(strategy.compiled.leaves)
+    fired = bool(ev.raw[role][t]) if role and role in ev.raw else False
     rows: list[dict[str, Any]] = []
-    for leaf in strategy.compiled.leaves.values():
-        values = {role: _round(ev.values[leaf.id][role][t]) for role in leaf.operands}
-        rows.append({"id": leaf.id, "held": bool(ev.truth[leaf.id][t]), "text": _words(leaf), "values": values,
+    for lid in ids:
+        leaf = strategy.compiled.leaves[lid]
+        values = {r: _round(ev.values[leaf.id][r][t]) for r in leaf.operands}
+        held = bool(ev.truth[leaf.id][t])
+        rows.append({"id": leaf.id, "held": held, "optional": fired and not held, "text": _words(leaf), "values": values,
                      "timeframe": leaf.timeframe})
     return rows
 
 
 def _words(leaf: Any) -> str:
     """The condition in its own operands' words (no ScreenQL syntax for the trader)."""
-    parts = leaf.operand_text
+    def word(text: str) -> str:
+        try:
+            return f"{float(text):g}"                         # a fixed number: "45", never "45.0"
+        except ValueError:
+            return text
+
+    parts = {k: word(v) for k, v in leaf.operand_text.items()}
     left = parts.get("left", "")
+    cmp = getattr(leaf, "cmp", "")
     if "right" in parts:
-        return f"{left} vs {parts['right']}"
-    if "low" in parts:
-        return f"{left} between {parts['low']} and {parts['high']}"
-    return left
+        text = f"{left} {CMP_WORDS.get(cmp, 'vs')} {parts['right']}"
+    elif "low" in parts:
+        text = f"{left} between {parts['low']} and {parts['high']}"
+    elif cmp in ("rising", "falling"):
+        text = f"{left} {cmp} for {leaf.bars} bars"
+    else:
+        text = left
+    if getattr(leaf, "within_bars", None):
+        text += f" (within {leaf.within_bars} bars)"
+    return text
 
 
 def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: RiskConfig, charges: Any = None,
@@ -198,7 +228,7 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
         kind = "entry" if ts in taken else "skipped"
         mid = f"m{len(markers) + 1}"
         markers.append({"id": mid, "t": _iso(ts), "kind": kind, "side": side})
-        why[mid] = why_at(strategy, ev, t)
+        why[mid] = why_at(strategy, ev, t, f"entry_{side}")
     for tr in trades:
         if tr.exit_time is None or tr.exit_reason == END_OF_DATA:
             continue                                           # still open on the last bar: no exit is drawn

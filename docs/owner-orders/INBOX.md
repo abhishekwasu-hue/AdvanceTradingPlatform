@@ -679,3 +679,15 @@ empty space drags; a panel dropped on another's place swaps with it; a drag ends
 Note: My trades > Positions shows "Closed today" only; "Earlier trades" searches by a date range (IST days) and a
 symbol; the other cards (costs, journal drafts, paper account and tools) fold under one "More" line, closed by default
 and remembered per browser (PR claude/closed-trades-today).
+
+## 19 Nov - work status and "keep going" (Marathi, transliterated)
+
+> "tumche sarva kaam purna zale ka"
+
+> "tumhi thambu naka kaam karu naka"
+
+> "kaam purna kara"
+
+Note: read together as "do not stop; finish the work" (the second message alone is ambiguous; the third settles it).
+Work continues in roadmap order: SFC P3 (marker "why", claude/sfc-p3), then P4-P6, then the Upstox TradeButton +
+the cash-share NRML fix (owner "Default yes" earlier).

@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ def custom_strategy_info(record: CustomStrategyRecord) -> StrategyInfo:
     )
 
 
-async def load_custom_strategy(strategy_id: str, user: Optional[User], session: AsyncSession) -> DeclarativeStrategy:
+async def load_custom_strategy(strategy_id: str, user: Optional[User], session: AsyncSession) -> BaseStrategy:
     """Loads and rehydrates a saved custom strategy belonging to the caller's tenant. Raises
     PermissionError if no user is authenticated, and KeyError if the id doesn't exist or belongs
     to a different tenant - both cases look identical from the outside (a bare 404-worthy
@@ -58,6 +59,17 @@ async def load_custom_strategy(strategy_id: str, user: Optional[User], session: 
     if record is None or record.tenant_id != user.tenant_id:
         raise KeyError(f"Unknown strategy id: {strategy_id}")
 
+    # SFC P0 (owner APPROVED 19 Nov): an `atp.strategy/2` config runs on the ONE evaluator the chart reads
+    # (app/strategy_v2); every saved v1 config keeps running on DeclarativeStrategy, unchanged (plan OQ-6).
+    from app.strategy_v2.schema import is_v2
+    try:
+        raw = json.loads(record.config_json or "{}")
+    except ValueError:
+        raw = None
+    if is_v2(raw):
+        from app.strategy_v2.adapter import StrategyV2Strategy
+        from app.strategy_v2.schema import StrategyV2
+        return StrategyV2Strategy(strategy_id, StrategyV2.model_validate(raw))
     config = CustomStrategyConfig.model_validate_json(record.config_json)
     return DeclarativeStrategy(strategy_id, config)
 

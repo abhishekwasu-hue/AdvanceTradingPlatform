@@ -39,6 +39,57 @@ def _utc(t: datetime | None) -> datetime | None:
     return t.replace(tzinfo=UTC) if t.tzinfo is None else t.astimezone(UTC)
 
 
+UNDERLYING_NOTE = ("Daily candles of {index}, the contract's underlying, from the end-of-day exchange files - the contract's own "
+                   "candles are not stored. Each mark sits on the candle of its day; its price is the contract's own fill price, not a "
+                   "price on this chart.")
+CONTRACT_NOTE = ("Daily candles of the contract itself from the end-of-day exchange files - intraday candles are not stored for "
+                 "this trade, so each mark sits on the candle of its day.")
+
+
+def contract_name(symbol: str) -> str | None:
+    """A broker's compact F&O symbol in plain words ('NIFTY26N0924950CE' -> 'NIFTY 24950 CE 09 NOV 26'); None when the
+    symbol is not a contract this parser knows."""
+    from app.paper.fno_contracts import parse_symbol
+    p = parse_symbol(symbol)
+    if p is None:
+        return None
+    when = p.expiry.strftime("%d %b %y").upper() if p.expiry else f"{p.month[1]:02d}/{p.month[0] % 100:02d}"
+    strike = f" {p.strike:g}" if p.strike is not None else ""
+    return f"{p.underlying}{strike} {p.right} {when}"
+
+
+async def _candles(session: AsyncSession, row: JournalManualTradeRecord, start: datetime, end: datetime) -> tuple[list[dict[str, Any]], str, str, bool]:
+    """(candles, charted name, note, marks at chart prices). An F&O contract (the broker's compact symbol, imported or
+    typed): its own daily candles when the exchange files hold them, else its underlying index's (a premium is never
+    drawn on the index's price scale). Anything else: its own daily candles, as before."""
+    from app.backtest import bar_source
+    from app.market_data.eod_routes import daily_bars
+    from app.paper.fno_contracts import parse_symbol
+
+    def bars(rows: list[Any]) -> list[dict[str, Any]]:
+        frame = bar_source.to_frame(rows)
+        return bar_source.frame_bars(frame) if len(frame) else []
+
+    parsed = parse_symbol(row.symbol)
+    if parsed is None:
+        return bars(await daily_bars(session, row.symbol, start, end)), row.symbol, NOTE, True
+    name = contract_name(row.symbol) or row.symbol
+    if parsed.expiry is not None:
+        from app.charts import contracts
+        right = parsed.right if parsed.right in ("CE", "PE") else "FUT"
+        key = contracts.contract_key(parsed.underlying, right, parsed.expiry, parsed.strike)
+        own = await contracts.daily_bars(session, key, start, end)
+        if own:
+            from types import SimpleNamespace
+            # each bar's END, as the lake stores Daily bars: the IST trade day ends at 18:30 UTC
+            rows = [SimpleNamespace(ts=datetime(d.year, d.month, d.day, 18, 30, tzinfo=UTC), open=b["o"], high=b["h"], low=b["l"],
+                                    close=b["c"], volume=b.get("v") or 0) for d, b in sorted(own.items())]
+            return bars(rows), name, CONTRACT_NOTE, True
+    from app.instruments.master import INDEX_SYMBOLS
+    index = INDEX_SYMBOLS.get(parsed.underlying, parsed.underlying)
+    return bars(await daily_bars(session, index, start, end)), f"{name} (on {index})", UNDERLYING_NOTE.format(index=index), False
+
+
 def _bar_at(candles: list[dict[str, Any]], when: datetime) -> str | None:
     """The timestamp of the last candle that started at or before `when` (the candle the fill happened in)."""
     hit = None
@@ -52,27 +103,24 @@ def _bar_at(candles: list[dict[str, Any]], when: datetime) -> str | None:
 
 
 async def chart(session: AsyncSession, row: JournalManualTradeRecord, *, now: datetime | None = None) -> dict[str, Any]:
-    from app.backtest import bar_source
-    from app.market_data.eod_routes import daily_bars
     now = now or datetime.now(UTC)
     entry_time, exit_time = _utc(row.entry_time), _utc(row.exit_time)
     assert entry_time is not None
     start = entry_time - timedelta(days=DAYS_BEFORE)
     end = min(now, (exit_time or entry_time) + timedelta(days=DAYS_AFTER))
-    rows = await daily_bars(session, row.symbol, start, end)
-    frame = bar_source.to_frame(rows)
-    candles = bar_source.frame_bars(frame) if len(frame) else []
+    candles, charted, note, at_price = await _candles(session, row, start, end)
     side_in = "BUY" if row.direction == "LONG" else "SELL"
     marks: list[dict[str, Any]] = [{"kind": "entry", "label": "Entry", "at": entry_time.isoformat(), "price": float(row.entry_price),
-                                    "side": side_in, "bar": _bar_at(candles, entry_time)}]
+                                    "on_chart": at_price, "side": side_in, "bar": _bar_at(candles, entry_time)}]
     if exit_time is not None and row.exit_price is not None:
         marks.append({"kind": "exit", "label": "Exit", "at": exit_time.isoformat(), "price": float(row.exit_price),
-                      "side": "SELL" if side_in == "BUY" else "BUY", "bar": _bar_at(candles, exit_time)})
-    levels = [{"kind": "stop", "label": "Your stop", "price": float(row.stop_loss)}] if row.stop_loss else []
-    return {"symbol": row.symbol, "exchange": row.exchange or "NSE", "direction": row.direction, "timeframe": TIMEFRAME,
-            "timeframe_label": LABEL, "note": NOTE, "candles": candles, "marks": marks, "levels": levels,
+                      "on_chart": at_price, "side": "SELL" if side_in == "BUY" else "BUY", "bar": _bar_at(candles, exit_time)})
+    # his stop is a price of what he traded: drawn only when the chart is that instrument's own
+    levels = [{"kind": "stop", "label": "Your stop", "price": float(row.stop_loss)}] if row.stop_loss and at_price else []
+    return {"symbol": charted, "exchange": row.exchange or "NSE", "direction": row.direction, "timeframe": TIMEFRAME,
+            "timeframe_label": LABEL, "note": note, "candles": candles, "marks": marks, "levels": levels,
             "missing": not candles,
-            "missing_text": None if candles else f"No daily candles are stored for {row.symbol} around this trade, so it cannot be drawn.",
+            "missing_text": None if candles else f"No daily candles are stored for {charted} around this trade, so it cannot be drawn.",
             "image": f"/api/journal/manual/{row.id}/trade-chart.png"}
 
 
@@ -94,7 +142,7 @@ def render(data: dict[str, Any], *, cvd: bool = False) -> bytes:
     marks = {m["kind"]: m for m in data["marks"] if m.get("bar")}
     drawings: list[dict[str, Any]] = []
     entry, exit_ = marks.get("entry"), marks.get("exit")
-    if entry and exit_:
+    if entry and exit_ and entry.get("on_chart", True):
         drawings.append({"kind": "trendline", "anchors": [{"t": entry["bar"], "p": entry["price"]}, {"t": exit_["bar"], "p": exit_["price"]}],
                          "style": {"color": _hex(pal.text_muted), "width": 1, "line": "dashed"}})
     for lv in data.get("levels") or []:
@@ -103,6 +151,14 @@ def render(data: dict[str, Any], *, cvd: bool = False) -> bytes:
     slot = PNG_W * 0.85 / max(1, len(stamps))                       # about one candle's width in pixels
     room = max(1, math.ceil(LABEL_PX / slot))                        # candles a label needs to its right
     for m in (entry, exit_):
+        if m and not m.get("on_chart", True):
+            # a contract's fill on its underlying's chart: the label sits at that day's close, never at the premium
+            close = next((c["close"] for c in data["candles"] if str(c["timestamp"]) == m["bar"]), None)
+            if close is not None:
+                colour = pal.buyer if m["side"] == "BUY" else pal.seller
+                drawings.append({"kind": "text", "anchors": [{"t": m["bar"], "p": close}], "text": f"{m['label']} (premium {m['price']:,.2f})",
+                                 "style": {"color": _hex(colour)}})
+            continue
         if m:
             colour = pal.buyer if m["side"] == "BUY" else pal.seller
             i = stamps.index(m["bar"]) if m["bar"] in stamps else 0

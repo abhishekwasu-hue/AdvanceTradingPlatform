@@ -366,3 +366,67 @@ def test_no_candles_is_said_plainly(two, monkeypatch):
     c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
     assert c["missing"] and c["candles"] == [] and "No daily candles" in c["missing_text"]
     assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png", headers=a).content)
+
+
+def _fake_daily(asked):
+    async def fake(session, symbol, start, end):
+        asked.append(symbol)
+        out = []
+        for i in range(30):
+            day = datetime(2026, 9, 20, 18, 30, tzinfo=UTC) + timedelta(days=i)
+            out.append(SimpleNamespace(ts=day, open=100 + i, high=103 + i, low=98 + i, close=101 + i, volume=1000))
+        return [b for b in out if start <= b.ts <= end]
+    return fake
+
+
+def test_an_imported_option_is_drawn_on_its_underlying_index_never_at_its_premium(two, monkeypatch):
+    """Owner 19 Nov: a Fyers order book option had no chart. Its own daily candles are not stored -> its underlying index's
+    daily candles, the contract named in plain words, the marks on their days with the premium in words (no price line,
+    no stop line on the index scale)."""
+    a = two["a"]
+    assert _post("/api/journal/import", a, "FYERS_orderbook.csv", FYERS_ORDERS.encode()).json()["imported"] == 2
+    e = next(x for x in client.get("/api/journal/manual", headers=a).json()["entries"] if x["symbol"] == "DEMO26N0910000CE")
+    asked: list[str] = []
+    import app.charts.contracts as contracts
+    import app.market_data.eod_routes as eod
+    monkeypatch.setattr(eod, "daily_bars", _fake_daily(asked))
+
+    async def no_contract_bars(session, key, start, end):
+        asked.append(key)
+        return {}
+    monkeypatch.setattr(contracts, "daily_bars", no_contract_bars)
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    assert asked[0] == "NFO:DEMO:CE:2026-11-09:10000" and asked[1] == "DEMO"          # its own candles first, then the underlying
+    assert c["symbol"] == "DEMO 10000 CE 09 NOV 26 (on DEMO)" and "underlying" in c["note"] and c["candles"]
+    assert all(m["on_chart"] is False for m in c["marks"]) and c["levels"] == []
+    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png", headers=a).content)
+
+
+def test_an_option_with_its_own_daily_candles_is_drawn_on_them(two, monkeypatch):
+    a = two["a"]
+    assert _post("/api/journal/import", a, "FYERS_orderbook.csv", FYERS_ORDERS.encode()).json()["imported"] == 2
+    e = next(x for x in client.get("/api/journal/manual", headers=a).json()["entries"] if x["symbol"] == "DEMO26N0910000CE")
+    from datetime import date as _date
+
+    import app.charts.contracts as contracts
+
+    async def own(session, key, start, end):
+        return {_date(2026, 9, d): {"o": 40 + d, "h": 50 + d, "l": 38 + d, "c": 45 + d, "v": 10} for d in range(25, 31)} | \
+            {_date(2026, 10, d): {"o": 40 + d, "h": 50 + d, "l": 38 + d, "c": 45 + d, "v": 10} for d in range(1, 3)}
+    monkeypatch.setattr(contracts, "daily_bars", own)
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    assert c["symbol"] == "DEMO 10000 CE 09 NOV 26" and "contract itself" in c["note"] and len(c["candles"]) == 8
+    assert all(m["on_chart"] is True for m in c["marks"])
+
+
+def test_an_outside_option_snapshot_is_planned_on_its_underlying_without_premium_lines():
+    from types import SimpleNamespace as NS
+
+    from app.journal import entries
+    m = NS(symbol="NIFTY26N0924950CE", exchange="NSE", entry_time=datetime(2026, 11, 6, 4, 31, tzinfo=UTC), exit_time=None,
+           entry_price=53.85, stop_loss=40.0, target=None, exit_price=None, timeframe=None)
+    plan = entries.chart_plan(NS(trade=None, manual=m), "entry", timeframe=None)
+    assert (plan.exchange, plan.symbol, plan.levels) == ("NSE", "NIFTY", {})
+    m.symbol = "RELIANCE"
+    plan = entries.chart_plan(NS(trade=None, manual=m), "entry", timeframe=None)
+    assert plan.symbol == "RELIANCE" and plan.levels == {"ENTRY": 53.85, "SL": 40.0}

@@ -26,10 +26,12 @@ export type TradeChartApi = Pick<JournalApi, "tradeChart" | "image">;
 export function chartMarks(c: TradeChart): { markers: ChartMarker[]; lines: PriceLineSpec[] } {
   const markers: ChartMarker[] = c.marks.filter((m) => m.bar).map((m) => ({
     timestamp: m.bar as string, position: m.side === "BUY" ? "belowBar" : "aboveBar", color: m.side === "BUY" ? "up" : "down",
-    shape: m.side === "BUY" ? "arrowUp" : "arrowDown", text: `${m.label} ${formatPrice(m.price)}`,
+    shape: m.side === "BUY" ? "arrowUp" : "arrowDown",
+    text: m.on_chart === false ? `${m.label} (premium ${formatPrice(m.price)})` : `${m.label} ${formatPrice(m.price)}`,
   }));
   const lines: PriceLineSpec[] = [
-    ...c.marks.map((m) => ({ price: m.price, color: m.side === "BUY" ? "up" : "down", title: m.label })),
+    // a premium is never drawn as a line on the underlying's price scale
+    ...c.marks.filter((m) => m.on_chart !== false).map((m) => ({ price: m.price, color: m.side === "BUY" ? "up" : "down", title: m.label })),
     ...c.levels.map((l) => ({ price: l.price, color: "fg", title: l.label })),
   ];
   return { markers, lines };

@@ -144,6 +144,13 @@ describe("M88 show on chart", () => {
     expect([short.position, short.color, short.shape]).toEqual(["aboveBar", "down", "arrowDown"]);
   });
 
+  it("an option on its underlying's chart: the mark names the premium and draws no price line (owner 19 Nov)", () => {
+    const onIndex = { ...CHART, marks: CHART.marks.map((m) => ({ ...m, on_chart: false })), levels: [] };
+    const { markers, lines } = chartMarks(onIndex);
+    expect(markers[0].text).toBe("Entry (premium 105.00)");
+    expect(lines).toEqual([]);
+  });
+
   it("an outside-ATP entry has 'Show on chart' in its Charts section; an ATP trade does not", () => {
     const charts = { ...DEMO_ENTRY.charts, trade: "/api/journal/manual/9/trade-chart", trade_image: "/api/journal/manual/9/trade-chart.png" };
     const manual = html(<EntryEditorV2 entry={{ ...DEMO_ENTRY, kind: "manual", manual: true, imported: true, id: 9, charts }} api={journalApi}

@@ -26,7 +26,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import MarketEventRecord, MarketHolidayRecord, TradeRecord
-from app.market_data.calendar import IST, family_holidays, next_trading_day
+from app.market_data.calendar import IST, MARKET_CLOSE, family_holidays, last_session_close, next_trading_day
 from app.rhythm import KINDS, schedule, words
 
 logger = logging.getLogger(__name__)
@@ -701,6 +701,12 @@ def subtitle(kind: str, ctx: Ctx, names: Optional[Dict[date, str]] = None) -> st
         return f"{today} · the market opens at 09:15"
     if kind == "mid_session":
         return f"{today} · market open"
+    # Owner 19 Nov ("Wrap mdhe confusion hot aahe"): before today's close the wrap is the LAST session's - said so, never
+    # "after the close" while the market is open.
+    if ctx.now.astimezone(IST).time() < MARKET_CLOSE:
+        last = last_session_close(ctx.now, ctx.holidays)
+        if last is not None:
+            return f"{today} · market open · the wrap of {_day_label(last.astimezone(IST).date())}"
     return f"{today} · after the close"
 
 

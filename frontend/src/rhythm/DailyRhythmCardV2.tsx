@@ -62,6 +62,17 @@ export function RhythmBriefV2({ brief, phase, kind, onKind }: {
           key: k, data: { "rhythm-tab": k },
           label: <>{TAB_LABELS[k]}{k === phase && <span aria-label="now" role="img" className="ml-space-1 inline-block h-1.5 w-1.5 rounded-pill bg-current" />}</>,
         }))} />
+      {/* Owner 19 Nov ("Wrap mdhe confusion hot aahe, current situation disayla pahije"): during the session the wrap is
+          the last session's - said plainly, with one tap to the market now. */}
+      {kind === "closing" && phase === "mid_session" && (
+        <div className="mt-space-3 flex flex-wrap items-center justify-between gap-space-2 rounded-control bg-warn-tint px-space-3 py-space-2" data-rhythm-earlier>
+          <p className="text-t13 text-fg">The market is open. This wrap is of the last session.</p>
+          <button type="button" onClick={() => onKind("mid_session")} data-rhythm-now
+            className="inline-flex min-h-9 items-center gap-space-1 rounded-control border border-brand px-space-3 text-t13 font-semibold text-brand hover:bg-brand-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+            See the market now<ChevronRight size={14} aria-hidden />
+          </button>
+        </div>
+      )}
       <div className="mt-space-4 divide-y divide-subtle">
         {shown.sections.map((s) => <RhythmSectionV2 key={s.id} section={s} typed />)}
       </div>

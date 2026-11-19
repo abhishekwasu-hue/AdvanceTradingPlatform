@@ -629,3 +629,11 @@ questions OQ-1 .. OQ-11 take their recommended defaults until the owner says oth
 
 Note: root cause - the Upstox adapter sent ATP's product word "NRML" as is; Upstox takes I / D / MTF. Fixed with the
 failure shown first and no PAPER lines on a LIVE ticket (PR claude/upstox-live-product).
+
+## 19 Nov - owner (Today, daily brief)
+
+> "Wrap mdhe confusion hot aahe current situation disayla pahije" (screenshot 12:40 IST: Wrap tab, "Thu 19 Nov · after
+> the close", indices "close of Wed 18 Nov")
+
+Note: the page opens on the brief of the moment (Pulse during the session); the Wrap tab during the session now says it
+is the last session's wrap (subtitle and a line) with one tap to the market now (PR claude/today-phase).

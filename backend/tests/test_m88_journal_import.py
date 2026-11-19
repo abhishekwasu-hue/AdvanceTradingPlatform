@@ -337,7 +337,7 @@ def test_trade_on_its_chart_and_save_image(two, monkeypatch):
     import app.market_data.eod_routes as eod
     monkeypatch.setattr(eod, "daily_bars", fake_daily)
     assert aaaa["charts"]["trade"].endswith(f"/manual/{aaaa['id']}/trade-chart")
-    r = client.get(f"/api/journal/manual/{aaaa['id']}/trade-chart", headers=a)
+    r = client.get(f"/api/journal/manual/{aaaa['id']}/trade-chart?tf=1d", headers=a)
     assert r.status_code == 200, r.text
     c = r.json()
     assert c["timeframe"] == "day" and c["timeframe_label"] == "Daily candles" and "intraday" in c["note"] and c["candles"]
@@ -347,7 +347,7 @@ def test_trade_on_its_chart_and_save_image(two, monkeypatch):
     stamps = [k["timestamp"] for k in c["candles"]]
     assert entry["bar"] in stamps and exit_["bar"] in stamps and entry["bar"] < exit_["bar"]
     assert entry["bar"].startswith("2026-10-04T18:30") or entry["bar"].startswith("2026-10-05")   # the candle of 5 Oct (IST)
-    png = client.get(f"/api/journal/manual/{aaaa['id']}/trade-chart.png", headers=a)
+    png = client.get(f"/api/journal/manual/{aaaa['id']}/trade-chart.png?tf=1d", headers=a)
     assert png.status_code == 200 and is_png(png.content) and "attachment" in png.headers["content-disposition"]
     assert asked and set(asked) == {"AAAA"}
     assert client.get(f"/api/journal/manual/{aaaa['id']}/trade-chart", headers=two["b"]).status_code == 404
@@ -363,9 +363,9 @@ def test_no_candles_is_said_plainly(two, monkeypatch):
         return []
     import app.market_data.eod_routes as eod
     monkeypatch.setattr(eod, "daily_bars", none)
-    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=1d", headers=a).json()
     assert c["missing"] and c["candles"] == [] and "No daily candles" in c["missing_text"]
-    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png", headers=a).content)
+    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png?tf=1d", headers=a).content)
 
 
 def _fake_daily(asked):
@@ -395,11 +395,11 @@ def test_an_imported_option_is_drawn_on_its_underlying_index_never_at_its_premiu
         asked.append(key)
         return {}
     monkeypatch.setattr(contracts, "daily_bars", no_contract_bars)
-    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=1d", headers=a).json()
     assert asked[0] == "NFO:DEMO:CE:2026-11-09:10000" and asked[1] == "DEMO"          # its own candles first, then the underlying
     assert c["symbol"] == "DEMO 10000 CE 09 NOV 26 (on DEMO)" and "underlying" in c["note"] and c["candles"]
     assert all(m["on_chart"] is False for m in c["marks"]) and c["levels"] == []
-    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png", headers=a).content)
+    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png?tf=1d", headers=a).content)
 
 
 def test_an_option_with_its_own_daily_candles_is_drawn_on_them(two, monkeypatch):
@@ -414,7 +414,7 @@ def test_an_option_with_its_own_daily_candles_is_drawn_on_them(two, monkeypatch)
         return {_date(2026, 9, d): {"o": 40 + d, "h": 50 + d, "l": 38 + d, "c": 45 + d, "v": 10} for d in range(25, 31)} | \
             {_date(2026, 10, d): {"o": 40 + d, "h": 50 + d, "l": 38 + d, "c": 45 + d, "v": 10} for d in range(1, 3)}
     monkeypatch.setattr(contracts, "daily_bars", own)
-    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=1d", headers=a).json()
     assert c["symbol"] == "DEMO 10000 CE 09 NOV 26" and "contract itself" in c["note"] and len(c["candles"]) == 8
     assert all(m["on_chart"] is True for m in c["marks"])
 
@@ -430,3 +430,64 @@ def test_an_outside_option_snapshot_is_planned_on_its_underlying_without_premium
     m.symbol = "RELIANCE"
     plan = entries.chart_plan(NS(trade=None, manual=m), "entry", timeframe=None)
     assert plan.symbol == "RELIANCE" and plan.levels == {"ENTRY": 53.85, "SL": 40.0}
+
+
+
+def _fake_store(asked):
+    import pandas as pd
+
+    from app.market_store.models import BarsResult
+
+    async def read_bars(session, symbol, interval, start, end, *, user=None, purpose="", exchange="NSE", rest=None, **_):
+        asked.append((symbol, interval, getattr(user, "id", None), rest))
+        idx = pd.date_range("2026-10-05 03:45", periods=40, freq="15min", tz="UTC", name="timestamp")   # the fixture fills: 5 Oct, 10:01-10:08 IST
+        frame = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 10.0}, index=idx)
+        return BarsResult(symbol=symbol, exchange=exchange, interval=interval, frame=frame, source="lake:intraday")
+    return read_bars
+
+
+def test_the_chart_is_15_minutes_by_default_from_his_own_broker_and_he_can_pick_another(two, monkeypatch):
+    """Owner 19 Nov: 15 minutes by default, his choice of timeframe; intraday only from HIS OWN broker's history (the
+    reader is his user, his own session) - an option on its underlying index, never its premium on the index scale."""
+    a = two["a"]
+    assert _post("/api/journal/import", a, "FYERS_orderbook.csv", FYERS_ORDERS.encode()).json()["imported"] == 2
+    e = next(x for x in client.get("/api/journal/manual", headers=a).json()["entries"] if x["symbol"] == "DEMO26N0910000CE")
+    asked: list = []
+    import app.market_store as mstore
+    import app.market_store.sources as sources
+    monkeypatch.setattr(mstore, "read_bars", _fake_store(asked))
+
+    async def no_session(session, user, symbol, exchange, broker=None):
+        return None
+    monkeypatch.setattr(sources, "own_rest", no_session)
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    assert c["tf"] == "15m" and c["timeframe_label"] == "15-minute candles" and c["timeframes"] == ["5m", "15m", "1h", "1d"]
+    assert c["candles"] and "your own broker" in c["note"] and "underlying" in c["note"]
+    assert asked[0][0] == "DEMO" and asked[0][1] == "15m" and asked[0][2] is not None      # his user, the index, 15 minutes
+    assert all(m["on_chart"] is False for m in c["marks"]) and c["levels"] == []
+    assert all(m["bar"] for m in c["marks"])                                                # each fill on its 15-minute candle
+    one_h = client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=1h", headers=a).json()
+    assert one_h["tf"] == "1h" and asked[-1][1] == "1h"
+    assert client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=2m", headers=a).status_code == 422
+    assert is_png(client.get(f"/api/journal/manual/{e['id']}/trade-chart.png?tf=15m", headers=a).content)
+    assert client.get(f"/api/journal/manual/{e['id']}/trade-chart?tf=15m", headers=two["b"]).status_code == 404
+
+
+def test_no_own_intraday_history_says_so_and_offers_daily(two, monkeypatch):
+
+    import app.market_store as mstore
+    import app.market_store.sources as sources
+    from app.market_store.models import BarsResult
+    a = two["a"]
+    assert _post("/api/journal/import", a, "tradebook.csv", ZERODHA).json()["imported"] == 2
+    e = client.get("/api/journal/manual", headers=a).json()["entries"][0]
+
+    async def empty(session, symbol, interval, start, end, **_):
+        return BarsResult(symbol=symbol, exchange="NSE", interval=interval)
+
+    async def no_session(session, user, symbol, exchange, broker=None):
+        return None
+    monkeypatch.setattr(mstore, "read_bars", empty)
+    monkeypatch.setattr(sources, "own_rest", no_session)
+    c = client.get(f"/api/journal/manual/{e['id']}/trade-chart", headers=a).json()
+    assert c["missing"] and "your own broker" in c["missing_text"] and "Daily" in c["missing_text"]

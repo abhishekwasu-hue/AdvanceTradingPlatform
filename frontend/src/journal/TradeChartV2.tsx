@@ -39,25 +39,42 @@ export function chartMarks(c: TradeChart): { markers: ChartMarker[]; lines: Pric
 
 type State = { status: "loading" } | { status: "error"; error: unknown } | { status: "ok"; chart: TradeChart };
 
+/** Owner 19 Nov: 15 minutes by default, his choice of timeframe (the server answers each from his own broker's
+ * history, Daily from the end-of-day files). */
+export const TRADE_CHART_TFS: { key: string; label: string; chart: string }[] = [
+  { key: "5m", label: "5m", chart: "5min" }, { key: "15m", label: "15m", chart: "15min" },
+  { key: "1h", label: "1h", chart: "60min" }, { key: "1d", label: "Daily", chart: "day" },
+];
+export const DEFAULT_TRADE_TF = "15m";
+
+/** The chart path with the chosen timeframe (the server's own `?tf=`). Pure. */
+export function withTf(path: string, tf: string): string {
+  const [base, query = ""] = path.split("?");
+  const q = new URLSearchParams(query);
+  q.set("tf", tf);
+  return `${base}?${q.toString()}`;
+}
+
 export function TradeChartV2({ api, path, imagePath, fileName }: { api: TradeChartApi; path: string; imagePath?: string; fileName: string }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<State>({ status: "loading" });
   const [round, setRound] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [tf, setTf] = useState(DEFAULT_TRADE_TF);
   useEffect(() => {
     if (!open) return undefined;
     let alive = true;
     setState({ status: "loading" });
-    api.tradeChart(path).then((chart) => { if (alive) setState({ status: "ok", chart }); })
+    api.tradeChart(withTf(path, tf)).then((chart) => { if (alive) setState({ status: "ok", chart }); })
       .catch((error) => { if (alive) setState({ status: "error", error }); });
     return () => { alive = false; };
-  }, [api, path, open, round]);
+  }, [api, path, open, round, tf]);
 
   async function saveImage() {
     if (!imagePath) return;
     setSaving(true);
-    try { saveBlob(await api.image(imagePath), fileName); } catch (e) { toast.error(errorSentence(e)); } finally { setSaving(false); }
+    try { saveBlob(await api.image(withTf(imagePath, tf)), fileName); } catch (e) { toast.error(errorSentence(e)); } finally { setSaving(false); }
   }
 
   if (!open) {
@@ -72,7 +89,13 @@ export function TradeChartV2({ api, path, imagePath, fileName }: { api: TradeCha
   return (
     <div className="space-y-space-2" data-trade-chart>
       <div className="flex flex-wrap items-center gap-space-2">
-        {c && <span className={chipClass({ tone: "info" })} data-trade-chart-tf>{c.timeframe_label}</span>}
+        <span role="group" aria-label="Timeframe" className="inline-flex flex-wrap gap-space-1" data-trade-chart-tfs>
+          {TRADE_CHART_TFS.map((t) => (
+            <button key={t.key} type="button" aria-pressed={tf === t.key} onClick={() => setTf(t.key)} data-trade-chart-tf-pick={t.key}
+              className={tf === t.key ? chipClass({ tone: "info" }) : `${chipClass({ tone: "neutral" })} opacity-80`}>{t.label}</button>
+          ))}
+        </span>
+        {c && <span className="text-t13 text-fg-muted" data-trade-chart-tf>{c.timeframe_label}</span>}
         <span className="ml-auto flex flex-wrap gap-space-2">
           {c && !c.missing && imagePath && (
             <button type="button" className={BUTTON_SECONDARY} onClick={() => void saveImage()} disabled={saving} data-trade-chart-save>
@@ -89,7 +112,7 @@ export function TradeChartV2({ api, path, imagePath, fileName }: { api: TradeCha
         <>
           <div className="min-w-0 overflow-hidden rounded-panel border border-subtle" data-trade-chart-candles={c.candles.length}>
             <Suspense fallback={<LoadingRowsV2 rows={3} />}>
-              <ProChart candles={c.candles} symbol={c.symbol} timeframe="day" markers={drawn.markers} priceLines={drawn.lines}
+              <ProChart candles={c.candles} symbol={c.symbol} timeframe={TRADE_CHART_TFS.find((t) => t.key === (c.tf ?? "1d"))?.chart ?? "day"} markers={drawn.markers} priceLines={drawn.lines}
                 height={300} compact drawingTools={false} defaultIndicators={[]} exchange={c.exchange} />
             </Suspense>
           </div>

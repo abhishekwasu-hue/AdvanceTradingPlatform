@@ -369,5 +369,7 @@ export interface TradeChart {
   symbol: string; exchange: string; direction: "LONG" | "SHORT"; timeframe: string; timeframe_label: string; note: string;
   candles: { timestamp: string; open: number; high: number; low: number; close: number; volume: number }[];
   marks: TradeChartMark[]; levels: { kind: string; label: string; price: number }[];
+  /** Owner 19 Nov: the timeframe answered and the ones he may pick (absent from an older server: Daily). */
+  tf?: string; timeframes?: string[];
   missing: boolean; missing_text: string | null; image: string;
 }

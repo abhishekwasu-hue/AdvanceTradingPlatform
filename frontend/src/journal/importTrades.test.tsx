@@ -169,3 +169,13 @@ describe("M88 show on chart", () => {
     expect(api.tradeChart).not.toHaveBeenCalled();
   });
 });
+
+describe("the journal chart's timeframe (owner 19 Nov)", () => {
+  it("15 minutes first, his choice of 5m / 1h / Daily, the path carries it", async () => {
+    const { DEFAULT_TRADE_TF, TRADE_CHART_TFS, withTf } = await import("./TradeChartV2");
+    expect(DEFAULT_TRADE_TF).toBe("15m");
+    expect(TRADE_CHART_TFS.map((t) => t.key)).toEqual(["5m", "15m", "1h", "1d"]);
+    expect(withTf("/api/journal/manual/9/trade-chart", "1h")).toBe("/api/journal/manual/9/trade-chart?tf=1h");
+    expect(withTf("/api/journal/manual/9/trade-chart.png?tf=1d&cvd=true", "15m")).toBe("/api/journal/manual/9/trade-chart.png?tf=15m&cvd=true");
+  });
+});

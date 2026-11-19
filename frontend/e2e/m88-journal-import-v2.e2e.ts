@@ -104,8 +104,13 @@ async function openJournal(page: Page) {
     return r.fulfill({ json: { imported: 1, duplicates: 0, problems: 1, import_id: 7, already_imported: false, entry_ids: [41] } });
   });
   await page.route(/\/api(?:\/v1)?\/journal\/manual\/41$/, (r) => r.fulfill({ json: IMPORTED }));
-  await page.route(/\/api(?:\/v1)?\/journal\/manual\/41\/trade-chart$/, (r) => r.fulfill({ json: chart() }));
-  await page.route(/\/api(?:\/v1)?\/journal\/manual\/41\/trade-chart\.png$/, (r) => r.fulfill({ body: PNG, contentType: "image/png" }));
+  // owner 19 Nov: the chart answers the timeframe asked (?tf=, 15 minutes by default)
+  const LABELS: Record<string, string> = { "5m": "5-minute candles", "15m": "15-minute candles", "1h": "1-hour candles", "1d": "Daily candles" };
+  await page.route(/\/api(?:\/v1)?\/journal\/manual\/41\/trade-chart(\?.*)?$/, (r) => {
+    const tf = new URL(r.request().url()).searchParams.get("tf") ?? "15m";
+    return r.fulfill({ json: { ...chart(), tf, timeframes: ["5m", "15m", "1h", "1d"], timeframe_label: LABELS[tf] } });
+  });
+  await page.route(/\/api(?:\/v1)?\/journal\/manual\/41\/trade-chart\.png(\?.*)?$/, (r) => r.fulfill({ body: PNG, contentType: "image/png" }));
   await page.route(/\/api(?:\/v1)?\/journal\/(trades|manual)\/\d+\/chart\?at=(entry|exit)$/, (r) => r.fulfill({ body: PNG, contentType: "image/png" }));
   await page.goto("/analytics/journal");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
@@ -159,6 +164,9 @@ for (const size of SIZES) {
       await expect(editor).toBeVisible();
       await editor.locator("[data-show-on-chart]").click();
       const tc = editor.locator("[data-trade-chart]");
+      await expect(tc.locator("[data-trade-chart-tf]")).toHaveText("15-minute candles");          // owner 19 Nov: 15 minutes first
+      await expect(tc.locator("[data-trade-chart-tf-pick='15m']")).toHaveAttribute("aria-pressed", "true");
+      await tc.locator("[data-trade-chart-tf-pick='1d']").click();
       await expect(tc.locator("[data-trade-chart-tf]")).toHaveText("Daily candles");
       await expect(tc.locator("[data-trade-chart-candles='40'] canvas").first()).toBeVisible();
       await tc.scrollIntoViewIfNeeded();

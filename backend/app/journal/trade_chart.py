@@ -27,6 +27,16 @@ DAYS_BEFORE = 90            # calendar days of candles shown before the entry
 DAYS_AFTER = 15             # and after the exit (or the entry, while the trade is open)
 TIMEFRAME = "day"
 LABEL = "Daily candles"
+# Owner 19 Nov: "15 minute chart ... userla time frame nivadnyachi sandhi pahije" - 15 minutes by default, his choice
+# of 5 minutes / 1 hour / Daily. Intraday candles are HIS OWN broker's only (market_store.read_bars with his user and
+# his own session - M86 D4 / D5: never another user's data); Daily stays the end-of-day exchange files.
+DEFAULT_TF = "15m"
+TIMEFRAMES: dict[str, str] = {"5m": "5-minute candles", "15m": "15-minute candles", "1h": "1-hour candles", "1d": LABEL}
+INTRADAY_WINDOW: dict[str, tuple[int, int]] = {"5m": (2, 1), "15m": (5, 2), "1h": (20, 5)}   # days before entry / after exit
+INTRADAY_NOTE = "{label} from your own broker's history; each mark sits on the candle of its fill."
+INTRADAY_UNDERLYING_NOTE = ("{label} of {index}, the contract's underlying, from your own broker's history (the contract's own "
+                            "intraday candles are not stored). Each mark sits on the candle of its fill; its price is the "
+                            "contract's own fill price, not a price on this chart.")
 NOTE = ("Daily candles from the end-of-day exchange files - intraday candles are not stored for this trade, so each mark "
         "sits on the candle of its day.")
 PNG_W, PNG_H, PAD, HEAD = 1600, 900, 32, 26
@@ -102,13 +112,47 @@ def _bar_at(candles: list[dict[str, Any]], when: datetime) -> str | None:
     return hit
 
 
-async def chart(session: AsyncSession, row: JournalManualTradeRecord, *, now: datetime | None = None) -> dict[str, Any]:
+async def _intraday(session: AsyncSession, row: JournalManualTradeRecord, user: Any, tf: str, start: datetime, end: datetime
+                    ) -> tuple[list[dict[str, Any]], str, str, bool]:
+    """(candles, charted name, note, marks at chart prices) on an intraday timeframe from HIS OWN broker's history only:
+    an F&O contract on its underlying index (its own intraday candles are not stored), anything else on itself."""
+    from app.instruments.master import INDEX_SYMBOLS
+    from app.market_store import read_bars
+    from app.market_store.sources import own_rest
+    from app.paper.fno_contracts import parse_symbol
+    label = TIMEFRAMES[tf]
+    parsed = parse_symbol(row.symbol)
+    if parsed is not None:
+        symbol = INDEX_SYMBOLS.get(parsed.underlying, parsed.underlying)
+        charted = f"{contract_name(row.symbol) or row.symbol} (on {symbol})"
+        note, at_price = INTRADAY_UNDERLYING_NOTE.format(label=label, index=symbol), False
+    else:
+        symbol, charted, at_price = row.symbol, row.symbol, True
+        note = INTRADAY_NOTE.format(label=label)
+    if user is None:
+        return [], charted, note, at_price
+    rest = await own_rest(session, user, symbol, "NSE")
+    got = await read_bars(session, symbol, tf, start, end, user=user, purpose="journal", rest=rest)
+    candles = [{"timestamp": ts.isoformat(), "open": float(r.open), "high": float(r.high), "low": float(r.low), "close": float(r.close),
+                "volume": float(r.volume or 0)} for ts, r in got.frame.iterrows()]
+    return candles, charted, note, at_price
+
+
+async def chart(session: AsyncSession, row: JournalManualTradeRecord, *, user: Any = None, tf: str = DEFAULT_TF,
+                now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(UTC)
+    tf = tf if tf in TIMEFRAMES else DEFAULT_TF
     entry_time, exit_time = _utc(row.entry_time), _utc(row.exit_time)
     assert entry_time is not None
-    start = entry_time - timedelta(days=DAYS_BEFORE)
-    end = min(now, (exit_time or entry_time) + timedelta(days=DAYS_AFTER))
-    candles, charted, note, at_price = await _candles(session, row, start, end)
+    if tf == "1d":
+        start = entry_time - timedelta(days=DAYS_BEFORE)
+        end = min(now, (exit_time or entry_time) + timedelta(days=DAYS_AFTER))
+        candles, charted, note, at_price = await _candles(session, row, start, end)
+    else:
+        before, after = INTRADAY_WINDOW[tf]
+        start = entry_time - timedelta(days=before)
+        end = min(now, (exit_time or entry_time) + timedelta(days=after))
+        candles, charted, note, at_price = await _intraday(session, row, user, tf, start, end)
     side_in = "BUY" if row.direction == "LONG" else "SELL"
     marks: list[dict[str, Any]] = [{"kind": "entry", "label": "Entry", "at": entry_time.isoformat(), "price": float(row.entry_price),
                                     "on_chart": at_price, "side": side_in, "bar": _bar_at(candles, entry_time)}]
@@ -117,11 +161,19 @@ async def chart(session: AsyncSession, row: JournalManualTradeRecord, *, now: da
                       "on_chart": at_price, "side": "SELL" if side_in == "BUY" else "BUY", "bar": _bar_at(candles, exit_time)})
     # his stop is a price of what he traded: drawn only when the chart is that instrument's own
     levels = [{"kind": "stop", "label": "Your stop", "price": float(row.stop_loss)}] if row.stop_loss and at_price else []
-    return {"symbol": charted, "exchange": row.exchange or "NSE", "direction": row.direction, "timeframe": TIMEFRAME,
-            "timeframe_label": LABEL, "note": note, "candles": candles, "marks": marks, "levels": levels,
-            "missing": not candles,
-            "missing_text": None if candles else f"No daily candles are stored for {charted} around this trade, so it cannot be drawn.",
-            "image": f"/api/journal/manual/{row.id}/trade-chart.png"}
+    label = TIMEFRAMES[tf]
+    if candles:
+        missing = None
+    elif tf == "1d":
+        missing = f"No daily candles are stored for {charted} around this trade, so it cannot be drawn."
+    else:
+        missing = (f"No {label} of {charted} are stored from your own broker around this trade. Connect your broker, or "
+                   f"pick Daily.")
+    return {"symbol": charted, "exchange": row.exchange or "NSE", "direction": row.direction,
+            "timeframe": TIMEFRAME if tf == "1d" else tf, "timeframe_label": label, "timeframes": list(TIMEFRAMES),
+            "tf": tf, "note": note, "candles": candles, "marks": marks, "levels": levels,
+            "missing": not candles, "missing_text": missing,
+            "image": f"/api/journal/manual/{row.id}/trade-chart.png?tf={tf}"}
 
 
 def _hex(rgb: tuple[int, int, int]) -> str:
@@ -169,7 +221,7 @@ def render(data: dict[str, Any], *, cvd: bool = False) -> bytes:
                                  "style": {"color": _hex(colour), "width": 2, "line": "solid"}})
             drawings.append({"kind": "text", "anchors": [{"t": at, "p": m["price"]}], "text": f"{m['label']} {m['price']:,.2f}",
                              "style": {"color": _hex(colour)}})
-    chart_img, _ = render_chart({"bars": bars, "tf": "1d", "reason": data.get("missing_text") or "no candles"}, areas=[],
+    chart_img, _ = render_chart({"bars": bars, "tf": "1d" if data.get("tf", "1d") == "1d" else data["tf"], "reason": data.get("missing_text") or "no candles"}, areas=[],
                                 drawings=drawings, protected=None, reference=None, pal=pal, width=PNG_W, height=PNG_H, font_px=18)
     w, h = PNG_W + 2 * PAD, PAD + int(HEAD * P.LINE_GAP) + 12 + PNG_H + 12 + int(2 * 20 * P.LINE_GAP) + PAD
     img = Image.new("RGB", (w, h), pal.background)
@@ -185,6 +237,7 @@ def render(data: dict[str, Any], *, cvd: bool = False) -> bytes:
     return buf.getvalue()
 
 
-async def png(session: AsyncSession, row: JournalManualTradeRecord, *, cvd: bool = False) -> bytes:
-    data = await chart(session, row)
+async def png(session: AsyncSession, row: JournalManualTradeRecord, *, user: Any = None, tf: str = DEFAULT_TF,
+              cvd: bool = False) -> bytes:
+    data = await chart(session, row, user=user, tf=tf)
     return await asyncio.to_thread(render, data, cvd=cvd)

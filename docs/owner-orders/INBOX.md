@@ -518,3 +518,9 @@ Note: root cause - the imported option kept the broker's compact symbol and the 
 > "aho pan to daily candle varcha chart var kasa disnar te pandhra minitachya chart var disayla pahije mi journal madhlya chart baddal bolat aahe" (transliterated from Devanagari)
 
 Note: the journal trade chart must be a 15-minute chart, not Daily. Sources and the M86 rule (no other user's data) being checked before the build.
+
+## 19 Nov - owner
+
+> "15 minute chart lavkar kar aur userla time frame nivadnyachi sandhi pahije" (transliterated from Devanagari)
+
+Note: the journal trade chart on 15 minutes by default, with a timeframe choice for the user.

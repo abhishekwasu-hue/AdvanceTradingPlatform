@@ -509,19 +509,21 @@ async def import_commit(file: UploadFile | None = File(default=None), mapping: s
 
 
 @router.get("/manual/{manual_id}/trade-chart", dependencies=[Depends(trade_chart_rate_limit)])
-async def manual_trade_chart(manual_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    """M88: the candles around his outside trade with its entry and exit marked (Daily, from the end-of-day files)."""
+async def manual_trade_chart(manual_id: int, tf: str = Query(default="15m", pattern="^(5m|15m|1h|1d)$"),
+                             user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """M88: the candles around his outside trade with its entry and exit marked. Owner 19 Nov: 15 minutes by default,
+    his choice of 5m / 1h / Daily - intraday from his own broker's history only, Daily from the end-of-day files."""
     ref = await _ref(session, user, "manual", manual_id)
     assert ref.manual is not None
-    return await trade_chart_view.chart(session, ref.manual)
+    return await trade_chart_view.chart(session, ref.manual, user=user, tf=tf)
 
 
 @router.get("/manual/{manual_id}/trade-chart.png", dependencies=[Depends(trade_chart_rate_limit)])
-async def manual_trade_chart_png(manual_id: int, cvd: bool = False, user: User = Depends(get_current_user),
-                                 session: AsyncSession = Depends(get_session)) -> Response:
+async def manual_trade_chart_png(manual_id: int, cvd: bool = False, tf: str = Query(default="15m", pattern="^(5m|15m|1h|1d)$"),
+                                 user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Response:
     """M88: "Save image" of that chart (the study renderer's pixels)."""
     ref = await _ref(session, user, "manual", manual_id)
     assert ref.manual is not None
-    data = await trade_chart_view.png(session, ref.manual, cvd=cvd)
+    data = await trade_chart_view.png(session, ref.manual, user=user, tf=tf, cvd=cvd)
     name = f"{ref.manual.symbol.replace(' ', '-')}-trade-{ref.manual.id}.png"
     return Response(content=data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})

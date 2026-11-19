@@ -529,3 +529,9 @@ Note: the journal trade chart on 15 minutes by default, with a timeframe choice 
 > "CA chat suru kr"
 
 Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.
+
+## 19 Nov - owner (Terminal mode badge)
+
+> (Terminal screenshot, PAPER badge) "varti paper ha symbol ka disto" (transliterated from Devanagari)
+
+> "Default yes" (to: while LIVE is on for him, the badge says "Live on" in red; Paper when it is off)

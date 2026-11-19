@@ -88,8 +88,11 @@ describe("LIVE-2 mode control", () => {
     const status = (mode: "PAPER" | "LIVE") => ({ mode: { mode, live_allowed: true, message: "" } }) as unknown as TerminalStatus;
     expect(modeChip(null)).toEqual({ label: "Paper", title: PAPER_ONLY_TITLE });
     expect(PAPER_ONLY_TITLE).toBe("Paper only - live trading is switched off by the admin.");
-    expect(modeChip(status("PAPER"), true)).toEqual({ label: "Paper", title: LIVE_ON_TITLE });
-    expect(modeChip(status("LIVE"), true)).toEqual({ label: "Live", title: LIVE_ON_TITLE });
+    // Owner 19 Nov: while LIVE is open for him the chip says "Live on" (each order still picks its own mode).
+    expect(modeChip(status("PAPER"), true)).toEqual({ label: "Live on", title: LIVE_ON_TITLE });
+    expect(modeChip(status("LIVE"), true)).toEqual({ label: "Live on", title: LIVE_ON_TITLE });
+    const notHis = { mode: { mode: "PAPER", live_allowed: false, message: "" } } as unknown as TerminalStatus;
+    expect(modeChip(notHis, true)).toEqual({ label: "Paper", title: LIVE_ON_TITLE });          // another organisation: Paper
     expect(LIVE_ON_TITLE).not.toMatch(/off|unavailable|only/i);
   });
 });

@@ -529,3 +529,16 @@ Note: the journal trade chart on 15 minutes by default, with a timeframe choice 
 > "CA chat suru kr"
 
 Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.
+
+## 19 Nov - owner (Find setups, Own words)
+
+> "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest
+> swings to identify trendline and suport line, similary sell on ressistance trendline and horizontal resistance. use
+> timefram 30 minutes" -> "No part of this idea could become a condition yet")
+
+> "copy kele, briker la login kele, pn pudhe kasee karayche, copy kelele kuthe paste karu" (screenshot: Trade in your
+> broker app, HEROMOTOCO, Market, NRML)
+
+Note: the reader gains trendline touches (support / resistance), horizontal support / resistance, his spellings, the
+idea's own "use timeframe" and OR between alternatives (PR claude/idea-trendlines). The broker-app question is answered
+in chat; an improvement is logged as a decision for the owner.

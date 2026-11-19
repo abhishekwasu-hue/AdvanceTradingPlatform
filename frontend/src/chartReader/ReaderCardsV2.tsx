@@ -65,8 +65,8 @@ const TRI_WORD: Record<Tri, string> = { yes: "Yes", no: "No", unclear: "Unclear"
 const TRI_MARK: Record<Tri, { tone: ChipTone; mark: string }> = {
   yes: { tone: "up", mark: "✓" }, no: { tone: "down", mark: "✕" }, unclear: { tone: "neutral", mark: "◆" },
 };
-const STATUS_WORD: Record<ConditionStatus, string> = { met: "Met", not_met: "Not met", unclear: "Unclear" };
-const STATUS_MARK: Record<ConditionStatus, { tone: ChipTone; mark: string }> = {
+export const STATUS_WORD: Record<ConditionStatus, string> = { met: "Met", not_met: "Not met", unclear: "Unclear" };
+export const STATUS_MARK: Record<ConditionStatus, { tone: ChipTone; mark: string }> = {
   met: { tone: "up", mark: "✓" }, not_met: { tone: "down", mark: "✕" }, unclear: { tone: "neutral", mark: "◆" },
 };
 

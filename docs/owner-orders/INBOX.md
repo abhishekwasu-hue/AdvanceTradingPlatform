@@ -506,3 +506,9 @@ Note: new item BT-DRAW - the backtest chart draws what the selected strategy its
 > "default yes"
 
 Note: CA-CHAT approved with the default (OPEN_QUESTIONS CA-CHAT-Q1): one Setup dropdown (My method for the owner only, the book strategies, "My own conditions"); a chat on the same chart where the trader writes his conditions and the AI answers each as met / not met / unclear with evidence and marks it on the chart; the user's own AI key; cost per message shown; signal-language guard; one thread per analysis kept in My analyses.
+
+## 19 Nov - owner
+
+> "CA chat suru kr"
+
+Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.

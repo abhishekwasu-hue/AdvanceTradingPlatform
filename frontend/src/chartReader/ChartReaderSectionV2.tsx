@@ -7,7 +7,9 @@ import { Button, Skeleton } from "../components/primitives";
 import { Combobox } from "../ui/Combobox";
 import { HelpPopover } from "../ui/HelpPopover";
 import { useFeatures } from "../ui/useFeatures";
+import type { LayerBand } from "../charting/engine";
 import { chartReaderApi } from "./api";
+import ConditionChatV2 from "./ConditionChatV2";
 import { AbhiCard, BookCard, RulesList, bookTitle, card, estimateText, type ReadState } from "./ReaderCardsV2";
 import type { ReaderRequest, ReaderSource, ReaderStrategies } from "./types";
 
@@ -40,7 +42,13 @@ export const LAKE_LABEL = "Advanced analysis (code + AI)";
 
 interface BookEntry { key: number; strategy: string; title: string; symbol?: string; request: ReaderRequest; state: ReadState }
 
-export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { itemId?: number | null; symbol?: string | null }) {
+/** CA-CHAT: the Setup list's own-conditions choice (not a strategy id: the reader never receives it). */
+export const OWN_CONDITIONS = "__own_conditions__";
+export const OWN_CONDITIONS_LABEL = "My own conditions";
+
+export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol, onMarks }: {
+  itemId?: number | null; symbol?: string | null; onMarks?: (bands: LayerBand[]) => void;
+}) {
   const features = useFeatures();
   const on = features.on(READER_FLAG);
   const [list, setList] = useState<ReaderStrategies | null>(null);
@@ -105,7 +113,7 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
   }, [run]);
 
   const readBook = useCallback(() => {
-    if (!list || blocked || !pick) return;
+    if (!list || blocked || !pick || pick === OWN_CONDITIONS) return;
     const s = list.strategies.find((x) => x.id === pick);
     const key = nextKey.current++;
     const req = requestFor(pick);
@@ -197,19 +205,26 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
       {ownMethod && <AbhiCard state={abhi} estimateUsd={estimateFor(false)} symbol={abhiSymbol} onRead={() => void readAbhi()}
         disabled={Boolean(blocked) || abhi.phase === "loading"} disabledReason={blocked ?? undefined} />}
 
-      {bookOptions.length > 0 && (
-        <section className={card} aria-labelledby="reader-books-title" data-testid="reader-books">
-          <h3 id="reader-books-title" className="text-t15 font-semibold text-fg">Book strategies</h3>
+      <section className={card} aria-labelledby="reader-books-title" data-testid="reader-books">
+          <h3 id="reader-books-title" className="text-t15 font-semibold text-fg">Setup</h3>
           <div className="mt-space-2 flex flex-col gap-space-2 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1">
               <label htmlFor={pickId} className="mb-space-1 block text-t12 font-medium text-fg-muted">Strategy</label>
-              <Combobox id={pickId} label="Strategy" value={pick} onChange={setPick} placeholder="Choose a strategy"
-                options={bookOptions.map((s) => ({ value: s.id, label: s.name }))} dataAttrs={{ "data-testid": "reader-book-pick" }} />
+              {/* CA-CHAT (owner 18 / 19 Nov): one Setup list - the book strategies and "My own conditions" */}
+              <Combobox id={pickId} label="Strategy" value={pick} onChange={setPick} placeholder="Choose a setup"
+                options={[...bookOptions.map((s) => ({ value: s.id, label: s.name })), { value: OWN_CONDITIONS, label: OWN_CONDITIONS_LABEL }]}
+                dataAttrs={{ "data-testid": "reader-book-pick" }} />
             </div>
-            <Button className="h-11 w-full sm:w-auto md:h-9" disabled={!pick || Boolean(blocked)} reason={blocked ?? (pick ? undefined : "Choose a strategy first.")}
-              onClick={readBook} data-testid="reader-book-read">Read this strategy</Button>
+            {pick !== OWN_CONDITIONS && (
+              <Button className="h-11 w-full sm:w-auto md:h-9" disabled={!pick || Boolean(blocked)} reason={blocked ?? (pick ? undefined : "Choose a setup first.")}
+                onClick={readBook} data-testid="reader-book-read">Read this strategy</Button>
+            )}
           </div>
-          <p className="mt-space-2 font-tabular text-t12 text-fg-muted">{estimateText(estimateFor(Boolean(picked?.two_chart)))}</p>
+          {pick === OWN_CONDITIONS ? (
+            <div className="mt-space-3 border-t border-subtle pt-space-3">
+              <ConditionChatV2 itemId={itemId} onMarks={onMarks} />
+            </div>
+          ) : <p className="mt-space-2 font-tabular text-t12 text-fg-muted">{estimateText(estimateFor(Boolean(picked?.two_chart)))}</p>}
           {picked?.rules ? (
             <div className="mt-space-3 border-t border-subtle pt-space-3" data-testid="reader-book-rules">
               <h4 className="mb-space-2 text-t14 font-semibold text-fg">Rules of this strategy</h4>
@@ -217,7 +232,6 @@ export default function ChartReaderSectionV2({ itemId, symbol: knownSymbol }: { 
             </div>
           ) : null}
         </section>
-      )}
 
       {books.map((b) => (
         <BookCard key={b.key} title={b.title} state={b.state} symbol={b.symbol} rules={list.strategies.find((s) => s.id === b.strategy)?.rules}

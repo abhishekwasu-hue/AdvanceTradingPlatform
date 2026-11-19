@@ -122,3 +122,17 @@ export interface ReaderResult<R = AbhiRead | BookRead> {
   error?: string;
   category?: string;
 }
+
+/** CA-CHAT (owner 18 / 19 Nov): one condition the trader wrote, judged on his analysis's chart. */
+export interface ChatAnswer {
+  condition: string;
+  status: ConditionStatus;
+  evidence: string;
+  /** The price area it points at, when the chart has a price scale (else null). */
+  price_low: number | null;
+  price_high: number | null;
+}
+
+export interface ChatTurn { question: string; answers: ChatAnswer[]; cost_usd: number; at: string; unreadable?: boolean }
+export interface ChatThread { turns: ChatTurn[]; max_turns: number; estimate_usd: number }
+export interface ChatAsk { turn: ChatTurn; turns: number; estimate_usd: number }

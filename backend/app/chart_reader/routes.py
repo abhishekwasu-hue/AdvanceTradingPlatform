@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_mfa_session, require_role
-from app.chart_reader import FLAG, loader, service
+from app.chart_reader import FLAG, chat, loader, service
 from app.chart_reader import settings as settings_mod
 from app.core.config import CACHE_MAX_TTL_SECONDS
 from app.db.models import Tenant, User
@@ -92,6 +92,35 @@ async def read(body: ReadBody, user: User = Depends(get_current_user), session: 
     tenant = await _tenant(session, user)
     return await service.read(session, user, tenant, settings, symbol=body.symbol, strategy=body.strategy, source=body.source,
                               item_id=body.item_id)
+
+
+class ChatBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=chat.TEXT_MAX)
+
+
+@router.get("/items/{item_id}/chat")
+async def chat_thread(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CA-CHAT: the caller's own chat on his own analysis (404 for anyone else's)."""
+    settings = await _gate(session, user)
+    from app.chart_analyze import service as ca_service
+    row = await ca_service.own(session, user, item_id)
+    return {"turns": chat.thread(row), "max_turns": chat.TURNS_MAX, "estimate_usd": service.estimate_usd(settings, 1)}
+
+
+@router.post("/items/{item_id}/chat")
+async def chat_ask(item_id: int, body: ChatBody, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """CA-CHAT: his conditions checked on this analysis's chart (his own key and cap; the cost comes back)."""
+    settings = await _gate(session, user)
+    return await chat.ask(session, user, settings, item_id, body.text)
+
+
+@router.delete("/items/{item_id}/chat")
+async def chat_clear(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _gate(session, user)
+    await chat.clear(session, user, item_id)
+    return {"turns": []}
 
 
 def _admin_view(values: dict[str, Any]) -> dict[str, Any]:

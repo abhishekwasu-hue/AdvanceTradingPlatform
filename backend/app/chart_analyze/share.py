@@ -31,6 +31,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 from app.core import config as app_config
 
 STATE_KEY = "_share"
+CHAT_KEY = "_chat"          # CA-CHAT (owner 18 / 19 Nov): the owner's condition chat on this analysis - never part of `result`
 TOKEN_MAX = 200
 NOT_SHARED = "(Left out of the shared copy: it named a price, a date or the chart.)"
 SHARED_NOTE = ("Shared by a member of your organisation. The chart's name, its prices, its dates and the picture are left "
@@ -93,6 +94,7 @@ def split(result_json: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Dict[st
     if not isinstance(data, dict):
         return None, {}
     state = data.pop(STATE_KEY, None)
+    data.pop(CHAT_KEY, None)                      # the owner's own chat: never in the result, never in a shared copy
     data.pop("_pick", None)                       # a hybrid item's pick before its analysis (hybrid.PICK_KEY), not a result
     return data or None, state if isinstance(state, dict) else {}
 
@@ -117,11 +119,43 @@ def owner_view(item_id: int, user_id: int, tenant_id: int, state: Dict[str, Any]
     return {"token": make_token(item_id, user_id, tenant_id, int(state.get("version") or 0), until), "expires_at": until.isoformat()}
 
 
+def _chat_raw(result_json: str | None) -> Any:
+    try:
+        data = json.loads(result_json or "")
+    except ValueError:
+        return None
+    return data.get(CHAT_KEY) if isinstance(data, dict) else None
+
+
+def chat_of(result_json: str | None) -> list[dict[str, Any]]:
+    """CA-CHAT: the stored chat turns of an analysis ([] when none)."""
+    raw = _chat_raw(result_json)
+    turns = raw.get("turns") if isinstance(raw, dict) else None
+    return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
+
+
+def _dump(result: dict[str, Any], state: dict[str, Any], chat: Any) -> str:
+    out: dict[str, Any] = dict(result)
+    if state:
+        out[STATE_KEY] = state
+    if chat:
+        out[CHAT_KEY] = chat
+    return json.dumps(out, separators=(",", ":"))
+
+
 def with_state(result_json: str, state: Dict[str, Any]) -> str:
     result, _ = split(result_json)
     if result is None:
         raise ValueError("no stored result")
-    return json.dumps({**result, STATE_KEY: state}, separators=(",", ":"))
+    return _dump(result, state, _chat_raw(result_json))           # a new link keeps the owner's chat
+
+
+def with_chat(result_json: str, turns: list[dict[str, Any]]) -> str:
+    """CA-CHAT: the stored result with these chat turns (the link state kept; no turns: the chat removed)."""
+    result, state = split(result_json)
+    if result is None:
+        raise ValueError("no stored result")
+    return _dump(result, state, {"turns": turns} if turns else None)
 
 
 def new_state(old: Dict[str, Any], now: datetime, days: int) -> Dict[str, Any]:

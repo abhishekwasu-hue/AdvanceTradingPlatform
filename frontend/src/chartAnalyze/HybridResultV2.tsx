@@ -108,6 +108,8 @@ export interface HybridResultProps {
   deleting?: boolean;
   /** M84: "Read from your chart: NIFTY 50 · 15m", with Change and Re-run in place (ChartReadV2). */
   readLine?: ReactNode;
+  /** CA-CHAT: the price areas the trader's own condition answers point at, drawn on the live chart with ATP's reading. */
+  extraAreas?: readonly LayerBand[];
   /** Owner CA-Q1 (3 Nov): ATP's reading drawn on ATP's own chart (zoom, scroll, price axis) - the pages pass true;
    * the drawn picture stays for the download, behind Details. */
   liveChart?: boolean;
@@ -116,6 +118,13 @@ export interface HybridResultProps {
 const LIVE_TF: Record<string, TimeframeId> = { "5m": "5min", "15m": "15min", "1h": "60min", "1d": "day" };
 
 /** Owner CA-Q1: the reading's lines and areas in the chart core's own shapes (the same values the picture draws). */
+const NO_EXTRA: readonly LayerBand[] = [];
+
+/** CA-CHAT: ATP's reading plus the chat's areas (the chat's after ATP's own, so they draw on top). */
+export function withExtra(o: { levels: LevelLine[]; areas: LayerBand[] }, extra: readonly LayerBand[]): { levels: LevelLine[]; areas: LayerBand[] } {
+  return extra.length ? { levels: o.levels, areas: [...o.areas, ...extra] } : o;
+}
+
 export function readingOverlay(r: HybridResult["reading"]): { levels: LevelLine[]; areas: LayerBand[] } {
   const levels: LevelLine[] = [];
   if (r.protected != null) levels.push({ price: r.protected, title: "Protected", tone: "neutral" });
@@ -245,7 +254,7 @@ function Areas({ areas }: { areas: HybridArea[] }) {
   );
 }
 
-export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine, liveChart = false }: HybridResultProps) {
+export default function HybridResultV2({ result, userImageSrc, readingSrc, imageNote, onDownload, onDelete, downloading, deleting, actions = true, readLine, liveChart = false, extraAreas = NO_EXTRA }: HybridResultProps) {
   const r = result.reading;
   const ai = result.ai ? guardDeep(result.ai, KEEP) : null;
   const title = `${r.symbol} · ${r.timeframe_label}`;
@@ -287,7 +296,7 @@ export default function HybridResultV2({ result, userImageSrc, readingSrc, image
             <figcaption className="mb-space-1 text-t13 font-semibold text-fg">ATP&apos;s reading of {title}</figcaption>
             {live ? (
               <Suspense fallback={<Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}>
-                <EmbeddedChartV2 symbol={r.symbol} timeframe={LIVE_TF[r.timeframe]} className="h-72 md:h-80" drawing={false} {...readingOverlay(r)} />
+                <EmbeddedChartV2 symbol={r.symbol} timeframe={LIVE_TF[r.timeframe]} className="h-72 md:h-80" drawing={false} {...withExtra(readingOverlay(r), extraAreas)} />
               </Suspense>
             ) : picture ?? <Skeleton className="aspect-video w-full" label="Loading ATP's chart" />}
             {!live && <Legend />}

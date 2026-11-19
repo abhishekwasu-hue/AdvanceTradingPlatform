@@ -585,3 +585,9 @@ Note: plan only, no code until "APPROVED". The SPEC "sent earlier" did not reach
 > Report back with screenshots of each test.
 
 Note: the SPEC the PLAN task refers to; the plan (docs/plans/strategy-first-chart-PLAN.md) splits its acceptance tests by phase. No code until "APPROVED".
+
+## 19 Nov - owner (on the SPEC)
+
+> "es pack madhlya baryach goshti already aaplyakade astil" (transliterated from Devanagari)
+
+Note: the plan reuses what exists (inventory decides reuse / modify / replace per module); only the true gaps are new.

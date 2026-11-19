@@ -21,11 +21,15 @@ export interface PlotPa { id: string; kind: "band" | "box"; low: number; high: n
   level?: number | null }
 /** P2: the trade open on the last bar, with his own stop / target (none set: none drawn). */
 export interface PlotPosition { side: "long" | "short"; entry_time: string; entry: number | null; stop: number | null; target: number | null }
+/** P4: the quick stats of the same walk (points are price points, independent of his size; pnl is the money P&L with
+ * his own paper settings). */
+export interface PlotStats { trades: number; closed: number; open: number; wins: number; win_rate: number | null; points: number | null;
+  max_drawdown: number | null; avg_r: number | null; pnl: number | null }
 export interface PlotReply {
   strategy_id: string; name: string; timeframe: string | null; available: boolean; reason: string | null;
   series?: PlotSeries[]; markers?: PlotMarker[]; why?: Record<string, WhyRow[]>; trades?: PlotTrade[];
   state?: "warming" | "waiting" | "in_trade" | "exited"; last_signal?: { t: string; side: "long" | "short" } | null; gaps?: string[];
-  levels?: PlotLevel[]; pa?: PlotPa[]; position?: PlotPosition | null; pending?: { t: string; side: "long" | "short" } | null;
+  stats?: PlotStats; levels?: PlotLevel[]; pa?: PlotPa[]; position?: PlotPosition | null; pending?: { t: string; side: "long" | "short" } | null;
 }
 
 /** P2: the chart's forming candle, sent for the pending hint only (display only on the server too). */
@@ -149,4 +153,18 @@ export function whyAt(reply: PlotReply | null, time: number | null): WhyCard[] {
       ? { id: m.id, t: m.t, title: `${SIDE(m.side)} signal · not taken (already in a trade)`, tone: "muted", rows }
       : { id: m.id, t: m.t, title: `${SIDE(m.side)} entry`, tone: m.side === "long" ? "up" : "down", rows };
   });
+}
+
+/** P4: the time range that shows one trade with some bars around it (seconds), for "click scrolls to the trade". */
+export function tradeRange(trade: PlotTrade, barSeconds: number, last: number | null = null): { from: number; to: number } {
+  const start = unix(trade.entry_time);
+  const end = trade.exit_time ? unix(trade.exit_time) : (last ?? start);
+  const pad = Math.max(1, barSeconds) * 20;
+  return { from: start - pad, to: Math.max(end, start) + pad };
+}
+
+/** The move of a closed trade in price points (long: exit - entry; short: entry - exit). */
+export function tradePoints(trade: PlotTrade): number | null {
+  if (trade.exit === null || trade.entry === null) return null;
+  return trade.side === "long" ? trade.exit - trade.entry : trade.entry - trade.exit;
 }

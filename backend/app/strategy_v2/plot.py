@@ -7,6 +7,7 @@
   window), "skipped" when it was already in a trade; every exit with the rule that closed it;
 * `why`: for each signal / exit marker, the conditions that held with their values (the hover, P3);
 * `trades`, `state`, `last_signal`, `warmup_bars`;
+* P4: `stats` (trades, win rate, points, max drawdown, average R, money P&L) of the same walk;
 * P2: `levels` (a fixed number his condition compares a series with, in that series' pane), `pa` (the price-action
   shapes his conditions read on the last closed bar - a breakout's box, a zone band - from the screener's own evidence
   builder), `position` (the open trade: entry / his stop / his target, never a made-up one) and `pending` (the forming
@@ -166,6 +167,31 @@ def leaves_of(node: Any) -> list[str]:
     return [x for item in node.items for x in leaves_of(item)]
 
 
+def stats_of(trades: list[Any]) -> dict[str, Any]:
+    """P4: the quick stats of the walk on the chart's bars, in price points (independent of his size) plus the money
+    P&L the backtest gives with his own paper settings. A trade still open on the last bar counts as a trade (it has an
+    entry marker, T8) but not in the results. R = the move in units of the entry-to-his-stop distance (no stop: no R)."""
+    closed = [t for t in trades if t.exit_time is not None and t.exit_reason != END_OF_DATA and t.exit_price is not None]
+    points: list[float] = []
+    rs: list[float] = []
+    for t in closed:
+        sign = 1.0 if t.direction == SignalDirection.LONG else -1.0
+        move = sign * (float(t.exit_price) - float(t.entry_price))
+        points.append(move)
+        risk = abs(float(t.entry_price) - float(t.stop_loss)) if t.stop_loss is not None else 0.0
+        if risk > 0:
+            rs.append(move / risk)
+    curve = np.cumsum(points) if points else np.zeros(0)
+    peak = np.maximum.accumulate(np.concatenate([[0.0], curve])) if points else np.zeros(1)
+    drawdown = float(np.min(np.concatenate([[0.0], curve]) - peak)) if points else 0.0
+    wins = sum(p > 0 for p in points)
+    money = [float(t.pnl) for t in closed if t.pnl is not None]
+    return {"trades": len(trades), "closed": len(closed), "open": len(trades) - len(closed), "wins": int(wins),
+            "win_rate": _round(100.0 * wins / len(closed)) if closed else None, "points": _round(float(sum(points))),
+            "max_drawdown": _round(drawdown), "avg_r": _round(float(np.mean(rs))) if rs else None,
+            "pnl": _round(sum(money)) if money else None}
+
+
 def why_at(strategy: StrategyV2Strategy, ev: Evaluation, t: int, role: str | None = None) -> list[dict[str, Any]]:
     """P3: the conditions of the rule that fired on bar t (`role`: entry_long / entry_short; None: every condition), each
     with whether it held and its values. A condition that did not hold while the rule fired sits in an OR group the bar
@@ -247,7 +273,7 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
     return {
         "series": series_of(strategy, ev), "markers": markers, "why": why, "state": state, "last_signal": last_signal,
         "warmup_bars": ev.warmup_bars, "bars": len(df),
-        "levels": levels_of(strategy), "pa": pa_of(strategy, df, symbol), "position": position_of(trades),
+        "stats": stats_of(trades), "levels": levels_of(strategy), "pa": pa_of(strategy, df, symbol), "position": position_of(trades),
         "pending": pending_of(strategy, df, symbol, forming),
         "trades": [{"entry_time": _iso(tr.entry_time), "entry": _round(tr.entry_price), "side": "long" if tr.direction == SignalDirection.LONG else "short",
                     "stop": _round(tr.stop_loss) if tr.stop_loss is not None else None, "target": _round(tr.target1) if tr.target1 is not None else None,
@@ -258,4 +284,4 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
     }
 
 
-__all__ = ["plot", "series_of", "why_at", "levels_of", "pa_of", "position_of", "pending_of", "MAX_BARS"]
+__all__ = ["plot", "series_of", "why_at", "stats_of", "levels_of", "pa_of", "position_of", "pending_of", "MAX_BARS"]

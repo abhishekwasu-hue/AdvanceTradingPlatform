@@ -9,6 +9,9 @@ import { timeframeLabel, type ChartBar, type TimeframeId } from "../chart/timefr
 import { STATE_WORDS, strategyChartApi, strategyLayer, strategyMarkers, strategyStudies, whyAt, type ChartStrategy, type FormingBar, type PlotReply,
   type WhyCard } from "./model";
 import { formatDateTimeIST, formatNumber } from "../ui/format";
+import { Sheet } from "../components/primitives/Dialog";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { exitWord, tradePoints, tradeRange, type PlotTrade } from "./model";
 
 /**
  * SFC P1 (flag `strategy_chart`): one of his own strategies on the Charts page - only its indicators (each in its pane),
@@ -110,9 +113,19 @@ export function StrategyLayerV2({ engine, strategyId, slot, symbol, exchange, ti
   useEffect(() => () => onMarkers(strategyId, NONE), [onMarkers, strategyId]);
   const cards = useMarkerWhy(engine, state.sameTf ? state.reply : null);
   const why = cards.length > 0 ? <StrategyWhyV2 name={state.reply?.name ?? ""} colour={state.colour} cards={cards} floating={!!whySlot} /> : null;
+  const [statsOpen, setStatsOpen] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const barSeconds = candles.length > 1 ? Math.max(60, (Date.parse(candles[candles.length - 1].timestamp) - Date.parse(candles[candles.length - 2].timestamp)) / 1000) : 300;
+  const last = candles.length ? Math.floor(Date.parse(candles[candles.length - 1].timestamp) / 1000) : null;
+  const showTrade = (t: PlotTrade) => {
+    const r = tradeRange(t, barSeconds, last);
+    engine?.setVisibleTimeRange(r.from, r.to);
+    if (phone) setStatsOpen(false);                       // a phone: the sheet covers the chart - close it to show the trade
+  };
   return (
     <>
-      {legend && <StrategyLegendV2 state={state} onShowTf={onShowTf} onClear={onClear} />}
+      {legend && <StrategyLegendV2 state={state} onShowTf={onShowTf} onClear={onClear} onStats={state.sameTf && state.reply?.stats ? () => setStatsOpen(true) : undefined} />}
+      {state.reply && <StrategyStatsV2 reply={state.reply} open={statsOpen} onOpenChange={setStatsOpen} side={phone ? "bottom" : "right"} onTrade={showTrade} />}
       {why && (whySlot ? createPortal(why, whySlot) : legend ? why : null)}
     </>
   );
@@ -211,7 +224,8 @@ export function StrategyPickerV2({ list, value, onPick, onClose }: { list: Chart
 }
 
 /** One line under the chart: the strategy, its state, its last signal, and × to remove it. */
-export function StrategyLegendV2({ state, onShowTf, onClear }: { state: StrategyOverlayState; onShowTf?: (tf: TimeframeId) => void; onClear: () => void }) {
+export function StrategyLegendV2({ state, onShowTf, onClear, onStats }: { state: StrategyOverlayState; onShowTf?: (tf: TimeframeId) => void; onClear: () => void;
+  onStats?: () => void }) {
   const { reply, loading, failed, sameTf, strategyTf, colour } = state;
   if (!reply) {
     if (loading) return <p className="border-t border-subtle px-space-3 py-space-2 text-t12 text-fg-muted" role="status">Reading your strategy…</p>;
@@ -240,8 +254,69 @@ export function StrategyLegendV2({ state, onShowTf, onClear }: { state: Strategy
             {(reply.series ?? []).length > 0 && <span className="text-fg-muted">{(reply.series ?? []).map((s) => s.label).join(" · ")}</span>}
           </>
         )}
+      {onStats && (
+        <button type="button" onClick={onStats} data-strategy-stats aria-haspopup="dialog"
+          className="ml-auto inline-flex min-h-9 items-center rounded-control px-space-2 text-t13 text-brand hover:bg-surface-2">Stats</button>
+      )}
       <button type="button" onClick={onClear} aria-label={`Remove ${reply.name} from the chart`} data-strategy-clear
-        className="ml-auto inline-flex min-h-9 min-w-9 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg">×</button>
+        className={cx(!onStats && "ml-auto", " inline-flex min-h-9 min-w-9 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg")}>×</button>
     </section>
+  );
+}
+
+const signed = (v: number | null | undefined, d = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${formatNumber(v, d)}`);
+const tone = (v: number | null | undefined) => (v == null || v === 0 ? "text-fg" : v > 0 ? "text-up" : "text-down");
+
+/** P4: the strategy's quick stats on the chart's bars and its trades; a trade's row scrolls the chart to it. The same
+ * walk as the markers (a backtest of the bars on the chart), so the count is the number of entry arrows (T8). */
+export function StrategyStatsV2({ reply, open, onOpenChange, side, onTrade }: { reply: PlotReply; open: boolean; onOpenChange: (o: boolean) => void;
+  side: "right" | "bottom"; onTrade: (t: PlotTrade) => void }) {
+  const st = reply.stats;
+  if (!st) return null;
+  const trades = [...(reply.trades ?? [])].reverse();             // newest first
+  const tiles: [string, string, string, string][] = [
+    ["Trades", `${st.trades}`, st.open ? `${st.open} open` : "", "text-fg"],
+    ["Win rate", st.win_rate == null ? "—" : `${formatNumber(st.win_rate, 0)}%`, `${st.wins} of ${st.closed}`, "text-fg"],
+    ["P&L (points)", signed(st.points), st.pnl == null ? "" : `₹ ${signed(st.pnl, 0)}`, tone(st.points)],
+    ["Max drawdown", signed(st.max_drawdown), "points", tone(st.max_drawdown)],
+    ["Average R", signed(st.avg_r), "trades with a stop", tone(st.avg_r)],
+  ];
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} side={side} title={`${reply.name}: stats`}
+      description="Its trades on this chart's bars. Reference only.">
+      <div data-strategy-stats-sheet className="space-y-space-4">
+        <dl className="grid grid-cols-2 gap-space-2 sm:grid-cols-3">
+          {tiles.map(([label, value, note, cls]) => (
+            <div key={label} className="rounded-control border border-subtle bg-surface-2 px-space-3 py-space-2" data-stat={label}>
+              <dt className="text-t12 text-fg-muted">{label}</dt>
+              <dd className={cx("text-t16 font-semibold tabular-nums", cls)}>{value}</dd>
+              {note && <dd className="text-t12 text-fg-muted">{note}</dd>}
+            </div>
+          ))}
+        </dl>
+        {trades.length === 0 ? <p className="text-t13 text-fg-muted">No trades on these bars yet.</p> : (
+          <ul className="divide-y divide-subtle rounded-control border border-subtle" aria-label="Trades, newest first">
+            {trades.map((t) => {
+              const pts = tradePoints(t);
+              return (
+                <li key={t.entry_time}>
+                  <button type="button" onClick={() => onTrade(t)} data-stats-trade={t.entry_time}
+                    className="grid min-h-11 w-full grid-cols-[auto_1fr_auto] items-center gap-x-space-3 px-space-3 py-space-2 text-left text-t13 hover:bg-surface-2">
+                    <span className={t.side === "long" ? "font-semibold text-up" : "font-semibold text-down"}>{t.side === "long" ? "Long" : "Short"}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-fg">{formatDateTimeIST(t.entry_time)}</span>
+                      <span className="block text-t12 text-fg-muted">
+                        {formatNumber(t.entry ?? NaN, 2)} → {t.exit === null ? "open" : `${formatNumber(t.exit, 2)} · ${exitWord(t.exit_rule ?? undefined)}`}
+                      </span>
+                    </span>
+                    <span className={cx("tabular-nums font-semibold", tone(pts))}>{pts === null ? "Open" : signed(pts)}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Sheet>
   );
 }

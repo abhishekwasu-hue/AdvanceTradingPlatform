@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { api, madeUpBars, mockCharts } from "./chartsMocks";
 import { mockApi } from "./mockApi";
+import { choose } from "./combobox";
 
 /**
  * SFC P1 (owner APPROVED 19 Nov, docs/plans/strategy-first-chart-PLAN.md; flag `strategy_chart`): his own strategy from
@@ -268,4 +269,63 @@ test.describe("SFC P4: quick stats", () => {
     await sheet.locator("[data-stats-trade]").last().click();
     await expect(sheet).toHaveCount(0);
   });
+});
+
+test.describe("SFC P5: build a strategy in the chart's drawer", () => {
+  const BLOCKS = [
+    { block: "EMA", kind: "factor", returns: "num", unit: "same", doc: "Exponential moving average", timeframed: true, values: [], kwargs: [],
+      args: [{ name: "x", type: "num", required: true, choices: [], bounds: null, series: true }, { name: "n", type: "window", required: true, choices: [], bounds: null }] },
+    { block: "RSI", kind: "factor", returns: "num", unit: "index", doc: "Relative strength index", timeframed: true, values: [], kwargs: [],
+      args: [{ name: "n", type: "window", required: false, choices: [], bounds: null }] },
+  ];
+  for (const [label, size] of [["1440", { width: 1440, height: 900 }], ["390", { width: 390, height: 844 }]] as const) {
+    test(`${label}: nothing pre-filled; a blank setting blocks Save; saved, it is drawn on the chart at once`, async ({ page }) => {
+      await page.setViewportSize(size);
+      const plots = await open(page);
+      const saved: unknown[] = [];
+      await page.route(api("/strategies/v2/blocks$"), (r) => r.fulfill({ json: { blocks: BLOCKS } }));
+      await page.route(api("/strategies/v2/check$"), (r) => r.fulfill({ json: { ok: true, problems: [] } }));
+      await page.route(api("/strategies/v2$"), (r) => {
+        const body = r.request().postDataJSON() as { strategy: { name: string } };
+        saved.push(body.strategy);
+        return r.fulfill({ status: 201, json: { id: "custom:7", record_id: 7, name: body.strategy.name, strategy: body.strategy } });
+      });
+      await page.route(api("/strategies/v2/7$"), (r) => r.fulfill({ json: { id: "custom:7", record_id: 7, name: "My EMA", strategy: saved[0] } }));
+      if (size.width < 768) {
+        await page.getByRole("button", { name: "More chart controls" }).click();
+        await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: /Your strategies on the chart/ }).click();
+      } else {
+        await page.getByTestId("strategy-button").click();
+      }
+      await page.locator("[data-strategy-new]").click();
+      const b = page.locator("[data-strategy-builder]");
+      await expect(b).toBeVisible();
+      await expect(b.locator("[data-builder-name]")).toHaveValue("");                         // DEF-0
+      await expect(b.locator("[data-builder-timeframe]")).toHaveAttribute("data-combobox", "");
+      await expect(page.locator("[data-builder-save]")).toBeDisabled();
+      await b.locator("[data-builder-name]").fill("My EMA");
+      await choose(page, b.locator("[data-builder-timeframe]"), "5m");
+      await b.locator("[data-add-condition='Long entry']").click();
+      const c1 = b.locator("[data-condition='c1']");
+      await choose(page, c1.getByRole("combobox", { name: "c1 left", exact: true }), "EMA");
+      await choose(page, c1.getByRole("combobox", { name: "x", exact: true }), "close");
+      await choose(page, c1.getByRole("combobox", { name: "c1 comparison" }), "gt");
+      await choose(page, c1.getByRole("combobox", { name: "c1 right", exact: true }), "RSI");
+      await expect(page.locator("[data-builder-problems]")).toContainText("EMA needs its 'n' setting");
+      await expect(page.locator("[data-builder-problems]")).toContainText("RSI needs its 'n' setting");   // never the engine's 14
+      await expect(page.locator("[data-builder-save]")).toBeDisabled();
+      await c1.getByRole("spinbutton", { name: "n", exact: true }).first().fill("20");
+      await c1.getByRole("spinbutton", { name: "n", exact: true }).last().fill("14");
+      await expect(page.locator("[data-builder-problems]")).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p5-builder-${label}.png` });
+      await page.locator("[data-builder-save]").click();
+      await expect(page.locator("[data-builder-note]")).toContainText("Saved.");
+      expect(saved[0]).toMatchObject({ schema: "atp.strategy/2", name: "My EMA", timeframe: "5m", entry: { sides: "long", long: { op: "AND", items: [
+        { id: "c1", left: { kind: "indicator", block: "EMA", params: { x: "close", n: 20 } }, cmp: "gt", right: { kind: "indicator", block: "RSI", params: { n: 14 } } }] } } });
+      expect(saved[0]).not.toHaveProperty("exit");                                              // no exit chosen, none sent
+      await expect.poll(() => plots.length).toBeGreaterThan(0);                                // drawn on the chart at once
+      expect(plots[plots.length - 1]).toMatchObject({ strategy_id: "custom:7" });
+    });
+  }
 });

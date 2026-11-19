@@ -7,7 +7,9 @@ import type { LayerBand, LayerData, LayerLine, LayerSegment, StudyLine } from ".
  * reads the bars the way his bot does and runs the SAME evaluator as the backtest and the bot; this module only turns
  * its answer into chart parts. Nothing here orders anything.
  */
-export interface ChartStrategy { id: string; name: string; timeframe: string | null; drawable: boolean; reason: string | null }
+export interface ChartStrategy { id: string; name: string; timeframe: string | null; drawable: boolean; reason: string | null;
+  /** P5: built in the chart's builder (atp.strategy/2) - it opens there to edit. */
+  editable?: boolean }
 
 export interface PlotSeries { id: string; label: string; pane: string; points: { t: string; v: number | null }[] }
 export interface PlotMarker { id: string; t: string; kind: "entry" | "skipped" | "exit"; side: "long" | "short"; rule?: string; pnl?: number | null }

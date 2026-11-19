@@ -6,6 +6,13 @@
   store and his own broker's top-up, M86: never another user's intraday data; Daily from the exchange's files), on the
   strategy's own timeframe, and the same evaluation the backtest / bot use gives the series, markers, why and trades.
 Reference only: nothing is stored and nothing is ordered.
+
+SFC P5, the builder (his own strategies only; nothing is ordered, a saved strategy runs nowhere until he deploys it):
+* GET    /api/strategies/v2/blocks - what a condition can read: every registry function this engine evaluates on bars
+  (not the cross-sectional ones, not the ones needing an option chain / reference lists / stored zones, not a feature the
+  operator has off), with its settings (no value pre-filled: DEF-0);
+* POST   /api/strategies/v2/check - would it save, and if not, why (the compiler's own problems);
+* POST   /api/strategies/v2 · GET / PUT / DELETE /api/strategies/v2/{id} - save, read, edit, delete one of his own.
 """
 from __future__ import annotations
 
@@ -19,7 +26,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.models import RiskConfig
 from app.core.rate_limit import analysis_rate_limit
 from app.db.models import CustomStrategyRecord, User
@@ -70,7 +78,8 @@ async def chart_list(user: User = Depends(get_current_user), session: AsyncSessi
     for record in await _own(session, user):
         v2, why = _strategy_of(record)
         out.append({"id": f"custom:{record.id}", "name": record.name, "timeframe": v2.timeframe if v2 else None,
-                    "drawable": v2 is not None and v2.timeframe in ENGINE_LABEL, "reason": why})
+                    "drawable": v2 is not None and v2.timeframe in ENGINE_LABEL, "reason": why,
+                    "editable": '"atp.strategy/2"' in (record.config_json or "")[:200]})     # P5: built in the chart's builder
     return {"strategies": out}
 
 
@@ -124,4 +133,133 @@ async def plot_route(body: PlotBody, user: User = Depends(get_current_user), ses
     return {**head, "available": True, "reason": None, "gaps": got.gap_lines(), **drawn}
 
 
-__all__ = ["router", "FLAG", "chart_list", "plot_route"]
+# ------------------------------------------------------------------------------------------------------ P5: the builder
+SKIP_NEEDS = ("option_chain", "reference", "zones", "chains")
+
+
+def _arg(a: Any) -> dict[str, Any]:
+    # `series`: the input is a number series (close, high ...), not a setting; no default is ever sent (DEF-0)
+    return {"name": a.name, "type": a.type, "required": bool(a.required), "choices": [str(c) for c in a.choices],
+            "bounds": list(a.bounds) if a.bounds else None, "series": a.type == "num" and not a.literal_only}
+
+
+@router.get("/blocks")
+async def blocks(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """What a condition can read: every function the strategy engine evaluates on his bars, with its settings."""
+    await require_flag(session, FLAG, user.tenant_id)
+    from app.platform.controls import flag_enabled
+    from app.screener.registry import FUNCTIONS
+    from app.strategy_v2.compile import LAST_BAR_ONLY
+    flags: dict[str, bool] = {}
+    out = []
+    for name, spec in sorted(FUNCTIONS.items()):
+        if spec.cross_sectional or name in LAST_BAR_ONLY or any(need in SKIP_NEEDS for need in spec.needs):
+            continue
+        needed = [f for f in (spec.flag, *spec.also_flags) if f]
+        for f in needed:
+            if f not in flags:
+                flags[f] = await flag_enabled(session, f, user.tenant_id)
+        if not all(flags[f] for f in needed):
+            continue
+        out.append({"block": name, "kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "doc": (spec.doc or "")[:200],
+                    "timeframed": spec.timeframed, "args": [_arg(a) for a in spec.args], "kwargs": [_arg(a) for a in spec.kwargs],
+                    "values": list(spec.values)})
+    return {"blocks": out}
+
+
+def _compile_problems(raw: dict[str, Any]) -> tuple[StrategyV2 | None, list[str]]:
+    try:
+        v2 = StrategyV2.model_validate(raw)
+    except ValueError as exc:
+        errors = getattr(exc, "errors", None)
+        if callable(errors):
+            return None, [f"{'.'.join(str(p) for p in e.get('loc', ()))}: {e.get('msg', '')}".strip(": ") for e in errors()][:20]
+        return None, [str(exc)[:300]]
+    if v2.timeframe not in ENGINE_LABEL:
+        return None, [f"The {v2.timeframe} timeframe cannot be run yet"]
+    try:
+        StrategyV2Strategy("custom:0", v2)
+    except StrategyError as exc:
+        return None, exc.problems[:20]
+    return v2, []
+
+
+class StrategyBody(BaseModel):
+    strategy: dict[str, Any]
+
+
+@router.post("/check")
+async def check(body: StrategyBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await require_flag(session, FLAG, user.tenant_id)
+    v2, problems = _compile_problems(body.strategy)
+    return {"ok": v2 is not None, "problems": problems}
+
+
+def _saved(record: CustomStrategyRecord, v2: StrategyV2) -> dict[str, Any]:
+    return {"id": f"custom:{record.id}", "record_id": record.id, "name": record.name,
+            "strategy": json.loads(v2.model_dump_json(by_alias=True, exclude_none=True))}
+
+
+def _valid_or_400(raw: dict[str, Any]) -> StrategyV2:
+    v2, problems = _compile_problems(raw)
+    if v2 is None:
+        raise HTTPException(status_code=400, detail={"problems": problems})
+    return v2
+
+
+async def _own_v2(session: AsyncSession, user: User, record_id: int) -> tuple[CustomStrategyRecord, StrategyV2]:
+    record = await session.get(CustomStrategyRecord, record_id)
+    if record is None or record.tenant_id != user.tenant_id or record.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    try:
+        raw = json.loads(record.config_json or "{}")
+    except ValueError:
+        raw = {}
+    if not is_v2(raw):
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return record, StrategyV2.model_validate(raw)
+
+
+@router.post("", status_code=201, dependencies=[Depends(require_scope("strategies:write"))])
+async def create(body: StrategyBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await require_flag(session, FLAG, user.tenant_id)
+    v2 = _valid_or_400(body.strategy)
+    from app.plans.limits import check_can_add_custom_strategy, load_tenant
+    await check_can_add_custom_strategy(session, await load_tenant(session, user.tenant_id))
+    record = CustomStrategyRecord(tenant_id=user.tenant_id, user_id=user.id, name=v2.name,
+                                  config_json=v2.model_dump_json(by_alias=True, exclude_none=True))
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return _saved(record, v2)
+
+
+@router.get("/{record_id:int}")
+async def read(record_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await require_flag(session, FLAG, user.tenant_id)
+    record, v2 = await _own_v2(session, user, record_id)
+    return _saved(record, v2)
+
+
+@router.put("/{record_id:int}", dependencies=[Depends(require_scope("strategies:write"))])
+async def update(record_id: int, body: StrategyBody, user: User = Depends(require_trader),
+                 session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await require_flag(session, FLAG, user.tenant_id)
+    record, _old = await _own_v2(session, user, record_id)
+    v2 = _valid_or_400(body.strategy)
+    record.name = v2.name
+    record.config_json = v2.model_dump_json(by_alias=True, exclude_none=True)
+    await session.commit()
+    await session.refresh(record)
+    return _saved(record, v2)
+
+
+@router.delete("/{record_id:int}", status_code=204, dependencies=[Depends(require_scope("strategies:write"))])
+async def delete(record_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> None:
+    await require_flag(session, FLAG, user.tenant_id)
+    record, _v2 = await _own_v2(session, user, record_id)
+    await session.delete(record)
+    await session.commit()
+
+
+__all__ = ["router", "FLAG", "chart_list", "plot_route", "blocks", "check", "create", "read", "update", "delete"]

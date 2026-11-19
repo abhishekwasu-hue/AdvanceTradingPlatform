@@ -1,11 +1,12 @@
-# HANDOVER_NOW (18 Nov)
+# HANDOVER_NOW (19 Nov)
 
-Main ebfa6c23 (merged 18 Nov: #1103-#1108); deploy pending, migration no; srv2_bot OFF.
+Main f2c263fb (merged 19 Nov: #1114-#1122); deploy pending, migration no; flag `strategy_chart` OFF until the owner turns it on.
+
+Open PRs (draft, CI): #1123 SFC P3 (why), #1124 P4 (stats, stacked), #1126 P5 (builder, stacked), #1125 cash-share
+product NRML->CNC + OPEN_QUESTIONS UPX-TB-Q1 (Upstox TradeButton not in current docs: not built).
 
 Next, in order:
-1. BT-DRAW 2c: the template's own area band on the test chart (read-only out of area_gate; no gate logic change; parity pins stay).
-2. CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1): Analyze a chart = one Setup dropdown + chat on the same chart, own AI key, signal-language guard.
-3. SRV2 P3: atp-private branch claude/srv2-p3-vision (WIP: vision/* copied AS IS); add runner steps (vision worker, Telegram poll), tests, PR. Then P2 settings page, P5 parity. Blocker: atp-private CI (SRV2-Q2).
-
-Owner steps open: Static IP at Upstox; runner-v0.1.0 release; R2 offsite; atp-private CI billing.
-Books: trade-data branch ccr-7e74426e-fiv6z2 books/ (not on main).
+1. Merge #1123 -> #1124 -> #1126 when green (each after the one below it).
+2. SFC P6: audit first (order path): bot form lists only v1 (/api/custom-strategies skips v2 since P5) - add v2 to
+   the deploy picker; worker/runner parity = chart on recorded bars; LIVE only by the owner's switch.
+3. Then the 18 Nov list: BT-DRAW 2c, CA-CHAT, SRV2 P3 (atp-private CI blocker SRV2-Q2).

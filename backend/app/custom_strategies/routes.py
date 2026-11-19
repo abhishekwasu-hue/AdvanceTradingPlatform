@@ -19,6 +19,12 @@ from app.strategy_engine.nlu_parser import ParseResult, parse_strategy_descripti
 router = APIRouter(prefix="/api/custom-strategies", tags=["custom-strategies"])
 
 
+def _is_v2(record: CustomStrategyRecord) -> bool:
+    """SFC P5: an `atp.strategy/2` strategy (built in the chart's builder) is served by /api/strategies/v2 only; the v1
+    routes neither list nor read it (its config is not a v1 config)."""
+    return '"atp.strategy/2"' in (record.config_json or "")[:200]
+
+
 class ParseStrategyRequest(BaseModel):
     text: str
     name: str = "Parsed Strategy"
@@ -127,12 +133,12 @@ async def list_custom_strategies(
         .where(CustomStrategyRecord.tenant_id == user.tenant_id)
         .order_by(CustomStrategyRecord.created_at.desc())
     )
-    return [CustomStrategyResponse.from_record(r) for r in rows]
+    return [CustomStrategyResponse.from_record(r) for r in rows if not _is_v2(r)]
 
 
 async def _get_owned_or_404(strategy_id: int, user: User, session: AsyncSession) -> CustomStrategyRecord:
     record = await session.get(CustomStrategyRecord, strategy_id)
-    if record is None or record.tenant_id != user.tenant_id:
+    if record is None or record.tenant_id != user.tenant_id or _is_v2(record):
         raise HTTPException(status_code=404, detail="Unknown custom strategy")
     return record
 

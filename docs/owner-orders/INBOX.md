@@ -613,3 +613,10 @@ Note: the journal trade chart on 15 minutes by default, with a timeframe choice 
 > "CA chat suru kr"
 
 Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.
+
+## 19 Nov - owner (on the Strategy-first chart plan)
+
+> "Strategy-first chart plan (#1113). to tumchya "APPROVED" de ata" (transliterated from Devanagari)
+
+Note: read as the owner's APPROVED for the plan (it carries the word APPROVED). Build starts with P0; the plan's open
+questions OQ-1 .. OQ-11 take their recommended defaults until the owner says otherwise.

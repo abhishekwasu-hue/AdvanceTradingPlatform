@@ -60,7 +60,7 @@ export interface ChartLike {
 
 /** N4 CH6: how the engine adds study lines (ProChart passes the real `addSeries(LineSeries, ..., pane)`; tests a fake). */
 export interface LineSeriesLike { setData(data: { time: number; value: number }[]): void }
-export interface LineFactory { add(pane: number, color: string, title: string): LineSeriesLike; remove(line: LineSeriesLike): void }
+export interface LineFactory { add(pane: number, color: string, title: string, group?: string): LineSeriesLike; remove(line: LineSeriesLike): void }
 /** The pane every "own"-pane study shares, under the candles (pane 0). */
 export const STUDY_PANE = 1;
 
@@ -78,7 +78,7 @@ export class LightweightEngine implements ChartEngine {
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
   private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null; data: LayerBand[]; marks: LayerMark[] }>();
-  private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string }>();
+  private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string; group?: string }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
   private disposed = false;
@@ -388,14 +388,14 @@ export class LightweightEngine implements ChartEngine {
     const old = this.studyLines.get(id);
     const pane = line?.pane === "own" ? STUDY_PANE : 0;
     const color = line?.color ?? "#2563eb";
-    if (old && (!line || old.pane !== pane || old.color !== color)) {
+    if (old && (!line || old.pane !== pane || old.color !== color || old.group !== line.group)) {
       this.lines?.remove(old.line);
       this.studyLines.delete(id);
     }
     if (!line || !this.lines) return;
     let cur = this.studyLines.get(id);
     if (!cur) {
-      cur = { line: this.lines.add(pane, color, line.title ?? ""), pane, color };
+      cur = { line: this.lines.add(pane, color, line.title ?? "", line.group), pane, color, group: line.group };
       this.studyLines.set(id, cur);
     }
     cur.line.setData(line.data);

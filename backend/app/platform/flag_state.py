@@ -212,6 +212,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "chart_studies": _ready(),
     "chart_price_action": _ready(),
     "ai_multiview": _ready(),
+    "strategy_chart": _behind("SFC phases P1-P6 (docs/plans/strategy-first-chart-PLAN.md)"),
     "chart_trades_layer": _ready(),
     "chart_contracts": _ready("Reads the nightly end-of-day download"),
     "chart_futures_basis": _ready("Reads the nightly end-of-day download"),

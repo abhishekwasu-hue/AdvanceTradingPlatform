@@ -195,6 +195,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "chart_studies": FlagInfo("Screen formulas drawn on the chart", "screens", "a chart layer", ("screener_v2",), "", "ready"),
     "chart_price_action": FlagInfo("Swings, legs and trend drawn on the chart", "charts", "a chart layer", (), "", "ready"),
     "ai_multiview": FlagInfo("Technical, options, news and macro views of a symbol", "ai", "a Copilot view", ("ai_copilot",), "", "ready"),
+    "strategy_chart": FlagInfo("Your own strategy on the chart", "charts", "the chart's Strategy picker", ("ui_v2",), "", "unfinished"),
     "chart_trades_layer": FlagInfo("Your paper trades on the chart", "charts", "a chart layer", (), "", "ready"),
     "chart_contracts": FlagInfo("Daily option / future charts with OI", "charts", "contract chart window", ("history_backfill",), "the nightly download has run", "unfinished"),
     "chart_futures_basis": FlagInfo("Futures basis and rollover charts", "charts", "basis window", ("history_backfill",), "the nightly download has run", "unfinished"),
@@ -302,6 +303,7 @@ FLAG_GROUP: dict[str, str] = {
     "chart_analyze_hybrid": "charts",
     "chart_reader": "charts",                 # M86 W1 (the same group as Analyze a chart)
     "chart_price_action": "charts",
+    "strategy_chart": "charts",
     "chart_trades_layer": "charts",
     "chart_contracts": "charts",
     "chart_futures_basis": "charts",
@@ -424,7 +426,7 @@ FLAG_GROUP: dict[str, str] = {
 # list. FINISH: the roadmap item that finishes it. KEEP_OFF: stays off and hidden, with the reason. REMOVED_FROM_VIEW:
 # stays off, its code kept, and leaves the admin "Turn on" list (FA-2) - the server refuses to turn it on.
 FINISH: Dict[str, str] = {
-    "data_hub": "P1-5", "live_push": "AUD-G2.2", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
+    "data_hub": "P1-5", "strategy_chart": "SFC P2-P6", "live_push": "AUD-G2.2", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
     "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",

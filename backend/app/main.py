@@ -194,6 +194,7 @@ from app.signals_feed.routes import router as signals_feed_router
 from app.strategy_engine.chart_routes import router as strategy_chart_router
 from app.strategy_engine.console_routes import router as strategy_console_router
 from app.strategy_templates.routes import router as strategy_templates_router
+from app.strategy_v2.routes import router as strategy_v2_router
 from app.study.routes import router as study_router
 from app.support.desk_routes import admin_router as support_desk_admin_router
 from app.support.desk_routes import router as support_desk_router
@@ -497,6 +498,7 @@ app.include_router(trigger_plan_router)             # M75 W-8: his trigger plans
 app.include_router(study_router)                    # M77 SX-2: saved Copilot studies (snapshot, My studies, JSON), read-only (ui_v2 + study_export)
 app.include_router(daily_report_router)             # M88-R: the shared daily AI market report, stored and read (ui_v2 + shared_daily_report)
 app.include_router(daily_report_admin_router)       # M88-R: its admin setting, runs and Run now (SUPER_ADMIN + two-factor)
+app.include_router(strategy_v2_router)  # SFC P1: his own strategy on the chart (flag strategy_chart, off)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)

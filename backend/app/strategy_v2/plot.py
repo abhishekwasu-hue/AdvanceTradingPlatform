@@ -6,7 +6,11 @@
 * `markers`: every signal bar (OQ-1: the bar a side's rule TURNS true) - "entry" when the walk took it (flat, inside his
   window), "skipped" when it was already in a trade; every exit with the rule that closed it;
 * `why`: for each signal / exit marker, the conditions that held with their values (the hover, P3);
-* `trades`, `state`, `last_signal`, `warmup_bars`.
+* `trades`, `state`, `last_signal`, `warmup_bars`;
+* P2: `levels` (a fixed number his condition compares a series with, in that series' pane), `pa` (the price-action
+  shapes his conditions read on the last closed bar - a breakout's box, a zone band - from the screener's own evidence
+  builder), `position` (the open trade: entry / his stop / his target, never a made-up one) and `pending` (the forming
+  bar the chart sent: would a side's rule turn true if it closed now - display only, never stored or acted on).
 The trades are the backtest engine's own walk (`run_backtest`) on the same bars, so a marker here is a trade there.
 Nothing is stored, nothing is ordered.
 """
@@ -60,6 +64,98 @@ def series_of(strategy: StrategyV2Strategy, ev: Evaluation) -> list[dict[str, An
     return out
 
 
+def _pane(strategy: StrategyV2Strategy, ast: Any, label: str) -> str:
+    unit = validate_study(ast, base_tf=strategy.strategy.timeframe).unit
+    return "price" if unit == "price" else f"own:{label.split('(')[0]}"
+
+
+def levels_of(strategy: StrategyV2Strategy) -> list[dict[str, Any]]:
+    """A fixed number compared with a series ("RSI(14) below 30") is a flat line in that series' pane, once each."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, float]] = set()
+    base = strategy.strategy.timeframe
+    for leaf in strategy.compiled.leaves.values():
+        ops = leaf.operands
+        series = [(role, ast) for role, ast in ops.items() if any(isinstance(x, n.Call) for x in n.walk(ast))]
+        if not series:
+            continue
+        role, ast = series[0]
+        label = leaf.operand_text.get(role, n.to_text(ast))
+        if leaf.timeframe != base:
+            label += f" ({leaf.timeframe})"
+        pane = _pane(strategy, ast, leaf.operand_text.get(role, n.to_text(ast)))
+        for other, op in ops.items():
+            if other == role or not isinstance(op, n.Num) or not math.isfinite(float(op.value)):
+                continue
+            key = (pane, float(op.value))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"id": f"l{len(out) + 1}", "value": float(op.value), "pane": pane, "label": f"{label} {float(op.value):g}"})
+    return out
+
+
+def pa_of(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str) -> list[dict[str, Any]]:
+    """The price-action shapes his conditions read on the last closed bar (a breakout's box, a zone band), drawn by the
+    screener's own evidence builder from the same bars - only the shapes, nothing else of the pack."""
+    from app.screener import evidence as E
+    from app.screener.runtime import ScreenRuntimeError, SymbolData
+    base = strategy.strategy.timeframe
+    leaves = [leaf.ast for leaf in strategy.compiled.leaves.values() if leaf.timeframe == base]
+    if not leaves or df.empty:
+        return []
+    ast = n.Logic("ANY", leaves) if len(leaves) > 1 else leaves[0]
+    try:
+        from app.screener.validator import validate
+        validated = validate(ast, base_tf=base)
+        pack = E.build_pack(ast, validated, SymbolData(symbol, {base: df}), base_tf=base, window=E.MAX_WINDOW, debug=True)
+    except (ScreenRuntimeError, ValueError, KeyError):
+        return []
+    times = pack["bars"]["t"]
+    last = len(times) - 1
+
+    def at(i: Any, fallback: int) -> str:
+        return times[max(0, min(last, int(i) if i is not None else fallback))]
+
+    out: list[dict[str, Any]] = []
+    for d in pack.get("drawables") or []:
+        low, high = d.get("low"), d.get("high")
+        if d.get("kind") not in ("band", "box") or low is None or high is None:
+            continue
+        out.append({"id": f"p{len(out) + 1}", "kind": d["kind"], "low": float(low), "high": float(high), "label": str(d.get("label") or ""),
+                    "from": at(d.get("from"), 0), "to": at(d.get("to"), last), "role": d.get("role"),
+                    "level": float(d["level"]) if d.get("level") is not None else None})
+    return out
+
+
+def position_of(trades: list[Any]) -> dict[str, Any] | None:
+    """The trade still open on the last bar, with his own stop / target (OQ-10: no target set - none is drawn)."""
+    tr = next((t for t in reversed(trades) if t.exit_time is None or t.exit_reason == END_OF_DATA), None)
+    if tr is None or tr.entry_price is None:
+        return None
+    return {"side": "long" if tr.direction == SignalDirection.LONG else "short", "entry_time": _iso(tr.entry_time), "entry": _round(tr.entry_price),
+            "stop": _round(tr.stop_loss) if tr.stop_loss is not None else None,
+            "target": _round(tr.target1) if tr.target1 is not None else None}
+
+
+def pending_of(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, forming: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The forming bar the chart shows, read as if it closed now: the side whose rule would turn true on it. Display only:
+    computed apart from the closed-bar evaluation, never stored, never sent to paper / live, never counted."""
+    if not forming or df.empty:
+        return None
+    t = pd.Timestamp(forming["t"])
+    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    idx = df.index if df.index.tz is not None else df.index.tz_localize("UTC")
+    if t <= idx[-1]:
+        return None                                            # not newer than the last closed bar: nothing is forming
+    row = pd.DataFrame({k: [float(forming[k[0]])] for k in ("open", "high", "low", "close")} | {"volume": [float(forming.get("v") or 0.0)]},
+                       index=pd.DatetimeIndex([t if df.index.tz is not None else t.tz_localize(None)], name=df.index.name))
+    from app.strategy_v2.evaluate import evaluate
+    ev = evaluate(strategy.compiled, {strategy.strategy.timeframe: pd.concat([df, row])}, symbol)
+    side = "long" if ev.signal_long[-1] else "short" if ev.signal_short[-1] else None
+    return {"t": _iso(t), "side": side} if side else None
+
+
 def why_at(strategy: StrategyV2Strategy, ev: Evaluation, t: int) -> list[dict[str, Any]]:
     """Each condition on bar t: held or not, with its values (the marker's hover)."""
     rows: list[dict[str, Any]] = []
@@ -81,7 +177,8 @@ def _words(leaf: Any) -> str:
     return left
 
 
-def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: RiskConfig, charges: Any = None) -> dict[str, Any]:
+def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: RiskConfig, charges: Any = None,
+         forming: dict[str, Any] | None = None) -> dict[str, Any]:
     from app.backtest.engine import run_backtest
     df = df.iloc[-MAX_BARS:]
     ev, _ = strategy.evaluation(df, symbol)
@@ -120,6 +217,8 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
     return {
         "series": series_of(strategy, ev), "markers": markers, "why": why, "state": state, "last_signal": last_signal,
         "warmup_bars": ev.warmup_bars, "bars": len(df),
+        "levels": levels_of(strategy), "pa": pa_of(strategy, df, symbol), "position": position_of(trades),
+        "pending": pending_of(strategy, df, symbol, forming),
         "trades": [{"entry_time": _iso(tr.entry_time), "entry": _round(tr.entry_price), "side": "long" if tr.direction == SignalDirection.LONG else "short",
                     "stop": _round(tr.stop_loss) if tr.stop_loss is not None else None, "target": _round(tr.target1) if tr.target1 is not None else None,
                     "exit_time": _iso(tr.exit_time) if tr.exit_time and tr.exit_reason != END_OF_DATA else None,
@@ -129,4 +228,4 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
     }
 
 
-__all__ = ["plot", "series_of", "why_at", "MAX_BARS"]
+__all__ = ["plot", "series_of", "why_at", "levels_of", "pa_of", "position_of", "pending_of", "MAX_BARS"]

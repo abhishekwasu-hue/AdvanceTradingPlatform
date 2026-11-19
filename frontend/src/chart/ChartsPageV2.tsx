@@ -1,5 +1,6 @@
 import { Filter, Layers, LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square, Workflow } from "lucide-react";
-import { StrategyLegendV2, StrategyPickerV2, useStrategyList, useStrategyOverlay } from "../strategyChart/StrategyOverlay";
+import { MAX_STRATEGIES, StrategyLayerV2, StrategyPickerV2, useStrategyList } from "../strategyChart/StrategyOverlay";
+import type { ChartMarker } from "../charting/markers";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -179,12 +180,28 @@ export default function ChartsPageV2(_props: PageProps) {
   const [screenShown, setScreenShown] = useState(true);
   const screen = useScreenOverlay(engine, { screenId, symbol, exchange, timeframe, candles: data.candles,
     on: screenShown && tab === "chart" && !hubView });
-  // SFC P1 (flag strategy_chart): one of his own strategies on the chart - its indicators, signals and trades only.
+  // SFC P1 (flag strategy_chart): his own strategies on the chart - their indicators, signals and trades only. P2: up to
+  // MAX_STRATEGIES at once, each keeping the first colour free when it was chosen (removing one never recolours another).
   const strategyOn = features.on("strategy_chart") && tab === "chart" && !hubView;
   const strategies = useStrategyList(strategyOn);
-  const [strategyId, setStrategyId] = useState<string | null>(null);
+  const [stratChosen, setStratChosen] = useState<{ id: string; slot: number }[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const strat = useStrategyOverlay(engine, { strategyId: strategyOn ? strategyId : null, symbol, exchange, timeframe, candles: data.candles });
+  const pickStrategy = useCallback((id: string | null) => setStratChosen((cur) => {
+    if (id === null) return [];
+    if (cur.some((c) => c.id === id)) return cur.filter((c) => c.id !== id);
+    if (cur.length >= MAX_STRATEGIES) return cur;
+    const used = new Set(cur.map((c) => c.slot));
+    const slot = Array.from({ length: MAX_STRATEGIES }, (_, k) => k).find((k) => !used.has(k)) ?? 0;
+    return [...cur, { id, slot }];
+  }), []);
+  const [stratMarks, setStratMarks] = useState<Record<string, ChartMarker[]>>({});
+  const onStratMarkers = useCallback((id: string, marks: ChartMarker[]) => setStratMarks((cur) => {
+    if ((cur[id] ?? []) === marks || (!marks.length && !cur[id])) return cur;
+    const next = { ...cur };
+    if (marks.length) next[id] = marks; else delete next[id];
+    return next;
+  }), []);
+  const stratMarkers = useMemo(() => stratChosen.flatMap((c) => stratMarks[c.id] ?? []), [stratChosen, stratMarks]);
   // M94 F16: the template overlay from the address - read and drawn only on demand (its toolbar button; off at first)
   const tplAsk = features.on("intraday_pack") || features.on("sd_pack") ? overlayFromSearch(`?${params.toString()}`) : null;
   const [tplShown, setTplShown] = useState(false);
@@ -207,9 +224,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const wyckoffOn = view.layers.includes(WYCKOFF_LAYER_ID) && features.on("wyckoff_pack") && tab === "chart" && !hubView;
   const wyckoffLayer = useWyckoffLayer({ engine, symbol, exchange, timeframe, candles: data.candles, on: wyckoffOn });
   const chartMarkers = useMemo(() => {
-    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers, ...fibEw.markers, ...strat.markers];
+    const extra = [...tpl.markers, ...vsaLayer.markers, ...wyckoffLayer.markers, ...paLayer.markers, ...fibEw.markers, ...stratMarkers];
     return extra.length ? [...screen.markers, ...extra].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)) : screen.markers;
-  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers, fibEw.markers, strat.markers]);
+  }, [screen.markers, tpl.markers, vsaLayer.markers, wyckoffLayer.markers, paLayer.markers, fibEw.markers, stratMarkers]);
   // M97 PR-4: Supply & Demand zones (flag sd_pack) - read again when a new bar arrives; a tapped zone's candles highlighted
   const [tipBand, setTipBand] = useState<BandRef | null>(null);
   const sdOn = view.layers.includes(SD_LAYER_ID) && features.on("sd_pack") && tab === "chart" && !hubView;
@@ -282,8 +299,8 @@ export default function ChartsPageV2(_props: PageProps) {
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
   // CT-1 C1: the host's actions in the one ChartToolbar - icon buttons from 768 px, labelled rows under More on a phone.
   const actions: ToolbarAction[] = [
-    ...(strategyOn ? [{ id: "strategy", label: "Strategy", title: strategyId ? "Change or remove your strategy" : "Show one of your strategies",
-      moreLabel: "Your strategy on the chart", pressed: !!strategyId, haspopup: "dialog" as const, testId: "strategy-button",
+    ...(strategyOn ? [{ id: "strategy", label: "Strategy", title: stratChosen.length ? "Add, change or remove your strategies" : "Show one of your strategies",
+      moreLabel: "Your strategies on the chart", pressed: stratChosen.length > 0, haspopup: "dialog" as const, testId: "strategy-button",
       icon: <Workflow size={16} aria-hidden />, onClick: () => setPickerOpen((v) => !v) }] : []),
     ...(screenId != null ? [{ id: "screen-overlay", label: "Screen overlay", title: screenShown ? "Hide the screen overlay" : "Show the screen overlay",
       moreLabel: screenShown ? "Hide the screen overlay" : "Show the screen overlay", pressed: screenShown, testId: "screen-overlay-button",
@@ -378,7 +395,7 @@ export default function ChartsPageV2(_props: PageProps) {
               actions={actions} endActions={endActions} />
             {strategyOn && pickerOpen && (
               <div className="relative">
-                <StrategyPickerV2 list={strategies} value={strategyId} onPick={setStrategyId} onClose={() => setPickerOpen(false)} />
+                <StrategyPickerV2 list={strategies} value={stratChosen.map((c) => c.id)} onPick={pickStrategy} onClose={() => setPickerOpen(false)} />
               </div>
             )}
             {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
@@ -392,9 +409,11 @@ export default function ChartsPageV2(_props: PageProps) {
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} onBandTip={setTipBand} captureTouch={fs.on} rememberViewFor={userId}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
-            {strategyOn && strategyId && !fs.on && (
-              <StrategyLegendV2 state={strat} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} onClear={() => setStrategyId(null)} />
-            )}
+            {strategyOn && stratChosen.map((c) => (
+              <StrategyLayerV2 key={c.id} engine={engine} strategyId={c.id} slot={c.slot} symbol={symbol} exchange={exchange} timeframe={timeframe}
+                candles={data.candles} onMarkers={onStratMarkers} legend={!fs.on}
+                onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} onClear={() => pickStrategy(c.id)} />
+            ))}
             {screenId != null && screenShown && !fs.on && (
               <ScreenLegend state={screen} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}

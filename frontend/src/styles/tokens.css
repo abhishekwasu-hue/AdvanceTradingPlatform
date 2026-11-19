@@ -177,7 +177,9 @@ html { font-size: calc(100% * var(--text-scale)); }
    - chart-crosshair: the crosshair lines; chart-crosshair-label: their axis labels (white text on it);
    - chart-up / chart-down: candles and bars (volume at 28 % alpha), = up / down;
    - chart-drawing: a drawing's default colour; chart-rsi / chart-rsi-band: the RSI line and its 30 / 50 / 70 lines;
-   - chart-ov-1..4: EMA fast, EMA slow, VWAP, SMA. */
+   - chart-ov-1..4: EMA fast, EMA slow, VWAP, SMA;
+   - chart-strat-1..6: his own strategies on the chart (SFC P2), one colour each, clear of the up / down meaning colours
+     (also the colour-blind blue / orange ones). */
 :root {
   --chart-bg: 9 12 18;
   --chart-axis: 36 44 63;
@@ -192,6 +194,12 @@ html { font-size: calc(100% * var(--text-scale)); }
   --chart-ov-2: 245 158 11;
   --chart-ov-3: 232 121 249;
   --chart-ov-4: 167 139 250;
+  --chart-strat-1: 45 212 191;
+  --chart-strat-2: 250 204 21;
+  --chart-strat-3: 167 139 250;
+  --chart-strat-4: 232 121 249;
+  --chart-strat-5: 203 213 225;
+  --chart-strat-6: 214 167 120;
 }
 
 :root[data-theme="light"] {
@@ -208,6 +216,12 @@ html { font-size: calc(100% * var(--text-scale)); }
   --chart-ov-2: 180 83 9;
   --chart-ov-3: 162 28 175;
   --chart-ov-4: 109 40 217;
+  --chart-strat-1: 15 118 110;
+  --chart-strat-2: 161 98 7;
+  --chart-strat-3: 109 40 217;
+  --chart-strat-4: 162 28 175;
+  --chart-strat-5: 71 85 105;
+  --chart-strat-6: 120 85 50;
 }
 
 :root[data-cvd="on"] { --chart-up: 86 180 233; --chart-down: 249 115 22; }
@@ -229,6 +243,12 @@ html { font-size: calc(100% * var(--text-scale)); }
   --chart-ov-2: 245 158 11;
   --chart-ov-3: 232 121 249;
   --chart-ov-4: 167 139 250;
+  --chart-strat-1: 45 212 191;
+  --chart-strat-2: 250 204 21;
+  --chart-strat-3: 167 139 250;
+  --chart-strat-4: 232 121 249;
+  --chart-strat-5: 203 213 225;
+  --chart-strat-6: 214 167 120;
 }
 
 [data-chart-theme="light"] {
@@ -247,6 +267,12 @@ html { font-size: calc(100% * var(--text-scale)); }
   --chart-ov-2: 180 83 9;
   --chart-ov-3: 162 28 175;
   --chart-ov-4: 109 40 217;
+  --chart-strat-1: 15 118 110;
+  --chart-strat-2: 161 98 7;
+  --chart-strat-3: 109 40 217;
+  --chart-strat-4: 162 28 175;
+  --chart-strat-5: 71 85 105;
+  --chart-strat-6: 120 85 50;
 }
 
 :root[data-cvd="on"] [data-chart-theme="dark"] { --chart-up: 86 180 233; --chart-down: 249 115 22; }

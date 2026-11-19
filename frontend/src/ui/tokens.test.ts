@@ -118,7 +118,8 @@ describe("UI2-4b1 chart tokens", () => {
   const ON_BG: [string, number][] = [
     ["chart-text", 4.5],
     ...["chart-crosshair", "chart-crosshair-label", "chart-drawing", "chart-rsi", "chart-rsi-band", "chart-up", "chart-down",
-        "chart-ov-1", "chart-ov-2", "chart-ov-3", "chart-ov-4"].map((t): [string, number] => [t, 3]),
+        "chart-ov-1", "chart-ov-2", "chart-ov-3", "chart-ov-4",
+        "chart-strat-1", "chart-strat-2", "chart-strat-3", "chart-strat-4", "chart-strat-5", "chart-strat-6"].map((t): [string, number] => [t, 3]),
   ];
 
   it.each(Object.entries(CHART_THEMES))("%s: every chart colour meets AA on the chart background", (_, t) => {
@@ -132,7 +133,7 @@ describe("UI2-4b1 chart tokens", () => {
 
   it("a scoped chart theme repeats the app theme's values, so a chart looks the same either way", () => {
     for (const theme of ["dark", "light"]) {
-      expect(Object.keys(scoped(`[data-chart-theme="${theme}"]`))).toHaveLength(15);      // every chart token
+      expect(Object.keys(scoped(`[data-chart-theme="${theme}"]`))).toHaveLength(21);      // every chart token
       expect(Object.keys(scoped(`:root[data-cvd="on"] [data-chart-theme="${theme}"]`))).toEqual(["chart-up", "chart-down"]);
     }
     expect({ ...dark, ...scoped('[data-chart-theme="dark"]') }).toEqual(dark);

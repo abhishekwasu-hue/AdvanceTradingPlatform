@@ -18,6 +18,8 @@ export interface ChartPalette {
   bg: string; text: string; axis: string; grid: string; crosshair: string; crosshairLabel: string;
   up: string; down: string; volUp: string; volDown: string; drawing: string; rsi: string; rsiBand: string;
   ov: [string, string, string, string];
+  /** SFC P2: one colour per strategy on the chart (the first free one). */
+  strat: [string, string, string, string, string, string];
 }
 
 /** Volume bars take the candle colours at this alpha (UI v2 proposal §8). */
@@ -39,6 +41,7 @@ const TOKENS = {
   bg: "chart-bg", text: "chart-text", axis: "chart-axis", grid: "chart-grid", crosshair: "chart-crosshair",
   crosshairLabel: "chart-crosshair-label", up: "chart-up", down: "chart-down", drawing: "chart-drawing", rsi: "chart-rsi",
   rsiBand: "chart-rsi-band", ov1: "chart-ov-1", ov2: "chart-ov-2", ov3: "chart-ov-3", ov4: "chart-ov-4",
+  st1: "chart-strat-1", st2: "chart-strat-2", st3: "chart-strat-3", st4: "chart-strat-4", st5: "chart-strat-5", st6: "chart-strat-6",
 } as const;
 type Key = keyof typeof TOKENS;
 
@@ -47,6 +50,7 @@ const FALLBACK: Record<Key, string> = {
   bg: "9 12 18", text: "194 202 216", axis: "36 44 63", grid: "26 35 51", crosshair: "148 163 184", crosshairLabel: "100 116 139",
   up: "34 197 94", down: "239 68 68", drawing: "96 165 250", rsi: "56 189 248", rsiBand: "148 163 184",
   ov1: "56 189 248", ov2: "245 158 11", ov3: "232 121 249", ov4: "167 139 250",
+  st1: "45 212 191", st2: "250 204 21", st3: "167 139 250", st4: "232 121 249", st5: "203 213 225", st6: "214 167 120",
 };
 
 const rgb = (triple: string, alpha = 1) => {
@@ -73,6 +77,7 @@ export function readChartPalette(root: Element | null, candles: CandleColors | n
     crosshairLabel: rgb(read("crosshairLabel")), up, down, volUp: withAlpha(up, VOLUME_ALPHA), volDown: withAlpha(down, VOLUME_ALPHA),
     drawing: rgb(read("drawing")), rsi: rgb(read("rsi")), rsiBand: rgb(read("rsiBand")),
     ov: [rgb(read("ov1")), rgb(read("ov2")), rgb(read("ov3")), rgb(read("ov4"))],
+    strat: [rgb(read("st1")), rgb(read("st2")), rgb(read("st3")), rgb(read("st4")), rgb(read("st5")), rgb(read("st6"))],
   };
 }
 

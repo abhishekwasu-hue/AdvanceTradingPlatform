@@ -53,6 +53,16 @@ _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 # Upstox order-book product codes -> platform products. "D" (delivery) covers both CNC and NRML, so it is left as is (it
 # never matches a platform product - an untagged order is then not taken for this platform's exit).
 _UPSTOX_PRODUCT_BACK = {"I": "MIS"}
+# Upstox's place-order API takes only "I" (intraday), "D" (delivery / carry-forward: NRML for F&O, CNC for cash) and
+# "MTF". ATP's order carries the trader's own product word (MIS / NRML / CNC); sending "NRML" as is gets "The 'product'
+# is invalid" back (owner's LIVE order, 19 Nov). The margin calls below already map it the same way.
+_UPSTOX_PRODUCT = {"MIS": "I", "I": "I", "NRML": "D", "CNC": "D", "D": "D", "MTF": "MTF"}
+
+
+def upstox_product(product: str | None) -> str:
+    """ATP's product word -> Upstox's code. An unknown or empty word is carry-forward ("D"), the same rule the margin
+    calls use (`"I" if MIS else "D"`)."""
+    return _UPSTOX_PRODUCT.get(str(product or "").strip().upper(), "D")
 
 
 logger = logging.getLogger(__name__)
@@ -517,7 +527,7 @@ class UpstoxBroker(BrokerInterface):
                 "transaction_type": order.transaction_type.value,
                 "order_type": order.order_type,
                 "quantity": order.quantity,
-                "product": order.product,
+                "product": upstox_product(order.product),
                 "price": order.price or 0,
                 "trigger_price": order.trigger_price or 0,
                 "validity": order.validity,
@@ -596,7 +606,7 @@ class UpstoxBroker(BrokerInterface):
         instrument = await self._resolve_instrument(order.symbol, order.exchange)
         payload = {"instruments": [{
             "instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
-            "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D",
+            "transaction_type": order.transaction_type.value, "product": upstox_product(order.product),
         }]}
         try:
             data = await self._request("POST", "/charges/margin", json=payload)
@@ -618,7 +628,7 @@ class UpstoxBroker(BrokerInterface):
         for order in orders:
             instrument = await self._resolve_instrument(order.symbol, order.exchange)
             instruments.append({"instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
-                                "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D"})
+                                "transaction_type": order.transaction_type.value, "product": upstox_product(order.product)})
         data = await self._request("POST", "/charges/margin", json={"instruments": instruments})
         final = data.get("final_margin") if isinstance(data, dict) else None
         required = data.get("required_margin") if isinstance(data, dict) else None

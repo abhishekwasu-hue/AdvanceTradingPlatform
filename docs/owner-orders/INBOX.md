@@ -535,3 +535,12 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 > (Terminal screenshot, PAPER badge) "varti paper ha symbol ka disto" (transliterated from Devanagari)
 
 > "Default yes" (to: while LIVE is on for him, the badge says "Live on" in red; Paper when it is off)
+## 19 Nov - owner (LIVE order from the F&O ticket)
+
+> (3 screenshots, no text) LIVE ticket, NIFTY 25300 CE 23 NOV 26, Buy - Market - NRML, 1 lot. Result: "Not placed: NIFTY
+> 25300 CE 23 NOV 26 verified against upstox's instrument master (lot 65)". Next try: "Broker state uncertain since
+> 2026-11-19T05:18:59+00:00 (order 4 ... FAILED: ... Broker call failed: The ''product'' is invalid) - LIVE entries blocked
+> until position reconciliation passes". The confirm step also showed "Available (PAPER)" and "PAPER blocks nothing".
+
+Note: root cause - the Upstox adapter sent ATP's product word "NRML" as is; Upstox takes I / D / MTF. Fixed with the
+failure shown first and no PAPER lines on a LIVE ticket (PR claude/upstox-live-product).

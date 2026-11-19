@@ -294,7 +294,7 @@ export function StrategyStatsV2({ reply, open, onOpenChange, side, onTrade }: { 
   ];
   return (
     <Sheet open={open} onOpenChange={onOpenChange} side={side} title={`${reply.name}: stats`}
-      description="The trades of this strategy on the bars on this chart (the same walk as its markers). Reference only.">
+      description="Its trades on this chart's bars. Reference only.">
       <div data-strategy-stats-sheet className="space-y-space-4">
         <dl className="grid grid-cols-2 gap-space-2 sm:grid-cols-3">
           {tiles.map(([label, value, note, cls]) => (

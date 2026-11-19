@@ -238,6 +238,35 @@ export interface ClosedRow {
 }
 
 /** Closed trades, the most recently closed first. */
+/** The Indian calendar date (YYYY-MM-DD, IST) of a time - the trading day it belongs to. */
+export function istDate(iso: string | Date): string {
+  return new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(0, 10);
+}
+
+/** Owner 19 Nov ("old trades show hotat, tyachi awashyakta nahi, chalu diwsasache trade disayla pahije"): the trades
+ * closed on today's trading day (IST) only; earlier ones live in the Journal and Orders. */
+export function closedToday(trades: TradeRecord[], now: Date = new Date()): TradeRecord[] {
+  const today = istDate(now);
+  return trades.filter((t) => t.exit_time !== null && istDate(t.exit_time) === today);
+}
+
+/** Owner 19 Nov ("old serch mdhe dya with date range selector"): closed trades whose IST exit day is in [from, to]
+ * (YYYY-MM-DD, both included) and whose symbol holds `query` (any case); empty bounds are open. */
+export function closedBetween(trades: TradeRecord[], from: string, to: string, query = ""): TradeRecord[] {
+  const q = query.trim().toUpperCase();
+  return trades.filter((t) => {
+    if (t.exit_time === null) return false;
+    const day = istDate(t.exit_time);
+    return (!from || day >= from) && (!to || day <= to) && (!q || t.symbol.toUpperCase().includes(q));
+  });
+}
+
+/** The earlier-trades search's first range: the 7 days before today (IST). */
+export function earlierRange(now: Date = new Date()): { from: string; to: string } {
+  const day = (k: number) => istDate(new Date(now.getTime() - k * 86_400_000));
+  return { from: day(7), to: day(1) };
+}
+
 export function closedRows(trades: TradeRecord[]): ClosedRow[] {
   return trades
     .filter((t) => t.exit_time !== null)

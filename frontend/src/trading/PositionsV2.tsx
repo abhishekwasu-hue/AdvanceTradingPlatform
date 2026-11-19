@@ -1,7 +1,7 @@
 import { ExitAllV2, exitableRows, type ExitAllHooks } from "./ExitAllV2";
 import { AskAiAbout } from "../copilot/AskAiAbout";
 import { ArrowDownRight, ArrowUpRight, ChartCandlestick, Layers, Plus, RefreshCcw, SlidersHorizontal } from "lucide-react";
-import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { Suspense, lazy, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { useInPlace } from "../inplace/context";
@@ -43,7 +43,7 @@ import { useFeatures } from "../ui/useFeatures";
 import { liveHiddenFrom } from "../settings/useLiveHidden";
 import PageDishV2 from "../growth/PageDishV2";
 import {
-  NO_STOP, closedRows, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
+  NO_STOP, closedBetween, closedRows, closedToday, earlierRange, closedText, exitConfirmText, failedText, heldRows, holdingTiles, openCaption, type ClosedRow, type HeldRow,
 } from "./model";
 import BrokerBookV2 from "./BrokerBookV2";
 import { BUTTON_SECONDARY, FIELD, NoteV2, PageTitleV2, TileV2, TilesV2 } from "./PartsV2";
@@ -321,7 +321,11 @@ export default function PositionsV2(_props: PageProps = {}) {
       {hasOptions && <GreeksCardV2 symbolOf={(id) => byId.get(id)?.symbol} />}
 
       <ClosedTradesV2 trades={trades} onSaved={reloadTrades} />
+      <EarlierTradesV2 trades={trades} onSaved={reloadTrades} />
 
+      {/* Owner 19 Nov ("My trades mdhe anek tabs aahet, tya hide kelelya bre"): the other cards wait folded under one
+          line; the choice is remembered in this browser. */}
+      <MoreV2>
       {/* AUD-T7 (flag cost_meter): what charges took from his own closed trades, this year and this month. */}
       {features.on("cost_meter") && signedIn && <CostMeterV2 />}
       {/* M99 P7 (flag risk_options): his own "not moving" flag - information only, nothing is closed by it */}
@@ -342,6 +346,7 @@ export default function PositionsV2(_props: PageProps = {}) {
         <PaperTicketCard canTrade={canTrade} onPlaced={reload} />
         {canTrade && <ContractNoteCard onApplied={reload} />}
       </section>
+      </MoreV2>
 
       {/* UX-11 U5: the page's one footer line (the cards no longer repeat it). UX-11b: no "Phase 0" jargon. */}
       <PageFootnote />
@@ -706,17 +711,75 @@ function GreeksCardV2({ symbolOf }: { symbolOf: (tradeId: number) => string | un
 
 function ClosedTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; onSaved: () => void }) {
   const [all, setAll] = useState(false);
-  const rows = useMemo(() => closedRows(dataOf(trades) ?? []), [trades]);
+  // Owner 19 Nov: today's closed trades only (earlier ones: the Journal and Orders).
+  const rows = useMemo(() => closedRows(closedToday(dataOf(trades) ?? [])), [trades]);
   const shown = all ? rows : rows.slice(0, CLOSED_SHOWN);
   return (
-    <CardV2 title="Closed trades" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
+    <CardV2 title="Closed today" count={rows.length} more={{ label: "Orders", to: "/positions/orders" }} testId="history">
       {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
-        <EmptyStateV2 text="Closed trades show here." />
+        <EmptyStateV2 text="No trades closed today. Earlier trades are in your Journal." action={{ label: "Journal", to: "/positions/results/journal" }} />
       ) : (
         <>
           <ul className="divide-y divide-subtle">
             {shown.map((r) => <ClosedRowV2 key={r.id} row={r} onSaved={onSaved} />)}
           </ul>
+          {rows.length > CLOSED_SHOWN && (
+            <button type="button" onClick={() => setAll((a) => !a)} className={`${BUTTON_SECONDARY} mt-space-3 w-full`}>
+              {all ? "Show fewer" : `Show all ${rows.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </CardV2>
+  );
+}
+
+const MORE_KEY = "atp.positions.more";
+
+/** One folded line for the cards he does not need every minute (costs, journal drafts, paper account and tools). */
+function MoreV2({ children }: { children: ReactNode }) {
+  // Uncontrolled: the page opens it once from what this browser remembers; only his own click changes it afterwards.
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    let open = false;
+    try { open = localStorage.getItem(MORE_KEY) === "open"; } catch { /* intentional: storage throws in a private window; the fold then starts closed */ }
+    const el = ref.current;
+    if (!el) return undefined;
+    el.open = open;
+    // The native toggle event (React's onToggle did not reach this element in the browser test): his click is saved.
+    const save = () => { try { localStorage.setItem(MORE_KEY, el.open ? "open" : "closed"); } catch { /* intentional: storage throws in a private window; the fold then starts closed */ } };
+    el.addEventListener("toggle", save);
+    return () => el.removeEventListener("toggle", save);
+  }, []);
+  return (
+    <details ref={ref} data-block="more" className="space-y-space-4">
+      <summary className="cursor-pointer select-none text-t14 font-semibold text-fg">More: costs, journal drafts, paper account and tools</summary>
+      <div className="mt-space-4 space-y-space-4">{children}</div>
+    </details>
+  );
+}
+
+/** Owner 19 Nov: earlier closed trades by a date range (IST days) and a symbol search - not on the page by default. */
+function EarlierTradesV2({ trades, onSaved }: { trades: Loadable<TradeRecord[]>; onSaved: () => void }) {
+  const first = useMemo(() => earlierRange(), []);
+  const [from, setFrom] = useState(first.from);
+  const [to, setTo] = useState(first.to);
+  const [query, setQuery] = useState("");
+  const [all, setAll] = useState(false);
+  const rows = useMemo(() => closedRows(closedBetween(dataOf(trades) ?? [], from, to, query)), [trades, from, to, query]);
+  const shown = all ? rows : rows.slice(0, CLOSED_SHOWN);
+  return (
+    <CardV2 title="Earlier trades" count={rows.length} testId="earlier">
+      <div className="grid gap-space-2 sm:grid-cols-3" data-earlier-filters>
+        <label className="text-t13 text-fg-muted">From<input type="date" className={FIELD} value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} data-earlier-from /></label>
+        <label className="text-t13 text-fg-muted">To<input type="date" className={FIELD} value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} data-earlier-to /></label>
+        <label className="text-t13 text-fg-muted">Symbol<input type="search" className={FIELD} value={query} placeholder="e.g. NIFTY" onChange={(e) => setQuery(e.target.value)} data-earlier-search /></label>
+      </div>
+      {trades.status === "loading" ? <LoadingRowsV2 /> : trades.status === "error" ? <LoadFailedV2 what="your closed trades" /> : rows.length === 0 ? (
+        <p className="mt-space-3 text-t13 text-fg-muted">No closed trades in these dates.</p>
+      ) : (
+        <>
+          <ul className="mt-space-3 divide-y divide-subtle">{shown.map((r) => <ClosedRowV2 key={r.id} row={r} onSaved={onSaved} />)}</ul>
           {rows.length > CLOSED_SHOWN && (
             <button type="button" onClick={() => setAll((a) => !a)} className={`${BUTTON_SECONDARY} mt-space-3 w-full`}>
               {all ? "Show fewer" : `Show all ${rows.length}`}

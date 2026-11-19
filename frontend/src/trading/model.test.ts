@@ -3,7 +3,7 @@ import { ApiError } from "../api/errors";
 import type { LossStreakStatus } from "../types";
 import {
   LOSS_STREAK_CHOICES, lastResumeText, lossStreakNote,
-  allocationRows, bookedCurve, checkStatus, closedRows, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
+  allocationRows, bookedCurve, checkStatus, closedRows, closedToday, istDate, closedBetween, earlierRange, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
   failedText, fieldProblem, guardianLine, heldRows, holdingTiles, limitScopeLabel, limitValueText, longShortLine, openCaption, portfolioTiles,
   positionLevels, structureLabel, todayRisk, expiryLabel, instrumentName, qtyText, symbolExpiryLabel } from "./model";
 import { CONFIG, exposure, guardianMode, marketEvent, trade } from "./trading.fixture";
@@ -215,5 +215,33 @@ describe("UX-15 the broker-standard Positions row", () => {
     expect(qtyText(65, 65, true)).toBe("+65 (1 lot)");
     expect(qtyText(130, 65, false)).toBe("−130 (2 lots)");
     expect(qtyText(10, null, true)).toBe("+10");
+  });
+});
+
+describe("owner 19 Nov: My trades shows today's closed trades only", () => {
+  it("keeps the trades closed on today's IST trading day", () => {
+    const now = new Date("2026-11-19T10:00:00+05:30");
+    const got = closedToday([
+      trade({ id: 1, exit_time: "2026-11-19T04:00:00Z" }),          // 09:30 IST today
+      trade({ id: 2, exit_time: "2026-11-18T19:00:00Z" }),          // 00:30 IST today (UTC is still yesterday)
+      trade({ id: 3, exit_time: "2026-11-16T05:00:00Z" }),          // an earlier day
+      trade({ id: 4, exit_time: null }),                            // still open
+    ], now);
+    expect(got.map((t) => t.id)).toEqual([1, 2]);
+    expect(istDate("2026-11-18T19:00:00Z")).toBe("2026-11-19");
+  });
+});
+
+describe("owner 19 Nov: earlier trades by a date range and a symbol", () => {
+  const list = [trade({ id: 1, symbol: "NIFTY 25300 CE", exit_time: "2026-11-16T05:00:00Z" }),
+    trade({ id: 2, symbol: "HDFCBANK", exit_time: "2026-11-12T05:00:00Z" }), trade({ id: 3, symbol: "NIFTY 25150 CE", exit_time: "2026-10-30T05:00:00Z" }),
+    trade({ id: 4, exit_time: null })];
+  it("keeps the IST days in the range (both ends) and the symbol search, any case", () => {
+    expect(closedBetween(list, "2026-11-12", "2026-11-16").map((t) => t.id)).toEqual([1, 2]);
+    expect(closedBetween(list, "", "", "nifty").map((t) => t.id)).toEqual([1, 3]);
+    expect(closedBetween(list, "2026-11-13", "").map((t) => t.id)).toEqual([1]);
+  });
+  it("starts at the 7 days before today", () => {
+    expect(earlierRange(new Date("2026-11-19T10:00:00+05:30"))).toEqual({ from: "2026-11-12", to: "2026-11-18" });
   });
 });

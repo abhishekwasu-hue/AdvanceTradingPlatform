@@ -726,8 +726,9 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
           {p.margin && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.margin.value !== null && !boughtOption ? "Estimate. " : ""}{p.margin.basis}</span>}
           {p.margin?.note && !boughtOption && <span className="block max-w-[14rem] text-t12 text-fg-muted" data-line="margin-note">{p.margin.note}</span>}
         </Line>
-        {/* UI-28 U7.5 (Kite users: margin before placing): Required beside Available - his PAPER balance - one pair. */}
-        {available !== null && (
+        {/* UI-28 U7.5 (Kite users: margin before placing): Required beside Available - his PAPER balance - one pair.
+            A LIVE order never shows the practice balance (owner 19 Nov): the broker's own funds decide there. */}
+        {available !== null && p.mode !== "LIVE" && (
           <Line label="Available (PAPER)" testId="available">
             <span className={short ? "text-warn" : undefined}>{moneyText(available)}</span>
             {short && <span className="block max-w-[14rem] text-t12 text-warn">Less than the margin required</span>}

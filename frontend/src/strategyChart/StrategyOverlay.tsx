@@ -35,14 +35,14 @@ export interface StrategyOverlayState {
 const NONE: ChartMarker[] = [];
 const KEY_OF = (id: string) => id.replace(/[^A-Za-z0-9]/g, "_");
 
-export function useStrategyList(on: boolean, api: Pick<typeof strategyChartApi, "list"> = strategyChartApi): ChartStrategy[] {
+export function useStrategyList(on: boolean, api: Pick<typeof strategyChartApi, "list"> = strategyChartApi, revision = 0): ChartStrategy[] {
   const [list, setList] = useState<ChartStrategy[]>([]);
   useEffect(() => {
     if (!on) { setList([]); return undefined; }
     let live = true;
     api.list().then((r) => { if (live) setList(r.strategies); }, () => { if (live) setList([]); });
     return () => { live = false; };
-  }, [api, on]);
+  }, [api, on, revision]);
   return list;
 }
 
@@ -191,21 +191,21 @@ export function StrategyWhyV2({ name, colour, cards, floating = false }: { name:
 
 /** The toolbar's Strategy choice: his own strategies, up to MAX_STRATEGIES at once (a chosen one is removed by choosing
  * it again), or none. */
-export function StrategyPickerV2({ list, value, onPick, onClose }: { list: ChartStrategy[]; value: readonly string[];
-  onPick: (id: string | null) => void; onClose: () => void }) {
+export function StrategyPickerV2({ list, value, onPick, onClose, onNew, onEdit }: { list: ChartStrategy[]; value: readonly string[];
+  onPick: (id: string | null) => void; onClose: () => void; onNew?: () => void; onEdit?: (recordId: number) => void }) {
   const full = value.length >= MAX_STRATEGIES;
   return (
     <div role="dialog" aria-label="Your strategies" data-strategy-picker
       className="absolute right-space-3 top-full z-30 mt-space-1 w-72 max-w-[calc(100vw-2rem)] rounded-panel border border-subtle bg-surface-1 p-space-2 shadow-raised">
       {list.length === 0 ? (
-        <p className="px-space-2 py-space-2 text-t13 text-fg-muted">No saved strategies yet. Build one in Strategies.</p>
+        <p className="px-space-2 py-space-2 text-t13 text-fg-muted">No saved strategies yet.{onNew ? "" : " Build one in Strategies."}</p>
       ) : (
         <ul className="max-h-80 overflow-y-auto" role="listbox" aria-label="Strategy">
           {[{ id: "", name: "None", timeframe: null, drawable: true, reason: null } as ChartStrategy, ...list].map((s) => {
             const chosen = s.id ? value.includes(s.id) : value.length === 0;
             const blocked = !s.drawable || (!!s.id && full && !chosen);
             return (
-            <li key={s.id || "none"}>
+            <li key={s.id || "none"} className="flex items-center gap-space-1">
               <button type="button" role="option" aria-selected={chosen} disabled={blocked}
                 onClick={() => { onPick(s.id || null); onClose(); }} data-strategy-option={s.id || "none"}
                 title={s.reason ?? (blocked && s.drawable ? `At most ${MAX_STRATEGIES} strategies at once` : undefined)}
@@ -214,10 +214,21 @@ export function StrategyPickerV2({ list, value, onPick, onClose }: { list: Chart
                 <span className="truncate">{s.name}</span>
                 {s.timeframe && <span className="shrink-0 text-t12 text-fg-muted">{s.timeframe}</span>}
               </button>
+              {onEdit && s.editable && (
+                <button type="button" aria-label={`Edit ${s.name}`} data-strategy-edit={s.id}
+                  onClick={() => { onEdit(Number(s.id.split(":")[1])); onClose(); }}
+                  className="inline-flex min-h-11 shrink-0 items-center rounded-control px-space-2 text-t12 text-brand hover:bg-surface-2 md:min-h-9">Edit</button>
+              )}
             </li>
             );
           })}
         </ul>
+      )}
+      {onNew && (
+        <button type="button" onClick={() => { onNew(); onClose(); }} data-strategy-new
+          className="mt-space-1 flex min-h-11 w-full items-center rounded-control border-t border-subtle px-space-2 text-left text-t14 font-semibold text-brand hover:bg-surface-2 md:min-h-9">
+          + New strategy
+        </button>
       )}
     </div>
   );

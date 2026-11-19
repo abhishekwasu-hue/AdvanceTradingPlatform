@@ -85,6 +85,12 @@ BODY_OVERRIDES: Dict[Tuple[str, str], dict] = {
         "name": "Z10c", "timeframe": "1min", "short_conditions": [],
         "long_conditions": [{"left": {"type": "indicator", "indicator": "RSI", "period": 14}, "operator": "CROSSES_ABOVE",
                              "right": {"type": "value", "value": 50}}]},
+    # SFC P5: an atp.strategy/2 strategy (the one test_sfc_p1 draws), so the edit reaches the ownership check
+    ("PUT", "/api/strategies/v2/{record_id:int}"): {"strategy": {
+        "schema": "atp.strategy/2", "version": 1, "name": "Z10c", "timeframe": "5m",
+        "entry": {"sides": "long", "long": {"op": "AND", "items": [
+            {"id": "c1", "left": {"kind": "indicator", "block": "EMA", "params": {"x": "close", "n": 9}}, "cmp": "crosses_above",
+             "right": {"kind": "indicator", "block": "EMA", "params": {"x": "close", "n": 21}}}]}}}},
     ("PUT", "/api/charts/drawings/{drawing_id}"): {"version": 1, "drawing": {"kind": "hline", "anchors": [{"p": 100.0}]}},
     ("POST", "/api/news-feed/items/{item_id}/feedback"): {"verdict": "useful"},
     ("POST", "/api/ai/actions/{action_id}/snooze"): {"minutes": 30},
@@ -269,6 +275,11 @@ def world():
                 ids["invite_id"] = made.json()["id"]
             if "{version_number}" in route.path:
                 ids["version_number"] = 1                       # the planted version row of the planted strategy
+            if route.path.startswith("/api/strategies/v2/{record_id"):
+                from tests.test_sfc_p1 import RAW as SFC_RAW  # SFC P5: tenant A's own atp.strategy/2 strategy
+                made = client.post("/api/strategies/v2", headers=a_headers, json={"strategy": SFC_RAW})
+                assert made.status_code == 201, made.text
+                ids["record_id"] = made.json()["record_id"]
             if route.path.startswith("/api/screener/screens/{screen_id}/versions/{version}"):
                 ids["version"] = 1                              # LAB-18: the planted version row of the planted screen
             if route.path.startswith("/api/news-events/{event_id}"):

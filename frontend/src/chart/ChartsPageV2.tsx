@@ -1,5 +1,7 @@
 import { Filter, Layers, LayoutGrid, ListTree, Maximize2, Minimize2, ScanSearch, ScanText, Square, Workflow } from "lucide-react";
 import { MAX_STRATEGIES, StrategyLayerV2, StrategyPickerV2, useStrategyList } from "../strategyChart/StrategyOverlay";
+import { StrategyBuilderV2 } from "../strategyChart/BuilderV2";
+import { strategyChartApi } from "../strategyChart/model";
 import type { ChartMarker } from "../charting/markers";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
@@ -183,7 +185,10 @@ export default function ChartsPageV2(_props: PageProps) {
   // SFC P1 (flag strategy_chart): his own strategies on the chart - their indicators, signals and trades only. P2: up to
   // MAX_STRATEGIES at once, each keeping the first colour free when it was chosen (removing one never recolours another).
   const strategyOn = features.on("strategy_chart") && tab === "chart" && !hubView;
-  const strategies = useStrategyList(strategyOn);
+  // SFC P5: the builder drawer - new or edit; a save redraws the strategy at once (its layer remounts)
+  const [builder, setBuilder] = useState<{ open: boolean; editId: number | null }>({ open: false, editId: null });
+  const [stratRev, setStratRev] = useState(0);
+  const strategies = useStrategyList(strategyOn, strategyChartApi, stratRev);
   const [stratChosen, setStratChosen] = useState<{ id: string; slot: number }[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickStrategy = useCallback((id: string | null) => setStratChosen((cur) => {
@@ -396,7 +401,8 @@ export default function ChartsPageV2(_props: PageProps) {
               actions={actions} endActions={endActions} />
             {strategyOn && pickerOpen && (
               <div className="relative">
-                <StrategyPickerV2 list={strategies} value={stratChosen.map((c) => c.id)} onPick={pickStrategy} onClose={() => setPickerOpen(false)} />
+                <StrategyPickerV2 list={strategies} value={stratChosen.map((c) => c.id)} onPick={pickStrategy} onClose={() => setPickerOpen(false)}
+                  onNew={() => setBuilder({ open: true, editId: null })} onEdit={(id) => setBuilder({ open: true, editId: id })} />
               </div>
             )}
             {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
@@ -413,10 +419,19 @@ export default function ChartsPageV2(_props: PageProps) {
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
             {strategyOn && stratChosen.map((c) => (
-              <StrategyLayerV2 key={c.id} engine={engine} strategyId={c.id} slot={c.slot} symbol={symbol} exchange={exchange} timeframe={timeframe}
+              <StrategyLayerV2 key={`${c.id}:${stratRev}`} engine={engine} strategyId={c.id} slot={c.slot} symbol={symbol} exchange={exchange} timeframe={timeframe}
                 candles={data.candles} onMarkers={onStratMarkers} legend={!fs.on} whySlot={whySlot}
                 onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} onClear={() => pickStrategy(c.id)} />
             ))}
+            {strategyOn && (
+              <StrategyBuilderV2 open={builder.open} editId={builder.editId} onOpenChange={(open) => setBuilder((b) => ({ ...b, open }))}
+                onSaved={(saved) => {
+                  setStratRev((r) => r + 1);
+                  setBuilder({ open: true, editId: saved.record_id });
+                  if (!stratChosen.some((c) => c.id === saved.id)) pickStrategy(saved.id);   // shown on the chart at once
+                }}
+                onDeleted={(id) => { setStratRev((r) => r + 1); if (stratChosen.some((c) => c.id === id)) pickStrategy(id); }} />
+            )}
             {screenId != null && screenShown && !fs.on && (
               <ScreenLegend state={screen} onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} />
             )}

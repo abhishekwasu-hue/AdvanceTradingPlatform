@@ -440,10 +440,15 @@ function StepNo({ n }: { n: number }) {
 /** The "Pick a strategy" rows, in their groups (Ready-made, My strategies, More from the Library, Strategy templates). */
 export function strategyOptions(ready: readonly StrategyInfo[], custom: readonly CustomStrategyResponse[], others: readonly StrategyInfo[],
   templates: readonly StrategyTemplate[]): ComboOption[] {
+  // SFC P6: his own strategies are one group - the Strategy Builder's (v1) and the ones built on the chart (atp.strategy/2,
+  // listed by the library only); never a second time under "More from the Library"
+  const mine = new Set(custom.map((c) => c.strategy_id));
+  const own = (s: StrategyInfo) => s.id.startsWith("custom:");
   return [
     ...ready.map((s) => ({ value: s.id, label: s.name, group: "Ready-made" })),
     ...custom.map((c) => ({ value: c.strategy_id, label: c.config.name, group: "My strategies" })),
-    ...others.map((s) => ({ value: s.id, label: s.name, group: "More from the Library" })),
+    ...others.filter((s) => own(s) && !mine.has(s.id)).map((s) => ({ value: s.id, label: s.name, group: "My strategies" })),
+    ...others.filter((s) => !own(s)).map((s) => ({ value: s.id, label: s.name, group: "More from the Library" })),
     ...templates.map((t) => ({ value: PICK + t.id, label: t.name, group: "Strategy templates" })),
   ];
 }

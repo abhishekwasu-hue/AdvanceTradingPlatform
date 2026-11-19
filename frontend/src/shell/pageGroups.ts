@@ -45,8 +45,10 @@ export const PAGE_GROUPS_V2: readonly PageGroupV2[] = [
   { id: "my-trades", home: "positions", label: "My trades", tabs: [
     { key: "positions", label: "Positions" }, { key: "orders", label: "Orders" }, { key: "portfolio", label: "Money" },
     { key: "analytics", label: "Results", parts: [
-      { key: "analytics", label: "Summary" }, { key: "journal", label: "Journal" }, { key: "coach", label: "Coach" },
+      { key: "analytics", label: "Summary" }, { key: "coach", label: "Coach" },
     ] },
+    // Owner 19 Nov ("journal che tab disat nahi"): the Journal is its own tab of My trades, no longer a part inside Results.
+    { key: "journal", label: "Journal" },
   ] },
   { id: "strategies", home: "strategies", label: "Strategies", tabs: [
     { key: "strategies", label: "Library" }, { key: "strategy-builder", label: "Build" }, { key: "backtest", label: "Test" },

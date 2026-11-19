@@ -605,6 +605,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N4 CH4a: the trades layer - the caller's own PAPER trades (entries, exits, open stop / target) on the chart of
     # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
     # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
+    "strategy_chart": "Strategy-first chart (SFC): pick your own strategy on the chart - only its indicators, its signals and trades on every closed bar, from the same evaluator as the backtest and the bot (reference only, places no orders)",
     "chart_trades_layer": "Trades chart layer: your own PAPER trades on the chart, as of any bar (read-only, places no orders)",
     # N4 CH4b: option / future contract charts and synthetic spreads - daily bars and OI from the shared lake's F&O
     # bhavcopy rows, contract search from the instrument master, chain -> chart links, a COMPUTED daily IV (labelled).

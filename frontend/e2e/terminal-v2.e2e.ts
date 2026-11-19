@@ -1871,3 +1871,43 @@ test.describe("v2 terminal 1440: the mode badge while LIVE is open (owner 19 Nov
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/owner19-live-on.png`, clip: { x: 240, y: 60, width: 1200, height: 120 } });
   });
 });
+
+// Owner 19 Nov ("panel drag karun resize krta yet nahi"; "basket panel khali disat aahe, drag karun warti ghewu shaklo pahije,
+// give flexibility to all panels"): the watchlist closed by its X leaves its columns empty - the chart's left side drags
+// into them; a panel dropped on another's place swaps with it (the basket comes up into the top row).
+test.describe("v2 terminal 1920: free edges and swapping panels (owner 19 Nov)", () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });
+  const box = async (page: Page, id: string) => (await page.locator(`[data-panel='${id}']`).boundingBox())!;
+
+  test("the chart grows left into the closed watchlist's place; the basket swaps up with the chain", async ({ page }) => {
+    await open(page, "dark", { features: WL_ON, routes: listRoutes });
+    await settle(page);
+    await page.locator("[data-panel-close='watchlist']").click();
+    await expect(page.locator("[data-panel='watchlist']")).toHaveCount(0);
+    const chart0 = await box(page, "chart-1");
+    await shot(page, "owner19-before");
+    const edge = page.locator("[data-panel-free-edge='chart-1:left']");
+    await expect(edge).toHaveCount(1);
+    const e = (await edge.boundingBox())!;
+    await page.mouse.move(e.x + e.width / 2, e.y + e.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(2, e.y + e.height / 2, { steps: 10 });                // past the grid's edge: it stops there
+    await page.mouse.up();
+    const chart1 = await box(page, "chart-1");
+    await shot(page, "owner19-grown");
+    expect(chart1.x).toBeLessThan(chart0.x - 100);
+    expect(chart1.width).toBeGreaterThan(chart0.width + 100);
+    // The basket's title dragged onto the chain: the two swap places.
+    const chain0 = await box(page, "chain"), basket0 = await box(page, "basket");
+    const handle = (await page.locator("[data-panel-handle='basket']").boundingBox())!;
+    await page.mouse.move(handle.x + 20, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(chain0.x + 20, chain0.y + 10, { steps: 10 });
+    await page.mouse.up();
+    const basket1 = await box(page, "basket"), chain1 = await box(page, "chain");
+    expect(Math.round((await box(page, "chart-1")).x)).toBe(Math.round(chart1.x));     // the earlier resize stays (no undo)
+    expect(Math.abs(basket1.y - chain0.y)).toBeLessThan(4);
+    expect(Math.abs(chain1.y - basket0.y)).toBeLessThan(4);
+    await shot(page, "owner19-after");
+  });
+});

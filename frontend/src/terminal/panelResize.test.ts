@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COLUMNS, EMPTY_PREFS, PANELS, activeKey, gutters, layoutFor, layoutProblem, presetLayout, readPrefs, resetToPreset, resizeAcrossEdge,
-  resizeFromCorner, saveAs, withoutWatchlist, type Gutter, type PanelId, type PanelPlace,
+  freeEdges, resizeFreeEdge, resizeFromCorner, saveAs, swapPanels, withoutWatchlist, type Gutter, type PanelId, type PanelPlace,
 } from "./layoutModel";
 
 /**
@@ -86,5 +86,51 @@ describe("sizes: saved with Save as mine, restored on load, Reset", () => {
       expect(q.w).toBeGreaterThanOrEqual(PANELS[q.id].minW);
       expect(q.h).toBeGreaterThanOrEqual(PANELS[q.id].minH);
     }
+  });
+});
+
+describe("a side facing empty space drags too (owner 19 Nov)", () => {
+  // The owner's screen: Option seller with the watchlist CLOSED by its X - its 3 columns stay empty beside the chart.
+  const closed = () => presetLayout("option_seller").panels.map((p) => (p.id === "watchlist" ? { ...p, open: false } : p));
+  it("the chart's left side faces the empty columns: a free edge; a shared line is never one", () => {
+    const edges = freeEdges(closed());
+    expect(edges).toContainEqual({ id: "chart-1", side: "left" });
+    expect(edges).not.toContainEqual({ id: "chart-1", side: "right" });       // the line it shares with the chain
+    expect(edges).not.toContainEqual({ id: "chain", side: "right" });         // the grid's edge
+  });
+  it("dragging it left grows the chart into the empty columns, never past the grid or over a panel", () => {
+    const r = resizeFreeEdge(closed(), "chart-1", "left", -3);
+    expect(at(r.panels, "chart-1")).toMatchObject({ x: 0, w: 8 });
+    expect(r.limit).toBeNull();
+    expect(layoutProblem(r.panels)).toBeNull();
+    const far = resizeFreeEdge(closed(), "chart-1", "left", -5);
+    expect(at(far.panels, "chart-1")).toMatchObject({ x: 0, w: 8 });
+    expect(far.limit?.text).toBe("This is the edge of the grid.");
+  });
+  it("back to the right: it shrinks, down to its minimum", () => {
+    const grown = resizeFreeEdge(closed(), "chart-1", "left", -3).panels;
+    const r = resizeFreeEdge(grown, "chart-1", "left", 20);
+    expect(at(r.panels, "chart-1").w).toBe(PANELS["chart-1"].minW);
+    expect(r.limit?.kind).toBe("min");
+  });
+});
+
+describe("a panel dropped on another's place swaps with it (owner 19 Nov)", () => {
+  const seller = () => presetLayout("option_seller").panels;
+  it("the basket dragged up onto the chain: they swap places and sizes", () => {
+    const chain = at(seller(), "chain"), basket = at(seller(), "basket");
+    const r = swapPanels(seller(), "basket", chain.x, chain.y)!;
+    expect(r).not.toBeNull();
+    expect(at(r, "basket")).toMatchObject({ x: chain.x, y: chain.y, w: chain.w, h: chain.h });
+    expect(at(r, "chain")).toMatchObject({ x: basket.x, y: basket.y, w: basket.w, h: basket.h });
+    expect(layoutProblem(r)).toBeNull();
+  });
+  it("no panel under it: nothing to swap; a size below a minimum: refused", () => {
+    const open = seller().map((p) => (p.id === "watchlist" ? { ...p, open: false } : p));
+    expect(swapPanels(open, "basket", 0, 0)).toBeNull();                       // the watchlist's empty place: no swap (a move)
+    const tiny = seller().map((p) => (p.id === "basket" ? { ...p, w: PANELS.basket.minW, h: PANELS.basket.minH } : p));
+    const chart = at(tiny, "chart-1");
+    const r = swapPanels(tiny, "basket", chart.x, chart.y);
+    if (PANELS["chart-1"].minW > PANELS.basket.minW || PANELS["chart-1"].minH > PANELS.basket.minH) expect(r).toBeNull();
   });
 });

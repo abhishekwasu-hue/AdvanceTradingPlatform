@@ -324,12 +324,11 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     const strategies = render("/strategies/test", { ui_v2: true, idea_library: true });
     expect(strategies).toMatch(/>Library<.*>Build<.*>Test</s);
     expect(strategies).not.toContain(">Ideas<");                                       // M60: Ideas is a Learn tab
-    // Default 2: Results holds Summary · Journal as a second row; the Results tab is marked on both.
+    // Owner 19 Nov: the Journal is its own My trades tab (marked on its page); with its feature off there is no tab.
     const journal = render("/positions/results/journal");
-    expect(journal).toMatch(/aria-current="page"[^>]*data-page-tab="analytics"/);
-    expect(journal).toMatch(/data-page-parts="analytics".*>Summary<.*>Journal</s);
-    expect(journal).toMatch(/aria-current="page"[^>]*data-page-part="journal"/);
-    expect(render("/positions/results", { ui_v2: true })).not.toContain('data-page-part="journal"');   // its feature off
+    expect(journal).toMatch(/aria-current="page"[^>]*data-page-tab="journal"/);
+    expect(journal).toMatch(/>Results<.*>Journal</s);
+    expect(render("/positions/results", { ui_v2: true })).not.toContain('data-page-tab="journal"');   // its feature off
     // Settings: Account & broker · Trading · AI · App, with the pages of the tab on screen as parts.
     const broker = render("/settings/broker");
     expect(broker).toMatch(/data-page-tabs="settings".*>Account &amp; broker<.*>Trading<.*>AI<.*>App</s);

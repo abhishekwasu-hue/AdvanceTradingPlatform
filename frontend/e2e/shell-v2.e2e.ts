@@ -204,10 +204,10 @@ test.describe("v2 shell 1440 desktop", () => {
     await expect(nav.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
   });
 
-  test("M60: My trades, Strategies, Learn and Settings are tabs (at most four), each tab at its own address", async ({ page }) => {
+  test("M60: My trades, Strategies, Learn and Settings are tabs, each tab at its own address", async ({ page }) => {
     await open(page, "/positions", "light", { ...V2, features: { ui_v2: true, discipline_engine: true, idea_library: true, learn: true } });
     const tabs = page.getByRole("navigation", { name: "My trades" });
-    await expect(tabs.getByRole("link")).toHaveText(["Positions", "Orders", "Money", "Results"]);
+    await expect(tabs.getByRole("link")).toHaveText(["Positions", "Orders", "Money", "Results", "Journal"]);   // owner 19 Nov: Journal its own tab
     await expect(tabs.getByRole("link", { name: "Positions" })).toHaveAttribute("aria-current", "page");
     await tabs.getByRole("link", { name: "Orders" }).click();
     await expect(page).toHaveURL(/\/positions\/orders$/);
@@ -224,11 +224,11 @@ test.describe("v2 shell 1440 desktop", () => {
     // in 5 s, the flags answer only at teardown). The first check after each reload waits for the boot (BOOT).
     await page.goto("/strategies");
     await expect(page.getByRole("navigation", { name: "Strategies" }).getByRole("link")).toHaveText(["Library", "Build", "Test"], BOOT);
-    // Performance is My trades › Results; Journal (and, while the AI Copilot is off, the Coach) are its parts.
+    // Performance is My trades › Results; while the AI Copilot is off, the Coach is its part (owner 19 Nov: Journal is a tab).
     await page.goto("/analytics");
     await expect(page).toHaveURL(/\/positions\/results$/, BOOT);
     await expect(tabs.getByRole("link", { name: "Results" })).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("navigation", { name: "Results" }).getByRole("link")).toHaveText(["Summary", "Journal", "Coach"]);
+    await expect(page.getByRole("navigation", { name: "Results" }).getByRole("link")).toHaveText(["Summary", "Coach"]);
     await page.goto("/learn/news");
     await expect(page.getByRole("navigation", { name: "Learn" }).getByRole("link")).toHaveText(["Lessons", /Words explained/, "Ideas", "News & events"], BOOT);
     await page.goto("/settings/alerts");

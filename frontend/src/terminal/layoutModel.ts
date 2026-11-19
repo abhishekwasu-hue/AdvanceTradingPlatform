@@ -366,6 +366,81 @@ export function resizeAcrossEdge(panels: readonly PanelPlace[], g: Gutter, delta
 }
 
 /**
+ * Owner 19 Nov ("basket panel khali disat aahe, drag karun warti ghewu shaklo pahije, give flexibility to all panels"): a
+ * panel dragged onto a place another panel holds swaps places with it - the one it covers most - instead of being
+ * refused (every place of a full layout is taken, so a plain move could never bring the basket up). Each takes the
+ * other's place and size; refused (null) when a size would be below that panel's minimum or the result is not a layout.
+ */
+export function swapPanels(panels: readonly PanelPlace[], id: PanelId, x: number, y: number): PanelPlace[] | null {
+  const me = panels.find((q) => q.id === id && q.open);
+  if (!me) return null;
+  const want: PanelPlace = { ...me, x: Math.max(0, Math.min(COLUMNS - me.w, Math.round(x))), y: Math.max(0, Math.round(y)) };
+  const area = (q: PanelPlace) => Math.max(0, Math.min(want.x + want.w, q.x + q.w) - Math.max(want.x, q.x))
+    * Math.max(0, Math.min(want.y + want.h, q.y + q.h) - Math.max(want.y, q.y));
+  const other = panels.filter((q) => q.open && q.id !== id && area(q) > 0).sort((a, b) => area(b) - area(a))[0];
+  if (!other) return null;
+  const mine = PANELS[id], theirs = PANELS[other.id];
+  if (other.w < mine.minW || other.h < mine.minH || me.w < theirs.minW || me.h < theirs.minH) return null;
+  const next = panels.map((q) => (q.id === id ? { ...q, x: other.x, y: other.y, w: other.w, h: other.h }
+    : q.id === other.id ? { ...q, x: me.x, y: me.y, w: me.w, h: me.h } : q));
+  return layoutProblem(next) === null ? next : null;
+}
+
+/** A side of a panel. */
+export type Side = "left" | "right" | "top" | "bottom";
+
+/**
+ * Owner 19 Nov ("panel drag karun resize krta yet nahi"): a closed panel leaves its cells empty, and an edge that faces
+ * empty space had no line to drag (gutters need a panel on both sides; the corner only grows right / down) - so the chart
+ * could not grow into the watchlist's place. Every open panel's side that faces at least one free cell inside the grid,
+ * and is not already a gutter, is a free edge the user drags (`resizeFreeEdge`).
+ */
+export function freeEdges(panels: readonly PanelPlace[]): { id: PanelId; side: Side }[] {
+  const shown = panels.filter((q) => q.open);
+  const shared = new Set<string>();
+  for (const g of gutters(panels)) {
+    for (const id of g.before) shared.add(`${id}:${g.axis === "x" ? "right" : "bottom"}`);
+    for (const id of g.after) shared.add(`${id}:${g.axis === "x" ? "left" : "top"}`);
+  }
+  const taken = (x: number, y: number) => shown.some((q) => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
+  const out: { id: PanelId; side: Side }[] = [];
+  for (const q of shown) {
+    const strips: Record<Side, [number, number][]> = {
+      left: q.x > 0 ? Array.from({ length: q.h }, (_, i) => [q.x - 1, q.y + i]) : [],
+      right: q.x + q.w < COLUMNS ? Array.from({ length: q.h }, (_, i) => [q.x + q.w, q.y + i]) : [],
+      top: q.y > 0 ? Array.from({ length: q.w }, (_, i) => [q.x + i, q.y - 1]) : [],
+      bottom: q.y + q.h < ROWS && q.h < MAX_HEIGHT ? Array.from({ length: q.w }, (_, i) => [q.x + i, q.y + q.h]) : [],
+    };
+    for (const side of ["left", "right", "top", "bottom"] as const) {
+      if (shared.has(`${q.id}:${side}`)) continue;
+      if (strips[side].some(([x, y]) => !taken(x, y))) out.push({ id: q.id, side });
+    }
+  }
+  return out;
+}
+
+/** Drag a panel's free edge by `delta` columns / rows (positive = right / down): the panel grows into the free cells or
+ * gives them back, down to its minimum; the largest step that fits is applied and `limit` says why it stopped (T4-2). */
+export function resizeFreeEdge(panels: readonly PanelPlace[], id: PanelId, side: Side, delta: number): SizeResult {
+  const d = Math.round(delta);
+  if (d === 0 || !panels.some((q) => q.id === id && q.open)) return { panels: [...panels], moved: 0, limit: null };
+  const axis: Axis = side === "left" || side === "right" ? "x" : "y";
+  const apply = (k: number): PanelPlace[] => panels.map((q) => {
+    if (q.id !== id) return q;
+    if (side === "left") return { ...q, x: q.x + k, w: q.w - k };
+    if (side === "right") return { ...q, w: q.w + k };
+    if (side === "top") return { ...q, y: q.y + k, h: q.h - k };
+    return { ...q, h: q.h + k };
+  });
+  const sign = Math.sign(d);
+  for (let k = d; k !== 0; k -= sign) {
+    const next = apply(k);
+    if (limitOf(next, [id], axis) === null) return { panels: next, moved: k, limit: k === d ? null : limitOf(apply(k + sign), [id], axis) };
+  }
+  return { panels: [...panels], moved: 0, limit: limitOf(apply(sign), [id], axis) };
+}
+
+/**
  * Owner bug 13 Nov (panels do not resize by dragging): the corner (and Shift + the arrow keys) asks for a `w` x `h`
  * panel. Before, `resizePanel` refused the whole step as soon as a neighbour was in the way - in the Option seller layout
  * every panel touches one, so dragging a corner did nothing. Now, per axis: when a neighbour shares the panel's right

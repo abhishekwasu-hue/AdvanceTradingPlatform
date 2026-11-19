@@ -118,6 +118,7 @@ Facts from the code that the tables rely on:
 | signals | Signal language guard | - | `signal_language_v2` | INTERNAL | - |
 | signals_feed | Signals inbox, day-one setup card | `/api/signals`, `/api/signals/day-one` | `ui_v2`; `strategy_templates` (card) | EMPTY-BY-DEFAULT (404 until `ui_v2`) | unknown until the owner's check |
 | strategy_engine | Built-in strategies, registry, chart run | `/api/strategies` | - | WORKS | unknown until the owner's check |
+| strategy_v2 | SFC: his own strategy on the chart (flag strategy_chart) - the one evaluator for chart, backtest, paper and live | `/api/strategies/v2` | strategy_chart | BUILDING (P1) | unknown until the owner's check |
 | strategy_templates | Signal templates adopted as a PAPER bot | `/api/strategy-templates` | `strategy_templates`, `screener_waves` | EMPTY-BY-DEFAULT | unknown until the owner's check |
 | daily_report | Shared daily AI market report: EOD data only, one AI request a trading day on the admin's key, stored and read by every user, PDF (M88-R) | `/api/daily-report`, `/api/admin/daily-report` | `ui_v2` + `shared_daily_report` | EMPTY-BY-DEFAULT (404 while either is off; no report until the admin sets the symbols) | unknown until the owner's check |
 | study | Saved Copilot studies: snapshot, My studies, JSON and PDF download (M77 SX-2 / SX-3) | `/api/studies` | `ui_v2` + `study_export` | EMPTY-BY-DEFAULT (404 while either is off) | unknown until the owner's check |

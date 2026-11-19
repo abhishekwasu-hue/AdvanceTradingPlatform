@@ -284,7 +284,7 @@ export default function ChartV2({
   useEffect(() => { callbacks.current.onTools?.(tools); }, [tools.view, tools.controller]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={rootRef} data-chart-theme={theme} data-chart-grid={prefs.grid ? "on" : "off"} className={`relative w-full ${className}`}
+    <div ref={rootRef} data-chart-theme={theme} data-chart-grid={prefs.grid ? "on" : "off"} data-markers={markers.length} className={`relative w-full ${className}`}
          data-autoscale={view.autoScale ? "on" : "off"} data-latest-visible={view.latestVisible ? "yes" : "no"} data-crosshair={readout ? "on" : "off"}
          style={{ backgroundColor: "rgb(var(--chart-bg))" }}>
       <div ref={plotRef} className="h-full w-full" />

@@ -14,18 +14,20 @@ const tabs = (id: string, ctx: NavContext = trader) => visibleTabs(group(id), ct
 describe("M60 tab rows: at most four tabs each (and four parts under a tab)", () => {
   it("no row has more than four tabs - the Copilot's own row included", () => {
     for (const g of PAGE_GROUPS_V2) {
-      expect(g.tabs.length, g.id).toBeLessThanOrEqual(MAX_TABS);
+      // Owner 19 Nov ("journal che tab disat nahi"): My trades keeps the five tabs of his own M60 list (… Results · Journal).
+      expect(g.tabs.length, g.id).toBeLessThanOrEqual(g.id === "my-trades" ? MAX_TABS + 1 : MAX_TABS);
       for (const t of g.tabs) expect((t.parts ?? []).length, `${g.id} ${t.key}`).toBeLessThanOrEqual(MAX_TABS);
     }
     expect(COPILOT_V2_TABS.length).toBeLessThanOrEqual(MAX_TABS);
   });
 
-  it("My trades: Positions · Orders · Money · Results; Results holds Summary · Journal (default 2)", () => {
+  it("My trades: Positions · Orders · Money · Results · Journal (owner 19 Nov: the Journal is its own tab)", () => {
     expect(tabs("my-trades", full)).toEqual([["Positions", "/positions"], ["Orders", "/positions/orders"], ["Money", "/positions/money"],
-      ["Results", "/positions/results"]]);
-    const results = tabOf(group("my-trades"), "journal")!;
-    expect(results.label).toBe("Results");
-    expect(visibleParts(results, full).map((p) => [p.label, p.path])).toEqual([["Summary", "/positions/results"], ["Journal", "/positions/results/journal"]]);
+      ["Results", "/positions/results"], ["Journal", "/positions/results/journal"]]);
+    expect(tabOf(group("my-trades"), "journal")!.label).toBe("Journal");
+    expect(tabs("my-trades", trader).map((t) => t[0])).not.toContain("Journal");          // its feature off: no tab
+    const results = tabOf(group("my-trades"), "analytics")!;
+    expect(visibleParts(results, full).map((p) => [p.label, p.path])).toEqual([["Summary", "/positions/results"]]);
     // While the AI Copilot is off, the Coach stays a part of Results (its home there is not on).
     expect(visibleParts(results, trader).map((p) => p.label)).toEqual(["Summary", "Coach"]);
   });

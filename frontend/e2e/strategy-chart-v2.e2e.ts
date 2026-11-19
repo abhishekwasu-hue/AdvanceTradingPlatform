@@ -49,7 +49,15 @@ function reply(tf: string, id = "custom:7") {
       m6: [{ id: "c1", held: true, optional: false, text: "EMA(close, 9) crossed above EMA(close, 21)", values: { left: 24601, right: 24590 }, timeframe: "5m" },
            { id: "c2", held: true, optional: false, text: "RSI(14) > 45", values: { left: 61, right: 45 }, timeframe: "5m" }],
     },
-    trades: [], gaps: [],
+    trades: [
+      { entry_time: at(60), entry: bars[bars.length - 60].close, side: "long", stop: bars[bars.length - 60].close - 30, target: bars[bars.length - 60].close + 40,
+        exit_time: at(48), exit: bars[bars.length - 60].close + 40, exit_rule: "Target 1", pnl: 40 },
+      { entry_time: at(40), entry: bars[bars.length - 40].close, side: "short", stop: bars[bars.length - 40].close + 20, target: null,
+        exit_time: at(26), exit: bars[bars.length - 40].close + 20, exit_rule: "Stop Loss", pnl: -20 },
+      { entry_time: at(12), entry: last.close, side: "long", stop: last.close - 25, target: last.close + 50, exit_time: null, exit: null, exit_rule: null, pnl: null },
+    ],
+    stats: { trades: 3, closed: 2, open: 1, wins: 1, win_rate: 50, points: 20, max_drawdown: -20, avg_r: 0.17, pnl: 2000 },
+    gaps: [],
   };
 }
 
@@ -225,5 +233,39 @@ test.describe("SFC P3 on a phone (390)", () => {
     expect(card.x).toBeGreaterThanOrEqual(0);
     expect(card.x + card.width).toBeLessThanOrEqual(391);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p3-why-phone.png` });
+  });
+});
+
+test.describe("SFC P4: quick stats", () => {
+  test("T8 (1440): the stats count the entry arrows; a trade's row scrolls the chart to it", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await page.getByTestId("strategy-button").click();
+    await page.locator("[data-strategy-option='custom:7']").click();
+    await page.locator("[data-strategy-stats]").click();
+    const sheet = page.locator("[data-strategy-stats-sheet]");
+    await expect(sheet.locator("[data-stat='Trades']")).toContainText("3");               // = the 3 entry markers of the reply
+    await expect(sheet.locator("[data-stat='Win rate']")).toContainText("50%");
+    await expect(sheet.locator("[data-stat='P&L (points)']")).toContainText("+20");
+    await expect(sheet.locator("[data-stats-trade]")).toHaveCount(3);
+    await expect(sheet.locator("[data-stats-trade]").first()).toContainText("Open");      // newest first: the open one
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p4-stats.png` });
+    await sheet.locator("[data-stats-trade]").last().click();
+    await expect(sheet).toBeVisible();                                                     // desktop: stays open beside the chart
+  });
+
+  test("on a phone (390) the stats are a bottom sheet; a trade's row closes it to show the chart", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page);
+    await page.getByRole("button", { name: "More chart controls" }).click();
+    await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: /Your strategies on the chart/ }).click();
+    await page.locator("[data-strategy-option='custom:7']").click();
+    await page.locator("[data-strategy-stats]").click();
+    const sheet = page.locator("[data-strategy-stats-sheet]");
+    await expect(sheet).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p4-stats-phone.png` });
+    await sheet.locator("[data-stats-trade]").last().click();
+    await expect(sheet).toHaveCount(0);
   });
 });

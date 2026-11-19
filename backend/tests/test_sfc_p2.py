@@ -107,3 +107,32 @@ def test_t7_a_condition_that_did_not_hold_in_an_or_group_is_marked_optional():
     assert all(any(r["held"] for r in rs) for rs in rows)                                     # the bar met the group
     assert all(r["optional"] == (not r["held"]) for rs in rows for r in rs)
     assert any(r["optional"] for rs in rows for r in rs)
+
+
+# --- P4: the quick stats ----------------------------------------------------------------------------------------------
+def test_t8_the_trade_count_is_the_number_of_entry_markers_and_the_numbers_add_up():
+    out = plot(_strategy(), _bars(), "S", RISK)
+    st = out["stats"]
+    assert st["trades"] == sum(m["kind"] == "entry" for m in out["markers"]) == len(out["trades"])        # T8
+    closed = [t for t in out["trades"] if t["exit"] is not None]
+    assert st["closed"] == len(closed) and st["open"] == st["trades"] - st["closed"]
+    pts = [(t["exit"] - t["entry"]) * (1 if t["side"] == "long" else -1) for t in closed]
+    assert abs(st["points"] - sum(pts)) < 0.05 and st["wins"] == sum(p > 0 for p in pts)
+    assert st["max_drawdown"] <= 0
+
+
+def test_stats_by_hand():
+    from app.core.enums import SignalDirection
+    from app.strategy_v2.plot import stats_of
+
+    class T:
+        def __init__(self, **kw): self.__dict__.update(kw)
+    t0 = pd.Timestamp("2031-06-10T04:00:00Z")
+    L, S = SignalDirection.LONG, SignalDirection.SHORT
+    trades = [T(direction=L, entry_price=100, exit_price=110, stop_loss=95, exit_time=t0, exit_reason="Target 1", pnl=1000, entry_time=t0),
+              T(direction=S, entry_price=200, exit_price=206, stop_loss=203, exit_time=t0, exit_reason="Stop Loss", pnl=-600, entry_time=t0),
+              T(direction=L, entry_price=50, exit_price=46, stop_loss=None, exit_time=t0, exit_reason="Exit rule", pnl=-400, entry_time=t0),
+              T(direction=L, entry_price=60, exit_price=None, stop_loss=58, exit_time=None, exit_reason=None, pnl=None, entry_time=t0)]
+    assert stats_of(trades) == {"trades": 4, "closed": 3, "open": 1, "wins": 1, "win_rate": 33.3333, "points": 0.0,
+                                "max_drawdown": -10.0, "avg_r": 0.0, "pnl": 0.0}
+    assert stats_of([])["win_rate"] is None and stats_of([])["avg_r"] is None

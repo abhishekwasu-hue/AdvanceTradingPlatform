@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitWord, strategyLayer, strategyMarkers, strategyStudies, whyAt, type PlotReply } from "./model";
+import { exitWord, strategyLayer, strategyMarkers, strategyStudies, tradePoints, tradeRange, whyAt, type PlotReply } from "./model";
 
 /** SFC P1: the chart parts from the server's one evaluation (made-up reply). */
 const REPLY: PlotReply = {
@@ -83,5 +83,16 @@ describe("SFC P1: the strategy on the chart", () => {
     expect(whyAt(reply, at("2026-11-18T04:20:00Z"))[0]).toMatchObject({ title: "Long exit · Stop", tone: "down", rule: "STOP_LOSS", pnl: -12 });
     expect(whyAt(reply, at("2026-11-18T04:05:00Z"))).toEqual([]);
     expect(whyAt(reply, null)).toEqual([]);
+  });
+
+  it("P4: a trade's points by side, and the range that shows it with bars around it", () => {
+    const t = { entry_time: "2026-11-18T04:00:00+00:00", entry: 100, side: "short" as const, stop: 103, target: null, exit_time: "2026-11-18T05:00:00+00:00",
+      exit: 96, exit_rule: "Target 1", pnl: 4 };
+    expect(tradePoints(t)).toBe(4);
+    expect(tradePoints({ ...t, side: "long" })).toBe(-4);
+    expect(tradePoints({ ...t, exit: null })).toBeNull();
+    const s0 = Date.parse(t.entry_time) / 1000;
+    expect(tradeRange(t, 300)).toEqual({ from: s0 - 6000, to: s0 + 3600 + 6000 });
+    expect(tradeRange({ ...t, exit_time: null }, 300, s0 + 600)).toEqual({ from: s0 - 6000, to: s0 + 600 + 6000 });
   });
 });

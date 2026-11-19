@@ -74,10 +74,21 @@ async def chart_list(user: User = Depends(get_current_user), session: AsyncSessi
     return {"strategies": out}
 
 
+class FormingBar(BaseModel):
+    """P2: the chart's forming candle (display only: the pending hint; never stored, never acted on)."""
+    t: datetime
+    o: float = Field(allow_inf_nan=False)
+    h: float = Field(allow_inf_nan=False)
+    l: float = Field(allow_inf_nan=False)  # noqa: E741 - the bar's own field name
+    c: float = Field(allow_inf_nan=False)
+    v: float | None = Field(default=None, allow_inf_nan=False)
+
+
 class PlotBody(BaseModel):
     strategy_id: str = Field(pattern=r"^custom:\d{1,12}$")
     symbol: str = Field(min_length=1, max_length=60)
     exchange: str = Field(default="NSE", max_length=20)
+    forming: FormingBar | None = None
 
 
 @router.post("/plot", dependencies=[Depends(analysis_rate_limit)])
@@ -108,7 +119,8 @@ async def plot_route(body: PlotBody, user: User = Depends(get_current_user), ses
     if getattr(risk, "capital", None) is None:
         risk = RiskConfig()          # the walk needs a size; markers and exits do not depend on it (P&L is P4's)
     from app.strategy_v2.plot import plot
-    drawn = await run_in_threadpool(plot, strategy, got.frame, body.symbol, risk, charges)
+    forming = body.forming.model_dump(mode="json") if body.forming is not None else None
+    drawn = await run_in_threadpool(plot, strategy, got.frame, body.symbol, risk, charges, forming)
     return {**head, "available": True, "reason": None, "gaps": got.gap_lines(), **drawn}
 
 

@@ -507,6 +507,90 @@ Note: new item BT-DRAW - the backtest chart draws what the selected strategy its
 
 Note: CA-CHAT approved with the default (OPEN_QUESTIONS CA-CHAT-Q1): one Setup dropdown (My method for the owner only, the book strategies, "My own conditions"); a chat on the same chart where the trader writes his conditions and the AI answers each as met / not met / unclear with evidence and marks it on the chart; the user's own AI key; cost per message shown; signal-language guard; one thread per analysis kept in My analyses.
 
+## 19 Nov - owner
+
+> "TASK: PLAN ONLY — Strategy-first Chart (Strategy Builder + Chart Strategy Dropdown). Do NOT write or change any code in this step. Read the SPEC sent earlier and the current repo, then deliver a single PLAN document for approval. Coding starts only after you receive the word "APPROVED" from me. The PLAN must contain: 1. INVENTORY (complete, not sampled) ... chart, drawing tools, indicators, signal engine, chart reader / price action, paper mode, live orders, data feed ... reuse as-is / modify / replace. 2. ARCHITECTURE ... data feed -> bar store -> indicator + price-action calculators -> strategy evaluator -> (chart plot | paper engine | live order engine). Confirm the SAME evaluator feeds chart, paper and live. 3. STRATEGY DATA MODEL ... full JSON schema ... version field ... one complete example. 4. BLOCK CATALOGUE ... comparators and their exact meaning on closed bars. 5. EVALUATION ENGINE DESIGN ... closed-bar evaluation, no-repaint guarantee, multi-timeframe alignment rule, forming bar, warm-up, performance target. 6. CHART PLOTTING LAYER ... Lightweight Charts v5 createSeriesMarkers ... multi-strategy colours; legend; marker hover content. 7. UI WIREFRAMES ... Strategy Builder drawer, chart toolbar dropdown, legend, marker tooltip, quick-stats drawer. All in place, no page navigation. 8. BUILD PHASES ... each with its own acceptance tests (use the tests from the SPEC, split by phase) and an estimate. 9. RISKS AND OPEN QUESTIONS ... recommended answer for each. Format: one markdown file in the repo at docs/plans/strategy-first-chart-PLAN.md, plus a short summary in your reply. Wait for approval." (condensed only where marked "..."; full text in the session)
+
+Note: plan only, no code until "APPROVED". The SPEC "sent earlier" did not reach this session (not in the repo or uploads) - logged as an open question; the plan is built from this task's own requirements.
+
+
+## 19 Nov - owner (the SPEC for the Strategy-first chart plan)
+
+> SPEC: Strategy-first Chart (Strategy Builder + Chart Strategy Dropdown)
+>
+> GOAL
+> The chart is driven by the trader's own strategy, not by individual indicators.
+> The trader builds a strategy once (indicators + price action combined), then picks it
+> from a Strategy dropdown on the chart; everything that strategy uses is plotted automatically.
+>
+> 1. STRATEGY BUILDER (opens in place as a drawer; never navigates away)
+> - Block model: Indicator block -> Condition block -> Combine (AND/OR) -> Action.
+>   AND binds tighter than OR; allow brackets/groups.
+> - Indicator blocks: every indicator ATP already computes, each with user-editable settings.
+> - Price-action blocks: reuse the existing signal engine / chart reader
+>   (swing highs/lows, trend structure HH/HL/LH/LL, pullback to level/zone, support/resistance,
+>   breakout/retest, candlestick patterns, RSI divergence regular/hidden, etc.).
+> - Comparators: crosses above, crosses below, >, <, >=, <=, between, is rising, is falling,
+>   pattern present on last closed bar / within last N bars.
+> - Each condition may use its own timeframe (multi-timeframe).
+> - Entry: direction (long/short/both), session time window, max entries per day.
+> - Exit: SL and target (points, %, ATR multiple, swing level, candle high/low, premium),
+>   trailing rule, time exit, optional exit conditions built with the same blocks.
+> - Options mapping (optional per strategy): leg template, strike rule, expiry rule.
+> - Save as named strategy per user; edit, duplicate, delete, export/import as JSON.
+> - Nothing pre-selected, no default values forced, no risk check ON by default.
+>
+> 2. CHART STRATEGY DROPDOWN (chart toolbar)
+> - Lists the user's saved strategies. Selecting one:
+>   a) adds ONLY the indicators that strategy uses, each in its correct pane, with its settings;
+>   b) draws the price-action levels/zones/swings the strategy references;
+>   c) runs the strategy over all loaded bars and draws entry/exit markers
+>      (Lightweight Charts v5 createSeriesMarkers: long = arrowUp belowBar, short = arrowDown aboveBar,
+>      exit markers distinct);
+>   d) for an open/most recent trade: entry, SL, target price lines and a position box with R:R;
+>   e) shows a small legend: strategy name, state (waiting / in trade / exited), last signal.
+> - Deselecting removes everything that strategy added and nothing else.
+> - Multiple strategies may be selected at once; each gets its own colour in markers and legend.
+> - Switching symbol/timeframe re-runs the selected strategies automatically.
+>
+> 3. CALCULATION RULES
+> - Signals are evaluated on CLOSED bars only; a marker, once placed on a closed bar, never moves
+>   or disappears (no repaint). The forming bar may show a "pending" hint, visually distinct.
+> - Live mode: re-evaluate on each bar close from the user's own broker feed; EOD uses bhavcopy.
+> - Same engine for chart plot, paper mode and live orders, so the chart shows exactly what would trade.
+>
+> 4. EXPLAINABILITY
+> - Hover/tap on any marker shows which conditions were true at that bar
+>   (e.g. list of satisfied blocks with values), and for exits which exit rule fired.
+>
+> 5. QUICK STATS (in-place drawer, from the plotted run)
+> - Trade list (time, side, entry, exit, P&L, exit reason), win rate, total P&L,
+>   max drawdown, average R. Clicking a trade scrolls the chart to it.
+>
+> 6. CONSTRAINTS
+> - Keep TradingView Lightweight Charts attribution visible (Apache-2.0 requirement).
+> - All UI in place (panel/drawer/sheet), no page navigation.
+> - Do not hard-code any trading choice; every option is the user's setting.
+>
+> 7. ACCEPTANCE TESTS
+> - Build a strategy with 1 indicator condition + 1 price-action condition (AND); select it ->
+>   only that indicator appears, PA levels drawn, markers on every qualifying closed bar.
+> - Same strategy with OR -> marker count >= AND version.
+> - Deselect -> chart returns to its prior state exactly.
+> - Change timeframe -> markers recomputed, no stale markers.
+> - Reload page -> markers on closed bars identical (no repaint).
+> - Two strategies selected -> two colours, legends separate, deselect one leaves the other intact.
+> - Marker hover lists the true conditions; exit hover shows the exit rule.
+> - Quick stats trade count equals the number of entry markers.
+> Report back with screenshots of each test.
+
+Note: the SPEC the PLAN task refers to; the plan (docs/plans/strategy-first-chart-PLAN.md) splits its acceptance tests by phase. No code until "APPROVED".
+
+## 19 Nov - owner (on the SPEC)
+
+> "es pack madhlya baryach goshti already aaplyakade astil" (transliterated from Devanagari)
+
+Note: the plan reuses what exists (inventory decides reuse / modify / replace per module); only the true gaps are new.
 ## 19 Nov - owner (phone screenshots: Journal, an imported Fyers option "NIFTY26N0924950CE", Charts -> "No daily candles are stored ... cannot be drawn")
 
 > "Journal mdhe trade import jhale aahet, but daily candle error mule chart tayar jhala nahi"
@@ -540,6 +624,12 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 
 Note: Journal becomes its own My trades tab (his M60 list: Positions · Orders · Money · Results · Journal); a side facing
 empty space drags; a panel dropped on another's place swaps with it; a drag ends at window level (PR claude/journal-nav-panels).
+## 19 Nov - owner (on the Strategy-first chart plan)
+
+> "Strategy-first chart plan (#1113). to tumchya "APPROVED" de ata" (transliterated from Devanagari)
+
+Note: read as the owner's APPROVED for the plan (it carries the word APPROVED). Build starts with P0; the plan's open
+questions OQ-1 .. OQ-11 take their recommended defaults until the owner says otherwise.
 ## 19 Nov - owner (LIVE order from the F&O ticket)
 
 > (3 screenshots, no text) LIVE ticket, NIFTY 25300 CE 23 NOV 26, Buy - Market - NRML, 1 lot. Result: "Not placed: NIFTY
@@ -549,3 +639,11 @@ empty space drags; a panel dropped on another's place swaps with it; a drag ends
 
 Note: root cause - the Upstox adapter sent ATP's product word "NRML" as is; Upstox takes I / D / MTF. Fixed with the
 failure shown first and no PAPER lines on a LIVE ticket (PR claude/upstox-live-product).
+
+## 19 Nov - owner (Today, daily brief)
+
+> "Wrap mdhe confusion hot aahe current situation disayla pahije" (screenshot 12:40 IST: Wrap tab, "Thu 19 Nov · after
+> the close", indices "close of Wed 18 Nov")
+
+Note: the page opens on the brief of the moment (Pulse during the session); the Wrap tab during the session now says it
+is the last session's wrap (subtitle and a line) with one tap to the market now (PR claude/today-phase).

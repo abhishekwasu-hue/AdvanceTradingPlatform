@@ -460,3 +460,14 @@ def test_render_keeps_a_digest_short():
     assert "A &lt;b&gt;" in text and "line 3 &amp; more" in text and "line 4" not in text and "Empty" not in text
     assert deliver.open_button("https://aialgodesk.tech") == {"inline_keyboard": [[{"text": "Open in app", "url": "https://aialgodesk.tech/"}]]}
     assert deliver.open_button(None) is None
+
+
+def test_the_wrap_opened_during_the_session_says_it_is_the_last_sessions():
+    """Owner 19 Nov ("Wrap mdhe confusion hot aahe"): at 12:40 on a trading day the Wrap tab shows the LAST session's
+    wrap and says so - never "after the close" while the market is open."""
+    who = _who("mo4-wrap-open")
+    tuesday = date(2031, 6, 10)
+    brief = _build(who, "closing", _at(tuesday, 12, 40))
+    assert brief["subtitle"] == "Tue 10 Jun · market open · the wrap of Mon 09 Jun"
+    after = _build(who, "closing", _at(tuesday, 16, 0))
+    assert after["subtitle"] == "Tue 10 Jun · after the close"

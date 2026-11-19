@@ -614,19 +614,6 @@ Note: the journal trade chart on 15 minutes by default, with a timeframe choice 
 
 Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.
 
-## 19 Nov - owner (My trades)
-
-> "old trades show hotat, tyachi awashyakta nahi, chalu diwsasache trade disayla pahije" (screenshot: Closed trades with
-> 16 Nov and 30 Oct trades)
-
-> "hide kelele bre" (screenshot: Cost of trading, Your F&O journal)
-
-> "My trades tab mdhe anek tabs aahet, tya hide kelelya bre ani chalu diwsache trade show kra, old serch mdhe dya with
-> date range selector"
-
-Note: My trades > Positions shows "Closed today" only; "Earlier trades" searches by a date range (IST days) and a
-symbol; the other cards (costs, journal drafts, paper account and tools) fold under one "More" line, closed by default
-and remembered per browser (PR claude/closed-trades-today).
 ## 19 Nov - owner (Find setups, Own words)
 
 > "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest

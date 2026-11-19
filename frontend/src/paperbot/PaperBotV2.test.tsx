@@ -219,6 +219,10 @@ describe("UX2 fix 4 view", () => {
     const rows = strategyOptions([intraday, daily], [], [other], []);
     expect(rows.filter((r) => r.group === "Ready-made").map((r) => r.label)).toContain("Opening range breakout");
     expect(rows.filter((r) => r.group === "More from the Library").map((r) => r.label)).toContain("RSI divergence");
+    // SFC P6: a strategy built on the chart (only the library lists it) is his own - under "My strategies", once
+    const chartBuilt = { ...other, id: "custom:9", name: "My EMA" };
+    const mine = strategyOptions([], [], [other, chartBuilt], []);
+    expect(mine.filter((r) => r.value === "custom:9").map((r) => r.group)).toEqual(["My strategies"]);
     // CT-1 C6: the one SymbolPicker - the usual symbols suggested, any other typed (kept when the field is left).
     expect(pageSource).toContain('<SymbolPicker id={ids.symbol} label="Pick a symbol"');
     expect(pageSource).toContain("suggestions={SYMBOL_ROWS}");

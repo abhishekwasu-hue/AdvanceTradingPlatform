@@ -27,6 +27,21 @@ def custom_strategy_info(record: CustomStrategyRecord) -> StrategyInfo:
     """Presents a saved custom strategy the same shape as a built-in one, so the two can be
     merged into a single list for the frontend (GET /api/strategies).
     """
+    try:
+        raw = json.loads(record.config_json or "{}")
+    except ValueError:
+        raw = None
+    from app.strategy_v2.schema import is_v2
+    if is_v2(raw):
+        # SFC P6: an atp.strategy/2 strategy (built on the chart) in the same list - never read as a v1 config (that
+        # raised and failed the whole list for everyone in the organisation)
+        from app.strategy_v2.adapter import ENGINE_LABEL
+        tf = str(raw.get("timeframe") or "")
+        return StrategyInfo(
+            id=f"{CUSTOM_PREFIX}{record.id}", name=str(raw.get("name") or record.name),
+            description="Your own strategy, built on the chart.", category=StrategyCategory.INDICATOR_BASED,
+            timeframes=[ENGINE_LABEL.get(tf, tf)] if tf else [], default_params={},
+        )
     config = CustomStrategyConfig.model_validate_json(record.config_json)
     return StrategyInfo(
         id=f"{CUSTOM_PREFIX}{record.id}",

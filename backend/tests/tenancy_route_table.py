@@ -59,6 +59,7 @@ S_FUNDAMENTALS_MODEL = ("self: runs a valuation / score / screen model over the 
 # M55 O2: compute-only routes under a prefix the 'self' class otherwise never takes (test_z10c_tenancy_sweep.py): they
 # write nothing shared and nothing on the order path, so a VIEWER may run them like any member.
 SELF_COMPUTE_UNDER_GUARDED_PREFIX = frozenset({
+    ("POST", "/api/strategies/v2/plot"),          # SFC P1: draws his own strategy; stores nothing, orders nothing
     ("POST", "/api/strategies/{strategy_id}/chart-run"),
     ("POST", "/api/strategies/{strategy_id}/signal"),
     ("POST", "/api/strategies/{strategy_id}/signal/enrich"),
@@ -1018,6 +1019,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
     ("POST", "/api/strategies/{strategy_id}/chart-run"): S_STRATEGY_RUN,
+    ("GET", "/api/strategies/v2/chart-list"): "member",
+    ("POST", "/api/strategies/v2/plot"): ("self: SFC P1 - draws the caller's OWN saved strategy (404 for anyone else's) on bars read as "
+                                         "his bot reads them (his own store and broker session); stores nothing, orders nothing"),
     ("POST", "/api/strategies/{strategy_id}/paper-execute"): "trader",
     ("POST", "/api/strategies/{strategy_id}/signal"): S_STRATEGY_RUN,
     ("POST", "/api/strategies/{strategy_id}/signal/enrich"): S_STRATEGY_RUN,

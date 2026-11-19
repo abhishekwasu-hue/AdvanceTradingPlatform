@@ -87,7 +87,7 @@ def plot(strategy: StrategyV2Strategy, df: pd.DataFrame, symbol: str, risk: Risk
     signals = [(int(t), "long") for t in np.flatnonzero(ev.signal_long)] + [(int(t), "short") for t in np.flatnonzero(ev.signal_short)]
     signals.sort()
     try:
-        result = run_backtest(strategy, df, symbol, strategy.label, risk, charges) if charges is not None else \
+        result = run_backtest(strategy, df, symbol, strategy.label, risk, charges=charges) if charges is not None else \
             run_backtest(strategy, df, symbol, strategy.label, risk)
         trades = list(result.trades)
     except (ValueError, ZeroDivisionError):

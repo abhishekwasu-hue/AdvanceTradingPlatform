@@ -426,7 +426,7 @@ FLAG_GROUP: dict[str, str] = {
 # list. FINISH: the roadmap item that finishes it. KEEP_OFF: stays off and hidden, with the reason. REMOVED_FROM_VIEW:
 # stays off, its code kept, and leaves the admin "Turn on" list (FA-2) - the server refuses to turn it on.
 FINISH: Dict[str, str] = {
-    "data_hub": "P1-5", "live_push": "AUD-G2.2", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
+    "data_hub": "P1-5", "strategy_chart": "SFC P2-P6", "live_push": "AUD-G2.2", "markets_view": "FN7", "strategy_templates": "P2-3 / FN4", "idea_library": "P2-3 / FN4",
     "strategy_lab_pine": "FN3", "daily_rhythm": "P2-4 / FN7", "chart_contracts": "DATA-H / FN7",
     "chart_futures_basis": "DATA-H / FN7", "help_centre": "P2-6 (early, once the support contact is set)",
     "chart_analyze": "P2-5", "multi_account": "M45 (PAPER built; LIVE only on the owner's words)",

@@ -524,3 +524,8 @@ Note: the journal trade chart must be a 15-minute chart, not Daily. Sources and 
 > "15 minute chart lavkar kar aur userla time frame nivadnyachi sandhi pahije" (transliterated from Devanagari)
 
 Note: the journal trade chart on 15 minutes by default, with a timeframe choice for the user.
+## 19 Nov - owner
+
+> "CA chat suru kr"
+
+Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.

@@ -619,6 +619,18 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 > (Terminal screenshot, PAPER badge) "varti paper ha symbol ka disto" (transliterated from Devanagari)
 
 > "Default yes" (to: while LIVE is on for him, the badge says "Live on" in red; Paper when it is off)
+## 19 Nov - owner (Find setups, Own words)
+
+> "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest
+> swings to identify trendline and suport line, similary sell on ressistance trendline and horizontal resistance. use
+> timefram 30 minutes" -> "No part of this idea could become a condition yet")
+
+> "copy kele, briker la login kele, pn pudhe kasee karayche, copy kelele kuthe paste karu" (screenshot: Trade in your
+> broker app, HEROMOTOCO, Market, NRML)
+
+Note: the reader gains trendline touches (support / resistance), horizontal support / resistance, his spellings, the
+idea's own "use timeframe" and OR between alternatives (PR claude/idea-trendlines). The broker-app question is answered
+in chat; an improvement is logged as a decision for the owner.
 ## 19 Nov - owner (on the Strategy-first chart plan)
 
 > "Strategy-first chart plan (#1113). to tumchya "APPROVED" de ata" (transliterated from Devanagari)

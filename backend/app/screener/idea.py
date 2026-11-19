@@ -40,7 +40,7 @@ _FILLER = frozenset("""a an the in into on onto with at of to and or but is are 
 stocks stock shares share symbols symbol names name scrips scrip find show me list scan screen screens for all any from by it its
 has have having still also only just near around close closer chart charts timeframe tf time frame look looking want i we my
 some there their this these those like as so very same plus also one other more less than up down market markets setup setups
-idea ideas""".split())
+idea ideas similarly similary likewise""".split())
 # Trade wording: an instruction at the start of a leftover ("buy when ..."), or a level word anywhere ("target 10%").
 _TRADE = re.compile(r"^(?:buy|sell|short|go long|go short)\b|\b(?:target|targets|stop|stops|stop-loss|stoploss|sl|entry|enter|exit)\b",
                     re.IGNORECASE)
@@ -57,6 +57,7 @@ class Part:
     assumptions: List[str] = field(default_factory=list)
     span: Tuple[int, int] = (0, 0)
     tf: str = ""                       # the chart the phrase named ("" = the scan's own timeframe)
+    join: str = "AND"                  # owner 19 Nov: how it joins the part before it ("or", or another side's words -> OR)
 
     def as_dict(self) -> Dict[str, object]:
         return {"rule": self.rule, "phrase": self.phrase, "condition": self.condition, "reads": self.reads, "assumptions": list(self.assumptions)}
@@ -66,6 +67,7 @@ class Part:
 class Draft:
     parts: List[Part]
     unsupported: List[Dict[str, str]]
+    timeframe: str | None = None       # owner 19 Nov: the idea's own "use timeframe 30 minutes" (the scan's chart)
 
 
 Builder = Callable[[re.Match, str], Optional[Tuple[str, str, List[str]]]]
@@ -245,13 +247,64 @@ def _supertrend(m: re.Match, tf: str) -> Tuple[str, str, List[str]]:
     return f"SupertrendDir(){_at(tf)} {'>' if up else '<'} 0", f"the Supertrend direction is {'up' if up else 'down'}{_on(tf)}", ["Supertrend 10, 3 (the defaults)"]
 
 
+def _touches(m: re.Match) -> tuple[int, list[str]]:
+    """"the 3rd touch of the trendline": the line already holds n - 1 swings and this bar is the n-th visit (B5's own
+    minimum is 2 swings, its two anchors); no count named = the B5 setting's own minimum."""
+    raw = m.groupdict().get("n")
+    if raw:
+        n = int(raw)
+        return max(2, min(10, n - 1)), [f"touch number {n} = the line already holds {max(2, min(10, n - 1))} swings and this bar touches it"]
+    return 2, ["a trendline = drawn through at least 2 confirmed swings (the latest ones, the usual setting)"]
+
+
+def _line_touch(side: str) -> Builder:
+    """Owner 19 Nov ("buy on 3rd touches of trend line ... sell on resistance trendline"): the bar reached the trendline
+    drawn through the latest confirmed swings and closed on its side - a rising support line (low at or under it, close
+    above) or a falling resistance line (high at or over it, close below). A 0.5% band counts as a touch."""
+    def build(m: re.Match, tf: str) -> tuple[str, str, list[str]]:
+        k, assumed = _touches(m)
+        line = f'ChannelLine("{"up" if side == "support" else "down"}", {k}){_at(tf)}'
+        at = _at(tf)
+        if side == "support":
+            cond = f"low{at} <= {line} * 1.005 AND close{at} >= {line}"
+            words = f"the bar touched the rising trendline and closed above it{_on(tf)}"
+        else:
+            cond = f"high{at} >= {line} * 0.995 AND close{at} <= {line}"
+            words = f"the bar touched the falling trendline and closed below it{_on(tf)}"
+        return f"({cond})", words, assumed + ["a touch = within 0.5% of the line"]
+    return build
+
+
+def _level(side: str) -> Builder:
+    """A horizontal support / resistance level from the latest swings (NearSupport / NearResistance: the scan's own
+    chart only - a level named on another chart is not read)."""
+    def build(m: re.Match, tf: str) -> tuple[str, str, list[str]] | None:
+        if tf:
+            return None
+        fn = "NearSupport" if side == "support" else "NearResistance"
+        return (f"{fn}(0.5)", f"the close is at a horizontal {side} level from the latest swings",
+                [f"at the level = within 0.5% of the nearest {side} level"])
+    return build
+
+
 _SIDE = r"(?:(?P<side>bullish|bearish|bull|bear)\s+)?"
+# owner 19 Nov: the spellings traders type ("suport", "ressistance", "trend line")
+_SUPPORT = r"sup+ort"
+_RESIST = r"res+ist[ae]n[cs]e"
+_LINE = r"trend\s*-?\s*lines?"
+_NTH = r"(?:(?P<n>\d{1,2})\s*-?\s*(?:st|nd|rd|th)?\s+touch(?:es)?\s+(?:of|on|at|to)\s+(?:the\s+|a\s+)?)?"
 RULES: Sequence[Tuple[str, "re.Pattern[str]", Builder]] = [
     ("trend_up", re.compile(r"\b(?:up[- ]?trend|trending up|rising trend|higher highs and higher lows)\b", re.I), _trend("UP")),
     ("trend_down", re.compile(r"\b(?:down[- ]?trend|trending down|falling trend|lower highs and lower lows)\b", re.I), _trend("DOWN")),
     ("range", re.compile(r"\b(?:sideways|range[- ]?bound|ranging|in a range)\b", re.I), _trend("RANGE")),
-    ("demand_zone", re.compile(r"\b(?:demand|buyer|support)\s+(?:zone|area)s?\b", re.I), _zone("demand")),
-    ("supply_zone", re.compile(r"\b(?:supply|seller|resistance)\s+(?:zone|area)s?\b", re.I), _zone("supply")),
+    ("trendline_resistance", re.compile(rf"\b{_NTH}(?:{_RESIST}\s+{_LINE}|(?:falling|down)\s*{_LINE}|{_LINE}\s+{_RESIST})\b", re.I),
+     _line_touch("resistance")),
+    ("trendline_support", re.compile(rf"\b{_NTH}(?:{_SUPPORT}\s+{_LINE}|(?:rising|up)\s*{_LINE}|{_LINE}(?:\s+{_SUPPORT})?)\b", re.I),
+     _line_touch("support")),
+    ("support_level", re.compile(rf"\b(?:horizontal\s+{_SUPPORT}(?:\s+(?:line|level)s?)?|{_SUPPORT}\s+(?:line|level)s?)\b", re.I), _level("support")),
+    ("resistance_level", re.compile(rf"\b(?:horizontal\s+{_RESIST}(?:\s+(?:line|level)s?)?|{_RESIST}\s+(?:line|level)s?)\b", re.I), _level("resistance")),
+    ("demand_zone", re.compile(rf"\b(?:demand|buyer|{_SUPPORT})\s+(?:zone|area)s?\b", re.I), _zone("demand")),
+    ("supply_zone", re.compile(rf"\b(?:supply|seller|{_RESIST})\s+(?:zone|area)s?\b", re.I), _zone("supply")),
     ("rsi_divergence", re.compile(rf"\b{_SIDE}(?:rsi\s+)?divergences?\b", re.I), _divergence),
     ("rsi_level", re.compile(r"\brsi(?:\s*\(?\s*14\s*\)?)?\s+(?:is\s+)?(?P<op>above|over|greater than|more than|>|below|under|less than|<|near|around|at|about)"
                              r"\s+(?P<value>\d{1,3}(?:\.\d+)?)\b", re.I), _rsi),
@@ -336,6 +389,12 @@ def read_idea(text: str, base_tf: str = "1d") -> Draft:
         return Draft([], [{"phrase": "the idea", "why": "only English is supported yet"}])
     parts: List[Part] = []
     taken: List[Tuple[int, int]] = []
+    scan_tf, span = scan_timeframe(text)
+    if scan_tf and span:
+        taken.append(span)
+        base_tf = scan_tf
+    for m in _METHOD_NOTE.finditer(text):      # "use the latest swings to identify ..." - how the lines are drawn already
+        taken.append(m.span())
     for rule, pattern, build in RULES:
         for m in pattern.finditer(text):
             span = m.span()
@@ -353,12 +412,50 @@ def read_idea(text: str, base_tf: str = "1d") -> Draft:
                 continue
             parts.append(Part(rule, re.sub(r"\s+", " ", m.group(0)).strip(), condition, reads, assumptions, span, tf or ""))
     parts.sort(key=lambda p: p.span[0])
-    return Draft(parts, _leftovers(text, taken))
+    for before, part in zip(parts, parts[1:]):
+        gap = text[before.span[1]:part.span[0]]
+        if _OR_GAP.search(gap):
+            part.join = "OR"
+    return Draft(parts, _leftovers(text, taken), scan_tf)
 
 
-def joined(conditions: Sequence[str]) -> str:
-    """The screen: the conditions joined with AND (an OR part keeps its parentheses)."""
-    return " AND ".join(c if " OR " not in c or c.startswith("(") else f"({c})" for c in conditions)
+# owner 19 Nov: "use timeframe 30 minutes", "timeframe: 15m", "on the 30 minute timeframe" - the scan's own chart
+_SCAN_TF = re.compile(r"\b(?:use\s+|on\s+(?:the\s+|a\s+)?|in\s+(?:the\s+|a\s+)?)?(?:time\s*-?\s*fram(?:e|es)?|tf)\s*(?:of|is|=|:)?\s*"
+                      r"(?P<tf>(?:\d+\s*-?\s*)?[a-z]+)\b|\b(?:use\s+|on\s+(?:the\s+|a\s+)?)(?P<tf2>\d+\s*-?\s*min(?:ute)?s?)\s+"
+                      r"(?:time\s*-?\s*fram(?:e|es)?|chart)\b", re.I)
+
+
+def scan_timeframe(text: str) -> tuple[str | None, tuple[int, int] | None]:
+    """The scan's own chart when the idea names it on its own ("use timeframe 30 minutes"), and where it said so."""
+    said = _SCAN_TF.search(text or "")
+    if not said:
+        return None, None
+    words = said.group("tf") or said.group("tf2") or ""
+    for pattern, tf_word in _TF_RE:
+        if pattern.search(words):
+            return tf_word, said.span()
+    return None, None
+
+
+_METHOD_NOTE = re.compile(r"\buse\s+(?:the\s+)?(?:latest|recent|last)\s+swings?\s+to\s+(?:identify|draw|find|mark|get)\b", re.I)
+# Between two parts: "or", or the other side's own words ("similarly sell on ...") -> either may match (OR)
+_OR_GAP = re.compile(r"\bor\b|\b(?:buy|sell|short|similarly|likewise|also for)\b", re.I)
+
+
+def joined(conditions: Sequence[str], joins: Sequence[str] | None = None) -> str:
+    """The screen: the conditions joined with AND (an OR part keeps its parentheses). Owner 19 Nov: a part whose join is
+    "OR" (the idea said "or", or turned to the other side) is an alternative: AND binds tighter, so
+    A AND B OR C reads (A AND B) OR C."""
+    wrapped = [c if " OR " not in c or c.startswith("(") else f"({c})" for c in conditions]
+    if not joins or all(j != "OR" for j in list(joins)[1:]):
+        return " AND ".join(wrapped)
+    groups: list[list[str]] = []
+    for i, c in enumerate(wrapped):
+        if i == 0 or joins[i] == "OR":
+            groups.append([c])
+        else:
+            groups[-1].append(c)
+    return " OR ".join(g[0] if len(g) == 1 else f"({' AND '.join(g)})" for g in groups)
 
 
 __all__ = ["DISCLAIMER", "NOT_SUPPORTED", "TRADE_WORDS_WHY", "MAX_IDEA_CHARS", "RULES", "Part", "Draft", "read_idea", "joined"]

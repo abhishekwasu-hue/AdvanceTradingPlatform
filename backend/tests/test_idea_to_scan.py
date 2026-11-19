@@ -131,3 +131,38 @@ def test_an_idea_with_nothing_known_is_a_plain_answer_not_an_error():
     body = client.post(URL, headers=t["headers"], json={"text": "stocks my friend likes"}).json()
     assert body["ok"] is False and body["text"] is None and body["stages"] == [] and body["parts"] == []
     assert body["not_supported"] == [{"phrase": "friend likes", "why": idea.NOT_SUPPORTED}]
+
+
+OWNER_19NOV = ("buy on 3 rd touches of trend line or horizontal suport line, use latest swings to identify trendline and suport line, "
+               "similary sell on ressistance trendline and horizontal resistance. use timefram 30 minutes")
+
+
+def test_the_owners_trendline_idea_reads_whole_on_its_own_timeframe():
+    """Owner 19 Nov ("own words scan not working"): trendline touches, horizontal support / resistance, his spellings and
+    "use timefram 30 minutes" - every part reads; "or" and the other side's words make alternatives (OR), never AND."""
+    from app.screener import idea_edits
+    draft, tf, _ = idea_edits.replay(OWNER_19NOV, "1d", [])
+    assert tf == "30m"
+    assert [p.rule for p in draft.parts] == ["trendline_support", "support_level", "trendline_resistance", "resistance_level"]
+    assert [p.join for p in draft.parts] == ["AND", "OR", "OR", "AND"]
+    assert 'ChannelLine("up", 2)' in draft.parts[0].condition and "touch number 3" in draft.parts[0].assumptions[0]
+    assert {u["why"] for u in draft.unsupported} == {idea.TRADE_WORDS_WHY}              # only "buy" / "sell" left: his decision
+    text = idea.joined([p.condition for p in draft.parts], [p.join for p in draft.parts])
+    ast, validated = compile_screen(text, base_tf=tf)
+    assert ast is not None and validated.ok, [p.message for p in validated.problems]
+    assert text.count(" OR ") == 2 and "NearSupport(0.5)" in text
+
+
+def test_or_groups_bind_looser_than_and():
+    assert idea.joined(["A()", "B()", "C()"], ["AND", "AND", "OR"]) == "(A() AND B()) OR C()"
+    assert idea.joined(["A()", "B()"], ["AND", "AND"]) == "A() AND B()"
+    assert idea.joined(["A()", "B()"]) == "A() AND B()"
+
+
+def test_the_route_opens_the_owners_trendline_idea_on_30_minutes():
+    t = _org("tl", ("screener_v2", "screener_copilot", "screener_breakouts", "screener_breakouts_bk4"))
+    got = client.post(URL, headers=t["headers"], json={"text": OWNER_19NOV, "base_tf": "1d"})
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["base_tf"] == "30m" and body["ok"], body
+    assert all(p["ok"] for p in body["parts"]), body["parts"]

@@ -624,6 +624,18 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 
 Note: Journal becomes its own My trades tab (his M60 list: Positions · Orders · Money · Results · Journal); a side facing
 empty space drags; a panel dropped on another's place swaps with it; a drag ends at window level (PR claude/journal-nav-panels).
+## 19 Nov - owner (Find setups, Own words)
+
+> "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest
+> swings to identify trendline and suport line, similary sell on ressistance trendline and horizontal resistance. use
+> timefram 30 minutes" -> "No part of this idea could become a condition yet")
+
+> "copy kele, briker la login kele, pn pudhe kasee karayche, copy kelele kuthe paste karu" (screenshot: Trade in your
+> broker app, HEROMOTOCO, Market, NRML)
+
+Note: the reader gains trendline touches (support / resistance), horizontal support / resistance, his spellings, the
+idea's own "use timeframe" and OR between alternatives (PR claude/idea-trendlines). The broker-app question is answered
+in chat; an improvement is logged as a decision for the owner.
 ## 19 Nov - owner (on the Strategy-first chart plan)
 
 > "Strategy-first chart plan (#1113). to tumchya "APPROVED" de ata" (transliterated from Devanagari)

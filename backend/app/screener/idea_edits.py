@@ -292,7 +292,7 @@ def replay(text: str, base_tf: str, edits: Sequence[str]) -> Tuple[reader.Draft,
     `@tf`, and one that named another chart keeps it."""
     ops = [parse(e) for e in list(edits)[:MAX_EDITS]]
     before: List[str] = []
-    final_tf = base_tf
+    final_tf = reader.scan_timeframe(text)[0] or base_tf      # owner 19 Nov: the idea's own "use timeframe 30 minutes"
     for op in ops:
         before.append(final_tf)
         if op.kind != "tf" or op.tf == (op.tf_from or final_tf):

@@ -4,7 +4,7 @@ import { OrderModeChoice } from "../fno/OrderModeV2";
 import type { TradeSettingsView } from "../settings/tradeSettings";
 import actionSource from "./BrokerAppAction.tsx?raw";
 import { BrokerAppAction, BrokerFactsBody, SL_REMINDER, StopLossReminder, type BrokerAppInfo } from "./BrokerAppAction";
-import { basketFacts, entryFacts, ownEntrySettings, ownStopSetting, reverseFacts, ticketFacts } from "./brokerFacts";
+import { basketFacts, cashProduct, entryFacts, ownEntrySettings, ownStopSetting, reverseFacts, ticketFacts } from "./brokerFacts";
 import { BROKER_TABLE, KITE_BASKET_URL, brokerRow, factRows, factsText, kiteEntryLink, type OrderFacts } from "./brokerLinks";
 import ticketSource from "../fno/OrderTicketV2.tsx?raw";
 import basketSource from "../fno/BasketPanelV2.tsx?raw";
@@ -63,6 +63,14 @@ describe("B2 / B3 facts come only from his own order or settings", () => {
     const none = entryFacts({ symbol: "RELIANCE", direction: "SHORT" }, ownEntrySettings(null));
     expect(none).toMatchObject({ side: "SELL", quantity: null, orderType: null, product: null });
     expect(entryFacts({ symbol: "NIFTY 50", direction: "LONG", index: true }, own)).toMatchObject({ exchange: null, quantity: null });
+    // Owner 19 Nov: a cash share never shows NRML (the F&O product) - it reads as CNC; an F&O proposal keeps NRML
+    const nrml = ownEntrySettings(settings({ "order_defaults.product": "NRML" }));
+    expect(entryFacts({ symbol: "RELIANCE", exchange: "NSE", direction: "LONG" }, nrml).product).toBe("CNC");
+    expect(entryFacts({ symbol: "RELIANCE", exchange: "BSE", direction: "LONG" }, nrml).product).toBe("CNC");
+    expect(entryFacts({ symbol: "NIFTY", exchange: "NFO", direction: "LONG", legs: ["NIFTY 28 OCT 22800 CE"] }, nrml).product).toBe("NRML");
+    expect(entryFacts({ symbol: "NIFTY FUT", exchange: "NFO", direction: "LONG" }, nrml).product).toBe("NRML");
+    expect(cashProduct("mis")).toBe("MIS");
+    expect(cashProduct(null)).toBeNull();
     // Fixed lots is not a stock quantity
     expect(ownEntrySettings(settings({ "position_size.mode": "FIXED_LOTS", "position_size.lots": 2 }))).toMatchObject({ quantity: null, lots: 2 });
   });

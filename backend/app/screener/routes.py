@@ -1427,10 +1427,11 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
         parts.append({**part.as_dict(), "condition": nodes.to_text(ast) if ast is not None and not problems else part.condition,
                       "ok": not problems, "problems": problems})
     usable = [p["condition"] for p in parts if p["ok"]]
+    joins = [part.join for part, p in zip(draft.parts, parts) if p["ok"]]          # owner 19 Nov: "or" stays OR
     text: Optional[str] = None
     stages: List[Dict[str, Any]] = []
     if usable:
-        ast, validated = _compiled(idea.joined(usable), base_tf, {})
+        ast, validated = _compiled(idea.joined(usable, joins), base_tf, {})
         await _gate(session, user, ast, validated, {})
         if ast is not None and validated.ok:
             text, stages = nodes.to_text(ast), st.split(ast)

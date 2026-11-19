@@ -627,6 +627,18 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 Note: My trades > Positions shows "Closed today" only; "Earlier trades" searches by a date range (IST days) and a
 symbol; the other cards (costs, journal drafts, paper account and tools) fold under one "More" line, closed by default
 and remembered per browser (PR claude/closed-trades-today).
+## 19 Nov - owner (Find setups, Own words)
+
+> "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest
+> swings to identify trendline and suport line, similary sell on ressistance trendline and horizontal resistance. use
+> timefram 30 minutes" -> "No part of this idea could become a condition yet")
+
+> "copy kele, briker la login kele, pn pudhe kasee karayche, copy kelele kuthe paste karu" (screenshot: Trade in your
+> broker app, HEROMOTOCO, Market, NRML)
+
+Note: the reader gains trendline touches (support / resistance), horizontal support / resistance, his spellings, the
+idea's own "use timeframe" and OR between alternatives (PR claude/idea-trendlines). The broker-app question is answered
+in chat; an improvement is logged as a decision for the owner.
 ## 19 Nov - owner (on the Strategy-first chart plan)
 
 > "Strategy-first chart plan (#1113). to tumchya "APPROVED" de ata" (transliterated from Devanagari)

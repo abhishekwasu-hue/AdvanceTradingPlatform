@@ -543,3 +543,12 @@ Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Se
 Note: My trades > Positions shows "Closed today" only; "Earlier trades" searches by a date range (IST days) and a
 symbol; the other cards (costs, journal drafts, paper account and tools) fold under one "More" line, closed by default
 and remembered per browser (PR claude/closed-trades-today).
+## 19 Nov - owner (LIVE order from the F&O ticket)
+
+> (3 screenshots, no text) LIVE ticket, NIFTY 25300 CE 23 NOV 26, Buy - Market - NRML, 1 lot. Result: "Not placed: NIFTY
+> 25300 CE 23 NOV 26 verified against upstox's instrument master (lot 65)". Next try: "Broker state uncertain since
+> 2026-11-19T05:18:59+00:00 (order 4 ... FAILED: ... Broker call failed: The ''product'' is invalid) - LIVE entries blocked
+> until position reconciliation passes". The confirm step also showed "Available (PAPER)" and "PAPER blocks nothing".
+
+Note: root cause - the Upstox adapter sent ATP's product word "NRML" as is; Upstox takes I / D / MTF. Fixed with the
+failure shown first and no PAPER lines on a LIVE ticket (PR claude/upstox-live-product).

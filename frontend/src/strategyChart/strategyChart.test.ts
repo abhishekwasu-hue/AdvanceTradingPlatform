@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitWord, strategyLayer, strategyMarkers, strategyStudies, type PlotReply } from "./model";
+import { exitWord, strategyLayer, strategyMarkers, strategyStudies, whyAt, type PlotReply } from "./model";
 
 /** SFC P1: the chart parts from the server's one evaluation (made-up reply). */
 const REPLY: PlotReply = {
@@ -69,5 +69,19 @@ describe("SFC P1: the strategy on the chart", () => {
     expect(exit).toMatchObject({ shape: "circle", position: "aboveBar", color: "down", text: "Stop" });
     expect([exitWord("Target 1"), exitWord("Stop Loss"), exitWord("EXIT_SIGNAL"), exitWord("TIME_EXIT"), exitWord("Trailing stop"), exitWord(undefined)])
       .toEqual(["Target", "Stop", "Exit rule", "Time", "Trailing", "Exit"]);
+  });
+
+  it("P3 (T7): a signal marker lists its rule's conditions; an exit names its rule and result; nothing elsewhere", () => {
+    const reply: PlotReply = { ...REPLY, why: { m1: [
+      { id: "c1", held: true, optional: false, text: "EMA(close, 9) crossed above EMA(close, 21)", values: { left: 101, right: 99 }, timeframe: "5m" },
+      { id: "c2", held: false, optional: true, text: "RSI(14) > 45", values: { left: 40, right: 45 }, timeframe: "5m" }] } };
+    const at = (iso: string) => Date.parse(iso) / 1000;
+    const [entry] = whyAt(reply, at("2026-11-18T04:00:00Z"));
+    expect(entry).toMatchObject({ title: "Long entry", tone: "up" });
+    expect(entry.rows.map((r) => [r.held, r.optional])).toEqual([[true, false], [false, true]]);
+    expect(whyAt(reply, at("2026-11-18T04:10:00Z"))[0]).toMatchObject({ title: "Short signal · not taken (already in a trade)", tone: "muted" });
+    expect(whyAt(reply, at("2026-11-18T04:20:00Z"))[0]).toMatchObject({ title: "Long exit · Stop", tone: "down", rule: "STOP_LOSS", pnl: -12 });
+    expect(whyAt(reply, at("2026-11-18T04:05:00Z"))).toEqual([]);
+    expect(whyAt(reply, null)).toEqual([]);
   });
 });

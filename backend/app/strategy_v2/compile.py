@@ -51,6 +51,9 @@ class Leaf:
     timeframe: str
     operands: dict[str, Any] = field(default_factory=dict)       # role (left / right / low / high) -> number expression
     operand_text: dict[str, str] = field(default_factory=dict)
+    cmp: str = ""                              # SFC P3: the comparison, for the marker's "why" in words
+    bars: int | None = None
+    within_bars: int | None = None
 
 
 @dataclass
@@ -212,7 +215,7 @@ def compile_strategy(strategy: StrategyV2) -> Compiled:
                 o = _on_timeframe(o, tf) if tf != base else o
                 if validate_study(o, base_tf=base).kind == NUM:
                     operands[r] = o
-            leaves[cond.id] = Leaf(cond.id, text, ast, tf, operands, parts)
+            leaves[cond.id] = Leaf(cond.id, text, ast, tf, operands, parts, cond.cmp, cond.bars, cond.within_bars)
             for t, bars in check.validated.lookback.items():
                 lookback[t] = max(lookback.get(t, 0), int(bars))
             for t, bars in {**check.validated.lookback, **check.validated.fetch_lookback}.items():

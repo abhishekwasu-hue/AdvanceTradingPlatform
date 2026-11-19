@@ -63,7 +63,8 @@ def test_every_signal_bar_is_a_marker_and_the_taken_ones_are_the_backtests_entri
     exits = [m for m in out["markers"] if m["kind"] == "exit"]
     assert exits and all(m["rule"] for m in exits)
     first = entries[0]["id"]
-    assert {row["id"] for row in out["why"][first]} == {"c1", "c2", "s1"}
+    # P3: the conditions of the rule that fired (the long side's for a long entry, the short side's for a short one)
+    assert {row["id"] for row in out["why"][first]} == ({"c1", "c2"} if entries[0]["side"] == "long" else {"s1"})
     assert any(row["held"] and row["values"] for row in out["why"][first])
 
 

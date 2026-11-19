@@ -87,3 +87,23 @@ def test_a_breakout_condition_draws_its_box_from_the_evidence_builder():
     assert plot(_strategy(), _bars(), "S", RISK)["pa"] == []          # indicator-only: no PA shape is made up
     for p in out["pa"]:
         assert p["kind"] in ("band", "box") and p["low"] <= p["high"] and p["from"] <= p["to"]
+
+
+# --- P3: the marker's "why" -------------------------------------------------------------------------------------------
+def test_t7_a_signal_marker_lists_its_own_rules_conditions_in_words_with_values():
+    out = plot(_strategy(), _bars(), "S", RISK)
+    longs = [m for m in out["markers"] if m["kind"] in ("entry", "skipped") and m["side"] == "long"]
+    rows = out["why"][longs[0]["id"]]
+    assert [r["id"] for r in rows] == ["c1", "c2"] and all(r["held"] for r in rows)       # AND: every one held
+    assert rows[0]["text"] == "EMA(close, 9) crossed above EMA(close, 21)" and rows[1]["text"] == "RSI(14) > 45"
+    assert all(v is not None for r in rows for v in r["values"].values())
+
+
+def test_t7_a_condition_that_did_not_hold_in_an_or_group_is_marked_optional():
+    ored = copy.deepcopy(RAW)
+    ored["entry"]["long"]["op"] = "OR"
+    out = plot(_strategy(ored), _bars(1500, seed=9), "S", RISK)
+    rows = [out["why"][m["id"]] for m in out["markers"] if m["kind"] in ("entry", "skipped") and m["side"] == "long"]
+    assert all(any(r["held"] for r in rs) for rs in rows)                                     # the bar met the group
+    assert all(r["optional"] == (not r["held"]) for rs in rows for r in rs)
+    assert any(r["optional"] for rs in rows for r in rs)

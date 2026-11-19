@@ -195,6 +195,7 @@ export default function ChartsPageV2(_props: PageProps) {
     return [...cur, { id, slot }];
   }), []);
   const [stratMarks, setStratMarks] = useState<Record<string, ChartMarker[]>>({});
+  const [whySlot, setWhySlot] = useState<HTMLDivElement | null>(null);
   const onStratMarkers = useCallback((id: string, marks: ChartMarker[]) => setStratMarks((cur) => {
     if ((cur[id] ?? []) === marks || (!marks.length && !cur[id])) return cur;
     const next = { ...cur };
@@ -400,7 +401,9 @@ export default function ChartsPageV2(_props: PageProps) {
             )}
             {/* CTB-1 (owner 14 Nov): Buy / Sell / Exit on a contract's chart; Buy / Sell on an NSE share's (15 Nov); nothing on an index */}
             <ChartTradeBar symbol={symbol} exchange={exchange} ltp={live.ltp?.ltp ?? null} className="border-b border-subtle px-space-3 py-space-1" />
-            <div data-tour="charts-chart" className={cx("flex min-h-0", fs.on && "flex-1")}>
+            <div data-tour="charts-chart" className={cx("relative flex min-h-0", fs.on && "flex-1")}>
+              {/* SFC P3: a marker's "why" floats here, over the price pane's top (clear of the price axis) */}
+              <div ref={setWhySlot} data-strategy-why-slot className="pointer-events-none absolute left-space-3 top-space-12 z-20 max-w-[min(30rem,calc(100%-6.5rem))] md:left-space-12" />
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
                 prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
@@ -411,7 +414,7 @@ export default function ChartsPageV2(_props: PageProps) {
             </div>
             {strategyOn && stratChosen.map((c) => (
               <StrategyLayerV2 key={c.id} engine={engine} strategyId={c.id} slot={c.slot} symbol={symbol} exchange={exchange} timeframe={timeframe}
-                candles={data.candles} onMarkers={onStratMarkers} legend={!fs.on}
+                candles={data.candles} onMarkers={onStratMarkers} legend={!fs.on} whySlot={whySlot}
                 onShowTf={(tf) => { setPicked(true); setView({ timeframe: tf }); }} onClear={() => pickStrategy(c.id)} />
             ))}
             {screenId != null && screenShown && !fs.on && (

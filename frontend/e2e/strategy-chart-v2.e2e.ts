@@ -43,7 +43,13 @@ function reply(tf: string, id = "custom:7") {
       { id: "m3", t: at(40), kind: "entry", side: "short" }, { id: "m4", t: at(30), kind: "skipped", side: "long" },
       { id: "m5", t: at(26), kind: "exit", side: "short", rule: "Stop Loss", pnl: -20 }, { id: "m6", t: at(12), kind: "entry", side: "long" },
     ],
-    why: {}, trades: [], gaps: [],
+    why: {
+      m1: [{ id: "c1", held: true, optional: false, text: "EMA(close, 9) crossed above EMA(close, 21)", values: { left: 24512.4, right: 24380.1 }, timeframe: "5m" },
+           { id: "c2", held: true, optional: false, text: "RSI(14) > 45", values: { left: 58.2, right: 45 }, timeframe: "5m" }],
+      m6: [{ id: "c1", held: true, optional: false, text: "EMA(close, 9) crossed above EMA(close, 21)", values: { left: 24601, right: 24590 }, timeframe: "5m" },
+           { id: "c2", held: true, optional: false, text: "RSI(14) > 45", values: { left: 61, right: 45 }, timeframe: "5m" }],
+    },
+    trades: [], gaps: [],
   };
 }
 
@@ -166,5 +172,58 @@ test.describe("SFC P2 on a phone (390)", () => {
     await expect(page.locator("[data-strategy-legend]")).toHaveCount(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p2-phone.png`, fullPage: false });
+  });
+});
+
+test.describe("SFC P3: why a marker is there (1440)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test("T7: hovering a marker's candle lists the conditions that held; an exit names its rule and result", async ({ page }) => {
+    await open(page);
+    await page.getByTestId("strategy-button").click();
+    await page.locator("[data-strategy-option='custom:7']").click();
+    await expect(chart(page)).toHaveAttribute("data-markers", "6");
+    const box = (await chart(page).locator("canvas").first().boundingBox())!;
+    const why = page.locator("[data-strategy-why]");
+    const seen = new Set<string>();
+    for (let x = box.x + box.width - 80; x > box.x + 10 && seen.size < 2; x -= 2) {   // sweep the candles right to left
+      await page.mouse.move(x, box.y + box.height / 3);
+      if (await why.count()) {
+        const text = (await why.innerText()).trim();
+        if (text.includes("Long entry") && !seen.has("entry")) {
+          seen.add("entry");
+          await expect(why.locator("[data-why-row='c1']")).toContainText("EMA(close, 9) crossed above EMA(close, 21)");
+          await expect(why.locator("[data-why-row='c2']")).toHaveAttribute("data-held", "true");
+          if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p3-why-entry.png` });
+        }
+        if (text.includes("exit") && !seen.has("exit")) {
+          seen.add("exit");
+          await expect(why.locator("[data-why-exit]")).toContainText("Rule:");
+          await expect(why.locator("[data-why-exit]")).toContainText("P&L");
+          if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p3-why-exit.png` });
+        }
+      }
+    }
+    expect([...seen].sort()).toEqual(["entry", "exit"]);
+    await page.mouse.move(box.x + box.width + 200, box.y - 50);                        // off the chart: the card goes
+    await expect(why).toHaveCount(0);
+  });
+});
+
+test.describe("SFC P3 on a phone (390)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  test("T7: tapping a marker's candle shows why, over the chart, inside the screen", async ({ page }) => {
+    await open(page);
+    await page.getByRole("button", { name: "More chart controls" }).click();
+    await page.getByRole("dialog", { name: "More chart controls" }).getByRole("button", { name: /Your strategies on the chart/ }).click();
+    await page.locator("[data-strategy-option='custom:7']").click();
+    await expect(chart(page)).toHaveAttribute("data-markers", "6");
+    const box = (await chart(page).locator("canvas").first().boundingBox())!;
+    const why = page.locator("[data-strategy-why]");
+    for (let x = box.x + box.width - 70; x > box.x + 10 && !(await why.count()); x -= 2) await page.mouse.click(x, box.y + box.height / 3);
+    await expect(why).toBeVisible();
+    const card = (await why.boundingBox())!;
+    expect(card.x).toBeGreaterThanOrEqual(0);
+    expect(card.x + card.width).toBeLessThanOrEqual(391);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/sfc-p3-why-phone.png` });
   });
 });

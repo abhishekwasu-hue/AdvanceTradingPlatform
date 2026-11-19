@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { ChartMarker } from "../charting/markers";
 import { cx } from "../components/primitives/cx";
 import { chartTimeframe } from "../screener/evidence";
 import { readChartPalette } from "../chart/chartTheme";
 import { timeframeLabel, type ChartBar, type TimeframeId } from "../chart/timeframes";
-import { STATE_WORDS, strategyChartApi, strategyLayer, strategyMarkers, strategyStudies, type ChartStrategy, type FormingBar, type PlotReply } from "./model";
+import { STATE_WORDS, strategyChartApi, strategyLayer, strategyMarkers, strategyStudies, whyAt, type ChartStrategy, type FormingBar, type PlotReply,
+  type WhyCard } from "./model";
+import { formatDateTimeIST, formatNumber } from "../ui/format";
 
 /**
  * SFC P1 (flag `strategy_chart`): one of his own strategies on the Charts page - only its indicators (each in its pane),
@@ -98,14 +101,79 @@ export function useStrategyOverlay(engine: LightweightEngine | null, args: { str
 
 /** One selected strategy: draws itself and hands its markers to the page (the chart has ONE marker list); removing it
  * takes back exactly what it drew. */
-export function StrategyLayerV2({ engine, strategyId, slot, symbol, exchange, timeframe, candles, onMarkers, onShowTf, onClear, legend = true }: {
+export function StrategyLayerV2({ engine, strategyId, slot, symbol, exchange, timeframe, candles, onMarkers, onShowTf, onClear, legend = true, whySlot = null }: {
   engine: LightweightEngine | null; strategyId: string; slot: number; symbol: string; exchange: string; timeframe: TimeframeId;
   candles: readonly ChartBar[]; onMarkers: (id: string, markers: ChartMarker[]) => void; onShowTf?: (tf: TimeframeId) => void; onClear: () => void;
-  legend?: boolean }) {
+  legend?: boolean; whySlot?: HTMLElement | null }) {
   const state = useStrategyOverlay(engine, { strategyId, slot, symbol, exchange, timeframe, candles });
   useEffect(() => { onMarkers(strategyId, state.markers); }, [onMarkers, strategyId, state.markers]);
   useEffect(() => () => onMarkers(strategyId, NONE), [onMarkers, strategyId]);
-  return legend ? <StrategyLegendV2 state={state} onShowTf={onShowTf} onClear={onClear} /> : null;
+  const cards = useMarkerWhy(engine, state.sameTf ? state.reply : null);
+  const why = cards.length > 0 ? <StrategyWhyV2 name={state.reply?.name ?? ""} colour={state.colour} cards={cards} floating={!!whySlot} /> : null;
+  return (
+    <>
+      {legend && <StrategyLegendV2 state={state} onShowTf={onShowTf} onClear={onClear} />}
+      {why && (whySlot ? createPortal(why, whySlot) : legend ? why : null)}
+    </>
+  );
+}
+
+/** P3: the marker under the crosshair (desktop hover) or the one tapped (phone; it stays until another tap). */
+export function useMarkerWhy(engine: LightweightEngine | null, reply: PlotReply | null): WhyCard[] {
+  const [hover, setHover] = useState<number | null>(null);
+  const [pinned, setPinned] = useState<number | null>(null);
+  const replyRef = useRef(reply);
+  replyRef.current = reply;
+  useEffect(() => {
+    if (!engine) return undefined;
+    return engine.on((e) => {
+      if (e.type === "crosshair") setHover(e.time);
+      else if (e.type === "click") setPinned(whyAt(replyRef.current, e.time).length ? e.time : null);
+    });
+  }, [engine]);
+  return useMemo(() => {
+    const live = whyAt(reply, hover);
+    return live.length ? live : whyAt(reply, pinned);
+  }, [reply, hover, pinned]);
+}
+
+const valueText = (v: number | null) => (v === null ? "—" : formatNumber(v, 2, { trim: true }));
+
+/** P3: why a marker is there - the conditions that held (with their values), the ones an OR group did not need, or the
+ * rule that closed the trade and its result. Reference only. */
+export function StrategyWhyV2({ name, colour, cards, floating = false }: { name: string; colour: string; cards: WhyCard[]; floating?: boolean }) {
+  return (
+    <section aria-label={`Why: ${name}`} data-strategy-why aria-live="polite"
+      className={cx("px-space-3 py-space-2 text-t13", floating ? "mb-space-1 rounded-panel border border-subtle bg-surface-1/95 shadow-raised" : "border-t border-subtle")}>
+      {cards.map((c) => (
+        <div key={c.id} className="py-space-1" data-why-card={c.id}>
+          <p className="flex flex-wrap items-center gap-x-space-2 font-semibold">
+            {colour && <span aria-hidden className="inline-block h-space-2 w-space-2 shrink-0 rounded-full" style={{ backgroundColor: colour }} />}
+            <span className={c.tone === "up" ? "text-up" : c.tone === "down" ? "text-down" : "text-fg-muted"}>{c.title}</span>
+            <span className="font-normal text-fg-muted">{formatDateTimeIST(c.t)}</span>
+          </p>
+          {c.rule !== undefined ? (
+            <p className="text-fg-muted" data-why-exit>
+              Rule: <span className="text-fg">{c.rule || "Exit"}</span>
+              {c.pnl != null && <> · P&amp;L <span className={c.pnl >= 0 ? "text-up" : "text-down"}>{c.pnl >= 0 ? "+" : ""}{formatNumber(c.pnl, 2)}</span></>}
+            </p>
+          ) : (
+            <ul className="mt-space-1 space-y-space-1">
+              {c.rows.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-baseline gap-x-space-2" data-why-row={r.id} data-held={r.held}>
+                  <span aria-hidden className={r.held ? "text-up" : "text-fg-muted"}>{r.held ? "✓" : "✗"}</span>
+                  <span className={r.held ? "text-fg" : "text-fg-muted"}>{r.text}</span>
+                  <span className="text-t12 text-fg-muted">{Object.values(r.values).map(valueText).join(" · ")}</span>
+                  {r.optional && <span className="text-t12 text-fg-muted">(not needed: another condition of its OR group held)</span>}
+                  <span className="sr-only">{r.held ? "held" : "did not hold"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </section>
+  );
 }
 
 /** The toolbar's Strategy choice: his own strategies, up to MAX_STRATEGIES at once (a chosen one is removed by choosing

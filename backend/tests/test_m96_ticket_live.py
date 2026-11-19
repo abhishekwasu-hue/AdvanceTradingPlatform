@@ -282,3 +282,20 @@ def test_the_live_status_says_why_not_and_reads_only(setup):
     assert client.get("/api/paper/fno/live-status", headers=t["headers"]).json() == {"open": True, "text": None}
     assert spy.built == 0 and spy.placed == []
     assert client.get("/api/paper/fno/live-status").status_code == 401
+
+
+def test_a_live_order_the_broker_refuses_says_why_first(setup, monkeypatch):
+    """Owner 19 Nov: a refused LIVE order showed "Not placed: ... verified against upstox's instrument master" - the
+    plan's note - instead of the broker's refusal. The failure now leads; the notes follow it."""
+    t, expiry, strike, symbol, spy = setup
+    _price(monkeypatch, 60.0)
+    spy.ltp = 60.0
+    _switches(t, live_on=True, granted=True, lock=False)
+
+    async def refuse(order):
+        raise RuntimeError("The 'product' is invalid")
+    monkeypatch.setattr(spy, "place_order", refuse)
+    placed = _place(t, _body(expiry, strike, mode="LIVE", lots=1, product="NRML", order_type="MARKET", client_ref=_ref()))
+    assert placed["status"] != "PLACED", placed
+    assert "product" in placed["reasons"][0] and "invalid" in placed["reasons"][0], placed["reasons"]
+    assert len(placed["reasons"]) > 1                                # the notes are still there, after the failure

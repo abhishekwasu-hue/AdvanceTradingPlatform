@@ -378,4 +378,8 @@ describe("UI-28 U7.5: Required beside Available on the confirm step", () => {
     expect(short).toContain("Less than the margin required");
     expect(renderToStaticMarkup(<Review preview={preview()} />)).not.toContain('data-line="available"');
   });
+  it("a LIVE order never shows the practice balance (owner 19 Nov)", () => {
+    const html = renderToStaticMarkup(<Review preview={preview({ mode: "LIVE", margin: { value: 50_000, basis: "x" } })} budget={budget} />);
+    expect(html).not.toContain('data-line="available"');
+  });
 });

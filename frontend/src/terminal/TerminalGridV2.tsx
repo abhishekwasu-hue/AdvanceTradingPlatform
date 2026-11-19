@@ -2,8 +2,8 @@ import { GripVertical, Minimize2, Move, X } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import {
-  COLUMNS, PANELS, ROWS, gutterLabel, gutters, maximiseView, movePanel, placeLimit, readingOrder, resetEdge, resizeAcrossEdge, resizeFromCorner,
-  usedRows, type Gutter, type PanelId, type PanelPlace, type PresetId, type SizeLimit,
+  COLUMNS, PANELS, ROWS, freeEdges, gutterLabel, gutters, maximiseView, movePanel, placeLimit, readingOrder, resetEdge, resizeAcrossEdge, resizeFreeEdge,
+  resizeFromCorner, swapPanels, usedRows, type Gutter, type PanelId, type PanelPlace, type PresetId, type Side, type SizeLimit,
 } from "./layoutModel";
 
 /**
@@ -29,7 +29,7 @@ export const ROW_REM = 2.5;
 const LIMIT_MS = 4000;
 
 type Gesture = {
-  id: PanelId | null; kind: "move" | "resize" | "edge"; gutter?: Gutter; startX: number; startY: number; base: PanelPlace | null; colPx: number; rowPx: number;
+  id: PanelId | null; kind: "move" | "resize" | "edge" | "free"; gutter?: Gutter; side?: Side; startX: number; startY: number; base: PanelPlace | null; colPx: number; rowPx: number;
 };
 type Limit = { text: string; gutter?: string };
 /** The guide that follows the pointer while a line is dragged (px, relative to the grid). */
@@ -74,7 +74,14 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
   const grid = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const timer = useRef<number | undefined>(undefined);
-  const [draft, setDraft] = useState<PanelPlace[] | null>(null);
+  const [draft, setDraftState] = useState<PanelPlace[] | null>(null);
+  // Owner 19 Nov: the drag reads its draft and ends from the window - a handle that unmounts mid-drag (a free edge that
+  // reaches the grid's edge) loses its pointer capture, and the grid then never heard the release (the next drag began
+  // from the old layout and undid the resize).
+  const draftRef = useRef<PanelPlace[] | null>(null);
+  const setDraft = (v: PanelPlace[] | null) => { draftRef.current = v; setDraftState(v); };
+  const live = useRef<{ move: (e: { clientX: number; clientY: number }) => void; end: () => void } | null>(null);
+  const unlisten = useRef<(() => void) | null>(null);
   const [said, setSaid] = useState("");
   const [limit, setLimit] = useState<Limit | null>(null);
   const [maxed, setMaxed] = useState<PanelId | null>(null);
@@ -84,7 +91,7 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
   const maxId = maxed && panels.some((x) => x.id === maxed && x.open) ? maxed : null;
   const view = maxId ? maximiseView(shown, maxId) : shown;
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => { window.clearTimeout(timer.current); unlisten.current?.(); }, []);
 
   /** T4-2: the limit, shown on the grid (and the line amber); it goes after a moment unless a drag is still on it. */
   function showLimit(next: SizeLimit | null, gutter?: Gutter, linger = true) {
@@ -98,6 +105,18 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     gesture.current = g;
     setDraft([...panels]);
+    unlisten.current?.();
+    const onMove = (ev: PointerEvent) => live.current?.move(ev);
+    const onUp = () => { unlisten.current?.(); live.current?.end(); };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    unlisten.current = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      unlisten.current = null;
+    };
   }
 
   function start(e: ReactPointerEvent, id: PanelId, kind: "move" | "resize") {
@@ -105,6 +124,13 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     const base = panels.find((x) => x.id === id);
     if (!base) return;
     begin(e, { id, kind, startX: e.clientX, startY: e.clientY, base, ...cellSize(grid.current) });
+  }
+
+  /** Owner 19 Nov: a side that faces empty space (a closed panel's place) drags too - the panel grows into it. */
+  function startFree(e: ReactPointerEvent, id: PanelId, side: Side) {
+    if (e.button !== 0 || maxId) return;
+    e.stopPropagation();
+    begin(e, { id, kind: "free", side, startX: e.clientX, startY: e.clientY, base: null, ...cellSize(grid.current) });
   }
 
   function startEdge(e: ReactPointerEvent, gutter: Gutter) {
@@ -121,7 +147,7 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     }
   }
 
-  function move(e: ReactPointerEvent) {
+  function move(e: { clientX: number; clientY: number }) {
     const g = gesture.current;
     if (!g) return;
     const dx = Math.round((e.clientX - g.startX) / g.colPx);
@@ -134,6 +160,12 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
       showLimit(r.limit, g.gutter, false);
       return;
     }
+    if (g.kind === "free" && g.id && g.side) {
+      const r = resizeFreeEdge(panels, g.id, g.side, g.side === "left" || g.side === "right" ? dx : dy);
+      setDraft(r.panels);
+      showLimit(r.limit, undefined, false);
+      return;
+    }
     if (!g.base || !g.id) return;
     if (g.kind === "resize") {                                 // the corner: the shared lines move (owner bug 13 Nov)
       const r = resizeFromCorner(panels, g.id, g.base.w + dx, g.base.h + dy);
@@ -143,8 +175,10 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     }
     const [a, b] = [g.base.x + dx, g.base.y + dy];
     const next = movePanel(panels, g.id, a, b);
-    if (next) setDraft(next);                                  // a place that covers another panel is skipped: the last good one stays
-    showLimit(dx || dy ? placeLimit(panels, g.id, "move", a, b) : null, undefined, false);
+    // Owner 19 Nov: onto another panel's place - the two swap (the basket comes up into the top row, any panel anywhere).
+    const swapped = next ? null : swapPanels(panels, g.id, a, b);
+    if (next || swapped) setDraft(next ?? swapped);            // else the last good place stays
+    showLimit(dx || dy ? (next || swapped ? null : placeLimit(panels, g.id, "move", a, b)) : null, undefined, false);
   }
 
   function end() {
@@ -152,7 +186,8 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     gesture.current = null;
     guideStart.current = null;
     setGuide(null);
-    if (g && draft && !same(draft, panels)) onChange(draft);
+    const last = draftRef.current;
+    if (g && last && !same(last, panels)) onChange(last);
     setDraft(null);
     if (limit) {                                               // the note stays a moment after the drag ends
       window.clearTimeout(timer.current);
@@ -209,12 +244,14 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
     setSaid(next ? `${PANELS[id].label} is maximised. Double-click its title again to restore the layout.` : "The layout is restored.");
   }
 
+  live.current = { move, end };
   const rows = usedRows(view);
+  const free = maxId ? [] : freeEdges(shown);
   return (
     <div className="relative">
       <div ref={grid} role="region" aria-label="Terminal panels" data-terminal-grid data-maximised={maxId ?? undefined}
         className="grid grid-cols-12 gap-space-2" style={{ gridAutoRows: `${ROW_REM}rem`, gridTemplateRows: `repeat(${rows}, ${ROW_REM}rem)` }}
-        onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+        >
         {/* The order of the props (not of a panel being dragged), so nothing is re-ordered in the page while a drag runs. */}
         {readingOrder(panels).map((base) => view.find((x) => x.id === base.id) ?? base).map((place) => {
           const active = draft !== null && gesture.current?.id === place.id;
@@ -252,9 +289,16 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
               </header>
               {/* Collapsed (another panel maximised): only the title shows; the content stays as it was for the restore. */}
               <div className={cx("min-h-0 flex-1 overflow-auto p-space-3", collapsed && "hidden")}>{render(place)}</div>
+              {free.filter((f) => f.id === place.id).map(({ side }) => (
+                <div key={side} onPointerDown={(e) => startFree(e, place.id, side)} data-panel-free-edge={`${place.id}:${side}`} aria-hidden
+                  title="Drag to resize into the empty space"
+                  className={cx("absolute z-10 touch-none hover:bg-brand", side === "left" ? "inset-y-0 left-0 w-1.5 cursor-col-resize"
+                    : side === "right" ? "inset-y-0 right-0 w-1.5 cursor-col-resize" : side === "top" ? "inset-x-0 top-0 h-1.5 cursor-row-resize"
+                    : "inset-x-0 bottom-0 h-1.5 cursor-row-resize")} />
+              ))}
               {!maxId && (
                 <div onPointerDown={(e) => start(e, place.id, "resize")} data-panel-resize={place.id} aria-hidden title="Drag to resize"
-                  className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize touch-none rounded-tl-control border-l border-t border-subtle bg-surface-2" />
+                  className="absolute bottom-0 right-0 z-20 h-4 w-4 cursor-se-resize touch-none rounded-tl-control border-l border-t border-subtle bg-surface-2" />
               )}
             </section>
           );

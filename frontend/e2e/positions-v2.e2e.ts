@@ -138,11 +138,24 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect(live).toContainText("−₹400");
     await expect(live).toContainText("Close a live position in your broker's app.");
 
+    // Owner 19 Nov: today's closed trades (190) here; the earlier ones (191, 192) in Earlier trades by date range.
     const closed = page.locator("[data-block='history'] [data-closed]");
-    await expect(closed).toHaveCount(3);
+    await expect(closed).toHaveCount(1);
     await expect(closed.first()).toContainText("HDFCBANK");
-    await expect(page.locator("[data-closed='191']")).toContainText("Charges ₹52.10 (from your contract note)");
-    await expect(page.locator("[data-closed='191']")).toContainText("Entered before the level held.");
+    const earlier = page.locator("[data-block='earlier'] [data-closed]");
+    await expect(earlier).toHaveCount(2);
+    await expect(page.locator("[data-block='earlier'] [data-closed='191']")).toContainText("Charges ₹52.10 (from your contract note)");
+    await expect(page.locator("[data-block='earlier'] [data-closed='191']")).toContainText("Entered before the level held.");
+    if (process.env.OWNER_SHOTS) await page.screenshot({ path: `${process.env.OWNER_SHOTS}/mytrades-today-earlier.png`, fullPage: true });
+    await page.locator("[data-earlier-search]").fill("infy");
+    await expect(earlier).toHaveCount(1);
+    // The extra cards fold under "More"; folded, they stay folded after a reload (this browser remembers it).
+    await page.locator("[data-block='more'] > summary").click();
+    await expect(page.locator("[data-block='tools']")).toBeHidden();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("atp.positions.more"))).toBe("closed");
+    await page.reload();
+    await expect(page.locator("[data-block='more']")).not.toHaveAttribute("open", "");
+    await expect(page.locator("[data-block='tools']")).toBeHidden();
 
     // Owner bug report 13 Nov: the option's own chart opens in place, with the one-tap switch to its underlying. The
     // contract has made-up candles here, so the chart stays on it (without any, it moves to the underlying, which
@@ -196,7 +209,7 @@ test.describe("v2 positions 1440 desktop", () => {
     const block = page.locator("[data-block='positions']");
     await expect(block).toContainText("All positions are closed. Find a setup or let Autopilot trade for you.");
     await expect(block.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
-    await expect(page.locator("[data-block='history']")).toContainText("Closed trades show here.");
+    await expect(page.locator("[data-block='history']")).toContainText("No trades closed today.");
   });
 
   test("before the day's broker login: 'Log in to Upstox', and the paper exits still work", async ({ page }) => {

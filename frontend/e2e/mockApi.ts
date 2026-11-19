@@ -47,6 +47,9 @@ export interface MockCalls { posts: { url: string; method: string; body: unknown
 /** Answers every /api call from the captured fixtures (a real backend's responses for the demo account). */
 export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<MockCalls> {
   const calls: MockCalls = { posts: [] };
+  // Owner 19 Nov: My trades folds its extra cards under "More" (closed by default, remembered per browser). The
+  // existing tests read those cards, so they start with it open; positions-v2 checks the folded default itself.
+  await page.addInitScript(() => { try { if (!localStorage.getItem("atp.positions.more")) localStorage.setItem("atp.positions.more", "open"); } catch { /* none */ } });
   // /ai/actions/*: a small state machine (PROPOSED -> APPROVED / REJECTED), so the lists the page reloads after a
   // decision show it - every action is answered with the exact shape the backend returns.
   const actionsState = new Map<number, Action>();

@@ -389,7 +389,7 @@ async def execute_signal_for_user(
                     title=f"Order not placed: {signal.symbol}", message=why,
                     severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
                 )
-                return ExecutionResult(executed=False, reasons=pre_notes + [why]), order
+                return ExecutionResult(executed=False, reasons=[why] + pre_notes), order   # the failure first
 
         is_write = contract is not None and contract.position == OptionPosition.WRITE
         # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike. M68 TS1-009: the margin
@@ -476,10 +476,12 @@ async def execute_signal_for_user(
         with order_defaults.stop_band(mine.stop_limit_band_pct):     # M68 TS1-014: the protective stop's gap is his own
             result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
                                                                 pre_place_check=hierarchy_check)
-        if plan is not None:
-            result.reasons = plan.notes + result.reasons
-        if pre_notes:
-            result.reasons = pre_notes + result.reasons
+        # The plan's notes ("verified against the instrument master", the margin line ...) lead a placed order's reasons;
+        # on an order that did NOT go through they follow the reason it failed, so "Not placed: ..." names the failure
+        # (owner 19 Nov: a LIVE ticket showed the instrument-master note instead of the broker's refusal).
+        notes = list(pre_notes) + (plan.notes if plan is not None else [])
+        if notes:
+            result.reasons = notes + result.reasons if result.executed else result.reasons + notes
         if result.executed and result.trade is not None and paper_nr.advisory(mode):
             # PAPER-NR (2): the money this entry ties up against the practice balance (which may go below zero) - information.
             result.reasons = result.reasons + [await _practice_margin_line(session, user, result.trade, contract, manual_contract_meta)]

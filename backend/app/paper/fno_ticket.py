@@ -367,7 +367,7 @@ MarginReader = Callable[..., Awaitable[Optional[Tuple[float, str]]]]
 
 
 async def _broker_margin(session: AsyncSession, user: User, contract: Contract, side: str, units: float, product: str,
-                         fallback: Dict[str, Any], reader: Optional[MarginReader]) -> Dict[str, Any]:
+                         fallback: Dict[str, Any], reader: Optional[MarginReader], mode: str = "PAPER") -> Dict[str, Any]:
     """DEF-0 D8: the broker's margin for this order, labelled an estimate - on PAPER too, where nothing is blocked.
     Without it: the Builder's estimate when it has one, else one honest line (never a "-" beside "comes with the order
     ticket")."""
@@ -377,7 +377,7 @@ async def _broker_margin(session: AsyncSession, user: User, contract: Contract, 
     read = await reader(session, user, contract, side, units, product) if reader is not None else None
     if read is not None:
         value, name = read
-        return {"value": round(value, 2), "estimated": True, "basis": f"Your broker's margin for this order ({name}). PAPER blocks nothing.",
+        return {"value": round(value, 2), "estimated": True, "basis": f"Your broker's margin for this order ({name})." + ("" if mode == LIVE else " PAPER blocks nothing."),
                 "note": None, "source": "broker"}
     note = fallback.get("note")
     note = None if note and "comes with the order ticket" in note else note       # never "-" beside that promise
@@ -627,7 +627,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
         margin_line = future_margin(basis, units) if future else margin(side, right, float(contract.strike or 0.0), basis, ask.lots,
                                                                           contract.lot_size, contract.expiry)
     if margin_line is not None and contract is not None and basis is not None and units and ask.product is not None:
-        margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line, margin_reader)
+        margin_line = await _broker_margin(session, user, contract, side, units, ask.product, margin_line, margin_reader, mode)
     charges = None
     if basis is not None and units and not errors:
         from app.execution.india_costs import leg_cost

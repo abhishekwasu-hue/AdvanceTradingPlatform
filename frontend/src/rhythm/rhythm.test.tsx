@@ -105,3 +105,13 @@ describe("MO4 Telegram choice", () => {
     expect(telegramNote({ ...base, telegram: { connected: true, reaches_you: true } })).toBeNull();
   });
 });
+
+describe("owner 19 Nov: the Wrap tab during the session", () => {
+  it("says the market is open and offers the market now; after the close it does not", () => {
+    const during = html(<RhythmBriefV2 brief={CLOSING} phase="mid_session" kind="closing" onKind={() => undefined} />);
+    expect(during).toContain("data-rhythm-now");
+    expect(during).toContain("The market is open. This wrap is of the last session.");
+    const after = html(<RhythmBriefV2 brief={CLOSING} phase="closing" kind="closing" onKind={() => undefined} />);
+    expect(after).not.toContain("data-rhythm-now");
+  });
+});

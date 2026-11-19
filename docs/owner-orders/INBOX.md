@@ -512,3 +512,9 @@ Note: CA-CHAT approved with the default (OPEN_QUESTIONS CA-CHAT-Q1): one Setup d
 > "Journal mdhe trade import jhale aahet, but daily candle error mule chart tayar jhala nahi"
 
 Note: root cause - the imported option kept the broker's compact symbol and the trade chart looked it up as a cash share (a key never stored). Fix: an F&O contract is drawn on its own daily candles when stored, else on its underlying index's daily candles (marks on their days, the premium in words, never a price line on the index scale); the contract named in plain words; the At entry / At exit snapshots on the underlying too. Branch claude/journal-option-chart.
+
+## 19 Nov - owner (on the journal option-chart fix: daily candles)
+
+> "aho pan to daily candle varcha chart var kasa disnar te pandhra minitachya chart var disayla pahije mi journal madhlya chart baddal bolat aahe" (transliterated from Devanagari)
+
+Note: the journal trade chart must be a 15-minute chart, not Daily. Sources and the M86 rule (no other user's data) being checked before the build.

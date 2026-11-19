@@ -59,11 +59,23 @@ export function ownEntrySettings(view: TradeSettingsView | null | undefined): { 
 export function entryFacts(signal: { symbol: string; exchange?: string | null; direction: "LONG" | "SHORT" | null; legs?: readonly string[]; index?: boolean },
                            own: ReturnType<typeof ownEntrySettings>): OrderFacts {
   const legs = signal.legs && signal.legs.length ? signal.legs : undefined;
+  const cash = !legs && !signal.index && CASH_EXCHANGES.has((signal.exchange || "NSE").toUpperCase());
   return {
     instrument: signal.symbol, exchange: legs || signal.index ? null : (signal.exchange || "NSE"),
     side: legs ? null : signal.direction === "LONG" ? "BUY" : signal.direction === "SHORT" ? "SELL" : null,
-    quantity: legs || signal.index ? null : own.quantity, orderType: own.orderType, product: own.product, price: null, legs,
+    quantity: legs || signal.index ? null : own.quantity, orderType: own.orderType, product: cash ? cashProduct(own.product) : own.product, price: null, legs,
   };
+}
+
+const CASH_EXCHANGES = new Set(["NSE", "BSE"]);
+
+/** Owner 19 Nov ("Default yes"): a share bought in cash has no NRML (that is the F&O carry-forward product). His saved
+ * product reads as the cash one it means: NRML / CNC -> CNC (delivery), MIS stays MIS (intraday), MTF stays MTF; the
+ * same mapping the Upstox order path uses (brokers/upstox.py `upstox_product`). Nothing he did not save is filled in. */
+export function cashProduct(product: string | null): string | null {
+  if (!product) return null;
+  const p = product.toUpperCase();
+  return p === "NRML" || p === "CNC" ? "CNC" : p;
 }
 
 export const STOP_KIND_KEY = "exits.stop_loss_kind";

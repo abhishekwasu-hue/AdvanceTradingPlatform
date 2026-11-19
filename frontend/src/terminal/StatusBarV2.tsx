@@ -47,7 +47,8 @@ export function StatusBarV2({ status, failed, masked, onMask, compact = false, c
   );
   const modeChipEl = (
     <span title={mode.title} data-status="mode"
-      className="inline-flex shrink-0 items-center gap-space-1 rounded-pill border border-warn bg-warn-tint px-space-2 py-px text-t13 font-semibold text-warn">
+      className={mode.label === "Paper" ? "inline-flex shrink-0 items-center gap-space-1 rounded-pill border border-warn bg-warn-tint px-space-2 py-px text-t13 font-semibold text-warn"
+        : "inline-flex shrink-0 items-center gap-space-1 rounded-pill border border-down px-space-2 py-px text-t13 font-semibold text-down"}>
       <ShieldCheck size={14} aria-hidden />{mode.label}
     </span>
   );

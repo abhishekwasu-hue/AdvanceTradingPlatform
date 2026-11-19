@@ -135,7 +135,7 @@ export function ContextBarV2({ symbol, onSymbol, chain, spot, prevClose, vix, mo
           compact ? "absolute -top-space-3 right-space-3 min-h-6 bg-surface-1" : cx("relative min-h-9", !tools && "ml-auto"),
           paper ? "border-warn/40 text-warn" : "border-down/40 text-down")}>
         <span aria-hidden className={cx("pointer-events-none absolute inset-0 rounded-full", paper && "bg-warn-tint")} />
-        {compact && <ShieldCheck size={14} aria-hidden className="relative" />}<span className="relative">{paper ? "PAPER" : "LIVE"}</span>
+        {compact && <ShieldCheck size={14} aria-hidden className="relative" />}<span className="relative">{mode.label.toUpperCase()}</span>
       </span>
     </section>
   );

@@ -43,7 +43,10 @@ export const LIVE_ON_TITLE = "Live trading is on: each order and bot uses the mo
  *  OFF - Paper only, said so; ON - the mode of the page's order (Paper unless he picked Live), with his choice explained. */
 export function modeChip(s: TerminalStatus | null, liveAvailable = false): { label: string; title: string } {
   if (!liveAvailable) return { label: "Paper", title: PAPER_ONLY_TITLE };
-  return { label: s?.mode.mode === "LIVE" ? "Live" : "Paper", title: LIVE_ON_TITLE };
+  // Owner 19 Nov ("varti paper ha symbol ka disto" - "Default yes"): while LIVE is open for him the chip says so; each
+  // order and bot still uses the mode picked on it (Paper unless he picks Live).
+  if (s?.mode.mode === "LIVE" || s?.mode.live_allowed) return { label: "Live on", title: LIVE_ON_TITLE };
+  return { label: "Paper", title: LIVE_ON_TITLE };
 }
 
 /** The margin line: always labelled an estimate; the positions it could not estimate are said, never guessed. */

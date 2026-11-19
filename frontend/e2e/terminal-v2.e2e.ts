@@ -1856,6 +1856,22 @@ for (const width of [390, 360]) {
   });
 }
 
+// Owner 19 Nov ("varti paper ha symbol ka disto" - "Default yes"): while LIVE is open for him, the badge says LIVE ON
+// (red); each order and bot still picks its own mode (Paper unless he picks Live).
+test.describe("v2 terminal 1440: the mode badge while LIVE is open (owner 19 Nov)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  test("LIVE ON in red, its title says each order picks its own mode", async ({ page }) => {
+    await open(page, "dark", { features: { ...ON, live_trading: true, phase0_paper_only: false }, routes: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/terminal\/status$/, (r) => r.fulfill({ json: { ...STATUS, mode: { mode: "PAPER", live_allowed: true, message: "" } } }));
+    } });
+    const badge = page.locator("[data-terminal='mode']");
+    await expect(badge).toHaveText("LIVE ON");
+    await expect(badge).toHaveAttribute("data-mode", "live");
+    await expect(badge).toHaveAttribute("title", /each order and bot uses the mode you pick/);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/owner19-live-on.png`, clip: { x: 240, y: 60, width: 1200, height: 120 } });
+  });
+});
+
 // Owner 19 Nov ("panel drag karun resize krta yet nahi"; "basket panel khali disat aahe, drag karun warti ghewu shaklo pahije,
 // give flexibility to all panels"): the watchlist closed by its X leaves its columns empty - the chart's left side drags
 // into them; a panel dropped on another's place swaps with it (the basket comes up into the top row).

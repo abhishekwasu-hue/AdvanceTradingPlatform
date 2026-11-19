@@ -614,6 +614,11 @@ Note: the journal trade chart on 15 minutes by default, with a timeframe choice 
 
 Note: start CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1 default): one Setup dropdown + a chat on the same chart. Branch claude/ca-chat.
 
+## 19 Nov - owner (Terminal mode badge)
+
+> (Terminal screenshot, PAPER badge) "varti paper ha symbol ka disto" (transliterated from Devanagari)
+
+> "Default yes" (to: while LIVE is on for him, the badge says "Live on" in red; Paper when it is off)
 ## 19 Nov - owner (Find setups, Own words)
 
 > "own words scan not working" (screenshot: "buy on 3 rd touches of trend line or horizontal suport line, use latest
@@ -649,3 +654,28 @@ failure shown first and no PAPER lines on a LIVE ticket (PR claude/upstox-live-p
 
 Note: the page opens on the brief of the moment (Pulse during the session); the Wrap tab during the session now says it
 is the last session's wrap (subtitle and a line) with one tap to the market now (PR claude/today-phase).
+
+## 19 Nov - owner (Terminal and Journal)
+
+> "journal che tab disat nahi, tasech panel drag karun resize krta yet nahi" (Terminal screenshot: watchlist closed, its
+> columns empty beside the chart)
+
+> "basket panel khali disat aahe, drag karun warti ghewu shaklo pahije, give flexibility to all panels" (Panels dialog
+> screenshot)
+
+Note: Journal becomes its own My trades tab (his M60 list: Positions · Orders · Money · Results · Journal); a side facing
+empty space drags; a panel dropped on another's place swaps with it; a drag ends at window level (PR claude/journal-nav-panels).
+
+## 19 Nov - owner (My trades)
+
+> "old trades show hotat, tyachi awashyakta nahi, chalu diwsasache trade disayla pahije" (screenshot: Closed trades with
+> 16 Nov and 30 Oct trades)
+
+> "hide kelele bre" (screenshot: Cost of trading, Your F&O journal)
+
+> "My trades tab mdhe anek tabs aahet, tya hide kelelya bre ani chalu diwsache trade show kra, old serch mdhe dya with
+> date range selector"
+
+Note: My trades > Positions shows "Closed today" only; "Earlier trades" searches by a date range (IST days) and a
+symbol; the other cards (costs, journal drafts, paper account and tools) fold under one "More" line, closed by default
+and remembered per browser (PR claude/closed-trades-today).

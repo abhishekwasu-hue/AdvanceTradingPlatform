@@ -16,7 +16,7 @@ app/quality/causal_cases.py), so a signal once placed never moves when more bars
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -56,7 +56,7 @@ class Evaluation:
         return [k for k, v in self.truth.items() if bool(v[t])]
 
 
-def _combine(node: Union[str, Node], truth: dict[str, np.ndarray], size: int) -> np.ndarray:
+def _combine(node: str | Node, truth: dict[str, np.ndarray], size: int) -> np.ndarray:
     if isinstance(node, str):
         return truth[node]
     parts = [_combine(item, truth, size) for item in node.items]

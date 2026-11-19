@@ -16,7 +16,7 @@ with friendly names.
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -32,7 +32,7 @@ MAX_ITEMS = 20
 MAX_DEPTH = 4
 MAX_LEAVES = 40
 
-ParamValue = Union[float, int, str, bool]
+ParamValue = float | int | str | bool
 
 
 class _Model(BaseModel):
@@ -58,7 +58,7 @@ class BlockOperand(_Model):
     offset: int = Field(0, ge=0, le=500)
 
     @model_validator(mode="after")
-    def _names(self) -> "BlockOperand":
+    def _names(self) -> BlockOperand:
         if not _BLOCK.match(self.block):
             raise ValueError(f"block {self.block!r} is not a function name")
         for key in self.params:
@@ -67,7 +67,7 @@ class BlockOperand(_Model):
         return self
 
 
-Operand = Annotated[Union[ValueOperand, PriceOperand, BlockOperand], Field(discriminator="kind")]
+Operand = Annotated[ValueOperand | PriceOperand | BlockOperand, Field(discriminator="kind")]
 
 
 class Condition(_Model):
@@ -82,7 +82,7 @@ class Condition(_Model):
     within_bars: int | None = Field(None, ge=1, le=500)
 
     @model_validator(mode="after")
-    def _complete(self) -> "Condition":
+    def _complete(self) -> Condition:
         if not _ID.match(self.id):
             raise ValueError(f"condition id {self.id!r} must be 1-32 letters, digits, '-' or '_'")
         two_sided = ("crosses_above", "crosses_below", "gt", "lt", "gte", "lte")
@@ -100,7 +100,7 @@ class Condition(_Model):
 class Group(_Model):
     id: str | None = None
     op: Literal["AND", "OR"]
-    items: list[Union[Condition, "Group"]] = Field(min_length=1, max_length=MAX_ITEMS)
+    items: list[Condition | Group] = Field(min_length=1, max_length=MAX_ITEMS)
 
 
 Group.model_rebuild()
@@ -112,7 +112,7 @@ class Window(_Model):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     @model_validator(mode="after")
-    def _times(self) -> "Window":
+    def _times(self) -> Window:
         if not _HHMM.match(self.start) or not _HHMM.match(self.end):
             raise ValueError("the window takes times as HH:MM")
         if self.start >= self.end:
@@ -128,7 +128,7 @@ class Entry(_Model):
     max_entries_per_day: int | None = Field(None, ge=1, le=100)
 
     @model_validator(mode="after")
-    def _sides(self) -> "Entry":
+    def _sides(self) -> Entry:
         if self.sides in ("long", "both") and self.long is None:
             raise ValueError("long entries need their conditions")
         if self.sides in ("short", "both") and self.short is None:
@@ -144,7 +144,7 @@ class LevelRule(_Model):
     candle: Literal["entry", "signal", "previous"] | None = None
 
     @model_validator(mode="after")
-    def _complete(self) -> "LevelRule":
+    def _complete(self) -> LevelRule:
         needs = {"points": ("value",), "pct": ("value",), "premium": ("value",), "atr": ("value", "atr_period"),
                  "swing": ("swing_degree",), "candle": ("candle",)}[self.kind]
         missing = [k for k in needs if getattr(self, k) is None]
@@ -160,7 +160,7 @@ class Trailing(_Model):
     swing_degree: int | None = Field(None, ge=0, le=3)
 
     @model_validator(mode="after")
-    def _complete(self) -> "Trailing":
+    def _complete(self) -> Trailing:
         needs = {"points": ("value",), "pct": ("value",), "atr": ("value", "atr_period"), "swing": ("swing_degree",)}[self.kind]
         missing = [k for k in needs if getattr(self, k) is None]
         if missing:
@@ -173,7 +173,7 @@ class TimeExit(_Model):
     at: str | None = None
 
     @model_validator(mode="after")
-    def _one(self) -> "TimeExit":
+    def _one(self) -> TimeExit:
         if self.after_bars is None and self.at is None:
             raise ValueError("a time exit needs a number of bars or a time")
         if self.at is not None and not _HHMM.match(self.at):
@@ -204,7 +204,7 @@ class StrikeRule(_Model):
     premium: float | None = Field(None, gt=0)
 
     @model_validator(mode="after")
-    def _complete(self) -> "StrikeRule":
+    def _complete(self) -> StrikeRule:
         needs = {"atm": (), "itm": ("steps",), "otm": ("steps",), "delta": ("delta",), "premium": ("premium",)}[self.rule]
         missing = [k for k in needs if getattr(self, k) is None]
         if missing:
@@ -234,7 +234,7 @@ class StrategyV2(_Model):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     @model_validator(mode="after")
-    def _tree(self) -> "StrategyV2":
+    def _tree(self) -> StrategyV2:
         seen: set[str] = set()
         leaves = 0
         for group in self.groups().values():

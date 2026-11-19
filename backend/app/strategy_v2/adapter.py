@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from datetime import time
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -43,7 +43,7 @@ SIGNAL_TEXT = {"long": "Your long entry conditions turned true on this closed ba
                "short": "Your short entry conditions turned true on this closed bar"}
 
 
-def level(rule: Optional[LevelRule], ev: Evaluation, t: int, side: str, what: str) -> Optional[float]:
+def level(rule: LevelRule | None, ev: Evaluation, t: int, side: str, what: str) -> float | None:
     """A stop (`what` = "stop") or target ("target") price on bar t from his own rule; None when no rule or no value
     (a swing not formed yet). "premium" levels belong to the option leg (P6), not to the underlying."""
     if rule is None:
@@ -95,7 +95,7 @@ class StrategyV2Strategy(BaseStrategy):
         self.compiled: Compiled = compile_strategy(strategy)
         self.label = ENGINE_LABEL[strategy.timeframe]
         self.timeframes = [self.label]
-        self._cache: Optional[tuple[pd.DataFrame, str, Evaluation]] = None
+        self._cache: tuple[pd.DataFrame, str, Evaluation] | None = None
         self.computations = 0
         super().__init__()
 

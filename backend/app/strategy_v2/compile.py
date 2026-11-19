@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 from app.screener import nodes as n
 from app.screener.parser import ScreenQLSyntaxError, parse
@@ -31,7 +31,7 @@ from app.screener.validator import validate_study
 from app.strategy_templates.compile import _on_timeframe
 from app.strategy_v2.schema import BlockOperand, Condition, Group, PriceOperand, StrategyV2, ValueOperand, walk
 
-Operand = Union[ValueOperand, PriceOperand, BlockOperand]
+Operand = ValueOperand | PriceOperand | BlockOperand
 
 
 class StrategyError(ValueError):
@@ -57,7 +57,7 @@ class Leaf:
 class Node:
     """The AND / OR tree over leaf ids."""
     op: str
-    items: list[Union[str, "Node"]]
+    items: list[str | Node]
 
 
 @dataclass

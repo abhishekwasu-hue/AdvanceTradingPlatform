@@ -10,7 +10,7 @@ has no v2 form (a v2 target is a level rule) and is left out - the strategy then
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from app.strategy_engine.declarative import Condition as V1Condition
 from app.strategy_engine.declarative import CustomStrategyConfig
@@ -22,7 +22,7 @@ CMP = {"GT": "gt", "LT": "lt", "GTE": "gte", "LTE": "lte", "CROSSES_ABOVE": "cro
 PRICE = {"CLOSE": "close", "OPEN": "open", "HIGH": "high", "LOW": "low", "VOLUME": "volume"}
 
 
-def _operand(op: V1Operand) -> Optional[dict[str, Any]]:
+def _operand(op: V1Operand) -> dict[str, Any] | None:
     if op.type == "value":
         return {"kind": "value", "value": float(op.value)}
     name, p, k = op.indicator, int(op.period), float(op.multiplier)
@@ -42,7 +42,7 @@ def _operand(op: V1Operand) -> Optional[dict[str, Any]]:
     return {"kind": "indicator", "block": fn, "params": params}
 
 
-def _condition(c: V1Condition, i: int, side: str, base: str) -> Optional[dict[str, Any]]:
+def _condition(c: V1Condition, i: int, side: str, base: str) -> dict[str, Any] | None:
     tfs = {TF.get(o.timeframe or "", None) if o.timeframe else base for o in (c.left, c.right) if o.type != "value"}
     if len(tfs) > 1 or None in tfs:
         return None                                    # two timeframes in one condition: no exact v2 form
@@ -56,7 +56,7 @@ def _condition(c: V1Condition, i: int, side: str, base: str) -> Optional[dict[st
     return out
 
 
-def translate(config: CustomStrategyConfig) -> Optional[StrategyV2]:
+def translate(config: CustomStrategyConfig) -> StrategyV2 | None:
     """The v2 form of a v1 strategy, or None when it has no exact one (it then stays v1)."""
     base = TF.get(config.timeframe)
     if base is None:

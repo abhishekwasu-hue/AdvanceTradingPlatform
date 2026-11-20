@@ -692,6 +692,16 @@ Note: read together as "do not stop; finish the work" (the second message alone 
 Work continues in roadmap order: SFC P3 (marker "why", claude/sfc-p3), then P4-P6, then the Upstox TradeButton +
 the cash-share NRML fix (owner "Default yes" earlier).
 
+## 20 Nov - Copilot chat feel
+
+> "khupch boaring UI and presentation, AI connected astana proper chating hone apeskhit aahe,"
+
+Note on the screenshot (the Copilot panel on desktop):
+- The user bubble held an unfilled template ("... where the idea is wrong (a distance in ATRs) and your profit
+  objective in R. Information and education only, not advice. Every trading decision is yours.").
+- The answer was split into fixed chips/sections ("Summary", "What I need from you", "Next step") with bold headings.
+  It replied "I need your idea first ... your message is a template".
+- The panel shows "About NIFTY" and starters Brief / Read chart / Check my trade / My positions.
 ## 20 Nov - LIVE ticket still blocked (Marathi, transliterated; screenshot: NIFTY 25800 CE LIVE ticket, "Broker state uncertain since 2026-11-19T05:18:59+00:00 (order 4 ... FAILED ... The 'product' is invalid) - LIVE entries blocked until position reconciliation passes")
 
 > "live trading cha issue tumhi solve kela nahi ka"

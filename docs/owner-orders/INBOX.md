@@ -725,3 +725,10 @@ Follow-up (same day, relayed by the parent session, transliterated):
 
 Note: readable in one glance; the bias carried by a visual cue (colour + arrow / shape, colour-blind safe), never by
 buy / sell words (CLAUDE.md 3). Plan section "Glance design" (docs/plans/terminal-conclusion-PLAN.md); still a plan.
+
+Owner answer (same day, to the plan and TC-Q1..TC-Q5):
+
+> "Default yes"
+
+Note: the plan docs/plans/terminal-conclusion-PLAN.md is approved with every default (TC-Q1..TC-Q5). Build C0-C4, one PR
+each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ConclusionViewV2 } from "./ConclusionPanelV2";
-import { OI_SLOT_MS, SETTLE_MS, chipLabel, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
+import { ConclusionViewV2, SummaryV2 } from "./ConclusionPanelV2";
+import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
 import { CHOOSER_PANEL_IDS, PANEL_IDS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
 import pageSource from "./TerminalPageV2.tsx?raw";
@@ -104,5 +104,21 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     expect(conclusionPath("NIFTY", null, "15m", [], "a|b|3")).toBe("/terminal/conclusion?symbol=NIFTY&tf=15m&v=a%7Cb%7C3");
     expect(pageSource).not.toMatch(/setInterval/);
     expect(pageSource).toMatch(/useStepClose\(tfMs\(mainTf \?\? "15m"\), conclusionLive\)/);
+  });
+
+  it("C4: Summarise on tap; the summary with its cost; no key or refused: a plain reason, the readings unchanged", () => {
+    const ask = renderToStaticMarkup(<SummaryV2 busy={false} result={null} failed={false} onAsk={() => undefined} />);
+    expect(ask).toContain("Summarise with AI");
+    const done = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
+      result={{ ready: true, text: "Most readings lean up.", reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 80, cost_inr: 0.42 } }} />);
+    expect(done).toContain("Most readings lean up.");
+    expect(done).toContain("This summary cost ₹0.42 on your AI key.");
+    expect(done).toContain("Information only, not advice.");
+    const nokey = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
+      result={{ ready: false, text: null, reason: "Connect your own AI key in Settings to get a summary.", usage: null }} />);
+    expect(nokey).toContain("Connect your own AI key");
+    expect(nokey).toContain("Summarise with AI");
+    expect(costText(null)).toBe("");
+    expect(renderToStaticMarkup(<ConclusionViewV2 data={BODY} state="ok" summary={<i data-x />} />)).toContain("data-x");
   });
 });

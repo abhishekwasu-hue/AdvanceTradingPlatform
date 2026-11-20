@@ -1,8 +1,9 @@
-import { CandlestickChart, ChevronRight, Layers, ListChecks, RefreshCw, ShieldCheck, TriangleAlert, Wallet, Zap } from "lucide-react";
+import { CandlestickChart, ChevronRight, Layers, ListChecks, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wallet, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
 import {
-  chipLabel, fetchConclusion, glyph, segments, shortTime, toneOf, type Conclusion, type ConclusionSection, type Reading,
+  chipLabel, costText, fetchConclusion, glyph, segments, shortTime, summarizeConclusion, toneOf, type Conclusion, type ConclusionSection,
+  type ConclusionSummary, type Reading,
 } from "./conclusion";
 
 /**
@@ -12,12 +13,14 @@ import {
  * one structure line; what needs him; then each section folded (tap to open). Read only: no order button, no buy / sell
  * words (CLAUDE.md 3). Text sizes and colours from the tokens only.
  */
-export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, enabled = true, load = fetchConclusion }: {
+export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, enabled = true, load = fetchConclusion, summarize = summarizeConclusion }: {
   symbol: string; expiry: string | null; tf: string; also?: readonly string[];
   /** Any change refetches (bar close, a new OI slot, his positions / orders changing - C3). */
   refresh?: string | number;
   enabled?: boolean;
   load?: typeof fetchConclusion;
+  /** C4: the AI summary, on tap only (TC-Q3). */
+  summarize?: typeof summarizeConclusion;
 }) {
   const [data, setData] = useState<Conclusion | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
@@ -37,7 +40,42 @@ export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, 
     return () => { live = false; };
   }, [enabled, load, symbol, expiry, tf, alsoKey, refresh, tick]);
   useEffect(() => { last.current = ""; setData(null); setState("loading"); }, [symbol, expiry, tf]);
-  return <ConclusionViewV2 data={data} state={state} onRefresh={() => setTick((t) => t + 1)} />;
+  // C4: a summary belongs to the read it was made from; a new read (another fingerprint) clears it.
+  const [sum, setSum] = useState<{ busy: boolean; result: ConclusionSummary | null; failed: boolean; of: string }>({ busy: false, result: null, failed: false, of: "" });
+  const fingerprint = data?.fingerprint ?? "";
+  const shownSum = sum.of === fingerprint ? sum : { busy: false, result: null, failed: false, of: fingerprint };
+  const ask = () => {
+    setSum({ busy: true, result: null, failed: false, of: fingerprint });
+    summarize(symbol, expiry, tf, alsoKey ? alsoKey.split(",") : [], String(refresh))
+      .then((r) => setSum({ busy: false, result: r, failed: false, of: fingerprint }))
+      .catch(() => setSum({ busy: false, result: null, failed: true, of: fingerprint }));
+  };
+  return <ConclusionViewV2 data={data} state={state} onRefresh={() => setTick((t) => t + 1)}
+    summary={data ? <SummaryV2 busy={shownSum.busy} result={shownSum.result} failed={shownSum.failed} onAsk={ask} /> : null} />;
+}
+
+/** C4: "Summarise with AI" - his own key, on tap; the words are checked on the server (no advice, only the read's facts). */
+export function SummaryV2({ busy, result, failed, onAsk }: { busy: boolean; result: ConclusionSummary | null; failed: boolean; onAsk: () => void }) {
+  return (
+    <section aria-label="AI summary" data-summary className="space-y-space-1">
+      {result?.text ? (
+        <>
+          <p data-summary-text className="rounded-control border border-subtle bg-surface-2 p-space-2 text-fg">{result.text}</p>
+          <p className="text-t12 text-fg-muted">AI summary of the readings above. Information only, not advice. {costText(result.usage)}</p>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={onAsk} disabled={busy} data-summary-ask
+            className="inline-flex min-h-11 items-center gap-space-1 rounded-control border border-subtle px-space-3 text-t13 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60 md:min-h-9">
+            <Sparkles size={14} aria-hidden className="text-ai" />{busy ? "Summarising..." : "Summarise with AI"}
+          </button>
+          {(result?.reason || failed) && (
+            <p data-summary-reason className="text-t12 text-fg-muted">{result?.reason ?? "The summary could not be made right now. The readings above are unchanged."}</p>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 const SOURCE_ICON: Record<string, ReactNode> = {
@@ -46,7 +84,9 @@ const SOURCE_ICON: Record<string, ReactNode> = {
 };
 
 /** The panel's content (no state: the tests render it). */
-export function ConclusionViewV2({ data, state, onRefresh }: { data: Conclusion | null; state: "loading" | "ok" | "error"; onRefresh?: () => void }) {
+export function ConclusionViewV2({ data, state, onRefresh, summary }: {
+  data: Conclusion | null; state: "loading" | "ok" | "error"; onRefresh?: () => void; summary?: ReactNode;
+}) {
   if (!data) {
     return (
       <div data-panel-body="conclusion" className="text-t13 text-fg-muted" data-conclusion-state={state}>
@@ -109,6 +149,8 @@ export function ConclusionViewV2({ data, state, onRefresh }: { data: Conclusion 
           ))}
         </section>
       )}
+
+      {summary}
 
       <div className="divide-y divide-subtle border-t border-subtle" data-sections>
         {data.sections.map((s) => <SectionV2 key={s.key} s={s} />)}

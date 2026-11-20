@@ -8,8 +8,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.compliance_terms import require_ai_acknowledged
+from app.ai.rate_limit import ai_rate_limit
 from app.auth.dependencies import get_current_user
 from app.conclusion import FLAGS, gather
 from app.db.models import User
@@ -43,3 +46,47 @@ async def terminal_conclusion(symbol: str = Query(..., min_length=1, max_length=
     body = await gather.conclusion(session, user, symbol, expiry, tf, also=tuple(also))
     gather.remember(key, body, now)
     return body
+
+
+class SummaryBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=40)
+    expiry: str | None = Field(default=None, max_length=20)
+    tf: Timeframe = "15m"
+    also: list[Timeframe] = Field(default_factory=list, max_length=2)
+    v: str | None = Field(default=None, max_length=200)
+
+
+NO_KEY = "Connect your own AI key in Settings to get a summary. The readings above need no key."
+
+
+@router.post("/conclusion/summary", dependencies=[Depends(_require_flags), Depends(ai_rate_limit)])
+async def terminal_conclusion_summary(body: SummaryBody, user: User = Depends(require_ai_acknowledged),
+                                      session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """TERM-CON C4: on tap only - an AI summary of the same read, on his own key (no fallback to the organisation's key
+    at his limit), with the cost of this call. Refused by the checks: no summary, the rule lines stay."""
+    import time
+
+    from app.ai import metering
+    from app.ai import resolve as ai_resolve
+    from app.conclusion import summary
+    from app.db.models import Tenant
+    tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    try:
+        provider = await ai_resolve.provider_for_user(session, user, tenant, "copilot")
+    except HTTPException as exc:
+        if isinstance(exc.detail, dict) and exc.detail.get("code") == ai_resolve.LIMIT_CODE:
+            return {"ready": False, "text": None, "reason": str(exc.detail.get("message") or "Your AI limit is reached."), "usage": None}
+        raise
+    if getattr(provider, "name", "rule_based") == "rule_based":
+        return {"ready": False, "text": None, "reason": NO_KEY, "usage": None}
+    key = (user.id, body.symbol.strip().upper(), body.expiry, body.tf, tuple(body.also), body.v)
+    now = time.monotonic()
+    read = gather.cached(key, now)
+    if read is None:
+        read = await gather.conclusion(session, user, body.symbol, body.expiry, body.tf, also=tuple(body.also))
+        gather.remember(key, read, now)
+    text, why = await summary.summarize(provider, read)
+    return {"ready": True, "text": text, "reason": None if text else "The summary was withheld: it did not pass ATP's checks. The readings above are unchanged.",
+            "usage": metering.spent_by(provider), "fingerprint": read.get("fingerprint")}

@@ -1911,3 +1911,83 @@ test.describe("v2 terminal 1920: free edges and swapping panels (owner 19 Nov)",
     await shot(page, "owner19-after");
   });
 });
+
+// --- TERM-CON C2: the Conclusion panel (flag terminal_conclusion) -----------------------------------------------------
+// Made-up readings only. CONCLUSION_SHOTS=<dir> writes the before / after screenshots for the owner's comparison page.
+const CONCLUSION = {
+  symbol: "NIFTY", expiry: "2026-11-03", tf: "15m", as_of: "2026-10-27T05:00:00Z", fingerprint: "e2e1",
+  note: "Information only: what ATP's readings show, never a recommendation. The decision is yours.",
+  readings: [
+    { source: "chart", label: "15-minute structure", tf: "15m", direction: "up", as_of: "2026-10-27T04:45:00Z" },
+    { source: "oi", label: "OI", tf: null, direction: "up", as_of: "2026-10-27T04:55:00Z", stale: false },
+    { source: "signals", label: "Your signals", tf: null, direction: "up", as_of: "2026-10-27T04:30:00Z" },
+    { source: "positions", label: "Positions", tf: null, direction: "down", as_of: "2026-10-27T05:00:00Z" },
+  ],
+  needs_you: [{ key: "orders", text: "1 order not placed today", action: "orders" }],
+  glance: {
+    lean: { side: "up", count: 3, of: 4, words: "Lean up · 3 of 4" },
+    meter: { up: 3, down: 1, range: 0, none: 0, total: 4 },
+    agrees: [{ direction: "up", text: "15-minute structure up · OI up · Your signals up", sources: ["chart", "oi", "signals"] }],
+    conflicts: [{ text: "15-minute structure up · OI up · Your signals up · Positions down", sources: ["chart", "oi", "signals", "positions"] }],
+    line: "15-minute structure up · OI up · Your signals up · Positions down",
+  },
+  sections: [
+    { key: "chart", title: "Chart", status: "ok", source: "Chart reading (closed bars)", as_of: "2026-10-27T04:45:00Z", note: null, lines: [
+      { text: "15-minute structure: up; the last event was a break of structure up.", tone: "up", kind: "signal", source: "Chart reading (closed bars)", as_of: "2026-10-27T04:45:00Z" },
+      { text: "Buyer area: 24,180–24,220 (price has come back to it).", tone: "up", kind: "signal", source: "Stored areas", as_of: "2026-10-27T04:45:00Z" }] },
+    { key: "oi", title: "OI", status: "ok", source: "OI banner (stored slots)", as_of: "2026-10-27T04:55:00Z", note: null, lines: [
+      { text: "OI: Put premium down / call premium up.", tone: "up", kind: "data", source: "OI banner (stored slots)", as_of: "2026-10-27T04:55:00Z" },
+      { text: "PCR 1.12 (balanced).", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: "2026-10-27T04:55:00Z" }] },
+    { key: "positions", title: "My positions", status: "ok", source: "Your positions", as_of: "2026-10-27T05:00:00Z", note: null, lines: [
+      { text: "PAPER · 2 legs · gains if the price falls · P&L +750.", tone: "up", kind: "record", source: "Your positions", as_of: "2026-10-27T05:00:00Z" }] },
+    { key: "orders", title: "My orders", status: "ok", source: "Your orders today", as_of: "2026-10-27T05:00:00Z", note: null, lines: [
+      { text: "Today: 2 filled.", tone: "neutral", kind: "record", source: "Your orders today", as_of: "2026-10-27T05:00:00Z" },
+      { text: "PAPER order NIFTY 24000 PE 03 NOV 26 rejected: Today's loss limit is reached.", tone: "warn", kind: "record", source: "Your orders today", as_of: "2026-10-27T05:00:00Z" }] },
+    { key: "broker", title: "Broker", status: "ok", source: "Broker check", as_of: null, note: null, lines: [
+      { text: "Books agree with your broker.", tone: "neutral", kind: "record", source: "Broker check", as_of: null }] },
+  ],
+};
+const CON_ON = { ...ON, terminal_conclusion: true };
+const CON_SHOTS = process.env.CONCLUSION_SHOTS;
+const conclusionRoute = (calls: string[]) => async (page: Page) => {
+  await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\?/, (r) => { calls.push(r.request().url()); return r.fulfill({ json: CONCLUSION }); });
+};
+
+test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
+  for (const [width, height] of [[1440, 1000], [390, 844]] as const) {
+    for (const theme of THEMES) {
+      test(`${width} ${theme}: off = no panel and no read; on = the glance strip, sections folded, no sideways scroll`, async ({ page }) => {
+        await page.setViewportSize({ width, height });
+        const off: string[] = [];
+        await open(page, theme, { features: ON, routes: conclusionRoute(off) });
+        await expect(page.locator("[data-panel-body='conclusion']")).toHaveCount(0);
+        if (width < 600) await expect(page.locator("[data-tab='conclusion']")).toHaveCount(0);
+        if (CON_SHOTS) await page.screenshot({ path: `${CON_SHOTS}/before-${width}-${theme}.png`, fullPage: width < 600 });
+        expect(off).toEqual([]);
+
+        const calls: string[] = [];
+        await open(page, theme, { features: CON_ON, routes: conclusionRoute(calls) });
+        if (width < 600) await page.locator("[data-tab='conclusion']").click();
+        const body = page.locator("[data-panel-body='conclusion']");
+        await expect(body).toBeVisible();
+        await expect(body.locator("[data-lean='up']")).toContainText("Lean up · 3 of 4");
+        await expect(body.locator("[data-segment]")).toHaveCount(4);
+        await expect(body.locator("[data-chip-source]")).toHaveCount(5);
+        await expect(body.locator("[data-need='orders']")).toBeVisible();
+        await expect(body.locator("details[data-section][open]")).toHaveCount(0);
+        expect(calls.length).toBeGreaterThan(0);
+        expect(new URL(calls[0]).pathname).toMatch(/^\/api(\/v1)?\/terminal\/conclusion$/);   // the real address, never /api/api/...
+        expect(new URL(calls[0]).searchParams.get("symbol")).toBe("NIFTY");
+        const text = (await body.innerText()).toLowerCase();
+        for (const word of [" buy ", " sell ", "target", "stop-loss"]) expect(text).not.toContain(word);
+        if (width < 600) await expectPhoneLayout(page);
+        await body.scrollIntoViewIfNeeded();
+        if (CON_SHOTS) {
+          await page.screenshot({ path: `${CON_SHOTS}/after-${width}-${theme}.png`, fullPage: width < 600 });
+          await body.locator("details[data-section='chart'] summary").click();
+          await body.screenshot({ path: `${CON_SHOTS}/after-${width}-${theme}-panel.png` });
+        }
+      });
+    }
+  }
+});

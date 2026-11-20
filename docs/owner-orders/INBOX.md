@@ -729,3 +729,10 @@ it is not billing - to be read from the failed run's annotation (SRV2-Q2).
 Note: atp-private's CI never started since 9 Nov: GitHub's annotation on the failed runs says "The job was not started
 because recent account payments have failed or your spending limit needs to be increased" (private-repo Actions
 minutes). Public repos are not charged, so CI runs now. Decided below (DECISIONS 20 Nov ATP-PRIVATE-PUBLIC).
+## 20 Nov - owner (Marathi, transliterated; answer to "Live trading is ON in the deploy health log - intended?", BT-DRAW 2c deploy check)
+
+> "live trading on aahe"
+
+Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
+(B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
+his switch alone.

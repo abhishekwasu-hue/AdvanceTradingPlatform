@@ -164,7 +164,7 @@ def test_ten_layouts_at_their_largest_fit_inside_the_size_cap():
     panels = []
     for i, pid in enumerate(prefs.TERMINAL_PANEL_IDS):
         extra = {"symbol": "X" * 30} if pid.startswith("chart-") else {}
-        panels.append(_panel(pid, 0, i * 5, 12, 5, open=True, **extra))
+        panels.append(_panel(pid, 0, i * 4, 12, 4, open=True, **extra))   # 13 panels x 4 rows fit the 64-row grid
     layouts = {f"layoutid{i:08d}": {"name": f"L{i:02d}" + "N" * 37, "preset": "multi_chart", "underlying": "U" * 30, "panels": panels,
                                    "saved_at": "2026-10-24T10:00:00+00:00"} for i in range(prefs.MAX_TERMINAL_LAYOUTS)}
     body = {"layouts": layouts, "active": "layoutid00000009"}

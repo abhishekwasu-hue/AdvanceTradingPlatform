@@ -65,6 +65,7 @@ from app.charts.workspace_watch import router as workspace_watch_router
 from app.charts.wyckoff_layer import router as chart_wyckoff_layer_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.compliance.routes import router as compliance_router
+from app.conclusion.routes import router as conclusion_router
 from app.context_panel.routes import router as context_panel_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.core.config import (
@@ -543,6 +544,7 @@ app.include_router(me_notices_router)  # TT12-1: one-time notices (risk limits n
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(markets_router)   # MO4 slice 2: the Sector & index view (flags ui_v2 + markets_view)
 app.include_router(terminal_router)  # Trading Terminal T1: the status bar's figures, the caller's own (ui_v2 + terminal)
+app.include_router(conclusion_router)  # TERM-CON: the Terminal's Conclusion panel, read only (ui_v2 + terminal + terminal_conclusion)
 app.include_router(growth_router)    # MO4 slice 3: the plan page + usage meter, the discipline share card (flags ui_v2 + growth_v2)
 app.include_router(growth_admin_router)  # C13: the referral reward wording (SUPER_ADMIN + two-factor)
 app.include_router(learn_router)     # C13: the Learn section (ui_v2 + learn), the public marketing pages (marketing_site)

@@ -732,3 +732,10 @@ Owner answer (same day, to the plan and TC-Q1..TC-Q5):
 
 Note: the plan docs/plans/terminal-conclusion-PLAN.md is approved with every default (TC-Q1..TC-Q5). Build C0-C4, one PR
 each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
+## 20 Nov - owner (Marathi, transliterated; answer to "Live trading is ON in the deploy health log - intended?", BT-DRAW 2c deploy check)
+
+> "live trading on aahe"
+
+Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
+(B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
+his switch alone.

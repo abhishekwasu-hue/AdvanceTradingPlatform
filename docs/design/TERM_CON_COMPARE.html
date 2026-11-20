@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal Conclusion panel</title>
+<!-- TERM-CON C2 (owner 20 Nov, plan docs/plans/terminal-conclusion-PLAN.md): before = flag terminal_conclusion OFF (the
+     Terminal as today), after = flag ON. Captured with Playwright (e2e/terminal-v2.e2e.ts, "Conclusion panel") on the
+     production build with every /api call mocked: the readings are MADE UP (no real account, price or order). -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.pair.wide { grid-template-columns: 1fr; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair, .trio { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>TERM-CON: the Terminal's Conclusion panel</h1>
+<p>One panel for the Terminal's symbol + expiry. The lean cue, meter and chips are read in one glance. The words underneath are structure words only. It has no order button.</p>
+<table>
+  <thead><tr><th>Item</th><th>Before (flag off)</th><th>After (flag on)</th></tr></thead>
+  <tbody>
+    <tr><td>Chart, OI, his signals, positions, orders, broker in one place</td><td class="bad">spread over 8 pages / panels</td><td class="good">one panel, each line with source and time</td></tr>
+    <tr><td>Glance cue</td><td>-</td><td class="good">▲ / ▼ / ◆ + "Lean" + count (chip-sized, TC-Q5), meter with glyphs, one chip per source</td></tr>
+    <tr><td>What agrees / conflicts</td><td>-</td><td class="good">listed by source, counts only (no score)</td></tr>
+    <tr><td>Needs you</td><td>-</td><td class="good">refused order, broker check, new orders stopped, expiry today</td></tr>
+    <tr><td>Desktop</td><td>-</td><td class="good">opens on Option seller / Quick trade below the open panels; Panels menu elsewhere</td></tr>
+    <tr><td>Phone 390</td><td>-</td><td class="good">"Conclusion" tab after Chart; no sideways scroll (phone guard)</td></tr>
+    <tr><td>Flag off</td><td colspan="2">no panel, no tab, no read sent (tested)</td></tr>
+  </tbody>
+</table>
+<h2>Desktop 1440 (light)</h2>
+<div class="pair">
+  <figure><figcaption>Before: flag off</figcaption><img src="term-con/before-1440-light.png" alt="Terminal at 1440 without the Conclusion panel"></figure>
+  <figure><figcaption>After: the Conclusion panel below the open panels</figcaption><img src="term-con/after-1440-light.png" alt="Terminal at 1440 with the Conclusion panel"></figure>
+</div>
+<h2>The panel (desktop dark, Chart section opened)</h2>
+<div class="pair wide"><figure><figcaption>After</figcaption><img src="term-con/after-1440-dark-panel.png" alt="Conclusion panel close-up, dark"></figure></div>
+<h2>Phone 390</h2>
+<div class="trio">
+  <figure><figcaption>Before: flag off</figcaption><img src="term-con/before-390-light.png" alt="Terminal phone without the Conclusion tab"></figure>
+  <figure><figcaption>After: Conclusion tab (light)</figcaption><img src="term-con/after-390-light.png" alt="Terminal phone with the Conclusion tab"></figure>
+  <figure><figcaption>After: the panel (dark)</figcaption><img src="term-con/after-390-dark-panel.png" alt="Conclusion panel on the phone, dark"></figure>
+</div>
+</main>
+</body>
+</html>

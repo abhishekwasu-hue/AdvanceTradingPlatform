@@ -19,7 +19,7 @@ export const NAMESPACE = "terminal";
 /** The same rule as the server (app/me/prefs.py TERMINAL_LAYOUT_NAME). */
 export const NAME_RULE = /^[A-Za-z0-9][A-Za-z0-9 &()+\-/.,:']{0,39}$/;
 
-export type PanelId = "watchlist" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chain" | "order" | "positions" | "orders" | "basket" | "bots" | "payoff";
+export type PanelId = "watchlist" | "chart-1" | "chart-2" | "chart-3" | "chart-4" | "chain" | "order" | "positions" | "orders" | "basket" | "bots" | "payoff" | "conclusion";
 export type PresetId = "option_seller" | "option_buyer" | "quick_trade" | "multi_chart";
 
 export interface PanelPlace {
@@ -50,7 +50,7 @@ export interface TerminalPrefs {
 
 export interface PanelInfo { label: string; minW: number; minH: number; w: number; h: number }
 
-export const PANEL_IDS: readonly PanelId[] = ["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"];
+export const PANEL_IDS: readonly PanelId[] = ["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff", "conclusion"];
 /** A panel not built yet is hidden (R6, FN0 25 Oct): never in the Panels menu, never opened, a stored open one reads
  * closed. M63 I-5 built the last two (Bots & signals, Payoff), so none is hidden now; the rule stays for the next one. */
 export const HIDDEN_PANELS: ReadonlySet<PanelId> = new Set<PanelId>();
@@ -72,6 +72,8 @@ export const PANELS: Record<PanelId, PanelInfo> = {
   basket: { label: "Basket", minW: 3, minH: 4, w: 3, h: 7 },   // TERM-2 step 2: the one basket
   bots: { label: "Bots & signals", minW: 3, minH: 4, w: 4, h: 6 },
   payoff: { label: "Payoff", minW: 3, minH: 4, w: 4, h: 6 },
+  // TERM-CON C2: the Conclusion panel (flag terminal_conclusion; off, it is closed and not offered - withoutConclusion).
+  conclusion: { label: "Conclusion", minW: 3, minH: 6, w: 4, h: 12 },
 };
 
 export const UNDERLYINGS: readonly string[] = ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"];
@@ -245,6 +247,21 @@ export function withoutWatchlist(panels: readonly PanelPlace[]): PanelPlace[] {
     const beside = q.open && q.x === wl.x + wl.w && q.y >= wl.y && q.y + q.h <= wl.y + wl.h;
     return beside ? { ...q, x: wl.x, w: q.w + wl.w } : q;
   });
+}
+
+/** TERM-CON C2: while `terminal_conclusion` is off the Conclusion panel is closed (a layout that has it reads as before). */
+export function withoutConclusion(panels: readonly PanelPlace[]): PanelPlace[] {
+  return panels.map((q) => (q.id === "conclusion" && q.open ? { ...q, open: false } : q));
+}
+
+/** TERM-CON C2 (TC-Q4): the presets the Conclusion panel opens in by default while its flag is on. */
+export const CONCLUSION_PRESETS: ReadonlySet<PresetId> = new Set<PresetId>(["option_seller", "quick_trade"]);
+
+/** TERM-CON C2: on Option seller / Quick trade (the preset itself, never a saved layout of his) the Conclusion panel opens
+ * in the first free place under the open panels; the preset's own geometry is unchanged. */
+export function withConclusion(panels: readonly PanelPlace[], preset: PresetId, isPresetLayout: boolean): PanelPlace[] {
+  if (!isPresetLayout || !CONCLUSION_PRESETS.has(preset) || panels.some((q) => q.id === "conclusion")) return [...panels];
+  return openPanel([...panels], "conclusion");
 }
 
 /** The panels in reading order (top to bottom, then left to right) - the keyboard and screen-reader order. */
@@ -778,7 +795,7 @@ export function forSave(prefs: TerminalPrefs): TerminalPrefs {
 // --- the phone ---------------------------------------------------------------------------------------------------------
 
 /** Phone (360 / 390): the panels as tabs, one at a time (T1); one row that scrolls sideways (PhoneTabsV2). */
-export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "payoff" | "bots";
+export type PhoneTab = "watchlist" | "chart" | "chain" | "basket" | "order" | "positions" | "orders" | "payoff" | "bots" | "conclusion";
 export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
   // TERM-2 step 3: Chart · Chain · Basket · Positions · Orders; a price opens the order ticket as a bottom sheet.
   { key: "chart", label: "Chart" }, { key: "chain", label: "Chain" }, { key: "basket", label: "Basket" },
@@ -788,4 +805,9 @@ export const PHONE_TABS: readonly { key: PhoneTab; label: string }[] = [
 ];
 /** UX-3: the Watchlist tab (first, as the panel is docked left) - only while the `watchlists` feature is on. */
 export const WATCHLIST_TAB: { key: PhoneTab; label: string } = { key: "watchlist", label: "Watchlist" };
-export const phoneTabs = (watchlists: boolean): readonly { key: PhoneTab; label: string }[] => (watchlists ? [WATCHLIST_TAB, ...PHONE_TABS] : PHONE_TABS);
+/** TERM-CON C2: the Conclusion tab, right after Chart - only while `terminal_conclusion` is on. */
+export const CONCLUSION_TAB: { key: PhoneTab; label: string } = { key: "conclusion", label: "Conclusion" };
+export const phoneTabs = (watchlists: boolean, conclusion = false): readonly { key: PhoneTab; label: string }[] => {
+  const base = conclusion ? [PHONE_TABS[0], CONCLUSION_TAB, ...PHONE_TABS.slice(1)] : PHONE_TABS;
+  return watchlists ? [WATCHLIST_TAB, ...base] : base;
+};

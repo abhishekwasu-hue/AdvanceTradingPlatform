@@ -1,4 +1,5 @@
 import { errorSentence } from "../api/errors";
+import { BrokerCheckV2 } from "../trading/BrokerCheckV2";
 import * as RD from "@radix-ui/react-dialog";
 import { ChevronRight, Minus, Plus, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -426,6 +427,10 @@ export function advancedSummary(draft: Pick<Draft, "product" | "stopLoss"> & { t
 }
 
 /** UX-9: the review asked for a stop-loss, so "More options" opens to show the field (the server's own words). */
+/** Owner 20 Nov: the server's "Broker state uncertain ..." refusal (a LIVE pause after an earlier failed LIVE order) is
+ * shown as the plain card with its one action (check with the broker now), never as the raw reason. */
+export const isBrokerPause = (text: string | null | undefined): boolean => !!text && /^Broker state uncertain/i.test(text);
+
 export function needsStop(problem: string | null | undefined): boolean {
   return !!problem && /stop-loss|target/i.test(problem);
 }
@@ -627,7 +632,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
 
         {step.kind === "multi" && <MultiOutcome result={step.result} exit={step.exit} />}
 
-        {problem && <p role="alert" className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="problem">{problem}</p>}
+        {problem && isBrokerPause(problem) ? <BrokerCheckV2 /> : problem && <p role="alert" className="rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="problem">{problem}</p>}
       </div>
 
       <div data-ticket-actions={stickyActions ? "sticky" : undefined} data-bottom-action={stickyActions ? "" : undefined}
@@ -654,6 +659,9 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 return <RiskBlockV2 block={block} busy={busy} testId="ticket-risk-block" onSmaller={onReviewWith ? (lots) => onReviewWith({ lots }) : undefined} />;
               }
               const why = blockedBy(step.preview);
+              if (why && isBrokerPause(why.text)) {
+                return <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">New LIVE orders are paused: check with your broker above.</p>;
+              }
               return why && (
                 <p className="basis-full text-t13 text-fg" data-ticket="blocked-by">
                   {why.text}{why.link && <> <InPlaceLink to={why.link} className="font-medium text-brand underline" data-ticket="change-limits">{why.link === "/settings/trade-settings" ? "Open Trade settings" : "Change limit"}</InPlaceLink></>}
@@ -699,7 +707,9 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
   /** M68 PR-7 (TS-3, D4): his paper account has no starting capital yet - asked here; then the order is checked again. */
   onCapitalSaved?: () => void;
 }) {
-  const problems = [...p.errors, ...p.refusals];
+  const all = [...p.errors, ...p.refusals];
+  const paused = all.some(isBrokerPause);
+  const problems = all.filter((r) => !isBrokerPause(r));
   const payoff = ticketPayoffSentence(p);
   const c = p.contract;
   const boughtOption = p.side === "BUY" && (c?.right === "CE" || c?.right === "PE");
@@ -755,6 +765,7 @@ export function Review({ preview: p, budget, events, liquidity, card, onCapitalS
         <CheckCardV2 testId="ticket" lines={card.lines} pending={card.pending} others={card.others} asking={card.asking} expanded={card.expanded}
           onExpand={card.setExpanded} onEdit={card.onEdit} onDontShow={card.onDontShow} onAccept={card.onAccept} />
       ) : <RiskChecksV2 testId="ticket" lines={reviewRiskLines(p, budget, events, liquidity)} />}
+      {paused && <BrokerCheckV2 />}
       {problems.length > 0 && (
         <ul role="alert" className="space-y-space-1 rounded-control bg-warn-tint px-space-3 py-space-2 text-t13 text-warn" data-ticket="refusals">
           {problems.map((r) => <li key={r}>{r}</li>)}

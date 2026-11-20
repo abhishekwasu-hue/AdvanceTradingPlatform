@@ -1,4 +1,4 @@
-# Terminal "Conclusion" panel — PLAN (roadmap TERM-CON; PLAN ONLY, no code until the owner approves)
+# Terminal "Conclusion" panel — PLAN (roadmap TERM-CON; APPROVED 20 Nov "Default yes"; build C0-C4)
 
 Source: owner instruction 20 Nov (INBOX "Terminal Conclusion panel (decision agent)", DECISIONS 20 Nov TERM-CON).
 His ask, in short: one window on the Terminal that shows the essence of everything ATP already reads (chart conditions,

@@ -710,3 +710,11 @@ Note: the product fix (#1114) is deployed; the block is the safety pause (Phase 
 it. It lifts only after a clean reconciliation, which the worker runs only in a LIVE-bot cycle and whose button sat on
 the old Deployments page. PR claude/broker-check: the pause in plain words on the ticket, Terminal and My positions with
 one action, "Check with <broker> now" (the same reconciliation route; it opens LIVE only when the books agree).
+
+## 20 Nov - Terminal Conclusion panel (decision agent)
+
+> "ok soda ha vishay ata mala he mhanayache aahe ki ATP madhye apan barech features ghetlele aahet terminal banavle aahe sagla banavla aahe parantu trading decision ghenyasathi asa consolidated ek window terminal var asayla pahije jyachyamadhye sagalyancha saar vyavasthit apalyala disel tyala mhanu apan conclusion jya jya condition hotat option change chi condition yet aahe ani chart varchya condition yet aahet mhanje ek agent asa asel jo ya sarvancha data gheun ek decision maker asel tasa agent mala vatate ATP madhye nahi chart reader varun to data ghenar OI analysis varun to data ghenar sobatach adhichya kahi positions aahet kay tyachyavar pan tu lakshat thevnar order zalya ki nahi tyachyavar pan tu laksha thevnar ya ya sandarbhat kahi plan tayar karta yeil ka kiva ATP madhye asa adhich kahi aahe ka jenekarun decision ghene shakya hoil ani ekach panel madhye traderla sagla kahi disel"
+
+Note (transliterated from Devanagari; the English-only guard forbids Devanagari): a plan is asked for, not a build
+("plan tayar karta yeil ka", "ATP madhye asa adhich kahi aahe ka"). Audit + plan: docs/plans/terminal-conclusion-PLAN.md
+(roadmap TERM-CON). Built only after his approval (OWNER_RULES A.6).

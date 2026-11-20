@@ -221,6 +221,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # R2 what-if: the basket's payoff also shows the combined payoff of the open PAPER positions on the same underlying and
     # expiry plus the new legs (one server calculation, POST /api/paper/fno/basket/evaluate with `with_open`). Read only.
     "term_whatif": "Terminal: what-if payoff of your open positions plus the basket's new legs (information only)",
+    # TERM-CON (docs/plans/terminal-conclusion-PLAN.md): one Conclusion panel for the Terminal's symbol + expiry - the
+    # chart reading, the OI banner, his own positions, orders and broker state lined up with source and time; what
+    # agrees and what conflicts. Read only: places, blocks or changes no order (ADR-0004, ADR-0006). OFF: 404.
+    "terminal_conclusion": "Terminal: one Conclusion panel - chart, OI, your positions, orders and broker state in one view (information only)",
     # Trading Terminal T1 (docs/owner-orders/ATP_SESSION_TRADING_TERMINAL.md, review TT-16..TT-19, TT-25; needs `ui_v2`):
     # the Terminal page at /terminal - the chart, the option chain, the order panel, positions, orders and the basket on one
     # screen as panels the user moves, resizes, opens and closes (presets and up to 10 own layouts in the prefs namespace

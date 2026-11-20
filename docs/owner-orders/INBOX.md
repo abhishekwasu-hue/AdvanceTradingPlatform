@@ -729,6 +729,27 @@ it is not billing - to be read from the failed run's annotation (SRV2-Q2).
 Note: atp-private's CI never started since 9 Nov: GitHub's annotation on the failed runs says "The job was not started
 because recent account payments have failed or your spending limit needs to be increased" (private-repo Actions
 minutes). Public repos are not charged, so CI runs now. Decided below (DECISIONS 20 Nov ATP-PRIVATE-PUBLIC).
+## 20 Nov - Terminal Conclusion panel (decision agent)
+
+> "ok soda ha vishay ata mala he mhanayache aahe ki ATP madhye apan barech features ghetlele aahet terminal banavle aahe sagla banavla aahe parantu trading decision ghenyasathi asa consolidated ek window terminal var asayla pahije jyachyamadhye sagalyancha saar vyavasthit apalyala disel tyala mhanu apan conclusion jya jya condition hotat option change chi condition yet aahe ani chart varchya condition yet aahet mhanje ek agent asa asel jo ya sarvancha data gheun ek decision maker asel tasa agent mala vatate ATP madhye nahi chart reader varun to data ghenar OI analysis varun to data ghenar sobatach adhichya kahi positions aahet kay tyachyavar pan tu lakshat thevnar order zalya ki nahi tyachyavar pan tu laksha thevnar ya ya sandarbhat kahi plan tayar karta yeil ka kiva ATP madhye asa adhich kahi aahe ka jenekarun decision ghene shakya hoil ani ekach panel madhye traderla sagla kahi disel"
+
+Note (transliterated from Devanagari; the English-only guard forbids Devanagari): a plan is asked for, not a build
+("plan tayar karta yeil ka", "ATP madhye asa adhich kahi aahe ka"). Audit + plan: docs/plans/terminal-conclusion-PLAN.md
+(roadmap TERM-CON). Built only after his approval (OWNER_RULES A.6).
+
+Follow-up (same day, relayed by the parent session, transliterated):
+
+> "Ok yacha user interface khup changla tayar kara mhanje eka najaret traderla signal samajla pahije buy or sell asa lihun sangaychi garaj padu naye samjhane walo ko ishara kafi hota hai"
+
+Note: readable in one glance; the bias carried by a visual cue (colour + arrow / shape, colour-blind safe), never by
+buy / sell words (CLAUDE.md 3). Plan section "Glance design" (docs/plans/terminal-conclusion-PLAN.md); still a plan.
+
+Owner answer (same day, to the plan and TC-Q1..TC-Q5):
+
+> "Default yes"
+
+Note: the plan docs/plans/terminal-conclusion-PLAN.md is approved with every default (TC-Q1..TC-Q5). Build C0-C4, one PR
+each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 ## 20 Nov - owner (Marathi, transliterated; answer to "Live trading is ON in the deploy health log - intended?", BT-DRAW 2c deploy check)
 
 > "live trading on aahe"

@@ -206,12 +206,16 @@ def test_a_position_without_a_stop_says_so_and_adds_no_default():
 
 # --- safety: no order path, no AI ------------------------------------------------------------------------------------
 
-def test_the_package_reaches_no_order_path_and_no_ai_call():
+def test_the_package_reaches_no_order_path_and_the_read_calls_no_ai():
     root = pathlib.Path(__file__).resolve().parents[1] / "app" / "conclusion"
     source = "\n".join(p.read_text() for p in root.glob("*.py"))
     for word in ("place_order", "modify_order", "cancel_order", "exit_position", "app.execution", "app.brokers",
-                 "provider_for_user", "narrate", "session.add(", "session.commit("):
+                 "session.add(", "session.commit("):
         assert word not in source, word
+    read = "\n".join((root / f).read_text() for f in ("__init__.py", "gather.py", "sections.py", "rules.py"))
+    for word in ("provider_for_user", "narrate", ".complete("):
+        assert word not in read, word                     # C4: only the on-tap summary route calls his AI key
     from app.main import app
     from tests.route_inventory import iter_api_routes
-    assert {r.method for r in iter_api_routes(app) if r.path.startswith(URL)} == {"GET"}
+    routes = {(r.method, r.path) for r in iter_api_routes(app) if r.path.startswith(URL)}
+    assert routes == {("GET", URL), ("POST", URL + "/summary")}

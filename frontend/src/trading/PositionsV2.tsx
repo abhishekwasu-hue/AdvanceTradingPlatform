@@ -40,6 +40,8 @@ import { PageIntro } from "../ui/PageIntro";
 import { PageFootnote } from "../ui/numbersFirst";
 import { TermHint } from "../ui/TermHint";
 import { useFeatures } from "../ui/useFeatures";
+import { BrokerCheckV2 } from "./BrokerCheckV2";
+import { liveAvailableFrom } from "../settings/useLiveAvailable";
 import { liveHiddenFrom } from "../settings/useLiveHidden";
 import PageDishV2 from "../growth/PageDishV2";
 import {
@@ -251,6 +253,8 @@ export default function PositionsV2(_props: PageProps = {}) {
       <PageIntro id="positions" lines={["Open a position's chart, or exit a paper position at the current price."]} />
       <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing."
         action={showsPaper([...(list ?? []).map((p) => p.mode), ...(dataOf(trades) ?? []).map((t) => t.mode)]) ? <PaperBadge className="self-start md:self-auto" /> : undefined} />
+      {/* Owner 20 Nov: a LIVE pause after a failed LIVE order, with its one action (check with the broker now) */}
+      {liveAvailableFrom(features) && <BrokerCheckV2 />}
 
       <section aria-label="Summary" data-block="summary" data-tour="positions-summary">
         {positions.status === "loading" ? <LoadingRowsV2 rows={2} /> : (

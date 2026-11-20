@@ -1,4 +1,5 @@
 import { LayoutPanelTop, Minus, Plus } from "lucide-react";
+import { BrokerCheckV2 } from "../trading/BrokerCheckV2";
 import { useConfirm } from "../ui/ConfirmDialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
@@ -325,6 +326,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       {confirmBox.dialog}
       {/* TERM-2 step 5: one line; every order is still shown to you before it is placed (the ticket's Review step). */}
       <PageIntro id="terminal" lines={["One symbol and expiry for the chart, chain, basket and your positions."]} />
+      {/* Owner 20 Nov: a LIVE pause after a failed LIVE order, with its one action (check with the broker now) */}
+      {liveAvailableFrom(features) && <BrokerCheckV2 />}
       <ContextBarV2 symbol={underlying} onSymbol={setUnderlying}
         chain={chain} spot={spot} prevClose={strip.prevClose} vix={strip.vix} mode={modeChip(dataOf(statusL) ?? null, liveAvailableFrom(features))} compact={narrow}
         // CT-1 T3: the layout controls only where the grid renders (from 1024 px); phone and tablet show the tabs.

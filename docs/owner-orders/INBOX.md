@@ -702,3 +702,11 @@ Note on the screenshot (the Copilot panel on desktop):
 - The answer was split into fixed chips/sections ("Summary", "What I need from you", "Next step") with bold headings.
   It replied "I need your idea first ... your message is a template".
 - The panel shows "About NIFTY" and starters Brief / Read chart / Check my trade / My positions.
+## 20 Nov - LIVE ticket still blocked (Marathi, transliterated; screenshot: NIFTY 25800 CE LIVE ticket, "Broker state uncertain since 2026-11-19T05:18:59+00:00 (order 4 ... FAILED ... The 'product' is invalid) - LIVE entries blocked until position reconciliation passes")
+
+> "live trading cha issue tumhi solve kela nahi ka"
+
+Note: the product fix (#1114) is deployed; the block is the safety pause (Phase G1) left by the order that failed before
+it. It lifts only after a clean reconciliation, which the worker runs only in a LIVE-bot cycle and whose button sat on
+the old Deployments page. PR claude/broker-check: the pause in plain words on the ticket, Terminal and My positions with
+one action, "Check with <broker> now" (the same reconciliation route; it opens LIVE only when the books agree).

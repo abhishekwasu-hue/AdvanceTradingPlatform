@@ -718,3 +718,10 @@ one action, "Check with <broker> now" (the same reconciliation route; it opens L
 Note (transliterated from Devanagari; the English-only guard forbids Devanagari): a plan is asked for, not a build
 ("plan tayar karta yeil ka", "ATP madhye asa adhich kahi aahe ka"). Audit + plan: docs/plans/terminal-conclusion-PLAN.md
 (roadmap TERM-CON). Built only after his approval (OWNER_RULES A.6).
+
+Follow-up (same day, relayed by the parent session, transliterated):
+
+> "Ok yacha user interface khup changla tayar kara mhanje eka najaret traderla signal samajla pahije buy or sell asa lihun sangaychi garaj padu naye samjhane walo ko ishara kafi hota hai"
+
+Note: readable in one glance; the bias carried by a visual cue (colour + arrow / shape, colour-blind safe), never by
+buy / sell words (CLAUDE.md 3). Plan section "Glance design" (docs/plans/terminal-conclusion-PLAN.md); still a plan.

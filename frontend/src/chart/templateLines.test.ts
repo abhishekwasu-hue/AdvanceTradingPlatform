@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OHLCVBar, Trade } from "../types";
 import { exitMarkerText, templateLines, templateParams } from "./templateLines";
-import { tradeLayer } from "./BacktestChartV2";
+import { areaSides, tradeLayer } from "./BacktestChartV2";
 
 /** BT-DRAW (owner 18 Nov): the test chart draws the template's own lines only. Made-up bars. */
 const bars: OHLCVBar[] = Array.from({ length: 80 }, (_, i) => {
@@ -66,5 +66,13 @@ describe("trades on the chart say why they closed and where each idea was wrong"
     expect(box.every((x) => x.role === "supply")).toBe(true);
     expect(box[0]).toMatchObject({ p1: 102.5, p2: 102.5, t1: Math.floor(Date.parse(bars[7].timestamp) / 1000) });
     expect((tradeLayer([{ ...t, setup_area_low: null }]).segments ?? []).filter((x) => x.role)).toHaveLength(0);
+  });
+  it("the legend shows a swatch per side the areas were drawn in (BT-DRAW 2c)", () => {
+    const t: Trade = { symbol: "DEMO", strategy_id: "x", direction: "SHORT", entry_time: bars[10].timestamp, entry_price: 101, quantity: 1,
+      stop_loss: 103, target1: 0, target2: null, exit_time: bars[20].timestamp, exit_price: 100, exit_reason: "x", pnl: 1, charges: 0,
+      setup_area_low: 101.5, setup_area_high: 102.5 };
+    expect(areaSides([t])).toEqual(["supply"]);
+    expect(areaSides([{ ...t, direction: "LONG" }, t])).toEqual(["demand", "supply"]);
+    expect(areaSides([{ ...t, setup_area_high: null }])).toEqual([]);
   });
 });

@@ -494,7 +494,15 @@ def test_stagnation_is_shown_and_nothing_happens(monkeypatch):
                                                                                "stagnation_bar_minutes": 5}}}})
     assert out.status_code == 200, out.text
     trade_id = _open_scaled(t, ExitRules(), lots=1)
-    start = _today(20).replace(second=0, microsecond=0)
+    # the position opened 20 minutes ago on the real clock: `_today` clamps to the IST day's start, so in the first
+    # 20 minutes after IST midnight its three 5-minute bars could not have closed yet (the check failed in CI then)
+    start = (datetime.now(UTC) - timedelta(minutes=20)).replace(second=0, microsecond=0)
+
+    async def opened_then():
+        async with _session_factory() as session:
+            await session.execute(sa.update(TradeRecord).where(TradeRecord.id == trade_id).values(entry_time=start))
+            await session.commit()
+    _run(opened_then())
 
     class _Got:
         def __init__(self, frame):

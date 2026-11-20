@@ -63,7 +63,7 @@ class Job:
     page: Optional[Tuple[str, str]] = None        # (label, path) of the page that does it today, for a job not built yet
     # CP-CHAT (owner 20 Nov): a job that needs his own idea never sends its starter as his message - its button puts this
     # text in the box for him to complete, then he sends it himself.
-    prefill: Optional[str] = None
+    prefill: str | None = None
 
 
 JOBS: Tuple[Job, ...] = (

@@ -100,7 +100,7 @@ def test_the_read_shows_only_his_own_positions_and_orders_for_the_symbol():
     assert body["symbol"] == "RELIANCE" and body["tf"] == "15m" and body["fingerprint"]
     keys = [s["key"] for s in body["sections"]]
     assert "chart" not in keys                         # its own flag (read_chart) is off: the section is hidden, not an error
-    assert keys == ["oi", "positions", "orders", "broker"]
+    assert keys == ["oi", "positions", "signals", "orders", "broker", "risk", "events"]
     pos = _section(body, "positions")
     assert len([x for x in pos["lines"] if x["text"].startswith("PAPER")]) == 1
     assert "P&L +50 ·" in pos["lines"][0]["text"] and pos["lines"][0]["tone"] == "up"

@@ -7,15 +7,17 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.conclusion import rules as R
 from app.conclusion import sections as S
 from app.db.models import TradeRecord, User
+from app.market_data.calendar import IST
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +54,28 @@ async def _orders(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     return [o.model_dump() for o in await list_orders(user=user, session=session, limit=200, mine=True, today=True)]
 
 
+async def _signals(session: AsyncSession, user: User) -> list[dict[str, Any]]:
+    """His own signals today (the Signals inbox's read; it needs `ui_v2`, which the panel needs too)."""
+    from app.signals_feed import service
+    return list((await service.feed(session, user, tab="today", limit=50)).get("items") or [])
+
+
+async def _kill(session: AsyncSession, user: User) -> dict[str, Any]:
+    from app.terminal.status import _kill_switch
+    return await _kill_switch(session, user)
+
+
+async def _guardian(session: AsyncSession, user: User) -> dict[str, Any]:
+    from app.risk_engine.guardian_routes import guardian_status
+    return await guardian_status(user=user, session=session)
+
+
+async def _events(session: AsyncSession, user: User, now: datetime) -> list[dict[str, Any]]:
+    from app.risk_engine.guardian_routes import list_events
+    start = now.astimezone(IST).date()
+    return await list_events(from_date=start, to_date=start + timedelta(days=7), user=user, session=session)
+
+
 async def _broker(session: AsyncSession, user: User) -> dict[str, Any]:
     from app.reconciliation.routes import reconciliation_status
     return (await reconciliation_status(user=user, session=session)).model_dump()
@@ -72,7 +96,9 @@ def fingerprint(body: dict[str, Any]) -> str:
 
 
 async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str | None, tf: str,
-                     now: datetime | None = None) -> dict[str, Any]:
+                     now: datetime | None = None, also: tuple[str, ...] = ()) -> dict[str, Any]:
+    """`also`: up to two more timeframes (the ones his own strategies on this chart use, TC-Q2); each is its own
+    reading and its own section - timeframes are never merged."""
     now = now or datetime.now(UTC)
     read_at = now.isoformat()
     symbol = symbol.strip().upper()
@@ -80,7 +106,11 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     oi = await _safe(session, "oi", _oi(session, user, symbol))
     positions = await _safe(session, "positions", _positions(session, user))
     orders = await _safe(session, "orders", _orders(session, user))
+    signals = await _safe(session, "signals", _signals(session, user))
     broker = await _safe(session, "broker", _broker(session, user))
+    kill = await _safe(session, "kill switch", _kill(session, user))
+    guard = await _safe(session, "risk", _guardian(session, user))
+    events = await _safe(session, "events", _events(session, user, now))
 
     out: list[dict[str, Any]] = []
     readings: list[dict[str, Any]] = []
@@ -92,6 +122,13 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
         out.append(S.chart_section(chart, symbol, tf))
         if (r := S.chart_reading(chart, tf)) is not None:
             readings.append(r)
+        for extra in [t for t in dict.fromkeys(also) if t != tf][:2]:
+            more = await _safe(session, f"chart {extra}", _chart(session, user, symbol, extra))
+            if isinstance(more, dict):
+                sec = S.chart_section(more, symbol, extra)
+                out.append({**sec, "key": f"chart-{extra}", "title": f"Chart {extra}"})
+                if (r := S.chart_reading(more, extra)) is not None:
+                    readings.append(r)
     if oi == "off":
         out.append(S.off("oi", "OI", S.SOURCE_OI))
     elif not isinstance(oi, dict):
@@ -106,15 +143,28 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
             readings.append(r)
     else:
         out.append(S.na("positions", "My positions", S.SOURCE_POSITIONS))
+    if isinstance(signals, list):
+        out.append(S.signals_section(signals, symbol, read_at))
+        if (r := S.signals_reading(signals, symbol)) is not None:
+            readings.append(r)
+    else:
+        out.append(S.na("signals", "My signals", S.SOURCE_SIGNALS))
     order_rows = orders if isinstance(orders, list) else []
     out.append(S.orders_section(order_rows, symbol, read_at) if isinstance(orders, list)
                else S.na("orders", "My orders", S.SOURCE_ORDERS))
     broker_row = broker if isinstance(broker, dict) else None
     out.append(S.broker_section(broker_row) if broker_row is not None else S.na("broker", "Broker", S.SOURCE_BROKER))
 
+    out.append(S.risk_section(kill, guard if isinstance(guard, dict) else None, symbol, read_at) if isinstance(kill, dict)
+               else S.na("risk", "Risk", S.SOURCE_RISK))
+    out.append(S.events_section(events, symbol, read_at) if isinstance(events, list) else S.na("events", "Events", S.SOURCE_EVENTS))
+
     body: dict[str, Any] = {"symbol": symbol, "expiry": expiry, "tf": tf, "as_of": read_at,
                             "sections": [s for s in out if s["status"] != "off"], "readings": readings,
-                            "needs_you": S.needs_you(order_rows, broker_row, symbol),
+                            "needs_you": S.needs_you(order_rows, broker_row, symbol, kill=kill if isinstance(kill, dict) else None,
+                                                     positions=positions if isinstance(positions, list) else [],
+                                                     today=now.astimezone(IST).date().isoformat()),
+                            "glance": R.glance(readings, symbol),
                             "note": "Information only: what ATP's readings show, never a recommendation. The decision is yours."}
     body["fingerprint"] = fingerprint(body)
     return body

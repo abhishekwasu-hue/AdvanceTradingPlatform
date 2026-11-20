@@ -131,7 +131,7 @@ def chart_reading(read: Mapping[str, Any], tf: str) -> dict[str, Any] | None:
     if not read.get("bars"):
         return None
     direction = structure_direction((read.get("structure") or {}).get("direction"))
-    return {"source": "chart", "label": f"Chart {tf}", "tf": tf, "direction": direction, "as_of": read.get("as_of")}
+    return {"source": "chart", "label": f"{_tf_words(tf)} structure", "tf": tf, "direction": direction, "as_of": read.get("as_of")}
 
 
 # --- OI --------------------------------------------------------------------------------------------------------------
@@ -256,6 +256,84 @@ def refused_orders(orders: Sequence[Mapping[str, Any]], symbol: str) -> list[Map
     return [o for o in orders if matches(symbol, o.get("symbol")) and o.get("status") in REFUSED]
 
 
+# --- his own signals today ------------------------------------------------------------------------------------------
+
+SOURCE_SIGNALS = "Your signals today"
+SIGNAL_SIDE = {"LONG": "an upside", "SHORT": "a downside"}
+SIGNAL_DIRECTION = {"LONG": "up", "SHORT": "down"}
+STATUS_WORDS = {"waiting": "waiting for you", "taken": "taken", "skipped": "skipped", "expired": "expired",
+                "not_placed": "not placed", "snoozed": "snoozed"}
+
+
+def signals_section(items: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> Section:
+    """From GET /api/signals/feed (today): his own proposals, scan setups and fills on this symbol, newest first, in the
+    signal language (the side of the market, which of his sources, its state; the feed's "why" lines that pass)."""
+    mine = [i for i in items if matches(symbol, i.get("symbol"))]
+    if not mine:
+        return section("signals", "My signals", SOURCE_SIGNALS, as_of=as_of,
+                       lines=[line(f"No signal on {symbol} today.", source=SOURCE_SIGNALS, as_of=as_of)])
+    out: list[Line] = []
+    for i in mine[:5]:
+        name = str((i.get("source") or {}).get("name") or "").strip()
+        whose = name if name and not L.check(name, "signal_own", own_symbols=[symbol]) else "Your strategy"
+        side = SIGNAL_SIDE.get(str(i.get("direction") or ""), "a")
+        state = STATUS_WORDS.get(str(i.get("status") or ""), "")
+        text = f"{whose}: {side} setup on {symbol}" + (f", {state}" if state else "") + "."
+        tone = {"LONG": "up", "SHORT": "down"}.get(str(i.get("direction") or ""), "neutral")
+        out.append(line(text, tone=tone, kind="signal", source=SOURCE_SIGNALS, as_of=i.get("at")))
+        for why in L.shown_lines([str(r) for r in (i.get("reasons") or [])], "signal_own", own_symbols=[symbol])[:2]:
+            out.append(line(why, tone=tone, kind="signal", source=SOURCE_SIGNALS, as_of=i.get("at")))
+    return section("signals", "My signals", SOURCE_SIGNALS, as_of=as_of, lines=signal_lines(out, symbol))
+
+
+def signals_reading(items: Sequence[Mapping[str, Any]], symbol: str) -> dict[str, Any] | None:
+    """The newest of his signals on this symbol that has a side."""
+    for i in items:
+        if matches(symbol, i.get("symbol")) and str(i.get("direction") or "") in SIGNAL_DIRECTION:
+            return {"source": "signals", "label": "Your signals", "tf": None,
+                    "direction": SIGNAL_DIRECTION[str(i["direction"])], "as_of": i.get("at")}
+    return None
+
+
+# --- risk and events (C1b) ------------------------------------------------------------------------------------------
+
+SOURCE_RISK = "Kill switch and your risk settings"
+SOURCE_EVENTS = "Market events (next 7 days)"
+GUARD_STATE = {"paused": "new entries paused by your drawdown settings", "reduced": "entry size reduced by your drawdown settings"}
+EVENT_ACTION = {"BLOCK": "new entries refused in its window (your setting)", "SIZE_CUT": "entry size cut in its window (your setting)"}
+
+
+def risk_section(kill: Mapping[str, Any], guardian: Mapping[str, Any] | None, symbol: str, as_of: str | None) -> Section:
+    """The kill switch (exits always run, ADR-0004) and only what HIS risk settings already do now: a drawdown pause or
+    size cut per mode, a cool-down on this symbol. Nothing is added when he has set nothing (DEF-0)."""
+    out = [line(str(kill.get("message") or "New orders are allowed."), tone="warn" if kill.get("engaged") else "neutral",
+                source="Kill switch", as_of=as_of)]
+    for mode, row in ((guardian or {}).get("modes") or {}).items():
+        state = str((row or {}).get("state") or "normal")
+        if state in GUARD_STATE:
+            out.append(line(f"{mode}: {GUARD_STATE[state]}.", tone="warn", source=SOURCE_RISK, as_of=(guardian or {}).get("as_of")))
+        for c in (row or {}).get("cooldowns") or []:
+            if matches(symbol, c.get("underlying")):
+                out.append(line(f"{mode}: cool-down on {symbol}, {int(c.get('minutes_left') or 0)} minutes left (your setting).",
+                                tone="warn", source=SOURCE_RISK, as_of=(guardian or {}).get("as_of")))
+    return section("risk", "Risk", SOURCE_RISK, as_of=as_of, lines=out)
+
+
+def events_section(events: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> Section:
+    """Market events for every symbol or for this one (global and his organisation's), as the Risk page lists them."""
+    mine = [e for e in events if str(e.get("underlying") or "*") == "*" or matches(symbol, e.get("underlying"))]
+    if not mine:
+        return section("events", "Events", SOURCE_EVENTS, as_of=as_of,
+                       lines=[line("No market event in the next 7 days.", kind="data", source=SOURCE_EVENTS, as_of=as_of)])
+    out: list[Line] = []
+    for e in mine[:5]:
+        text = f"{e.get('event_date')}" + (f" {e['start_time']}" if e.get("start_time") else "") + f" · {e.get('description') or e.get('kind')}"
+        action = EVENT_ACTION.get(str(e.get("action") or ""))
+        out.append(line(text + (f" · {action}" if action else "") + ".", tone="warn" if action else "neutral", kind="data",
+                        source=SOURCE_EVENTS, as_of=e.get("created_at")))
+    return section("events", "Events", SOURCE_EVENTS, as_of=as_of, lines=out)
+
+
 # --- the broker ------------------------------------------------------------------------------------------------------
 
 def _iso(value: Any) -> str | None:
@@ -273,8 +351,11 @@ def broker_section(status: Mapping[str, Any]) -> Section:
     return section("broker", "Broker", SOURCE_BROKER, as_of=last, lines=[line(text, source=SOURCE_BROKER, as_of=last)])
 
 
-def needs_you(orders: Sequence[Mapping[str, Any]], broker: Mapping[str, Any] | None, symbol: str) -> list[dict[str, Any]]:
-    """Facts that need him: a refused order today on this symbol, the broker check pending. No rule is added."""
+def needs_you(orders: Sequence[Mapping[str, Any]], broker: Mapping[str, Any] | None, symbol: str, *,
+              kill: Mapping[str, Any] | None = None, positions: Sequence[Mapping[str, Any]] = (),
+              today: str | None = None) -> list[dict[str, Any]]:
+    """Facts that need him: a refused order today on this symbol, the broker check pending, new orders stopped, a
+    position on this symbol that expires today. No rule is added."""
     out: list[dict[str, Any]] = []
     refused = refused_orders(orders, symbol)
     if refused:
@@ -282,8 +363,17 @@ def needs_you(orders: Sequence[Mapping[str, Any]], broker: Mapping[str, Any] | N
         out.append({"key": "orders", "text": f"{n} order{'s' if n > 1 else ''} not placed today", "action": "orders"})
     if broker and broker.get("broker_uncertain"):
         out.append({"key": "broker", "text": "Broker check pending", "action": "broker_check"})
+    if kill and kill.get("engaged"):
+        out.append({"key": "kill_switch", "text": "New orders stopped (exits still work)", "action": None})
+    if today:
+        expiring = [p for p in positions if (matches(symbol, p.get("underlying")) or matches(symbol, p.get("symbol")))
+                    and str(p.get("expiry") or "")[:10] == today]
+        if expiring:
+            n = len(expiring)
+            out.append({"key": "expiry", "text": f"{n} position{'s' if n > 1 else ''} expire{'' if n > 1 else 's'} today",
+                        "action": "positions"})
     return out
 
 
 __all__ = ["chart_section", "chart_reading", "oi_section", "oi_reading", "positions_section", "positions_reading",
-           "orders_section", "broker_section", "needs_you", "matches", "signal_lines", "structure_direction", "off", "na"]
+           "orders_section", "signals_section", "signals_reading", "risk_section", "events_section", "broker_section", "needs_you", "matches", "signal_lines", "structure_direction", "off", "na"]

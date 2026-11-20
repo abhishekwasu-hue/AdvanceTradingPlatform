@@ -206,7 +206,12 @@ def test_a_218_stock_list_makes_far_fewer_broker_calls(monkeypatch, fake_cache):
         return {s: pd.DataFrame({"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0], "volume": [1]},
                                 index=pd.DatetimeIndex([pd.Timestamp("2026-11-12", tz=IST)])) for s in symbols}
     monkeypatch.setattr(WF, "stored_daily", stored)
-    t1, t2 = _ist(2026, 11, 13, 10, 0, ), _ist(2026, 11, 13, 10, 15)          # two checks: a bar apart
+    # two checks a bar apart, on the weekday before the real today: the fetch path splits history from today by the real
+    # clock, so a fixed date drifted out of the window a week after it was written (it failed from 20 Nov 2026 on)
+    day = datetime.now(UTC).astimezone(IST).date() - timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    t1, t2 = _ist(day.year, day.month, day.day, 10, 0), _ist(day.year, day.month, day.day, 10, 15)
     counts = {}
     for lean in (False, True):
         broker = FakeUpstox()

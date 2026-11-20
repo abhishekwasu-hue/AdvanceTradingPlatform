@@ -66,7 +66,7 @@ describe("TERM-CON C2: the Conclusion panel", () => {
 
   it("helpers: the path, the chip labels, the meter's segments", () => {
     expect(conclusionPath("NIFTY", "2026-11-26", "15m", ["1h", "15m", "1d", "5m"])).toBe(
-      "/api/terminal/conclusion?symbol=NIFTY&tf=15m&expiry=2026-11-26&also=1h&also=1d");
+      "/terminal/conclusion?symbol=NIFTY&tf=15m&expiry=2026-11-26&also=1h&also=1d");
     expect(chipLabel(BODY.readings[0])).toBe("15m");
     expect(chipLabel(BODY.readings[2])).toBe("Strategy");
     expect(segments({ up: 1, down: 1, range: 1, none: 1, total: 4 })).toEqual(["up", "down", "range", "none"]);

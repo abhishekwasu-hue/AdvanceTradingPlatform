@@ -31,7 +31,7 @@ export function conclusionPath(symbol: string, expiry: string | null, tf: string
   const q = new URLSearchParams({ symbol, tf });
   if (expiry) q.set("expiry", expiry);
   for (const t of also.filter((x) => x !== tf).slice(0, 2)) q.append("also", t);
-  return `/api/terminal/conclusion?${q.toString()}`;
+  return `/terminal/conclusion?${q.toString()}`;          // request() adds the API base (/api/v1)
 }
 
 export const fetchConclusion = (symbol: string, expiry: string | null, tf: string, also: readonly string[] = []) =>

@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { request } from "../api/client";
+import { formatINR, formatTimeIST } from "../ui/format";
 
 export type Direction = "up" | "down" | "range" | "mixed" | "none";
 export type Tone = "up" | "down" | "neutral" | "warn";
@@ -55,7 +56,7 @@ export const summarizeConclusion = (symbol: string, expiry: string | null, tf: s
 /** "₹0.42" for this call's cost (from his own key's metering); empty when the call reported none. */
 export function costText(u: ConclusionSummary["usage"]): string {
   if (!u) return "";
-  return `This summary cost ₹${u.cost_inr < 0.01 ? "0.01" : u.cost_inr.toFixed(2)} on your AI key.`;
+  return `This summary cost ${formatINR(Math.max(u.cost_inr, 0.01), { paise: true })} on your AI key.`;
 }
 
 // --- C3: refresh on bar close and on a new OI slot, with no polling ---------------------------------------------------
@@ -131,8 +132,6 @@ export function segments(m: Glance["meter"]): Direction[] {
 
 /** A short time ("10:35") from an ISO time; the text itself when it is not one. */
 export function shortTime(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  if (!iso || Number.isNaN(Date.parse(iso))) return "";
+  return formatTimeIST(iso, { suffix: false });
 }

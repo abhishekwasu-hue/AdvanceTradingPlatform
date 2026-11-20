@@ -19,6 +19,11 @@ words buy, sell, target, stop or stop-loss. Use only numbers and symbols that ap
 QUESTION = "Summarise these readings."
 
 
+def _version() -> str:
+    from app.ai import prompt_versions
+    return prompt_versions.version_of("terminal_conclusion", SUMMARY_PROMPT)
+
+
 def facts_of(body: dict[str, Any]) -> list[str]:
     """The read as fact lines: the lean and meter, the line, agrees / conflicts, what needs him, every section line."""
     g = body.get("glance") or {}
@@ -43,6 +48,8 @@ async def summarize(provider: Any, body: dict[str, Any]) -> tuple[str | None, st
     facts = facts_of(body)
     if not facts:
         return None, "no facts"
+    from app.ai import prompt_versions
+    prompt_versions.stamp(provider, _version())       # H-C1: every model call carries its prompt version
     system = SUMMARY_PROMPT.format(facts=copilot.facts_text(facts))
     user = f"QUESTION:\n{QUESTION}"
     why = "provider returned no text"

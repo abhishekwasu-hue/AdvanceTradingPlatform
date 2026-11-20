@@ -16,6 +16,7 @@ in `diagnostics`, for a SUPER_ADMIN (handover 5 C).
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -172,11 +173,21 @@ async def chat_home(user: User = Depends(get_current_user), session: AsyncSessio
     jobs = chat.visible_jobs(await chat_flags(session, tenant_id))      # CU7: a job behind an OFF switch is not listed
     return {"top_line": chat.TOP_LINE, "ai": _ai_state(provider, one_key), "market_line": line, "disclaimer": chat.DISCLAIMER,
             "jobs": [{"id": j.id, "number": j.number, "title": j.title, "line": j.line, "starter": j.starter, "built": j.built,
-                      "page": {"label": j.page[0], "to": j.page[1]} if j.page else None} for j in jobs],
+                      "prefill": j.prefill, "page": {"label": j.page[0], "to": j.page[1]} if j.page else None} for j in jobs],
             "starters": [j.starter for j in jobs], "keep": chat_history.keep()}
 
 
 AGENT_FLAG = "copilot_agent"
+
+
+def chat_parts(text: str) -> list[str]:
+    """CP-CHAT (owner 20 Nov): the planner's reply in its own paragraphs (a list stays with its lines), so it reads as a
+    chat message; a reply written without blank lines keeps one part per line, as before."""
+    if re.search(r"\n[ \t]*\n", text or ""):
+        return [p.strip() for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+    return [x.strip() for x in (text or "").splitlines() if x.strip()]
+
+
 AGENT_FALLBACK_NOTE = "The AI could not answer this one, so this answer uses ATP's own sentences."
 
 
@@ -209,7 +220,7 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
               for c in ans.tool_calls]
     # M72 PR-2 (CP-2, F7): the checked headline first, then the short lines; the cards are tables code drew from the tool
     # results the model named (never a model-written table); the chips are fixed follow-up actions.
-    lines = [x.strip() for x in ans.text.splitlines() if x.strip()]
+    lines = chat_parts(ans.text)
     summary = [ans.headline, *lines] if ans.headline else lines or [ans.text]
     shape = chat.Answer(job="agent", title="Answer", summary=summary, worked=worked, notes=list(ans.disclaimers),
                         blocks=[{k: v for k, v in c.items() if k != "call"} for c in ans.cards]).as_dict()

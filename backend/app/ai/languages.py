@@ -43,13 +43,21 @@ _DEV_LETTER = re.compile("[\u0900-\u0965\u0970-\u097f]")
 
 # CH-1 (owner 5 Nov): the answer's register. "analyst" (default): an experienced market analyst's words, numbers first;
 # "plain": the earlier short plain answer. Rule 4 (never buy / sell / enter / exit / targets) is untouched by either.
+# CP-CHAT (owner 20 Nov, "proper chating"): the analyst register is a chat reply - the question answered first in short
+# natural paragraphs, a list only when the content is one, no fixed section headings, one short question when something
+# is missing. Every other rule of the planner prompt (numbers, tools, signal words, cards) stays as it is.
 TONES = ("analyst", "plain")
 _PLAIN = "5. Keep the answer short and plain."
-_ANALYST = ("5. Write like an experienced market analyst: the key numbers first, then short points, using market terms "
-            "precisely (trend, structure, swing high / low, demand / supply area, momentum, volume, open interest build-up, "
-            "implied volatility). Describe; never advise. Organise the text into short sections, each opening with a "
-            "Markdown heading line '## <title>' (for example Summary, Structure, Areas, Option chain, Scenarios, What to "
-            "watch) - only the sections the tool results support, Summary first.")
+_ANALYST = ("5. Reply like an experienced market analyst in a chat with a trader: answer the question first, in one to three "
+            "short natural paragraphs, the key numbers inside the sentences, using market terms precisely (trend, structure, "
+            "swing high / low, demand / supply area, momentum, volume, open interest build-up, implied volatility). Describe; "
+            "never advise. Use a few short '- ' bullet points only when the content is a list. No section headings and no "
+            "fixed parts such as Summary or Next step. When something the answer needs is missing from his message, ask for "
+            "it in one short question on its own line.")
+# CP-CHAT: the analyst register's answer text is a chat reply in paragraphs (rule 7's "text" field)
+_TEXT_FIELD = '"text": "<the answer: short plain lines, no Markdown tables>"'
+_CHAT_TEXT_FIELD = ('"text": "<the reply: short paragraphs separated by a blank line, \'- \' bullets only for a list, no headings, '
+                    'no Markdown tables>"')
 
 
 def resolve(lang: str, question: str) -> str:
@@ -68,7 +76,7 @@ def with_tone(system: str, tone: str) -> str:
     """The planner prompt with the answer's register (the line that starts rule 5)."""
     if tone == "plain" or _PLAIN not in system:
         return system
-    return system.replace(_PLAIN, _ANALYST, 1)
+    return system.replace(_PLAIN, _ANALYST, 1).replace(_TEXT_FIELD, _CHAT_TEXT_FIELD, 1)
 
 
 def has_devanagari_digit(text: str) -> bool:

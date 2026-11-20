@@ -68,9 +68,9 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
       await expect.poll(() => asked.length).toBe(1);
       expect(asked[0]).toContain("What is the structure of NIFTY 50 now?");
       expect(asked[0]).toContain('"symbol":"NIFTY 50"');
-      // CH-1b: the answer opens with its index, each section has its heading, and Copy is there
-      const index = sheet.locator("[data-answer-index] a");
-      await expect(index).toHaveText(["Summary", "Structure", "Areas", "Option chain", "What to watch"]);
+      // CH-1b: each section has its heading and Copy is there; CP-CHAT (owner 20 Nov): a short answer opens with no row
+      // of section chips (the jump index is only for a long answer)
+      await expect(sheet.locator("[data-answer-index]")).toHaveCount(0);
       await expect(sheet.locator("[data-answer-heading]")).toHaveCount(5);
       await expect(sheet.locator("[data-copy-answer]")).toBeVisible();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/ch1b-answer-${size.width}-dark.png` });

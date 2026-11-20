@@ -114,6 +114,8 @@ export const COPILOT_EN = {
     you: "You",
     typing: "Copilot is reading ATP's data",
     jumpLatest: "Jump to latest",
+    // CP-CHAT (owner 20 Nov): a starter that needs his idea fills the box; this line says what to add
+    ideaHint: "Add your idea after the colon, then send.",
     summaryMore: "More",
     summaryLess: "Less",
     placeholderShort: "Ask about the market",

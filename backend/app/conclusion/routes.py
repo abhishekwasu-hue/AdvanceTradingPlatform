@@ -31,7 +31,15 @@ async def _require_flags(user: User = Depends(get_current_user), session: AsyncS
 async def terminal_conclusion(symbol: str = Query(..., min_length=1, max_length=40),
                               expiry: str | None = Query(default=None, max_length=20), tf: Timeframe = "15m",
                               also: list[Timeframe] = Query(default=[]),
+                              v: str | None = Query(default=None, max_length=200),
                               user: User = Depends(get_current_user),
                               session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """Chart, OI, his positions, today's orders and the broker check for one symbol, each line with source and time."""
-    return await gather.conclusion(session, user, symbol, expiry, tf, also=tuple(also))
+    import time
+    key = (user.id, symbol.strip().upper(), expiry, tf, tuple(also), v)
+    now = time.monotonic()
+    if (hit := gather.cached(key, now)) is not None:
+        return hit
+    body = await gather.conclusion(session, user, symbol, expiry, tf, also=tuple(also))
+    gather.remember(key, body, now)
+    return body

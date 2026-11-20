@@ -39,6 +39,7 @@ import {
 import {
   ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
+import { OI_SLOT_MS, tfMs, useStepClose } from "./conclusion";
 import { ConclusionPanelV2 } from "./ConclusionPanelV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { TerminalWatchlistV2 } from "./TerminalWatchlistV2";
@@ -222,6 +223,11 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
     const ord = (dataOf(ordersL) ?? []).map((o) => `${o.id}:${o.status}`).join(",");
     return `${pos}|${ord}`;
   }, [positionsL, ordersL]);
+  // TERM-CON C3: and at each bar close of the main chart's timeframe and each new OI slot, while the market is open - one
+  // timer to the next boundary each, never an interval.
+  const conclusionLive = conclusionOn && signedIn && market.status?.sessions?.NSE?.is_open === true;
+  const barClosed = useStepClose(tfMs(mainTf ?? "15m"), conclusionLive);
+  const slotClosed = useStepClose(OI_SLOT_MS, conclusionLive);
   // TERM-2 step 4 (each behind its own flag, with ui_v2 + terminal; PAPER first): R1 Roll, R3 the short strikes' areas.
   const termOn = (flag: string) => features.on("ui_v2") && features.on("terminal") && features.on(flag);
   const rollOn = termOn("term_roll") && features.on("paper_account") && canTrade;
@@ -294,7 +300,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
         basket={legs} spot={spot?.ltp ?? null} fnoOn={features.on("paper_account") && canTrade} />;
       // TERM-CON C2: what the chart, the OI, his own signals, positions, orders and the broker show together (read only).
       case "conclusion": return <ConclusionPanelV2 symbol={underlying} expiry={live?.expiry ?? chain.expiry ?? null} tf={mainTf ?? "15m"}
-        enabled={signedIn && conclusionOn} refresh={conclusionRefresh} />;
+        enabled={signedIn && conclusionOn}
+        refresh={conclusionLive ? `${conclusionRefresh}|${barClosed}|${slotClosed}` : conclusionRefresh} />;
       default: return null;
     }
   }

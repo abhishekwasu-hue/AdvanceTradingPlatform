@@ -23,6 +23,27 @@ log = logging.getLogger(__name__)
 
 MAX_POSITIONS = 40
 
+# C3: a short in-process cache per (user, symbol, expiry, timeframes, the client's change key) - a second open tab or a
+# burst of triggers reuses one read; any change the page sees (a new bar, an OI slot, his orders) changes the key.
+CACHE_SECONDS = 15
+CACHE_MAX = 512
+_cache: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+
+
+def cached(key: tuple[Any, ...], now: float) -> dict[str, Any] | None:
+    hit = _cache.get(key)
+    if hit is None or hit[0] <= now:
+        _cache.pop(key, None)
+        return None
+    return hit[1]
+
+
+def remember(key: tuple[Any, ...], body: dict[str, Any], now: float) -> None:
+    if len(_cache) >= CACHE_MAX:
+        for k in sorted(_cache, key=lambda k: _cache[k][0])[: CACHE_MAX // 4]:
+            _cache.pop(k, None)
+    _cache[key] = (now + CACHE_SECONDS, body)
+
 
 async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> dict[str, Any] | None | str:
     from app.charts.read_chart import read_chart

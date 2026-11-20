@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.conclusion import rules as R
 from app.conclusion import sections as S
 from app.db.models import TradeRecord, User
+from app.market_data.calendar import IST
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +60,22 @@ async def _signals(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     return list((await service.feed(session, user, tab="today", limit=50)).get("items") or [])
 
 
+async def _kill(session: AsyncSession, user: User) -> dict[str, Any]:
+    from app.terminal.status import _kill_switch
+    return await _kill_switch(session, user)
+
+
+async def _guardian(session: AsyncSession, user: User) -> dict[str, Any]:
+    from app.risk_engine.guardian_routes import guardian_status
+    return await guardian_status(user=user, session=session)
+
+
+async def _events(session: AsyncSession, user: User, now: datetime) -> list[dict[str, Any]]:
+    from app.risk_engine.guardian_routes import list_events
+    start = now.astimezone(IST).date()
+    return await list_events(from_date=start, to_date=start + timedelta(days=7), user=user, session=session)
+
+
 async def _broker(session: AsyncSession, user: User) -> dict[str, Any]:
     from app.reconciliation.routes import reconciliation_status
     return (await reconciliation_status(user=user, session=session)).model_dump()
@@ -91,6 +108,9 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     orders = await _safe(session, "orders", _orders(session, user))
     signals = await _safe(session, "signals", _signals(session, user))
     broker = await _safe(session, "broker", _broker(session, user))
+    kill = await _safe(session, "kill switch", _kill(session, user))
+    guard = await _safe(session, "risk", _guardian(session, user))
+    events = await _safe(session, "events", _events(session, user, now))
 
     out: list[dict[str, Any]] = []
     readings: list[dict[str, Any]] = []
@@ -135,9 +155,15 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     broker_row = broker if isinstance(broker, dict) else None
     out.append(S.broker_section(broker_row) if broker_row is not None else S.na("broker", "Broker", S.SOURCE_BROKER))
 
+    out.append(S.risk_section(kill, guard if isinstance(guard, dict) else None, symbol, read_at) if isinstance(kill, dict)
+               else S.na("risk", "Risk", S.SOURCE_RISK))
+    out.append(S.events_section(events, symbol, read_at) if isinstance(events, list) else S.na("events", "Events", S.SOURCE_EVENTS))
+
     body: dict[str, Any] = {"symbol": symbol, "expiry": expiry, "tf": tf, "as_of": read_at,
                             "sections": [s for s in out if s["status"] != "off"], "readings": readings,
-                            "needs_you": S.needs_you(order_rows, broker_row, symbol),
+                            "needs_you": S.needs_you(order_rows, broker_row, symbol, kill=kill if isinstance(kill, dict) else None,
+                                                     positions=positions if isinstance(positions, list) else [],
+                                                     today=now.astimezone(IST).date().isoformat()),
                             "glance": R.glance(readings, symbol),
                             "note": "Information only: what ATP's readings show, never a recommendation. The decision is yours."}
     body["fingerprint"] = fingerprint(body)

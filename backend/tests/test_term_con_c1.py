@@ -87,3 +87,47 @@ def test_the_read_carries_the_glance_and_extra_timeframes_are_separate_sections(
     assert keys.count("chart") == 1 and keys.count("chart-1h") <= 1 and "chart-15m" not in keys
     assert set(body["glance"]) == {"lean", "meter", "agrees", "conflicts", "line"}
     assert "signals" in keys
+
+
+# --- C1b: risk and events --------------------------------------------------------------------------------------------
+
+def test_risk_shows_the_kill_switch_and_only_what_his_own_settings_do():
+    kill = {"engaged": True, "message": "New orders are stopped for your account. Exits still work."}
+    guard = {"as_of": "g", "modes": {"PAPER": {"state": "paused", "cooldowns": [{"underlying": "NIFTY", "minutes_left": 12},
+                                                                               {"underlying": "TCS", "minutes_left": 3}]},
+                                     "LIVE": {"state": "normal", "cooldowns": []}}}
+    texts = [x["text"] for x in S.risk_section(kill, guard, "NIFTY", "t")["lines"]]
+    assert texts == ["New orders are stopped for your account. Exits still work.",
+                     "PAPER: new entries paused by your drawdown settings.",
+                     "PAPER: cool-down on NIFTY, 12 minutes left (your setting)."]
+    calm = S.risk_section({"engaged": False, "message": "New orders are allowed."}, {"modes": {"PAPER": {"state": "normal"}}}, "NIFTY", "t")
+    assert [x["text"] for x in calm["lines"]] == ["New orders are allowed."]          # nothing added when he set nothing
+
+
+def test_events_for_every_symbol_or_this_one_only():
+    events = [{"event_date": "2026-11-21", "underlying": None, "description": "RBI policy", "action": "BLOCK"},
+              {"event_date": "2026-11-22", "underlying": "TCS", "description": "Results"},
+              {"event_date": "2026-11-23", "underlying": "NIFTY", "start_time": "09:15", "description": "Index rebalance"}]
+    texts = [x["text"] for x in S.events_section(events, "NIFTY", "t")["lines"]]
+    assert texts == ["2026-11-21 · RBI policy · new entries refused in its window (your setting).",
+                     "2026-11-23 09:15 · Index rebalance."]
+    assert S.events_section([], "NIFTY", "t")["lines"][0]["text"] == "No market event in the next 7 days."
+
+
+def test_needs_you_adds_the_kill_switch_and_an_expiry_today():
+    pos = [{"symbol": "NIFTY25NOV25800CE", "underlying": "NIFTY", "expiry": "2026-11-20"},
+           {"symbol": "TCS", "underlying": "TCS", "expiry": "2026-11-20"}]
+    got = S.needs_you([], None, "NIFTY", kill={"engaged": True}, positions=pos, today="2026-11-20")
+    assert [n["key"] for n in got] == ["kill_switch", "expiry"] and got[1]["text"] == "1 position expires today"
+    assert S.needs_you([], None, "NIFTY", positions=pos, today="2026-11-21") == []
+
+
+def test_the_read_has_risk_and_events_sections():
+    headers, me = _owner(f"tc1b-{uuid.uuid4().hex[:6]}@example.com")
+    for flag in FLAGS:
+        _set_flag(flag, me["tenant_id"], on=True)
+    body = client.get("/api/terminal/conclusion", params={"symbol": "NIFTY"}, headers=headers).json()
+    keys = [s["key"] for s in body["sections"]]
+    assert keys[-2:] == ["risk", "events"]
+    risk = next(s for s in body["sections"] if s["key"] == "risk")
+    assert risk["status"] == "ok" and risk["lines"][0]["text"] == "New orders are allowed."

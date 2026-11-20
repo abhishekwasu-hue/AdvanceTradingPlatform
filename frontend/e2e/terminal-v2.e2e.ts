@@ -1951,6 +1951,10 @@ const CON_ON = { ...ON, terminal_conclusion: true };
 const CON_SHOTS = process.env.CONCLUSION_SHOTS;
 const conclusionRoute = (calls: string[]) => async (page: Page) => {
   await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\?/, (r) => { calls.push(r.request().url()); return r.fulfill({ json: CONCLUSION }); });
+  // C4: the summary on tap (made-up words; the server checks real ones).
+  await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\/summary$/, (r) => { calls.push(`POST ${r.request().url()}`); return r.fulfill({ json: {
+    ready: true, text: "Most readings lean up: the 15-minute structure, OI and your signals agree. Your positions point the other way, and one order was not placed today.",
+    reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 60, cost_inr: 0.42 } } }); });
 };
 
 test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
@@ -1980,6 +1984,10 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
         expect(new URL(calls[0]).searchParams.get("symbol")).toBe("NIFTY");
         const text = (await body.innerText()).toLowerCase();
         for (const word of [" buy ", " sell ", "target", "stop-loss"]) expect(text).not.toContain(word);
+        expect(calls.some((c) => c.startsWith("POST"))).toBe(false);          // the AI is never called without a tap
+        await body.locator("[data-summary-ask]").click();
+        await expect(body.locator("[data-summary-text]")).toContainText("Most readings lean up");
+        await expect(body).toContainText("This summary cost ₹0.42 on your AI key.");
         if (width < 600) await expectPhoneLayout(page);
         await body.scrollIntoViewIfNeeded();
         if (CON_SHOTS) {

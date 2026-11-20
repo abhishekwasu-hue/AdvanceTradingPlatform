@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { request } from "../api/client";
+import { formatINR, formatTimeIST } from "../ui/format";
 
 export type Direction = "up" | "down" | "range" | "mixed" | "none";
 export type Tone = "up" | "down" | "neutral" | "warn";
@@ -39,6 +40,24 @@ export function conclusionPath(symbol: string, expiry: string | null, tf: string
 /** `v`: the page's change key (bar, OI slot, his positions / orders) - the server's short cache is per key (C3). */
 export const fetchConclusion = (symbol: string, expiry: string | null, tf: string, also: readonly string[] = [], v?: string) =>
   request<Conclusion>(conclusionPath(symbol, expiry, tf, also, v));
+
+// --- C4: the AI summary, on tap only, on his own key ------------------------------------------------------------------
+
+export interface ConclusionSummary {
+  ready: boolean; text: string | null; reason: string | null;
+  usage: { calls: number; tokens_input: number; tokens_output: number; cost_inr: number } | null;
+}
+
+export const summarizeConclusion = (symbol: string, expiry: string | null, tf: string, also: readonly string[] = [], v?: string) =>
+  request<ConclusionSummary>("/terminal/conclusion/summary", {
+    method: "POST", body: JSON.stringify({ symbol, expiry, tf, also: also.filter((x) => x !== tf).slice(0, 2), v: v?.slice(0, 200) }),
+  });
+
+/** "₹0.42" for this call's cost (from his own key's metering); empty when the call reported none. */
+export function costText(u: ConclusionSummary["usage"]): string {
+  if (!u) return "";
+  return `This summary cost ${formatINR(Math.max(u.cost_inr, 0.01), { paise: true })} on your AI key.`;
+}
 
 // --- C3: refresh on bar close and on a new OI slot, with no polling ---------------------------------------------------
 
@@ -113,8 +132,6 @@ export function segments(m: Glance["meter"]): Direction[] {
 
 /** A short time ("10:35") from an ISO time; the text itself when it is not one. */
 export function shortTime(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+  if (!iso || Number.isNaN(Date.parse(iso))) return "";
+  return formatTimeIST(iso, { suffix: false });
 }

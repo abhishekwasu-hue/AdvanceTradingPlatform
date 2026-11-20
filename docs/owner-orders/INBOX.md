@@ -710,3 +710,11 @@ Note: the product fix (#1114) is deployed; the block is the safety pause (Phase 
 it. It lifts only after a clean reconciliation, which the worker runs only in a LIVE-bot cycle and whose button sat on
 the old Deployments page. PR claude/broker-check: the pause in plain words on the ticket, Terminal and My positions with
 one action, "Check with <broker> now" (the same reconciliation route; it opens LIVE only when the books agree).
+
+## 20 Nov - owner (Marathi, transliterated; answer to "Live trading is ON in the deploy health log - intended?", BT-DRAW 2c deploy check)
+
+> "live trading on aahe"
+
+Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
+(B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
+his switch alone.

@@ -34,6 +34,12 @@ export function tradeLayer(trades: readonly Trade[]): LayerData {
   return { segments };
 }
 
+/** BT-DRAW 2c: which area sides the test's trades drew (a long's demand, a short's supply), for the legend swatches. Pure. */
+export function areaSides(trades: readonly Trade[]): ("demand" | "supply")[] {
+  const has = (dir: string) => trades.some((t) => t.direction === dir && t.setup_area_low != null && t.setup_area_high != null);
+  return [...(has("LONG") ? ["demand" as const] : []), ...(has("SHORT") ? ["supply" as const] : [])];
+}
+
 /**
  * Chart review PR 3 (CC-5): the "Test a strategy" chart under `ui_v2` - the same v2 chart as the Charts page (both axes,
  * Auto / Reset / Latest, the crosshair readout) with the backtest's entries and exits as markers, the trader's chart
@@ -58,6 +64,7 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
   const plan = useMemo(() => (lines ? { overlays: [], panes: { volume: true, rsi: false }, named: lines.named } : backtestChartPlan(strategyParams)),
     [lines, strategyParams]);
   const layer = useMemo(() => tradeLayer(trades), [trades]);
+  const sides = useMemo(() => areaSides(trades), [trades]);
   useEffect(() => {
     if (!engine) return undefined;
     const studies = lines?.studies ?? [];
@@ -80,9 +87,12 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
               <span aria-hidden className="inline-block h-0.5 w-4" style={{ backgroundColor: st.line.color }} />{st.line.title}{st.line.pane === "own" ? " (own pane)" : ""}
             </li>
           ))}
-          {trades.some((t) => t.setup_area_low != null) && (
-            <li className="inline-flex items-center gap-space-1">
-              <span aria-hidden className="inline-block h-2 w-4 border border-up" />Area the setup came from
+          {sides.length > 0 && (
+            <li data-area-sides={sides.join(" ")} className="inline-flex items-center gap-space-1">
+              {sides.map((side) => (
+                <span key={side} aria-hidden className={`inline-block h-2 w-4 border ${side === "demand" ? "border-up" : "border-down"}`} />
+              ))}
+              Area the setup came from
             </li>
           )}
           {trades.some((t) => t.setup_time) && (

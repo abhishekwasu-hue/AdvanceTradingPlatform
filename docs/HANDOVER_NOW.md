@@ -9,4 +9,4 @@ Next, in order:
 1. Merge #1123 -> #1124 -> #1126 when green (each after the one below it).
 2. SFC P6: audit first (order path): bot form lists only v1 (/api/custom-strategies skips v2 since P5) - add v2 to
    the deploy picker; worker/runner parity = chart on recorded bars; LIVE only by the owner's switch.
-3. Then the 18 Nov list: BT-DRAW 2c, CA-CHAT, SRV2 P3 (atp-private CI blocker SRV2-Q2).
+3. Then the 18 Nov list: CA-CHAT (BT-DRAW 2c merged #1110; follow-up claude/bt-draw-2c), SRV2 P3 (atp-private CI blocker SRV2-Q2).

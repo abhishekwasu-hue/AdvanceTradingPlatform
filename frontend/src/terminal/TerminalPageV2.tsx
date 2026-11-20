@@ -34,11 +34,12 @@ import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_HEIGHT, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns,
   changed, closePanel, equalWidths, fitToScreen, isPreset, layoutFor, nameProblem, openPanel, readingOrder, remove, rename, resetToPreset, saveAs,
-  saveOver, sizePanel, switchTo, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
+  saveOver, sizePanel, switchTo, withConclusion, withoutConclusion, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
 } from "./layoutModel";
 import {
   ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
 } from "./PanelsV2";
+import { ConclusionPanelV2 } from "./ConclusionPanelV2";
 import { PhoneTabsV2 } from "./PhoneTabsV2";
 import { TerminalWatchlistV2 } from "./TerminalWatchlistV2";
 import type { ScreenFrom } from "../chart/watchScreen";
@@ -163,7 +164,12 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
   // UX-3: the watchlist panel only while `watchlists` is on (the Charts panel's own flag); off, its columns go to its neighbour.
   const watchOn = features.on("watchlists");
-  const shownPanels = useMemo(() => (watchOn ? working.panels : withoutWatchlist(working.panels)), [watchOn, working.panels]);
+  // TERM-CON C2: the Conclusion panel only while `terminal_conclusion` is on (with ui_v2 + terminal); off, it stays closed.
+  const conclusionOn = features.on("ui_v2") && features.on("terminal") && features.on("terminal_conclusion");
+  const shownPanels = useMemo(() => {
+    const base = watchOn ? working.panels : withoutWatchlist(working.panels);
+    return conclusionOn ? withConclusion(base, working.preset, isPreset(key)) : withoutConclusion(base);
+  }, [watchOn, conclusionOn, working.panels, working.preset, key]);
   const openIds = useMemo(() => new Set(shownPanels.filter((x) => x.open).map((x) => x.id)), [shownPanels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
 
@@ -209,6 +215,13 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const levels = useMemo(() => terminalLevels({ underlying, expiry: live?.expiry ?? chain.expiry, basket: legs, held: trading.held,
     breakevens, combined: combined.list, spotSymbol }), [underlying, live?.expiry, chain.expiry, legs, trading.held, breakevens, combined.list, spotSymbol]);
   const afterOrder = () => { reloadPositions(); reloadOrders(); reloadExposure(); };
+  // TERM-CON C2: the Conclusion re-reads when his positions or orders change (the lists the Terminal already polls; no
+  // timer of its own). C3 adds the bar close and the OI slot.
+  const conclusionRefresh = useMemo(() => {
+    const pos = (dataOf(positionsL) ?? []).map((t) => t.id).join(",");
+    const ord = (dataOf(ordersL) ?? []).map((o) => `${o.id}:${o.status}`).join(",");
+    return `${pos}|${ord}`;
+  }, [positionsL, ordersL]);
   // TERM-2 step 4 (each behind its own flag, with ui_v2 + terminal; PAPER first): R1 Roll, R3 the short strikes' areas.
   const termOn = (flag: string) => features.on("ui_v2") && features.on("terminal") && features.on(flag);
   const rollOn = termOn("term_roll") && features.on("paper_account") && canTrade;
@@ -279,6 +292,9 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       case "bots": return <BotsPanelV2 enabled={signedIn} />;
       case "payoff": return <PayoffPanelV2 underlying={underlying} expiry={live?.expiry ?? chain.expiry ?? null} positions={dataOf(positionsL) ?? null}
         basket={legs} spot={spot?.ltp ?? null} fnoOn={features.on("paper_account") && canTrade} />;
+      // TERM-CON C2: what the chart, the OI, his own signals, positions, orders and the broker show together (read only).
+      case "conclusion": return <ConclusionPanelV2 symbol={underlying} expiry={live?.expiry ?? chain.expiry ?? null} tf={mainTf ?? "15m"}
+        enabled={signedIn && conclusionOn} refresh={conclusionRefresh} />;
       default: return null;
     }
   }
@@ -338,7 +354,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
               .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
               ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]}
             panels={<PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))}
-              onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} />}
+              onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} hide={conclusionOn ? undefined : "conclusion"} />}
             onSave={save} onSaveAs={() => setAsk({ kind: "save-as", value: "" })} onRename={() => own && setAsk({ kind: "rename", value: own.name })}
             onDelete={() => void del()} onReset={() => setWorking(resetToPreset(working))} resetTitle={`Back to the ${PRESETS[working.preset].name} layout`} />
         </div>} />
@@ -371,11 +387,12 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
 
       {narrow ? (
         <div className="space-y-space-3" data-tour="terminal-panels">
-          <PhoneTabsV2 tab={tab} onTab={setTab} watchlists={watchOn} counts={{ basket: legs.length, positions: dataOf(positionsL)?.length ?? 0 }} />
+          <PhoneTabsV2 tab={tab} onTab={setTab} watchlists={watchOn} conclusion={conclusionOn} counts={{ basket: legs.length, positions: dataOf(positionsL)?.length ?? 0 }} />
           <section id={`terminal-panel-${tab}`} role="tabpanel" aria-labelledby={`terminal-tab-${tab}`} data-phone-panel={tab}
             className="rounded-panel border border-subtle bg-surface-1 p-space-3">
             {tab === "watchlist" && watchOn && <div className="h-[28rem]">{panel("watchlist")}</div>}
             {tab === "chart" && <div className="h-[22rem]">{panel("chart-1")}</div>}
+            {tab === "conclusion" && conclusionOn && panel("conclusion")}
             {tab === "chain" && panel("chain")}
             {/* TERM-2 step 3: the one basket has its own tab on a phone. */}
             {tab === "basket" && panel("basket")}
@@ -407,11 +424,14 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
  * and "Equal widths". A change applies at once and is kept with "Save as mine" / "Save" like any other layout change; a
  * change that cannot be applied says why here.
  */
-function PanelsMenu({ panels, onToggle, onPanels, ids = CHOOSER_PANEL_IDS }: {
+function PanelsMenu({ panels, onToggle, onPanels, ids: offered = CHOOSER_PANEL_IDS, hide }: {
   panels: readonly PanelPlace[]; onToggle: (id: PanelId, on: boolean) => void; onPanels: (panels: PanelPlace[]) => void;
   /** The panels offered (UX-3: no Watchlist while `watchlists` is off). */
   ids?: readonly PanelId[];
+  /** TERM-CON C2: a panel whose flag is off (the Conclusion panel while `terminal_conclusion` is off). */
+  hide?: PanelId;
 }) {
+  const ids = hide ? offered.filter((id) => id !== hide) : offered;
   const open = new Set(panels.filter((x) => x.open).map((x) => x.id));
   const [note, setNote] = useState<string | null>(null);
   const apply = (r: SizeResult) => {

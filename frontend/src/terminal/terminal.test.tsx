@@ -469,7 +469,7 @@ describe("navigation behind the `terminal` flag (TT-18)", () => {
   });
 
   it("every panel has a label; ids match the server's allow-list order", () => {
-    expect(PANEL_IDS).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff"]);
+    expect(PANEL_IDS).toEqual(["watchlist", "chart-1", "chart-2", "chart-3", "chart-4", "chain", "order", "positions", "orders", "basket", "bots", "payoff", "conclusion"]);
     for (const id of PANEL_IDS) expect(PANELS[id].label).toMatch(/^[A-Z]/);
   });
 });

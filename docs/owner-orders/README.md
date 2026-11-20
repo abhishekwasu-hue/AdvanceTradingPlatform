@@ -93,6 +93,7 @@ README_HISTORY.md. INBOX.md (every instruction, verbatim) and DECISIONS.md are a
 | - | Watchlist screens: saved results, no re-check while the market is closed, fewer broker calls, progress (15 Nov) | DECISIONS.md 15 Nov (WS-FAST) | WS-FAST | in progress |
 | - | Port the Trade bot "15M SRv2" AS IS, owner-only (15 + 18 Nov) | DECISIONS.md 18 Nov (SRV2) | SRV2 | in progress |
 | - | Copilot chat feel: a real conversation when an AI key is connected, no empty template sent (20 Nov) | DECISIONS.md 20 Nov (CP-CHAT) | CP-CHAT | in progress |
+| - | Terminal "Conclusion" panel: one view of chart, OI, positions, orders, his signals and events (20 Nov) | DECISIONS.md 20 Nov (TERM-CON), ../plans/terminal-conclusion-PLAN.md | TERM-CON | in progress |
 | - | Other projects on the ATP host share its Caddy (5 Nov) | ../deploy/HOSTINGER_RUNBOOK.md 5a | OPS-SHARE | done |
 
 Other closed rows (Upstox OAuth redirect, broker field map, `users.ai_language`): README_HISTORY.md.

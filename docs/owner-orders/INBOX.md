@@ -711,6 +711,27 @@ it. It lifts only after a clean reconciliation, which the worker runs only in a 
 the old Deployments page. PR claude/broker-check: the pause in plain words on the ticket, Terminal and My positions with
 one action, "Check with <broker> now" (the same reconciliation route; it opens LIVE only when the books agree).
 
+## 20 Nov - Terminal Conclusion panel (decision agent)
+
+> "ok soda ha vishay ata mala he mhanayache aahe ki ATP madhye apan barech features ghetlele aahet terminal banavle aahe sagla banavla aahe parantu trading decision ghenyasathi asa consolidated ek window terminal var asayla pahije jyachyamadhye sagalyancha saar vyavasthit apalyala disel tyala mhanu apan conclusion jya jya condition hotat option change chi condition yet aahe ani chart varchya condition yet aahet mhanje ek agent asa asel jo ya sarvancha data gheun ek decision maker asel tasa agent mala vatate ATP madhye nahi chart reader varun to data ghenar OI analysis varun to data ghenar sobatach adhichya kahi positions aahet kay tyachyavar pan tu lakshat thevnar order zalya ki nahi tyachyavar pan tu laksha thevnar ya ya sandarbhat kahi plan tayar karta yeil ka kiva ATP madhye asa adhich kahi aahe ka jenekarun decision ghene shakya hoil ani ekach panel madhye traderla sagla kahi disel"
+
+Note (transliterated from Devanagari; the English-only guard forbids Devanagari): a plan is asked for, not a build
+("plan tayar karta yeil ka", "ATP madhye asa adhich kahi aahe ka"). Audit + plan: docs/plans/terminal-conclusion-PLAN.md
+(roadmap TERM-CON). Built only after his approval (OWNER_RULES A.6).
+
+Follow-up (same day, relayed by the parent session, transliterated):
+
+> "Ok yacha user interface khup changla tayar kara mhanje eka najaret traderla signal samajla pahije buy or sell asa lihun sangaychi garaj padu naye samjhane walo ko ishara kafi hota hai"
+
+Note: readable in one glance; the bias carried by a visual cue (colour + arrow / shape, colour-blind safe), never by
+buy / sell words (CLAUDE.md 3). Plan section "Glance design" (docs/plans/terminal-conclusion-PLAN.md); still a plan.
+
+Owner answer (same day, to the plan and TC-Q1..TC-Q5):
+
+> "Default yes"
+
+Note: the plan docs/plans/terminal-conclusion-PLAN.md is approved with every default (TC-Q1..TC-Q5). Build C0-C4, one PR
+each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 ## 20 Nov - owner (Marathi, transliterated; answer to "Live trading is ON in the deploy health log - intended?", BT-DRAW 2c deploy check)
 
 > "live trading on aahe"

@@ -719,3 +719,13 @@ one action, "Check with <broker> now" (the same reconciliation route; it opens L
 
 Note: decided below (DECISIONS 20 Nov AGENT-MODES); docs/adr/0029-owner-agent-modes.md. atp-private CI: the owner says
 it is not billing - to be read from the failed run's annotation (SRV2-Q2).
+
+## 20 Nov - atp-private visibility (Marathi, transliterated)
+
+> "Now public"
+
+> "are tu ata public aahe kalji karu nakos paise bharaychi garaj naste"
+
+Note: atp-private's CI never started since 9 Nov: GitHub's annotation on the failed runs says "The job was not started
+because recent account payments have failed or your spending limit needs to be increased" (private-repo Actions
+minutes). Public repos are not charged, so CI runs now. Decided below (DECISIONS 20 Nov ATP-PRIVATE-PUBLIC).

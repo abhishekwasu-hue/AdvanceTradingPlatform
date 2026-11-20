@@ -66,7 +66,7 @@ describe("TERM-CON C2: the Conclusion panel", () => {
 
   it("helpers: the path, the chip labels, the meter's segments", () => {
     expect(conclusionPath("NIFTY", "2026-11-26", "15m", ["1h", "15m", "1d", "5m"])).toBe(
-      "/api/terminal/conclusion?symbol=NIFTY&tf=15m&expiry=2026-11-26&also=1h&also=1d");
+      "/terminal/conclusion?symbol=NIFTY&tf=15m&expiry=2026-11-26&also=1h&also=1d");
     expect(chipLabel(BODY.readings[0])).toBe("15m");
     expect(chipLabel(BODY.readings[2])).toBe("Strategy");
     expect(segments({ up: 1, down: 1, range: 1, none: 1, total: 4 })).toEqual(["up", "down", "range", "none"]);
@@ -101,7 +101,7 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     // a 1-hour bar closes at 10:15 IST (09:15 + 1 h), not at 10:00
     expect(msToNext(at("2026-11-20T04:30:00Z"), tfMs("1h"))).toBe(15 * 60_000 + SETTLE_MS);
     expect(msToNext(at("2026-11-20T04:31:00Z"), OI_SLOT_MS)).toBe(4 * 60_000 + SETTLE_MS);
-    expect(conclusionPath("NIFTY", null, "15m", [], "a|b|3")).toBe("/api/terminal/conclusion?symbol=NIFTY&tf=15m&v=a%7Cb%7C3");
+    expect(conclusionPath("NIFTY", null, "15m", [], "a|b|3")).toBe("/terminal/conclusion?symbol=NIFTY&tf=15m&v=a%7Cb%7C3");
     expect(pageSource).not.toMatch(/setInterval/);
     expect(pageSource).toMatch(/useStepClose\(tfMs\(mainTf \?\? "15m"\), conclusionLive\)/);
   });

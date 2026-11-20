@@ -33,7 +33,7 @@ export function conclusionPath(symbol: string, expiry: string | null, tf: string
   if (expiry) q.set("expiry", expiry);
   for (const t of also.filter((x) => x !== tf).slice(0, 2)) q.append("also", t);
   if (v) q.set("v", v.slice(0, 200));
-  return `/api/terminal/conclusion?${q.toString()}`;
+  return `/terminal/conclusion?${q.toString()}`;          // request() adds the API base (/api/v1)
 }
 
 /** `v`: the page's change key (bar, OI slot, his positions / orders) - the server's short cache is per key (C3). */

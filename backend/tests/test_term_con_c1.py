@@ -131,3 +131,27 @@ def test_the_read_has_risk_and_events_sections():
     assert keys[-2:] == ["risk", "events"]
     risk = next(s for s in body["sections"] if s["key"] == "risk")
     assert risk["status"] == "ok" and risk["lines"][0]["text"] == "New orders are allowed."
+
+
+# --- C3: the short cache ----------------------------------------------------------------------------------------------
+
+def test_the_cache_reuses_one_read_per_key_and_a_new_change_key_reads_again(monkeypatch):
+    from app.conclusion import gather as G
+    calls = []
+
+    async def fake(session, user, symbol, expiry, tf, now=None, also=()):
+        calls.append((symbol, tf, also))
+        return {"n": len(calls)}
+    monkeypatch.setattr(G, "conclusion", fake)
+    G._cache.clear()
+    headers, me = _owner(f"tc3-{uuid.uuid4().hex[:6]}@example.com")
+    for flag in FLAGS:
+        _set_flag(flag, me["tenant_id"], on=True)
+    url = "/api/terminal/conclusion"
+    a = client.get(url, params={"symbol": "NIFTY", "v": "k1"}, headers=headers).json()
+    b = client.get(url, params={"symbol": "nifty", "v": "k1"}, headers=headers).json()
+    c = client.get(url, params={"symbol": "NIFTY", "v": "k2"}, headers=headers).json()
+    assert a == b == {"n": 1} and c == {"n": 2} and len(calls) == 2
+    assert G.cached(("x",), 0.0) is None
+    G.remember(("x",), {"y": 1}, 0.0)
+    assert G.cached(("x",), 1.0) == {"y": 1} and G.cached(("x",), G.CACHE_SECONDS + 1.0) is None

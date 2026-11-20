@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ConclusionViewV2 } from "./ConclusionPanelV2";
-import { chipLabel, conclusionPath, glyph, segments, toneOf, type Conclusion } from "./conclusion";
+import { OI_SLOT_MS, SETTLE_MS, chipLabel, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
 import { CHOOSER_PANEL_IDS, PANEL_IDS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
 import pageSource from "./TerminalPageV2.tsx?raw";
@@ -88,5 +88,21 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     expect(phoneTabs(false).map((t) => t.key)).not.toContain("conclusion");
     expect(pageSource).toMatch(/features\.on\("terminal_conclusion"\)/);
     expect(pageSource).toMatch(/hide=\{conclusionOn \? undefined : "conclusion"\}/);
+  });
+
+  it("C3: one timer to the next bar close (NSE bars from 09:15 IST) and the next OI slot - never an interval", () => {
+    const at = (iso: string) => Date.parse(iso);
+    const q = tfMs("15m");
+    expect(tfMs("1h")).toBe(3_600_000); expect(tfMs("5m")).toBe(300_000); expect(tfMs("1d")).toBe(86_400_000);
+    // 10:29:59 IST: the 10:15 bar is still forming; 10:30:05 IST (after the settle) it has closed.
+    const before = closedIndex(at("2026-11-20T04:59:59Z"), q);
+    expect(closedIndex(at("2026-11-20T05:00:05Z"), q)).toBe(before + 1);
+    expect(msToNext(at("2026-11-20T04:59:59Z"), q)).toBe(1_000 + SETTLE_MS);
+    // a 1-hour bar closes at 10:15 IST (09:15 + 1 h), not at 10:00
+    expect(msToNext(at("2026-11-20T04:30:00Z"), tfMs("1h"))).toBe(15 * 60_000 + SETTLE_MS);
+    expect(msToNext(at("2026-11-20T04:31:00Z"), OI_SLOT_MS)).toBe(4 * 60_000 + SETTLE_MS);
+    expect(conclusionPath("NIFTY", null, "15m", [], "a|b|3")).toBe("/api/terminal/conclusion?symbol=NIFTY&tf=15m&v=a%7Cb%7C3");
+    expect(pageSource).not.toMatch(/setInterval/);
+    expect(pageSource).toMatch(/useStepClose\(tfMs\(mainTf \?\? "15m"\), conclusionLive\)/);
   });
 });

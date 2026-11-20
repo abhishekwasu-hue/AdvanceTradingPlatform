@@ -27,7 +27,7 @@ export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, 
   useEffect(() => {
     if (!enabled) return undefined;
     let live = true;
-    load(symbol, expiry, tf, alsoKey ? alsoKey.split(",") : [])
+    load(symbol, expiry, tf, alsoKey ? alsoKey.split(",") : [], String(refresh))
       .then((body) => {
         if (!live) return;
         if (body.fingerprint !== last.current) { last.current = body.fingerprint; setData(body); }   // same facts: no repaint

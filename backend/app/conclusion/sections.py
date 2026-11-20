@@ -131,7 +131,7 @@ def chart_reading(read: Mapping[str, Any], tf: str) -> dict[str, Any] | None:
     if not read.get("bars"):
         return None
     direction = structure_direction((read.get("structure") or {}).get("direction"))
-    return {"source": "chart", "label": f"Chart {tf}", "tf": tf, "direction": direction, "as_of": read.get("as_of")}
+    return {"source": "chart", "label": f"{_tf_words(tf)} structure", "tf": tf, "direction": direction, "as_of": read.get("as_of")}
 
 
 # --- OI --------------------------------------------------------------------------------------------------------------
@@ -256,6 +256,45 @@ def refused_orders(orders: Sequence[Mapping[str, Any]], symbol: str) -> list[Map
     return [o for o in orders if matches(symbol, o.get("symbol")) and o.get("status") in REFUSED]
 
 
+# --- his own signals today ------------------------------------------------------------------------------------------
+
+SOURCE_SIGNALS = "Your signals today"
+SIGNAL_SIDE = {"LONG": "an upside", "SHORT": "a downside"}
+SIGNAL_DIRECTION = {"LONG": "up", "SHORT": "down"}
+STATUS_WORDS = {"waiting": "waiting for you", "taken": "taken", "skipped": "skipped", "expired": "expired",
+                "not_placed": "not placed", "snoozed": "snoozed"}
+
+
+def signals_section(items: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> Section:
+    """From GET /api/signals/feed (today): his own proposals, scan setups and fills on this symbol, newest first, in the
+    signal language (the side of the market, which of his sources, its state; the feed's "why" lines that pass)."""
+    mine = [i for i in items if matches(symbol, i.get("symbol"))]
+    if not mine:
+        return section("signals", "My signals", SOURCE_SIGNALS, as_of=as_of,
+                       lines=[line(f"No signal on {symbol} today.", source=SOURCE_SIGNALS, as_of=as_of)])
+    out: list[Line] = []
+    for i in mine[:5]:
+        name = str((i.get("source") or {}).get("name") or "").strip()
+        whose = name if name and not L.check(name, "signal_own", own_symbols=[symbol]) else "Your strategy"
+        side = SIGNAL_SIDE.get(str(i.get("direction") or ""), "a")
+        state = STATUS_WORDS.get(str(i.get("status") or ""), "")
+        text = f"{whose}: {side} setup on {symbol}" + (f", {state}" if state else "") + "."
+        tone = {"LONG": "up", "SHORT": "down"}.get(str(i.get("direction") or ""), "neutral")
+        out.append(line(text, tone=tone, kind="signal", source=SOURCE_SIGNALS, as_of=i.get("at")))
+        for why in L.shown_lines([str(r) for r in (i.get("reasons") or [])], "signal_own", own_symbols=[symbol])[:2]:
+            out.append(line(why, tone=tone, kind="signal", source=SOURCE_SIGNALS, as_of=i.get("at")))
+    return section("signals", "My signals", SOURCE_SIGNALS, as_of=as_of, lines=signal_lines(out, symbol))
+
+
+def signals_reading(items: Sequence[Mapping[str, Any]], symbol: str) -> dict[str, Any] | None:
+    """The newest of his signals on this symbol that has a side."""
+    for i in items:
+        if matches(symbol, i.get("symbol")) and str(i.get("direction") or "") in SIGNAL_DIRECTION:
+            return {"source": "signals", "label": "Your signals", "tf": None,
+                    "direction": SIGNAL_DIRECTION[str(i["direction"])], "as_of": i.get("at")}
+    return None
+
+
 # --- the broker ------------------------------------------------------------------------------------------------------
 
 def _iso(value: Any) -> str | None:
@@ -286,4 +325,4 @@ def needs_you(orders: Sequence[Mapping[str, Any]], broker: Mapping[str, Any] | N
 
 
 __all__ = ["chart_section", "chart_reading", "oi_section", "oi_reading", "positions_section", "positions_reading",
-           "orders_section", "broker_section", "needs_you", "matches", "signal_lines", "structure_direction", "off", "na"]
+           "orders_section", "signals_section", "signals_reading", "broker_section", "needs_you", "matches", "signal_lines", "structure_direction", "off", "na"]

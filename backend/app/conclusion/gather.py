@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.conclusion import rules as R
 from app.conclusion import sections as S
 from app.db.models import TradeRecord, User
 
@@ -52,6 +53,12 @@ async def _orders(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     return [o.model_dump() for o in await list_orders(user=user, session=session, limit=200, mine=True, today=True)]
 
 
+async def _signals(session: AsyncSession, user: User) -> list[dict[str, Any]]:
+    """His own signals today (the Signals inbox's read; it needs `ui_v2`, which the panel needs too)."""
+    from app.signals_feed import service
+    return list((await service.feed(session, user, tab="today", limit=50)).get("items") or [])
+
+
 async def _broker(session: AsyncSession, user: User) -> dict[str, Any]:
     from app.reconciliation.routes import reconciliation_status
     return (await reconciliation_status(user=user, session=session)).model_dump()
@@ -72,7 +79,9 @@ def fingerprint(body: dict[str, Any]) -> str:
 
 
 async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str | None, tf: str,
-                     now: datetime | None = None) -> dict[str, Any]:
+                     now: datetime | None = None, also: tuple[str, ...] = ()) -> dict[str, Any]:
+    """`also`: up to two more timeframes (the ones his own strategies on this chart use, TC-Q2); each is its own
+    reading and its own section - timeframes are never merged."""
     now = now or datetime.now(UTC)
     read_at = now.isoformat()
     symbol = symbol.strip().upper()
@@ -80,6 +89,7 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     oi = await _safe(session, "oi", _oi(session, user, symbol))
     positions = await _safe(session, "positions", _positions(session, user))
     orders = await _safe(session, "orders", _orders(session, user))
+    signals = await _safe(session, "signals", _signals(session, user))
     broker = await _safe(session, "broker", _broker(session, user))
 
     out: list[dict[str, Any]] = []
@@ -92,6 +102,13 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
         out.append(S.chart_section(chart, symbol, tf))
         if (r := S.chart_reading(chart, tf)) is not None:
             readings.append(r)
+        for extra in [t for t in dict.fromkeys(also) if t != tf][:2]:
+            more = await _safe(session, f"chart {extra}", _chart(session, user, symbol, extra))
+            if isinstance(more, dict):
+                sec = S.chart_section(more, symbol, extra)
+                out.append({**sec, "key": f"chart-{extra}", "title": f"Chart {extra}"})
+                if (r := S.chart_reading(more, extra)) is not None:
+                    readings.append(r)
     if oi == "off":
         out.append(S.off("oi", "OI", S.SOURCE_OI))
     elif not isinstance(oi, dict):
@@ -106,6 +123,12 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
             readings.append(r)
     else:
         out.append(S.na("positions", "My positions", S.SOURCE_POSITIONS))
+    if isinstance(signals, list):
+        out.append(S.signals_section(signals, symbol, read_at))
+        if (r := S.signals_reading(signals, symbol)) is not None:
+            readings.append(r)
+    else:
+        out.append(S.na("signals", "My signals", S.SOURCE_SIGNALS))
     order_rows = orders if isinstance(orders, list) else []
     out.append(S.orders_section(order_rows, symbol, read_at) if isinstance(orders, list)
                else S.na("orders", "My orders", S.SOURCE_ORDERS))
@@ -115,6 +138,7 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     body: dict[str, Any] = {"symbol": symbol, "expiry": expiry, "tf": tf, "as_of": read_at,
                             "sections": [s for s in out if s["status"] != "off"], "readings": readings,
                             "needs_you": S.needs_you(order_rows, broker_row, symbol),
+                            "glance": R.glance(readings, symbol),
                             "note": "Information only: what ATP's readings show, never a recommendation. The decision is yours."}
     body["fingerprint"] = fingerprint(body)
     return body

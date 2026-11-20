@@ -7,8 +7,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 MAX_POSITIONS = 40
 
 
-async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> Optional[Dict[str, Any]] | str:
+async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> dict[str, Any] | None | str:
     from app.charts.read_chart import read_chart
     try:
         return await read_chart(instrument=symbol, tf=tf, user=user, session=session)  # type: ignore[arg-type]
@@ -30,7 +30,7 @@ async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> Opt
         return "off" if exc.status_code == 404 else "na"
 
 
-async def _oi(session: AsyncSession, user: User, symbol: str) -> Optional[Dict[str, Any]] | str:
+async def _oi(session: AsyncSession, user: User, symbol: str) -> dict[str, Any] | None | str:
     from app.option_chain.routes import banner
     try:
         return await banner(symbol, user=user, session=session)
@@ -38,7 +38,7 @@ async def _oi(session: AsyncSession, user: User, symbol: str) -> Optional[Dict[s
         return "off" if exc.status_code == 404 else "na"
 
 
-async def _positions(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
+async def _positions(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     """His own open positions (tenant AND user), PAPER and LIVE alike, grouped as the Copilot's position watch groups them."""
     from app.ai.tools.copilot_trades import group_rows
     rows = list(await session.scalars(select(TradeRecord).where(
@@ -47,12 +47,12 @@ async def _positions(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
     return group_rows(rows)[:MAX_POSITIONS]
 
 
-async def _orders(session: AsyncSession, user: User) -> List[Dict[str, Any]]:
+async def _orders(session: AsyncSession, user: User) -> list[dict[str, Any]]:
     from app.trading.routes import list_orders
     return [o.model_dump() for o in await list_orders(user=user, session=session, limit=200, mine=True, today=True)]
 
 
-async def _broker(session: AsyncSession, user: User) -> Dict[str, Any]:
+async def _broker(session: AsyncSession, user: User) -> dict[str, Any]:
     from app.reconciliation.routes import reconciliation_status
     return (await reconciliation_status(user=user, session=session)).model_dump()
 
@@ -65,15 +65,15 @@ async def _safe(session: AsyncSession, name: str, coro: Any) -> Any:
         return "na"
 
 
-def fingerprint(body: Dict[str, Any]) -> str:
+def fingerprint(body: dict[str, Any]) -> str:
     """The same facts give the same fingerprint (the read time is left out), so the panel can skip a repaint."""
     core = {k: v for k, v in body.items() if k not in ("as_of", "fingerprint")}
     return hashlib.sha256(json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: Optional[str], tf: str,
-                     now: Optional[datetime] = None) -> Dict[str, Any]:
-    now = now or datetime.now(timezone.utc)
+async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str | None, tf: str,
+                     now: datetime | None = None) -> dict[str, Any]:
+    now = now or datetime.now(UTC)
     read_at = now.isoformat()
     symbol = symbol.strip().upper()
     chart = await _safe(session, "chart", _chart(session, user, symbol, tf))
@@ -82,8 +82,8 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: Opt
     orders = await _safe(session, "orders", _orders(session, user))
     broker = await _safe(session, "broker", _broker(session, user))
 
-    out: List[Dict[str, Any]] = []
-    readings: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
+    readings: list[dict[str, Any]] = []
     if chart == "off":
         out.append(S.off("chart", "Chart", S.SOURCE_CHART))
     elif not isinstance(chart, dict):
@@ -112,7 +112,7 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: Opt
     broker_row = broker if isinstance(broker, dict) else None
     out.append(S.broker_section(broker_row) if broker_row is not None else S.na("broker", "Broker", S.SOURCE_BROKER))
 
-    body: Dict[str, Any] = {"symbol": symbol, "expiry": expiry, "tf": tf, "as_of": read_at,
+    body: dict[str, Any] = {"symbol": symbol, "expiry": expiry, "tf": tf, "as_of": read_at,
                             "sections": [s for s in out if s["status"] != "off"], "readings": readings,
                             "needs_you": S.needs_you(order_rows, broker_row, symbol),
                             "note": "Information only: what ATP's readings show, never a recommendation. The decision is yours."}

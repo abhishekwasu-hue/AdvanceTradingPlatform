@@ -14,12 +14,13 @@ from that source's own output: no threshold, no weighting is added here (DECISIO
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 from app.signals import language as L
 
-Line = Dict[str, Any]
-Section = Dict[str, Any]
+Line = dict[str, Any]
+Section = dict[str, Any]
 
 SOURCE_CHART = "Chart reading (closed bars)"
 SOURCE_OI = "OI banner (stored slots)"
@@ -47,12 +48,12 @@ NA_NOTES = {
 }
 
 
-def line(text: str, *, tone: str = "neutral", kind: str = "record", source: str, as_of: Optional[str]) -> Line:
+def line(text: str, *, tone: str = "neutral", kind: str = "record", source: str, as_of: str | None) -> Line:
     return {"text": text, "tone": tone, "kind": kind, "source": source, "as_of": as_of}
 
 
-def section(key: str, title: str, source: str, *, status: str = "ok", as_of: Optional[str] = None,
-            lines: Sequence[Line] = (), note: Optional[str] = None) -> Section:
+def section(key: str, title: str, source: str, *, status: str = "ok", as_of: str | None = None,
+            lines: Sequence[Line] = (), note: str | None = None) -> Section:
     return {"key": key, "title": title, "status": status, "source": source, "as_of": as_of, "lines": list(lines), "note": note}
 
 
@@ -60,11 +61,11 @@ def off(key: str, title: str, source: str) -> Section:
     return section(key, title, source, status="off")
 
 
-def na(key: str, title: str, source: str, note: Optional[str] = None) -> Section:
+def na(key: str, title: str, source: str, note: str | None = None) -> Section:
     return section(key, title, source, status="na", note=note or NA_NOTES.get(key, "Not available right now."))
 
 
-def signal_lines(lines: Iterable[Line], symbol: str) -> List[Line]:
+def signal_lines(lines: Iterable[Line], symbol: str) -> list[Line]:
     """The signal lines that pass the signal language for his own symbol; the others are left out (never rewritten)."""
     own = [symbol] if symbol else []
     return [x for x in lines if x["kind"] != "signal" or not L.check(x["text"], "signal_own", own_symbols=own)]
@@ -92,7 +93,7 @@ def chart_section(read: Mapping[str, Any], symbol: str, tf: str) -> Section:
     as_of = read.get("as_of")
     if not read.get("bars"):
         return na("chart", "Chart", SOURCE_CHART, "No closed bars for this chart yet.")
-    out: List[Line] = []
+    out: list[Line] = []
     st = read.get("structure") or {}
     direction = str(st.get("direction") or "none")
     text = f"{_tf_words(tf)} structure: {STRUCTURE_WORDS.get(direction, 'not formed yet')}"
@@ -126,7 +127,7 @@ def chart_section(read: Mapping[str, Any], symbol: str, tf: str) -> Section:
     return section("chart", "Chart", SOURCE_CHART, as_of=as_of, lines=signal_lines(out, symbol))
 
 
-def chart_reading(read: Mapping[str, Any], tf: str) -> Optional[Dict[str, Any]]:
+def chart_reading(read: Mapping[str, Any], tf: str) -> dict[str, Any] | None:
     if not read.get("bars"):
         return None
     direction = structure_direction((read.get("structure") or {}).get("direction"))
@@ -135,14 +136,14 @@ def chart_reading(read: Mapping[str, Any], tf: str) -> Optional[Dict[str, Any]]:
 
 # --- OI --------------------------------------------------------------------------------------------------------------
 
-def _figure(value: Any) -> Optional[str]:
+def _figure(value: Any) -> str | None:
     try:
         return L.group_in(float(value))
     except (TypeError, ValueError):
         return None
 
 
-def oi_section(resp: Mapping[str, Any], expiry: Optional[str]) -> Section:
+def oi_section(resp: Mapping[str, Any], expiry: str | None) -> Section:
     """From GET /api/option-chain/{u}/banner: the latest stored slot's banner in neutral fact words (oi_words)."""
     from app.option_chain import oi_words
     b = resp.get("banner")
@@ -170,7 +171,7 @@ def oi_section(resp: Mapping[str, Any], expiry: Optional[str]) -> Section:
     return section("oi", "OI", SOURCE_OI, status=status, as_of=as_of, lines=out, note=note)
 
 
-def oi_reading(resp: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+def oi_reading(resp: Mapping[str, Any]) -> dict[str, Any] | None:
     b = resp.get("banner")
     if not b:
         return None
@@ -180,25 +181,25 @@ def oi_reading(resp: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
 
 # --- his own positions -----------------------------------------------------------------------------------------------
 
-def matches(symbol: str, name: Optional[str]) -> bool:
+def matches(symbol: str, name: str | None) -> bool:
     """A row belongs to the Terminal's symbol: the symbol itself or one of its contracts (NIFTY -> NIFTY25NOV25800CE),
     never a longer name that starts the same (NIFTY is not NIFTYNXT50, BANKNIFTY is not NIFTY)."""
     sym, text = (symbol or "").strip().upper(), (name or "").strip().upper()
     return bool(sym) and (text == sym or re.match(rf"^{re.escape(sym)}\d", text) is not None)
 
 
-def _money(value: Optional[float]) -> str:
+def _money(value: float | None) -> str:
     sign = "+" if value is not None and value > 0 else ""
     return sign + L.group_in(float(value or 0))
 
 
-def positions_section(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: Optional[str]) -> Section:
+def positions_section(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> Section:
     """From the Copilot's position rows (ai/tools/copilot_trades.group_rows, PAPER and LIVE alike) for this symbol."""
     mine = [r for r in rows if matches(symbol, r.get("underlying")) or matches(symbol, r.get("symbol"))]
     if not mine:
         return section("positions", "My positions", SOURCE_POSITIONS, as_of=as_of,
                        lines=[line(f"No open position on {symbol}.", source=SOURCE_POSITIONS, as_of=as_of)])
-    out: List[Line] = []
+    out: list[Line] = []
     for r in mine:
         what = f"{r.get('legs')} legs" if r.get("kind") == "STRUCTURE" else str(r.get("symbol"))
         text = f"{r.get('mode')} · {what} · {SIDE_WORDS.get(str(r.get('side')), 'no single direction')}"
@@ -216,7 +217,7 @@ def positions_section(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: Opt
     return section("positions", "My positions", SOURCE_POSITIONS, as_of=as_of, lines=out)
 
 
-def positions_reading(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: Optional[str]) -> Optional[Dict[str, Any]]:
+def positions_reading(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> dict[str, Any] | None:
     mine = [r for r in rows if matches(symbol, r.get("underlying")) or matches(symbol, r.get("symbol"))]
     if not mine:
         return None
@@ -228,7 +229,7 @@ def positions_reading(rows: Sequence[Mapping[str, Any]], symbol: str, as_of: Opt
 
 # --- his orders today ------------------------------------------------------------------------------------------------
 
-def orders_section(orders: Sequence[Mapping[str, Any]], symbol: str, as_of: Optional[str]) -> Section:
+def orders_section(orders: Sequence[Mapping[str, Any]], symbol: str, as_of: str | None) -> Section:
     """From GET /api/orders?mine=true&today=true, this symbol's orders: counts by outcome, and each refused one with
     the reason the order record gives."""
     mine = [o for o in orders if matches(symbol, o.get("symbol"))]
@@ -239,7 +240,7 @@ def orders_section(orders: Sequence[Mapping[str, Any]], symbol: str, as_of: Opti
     working = sum(1 for o in mine if o.get("status") in WORKING)
     cancelled = sum(1 for o in mine if o.get("status") == "CANCELLED")
     parts = [f"{filled} filled" if filled else "", f"{working} working" if working else "", f"{cancelled} cancelled" if cancelled else ""]
-    out: List[Line] = []
+    out: list[Line] = []
     if any(parts):
         out.append(line("Today: " + " · ".join(p for p in parts if p) + ".", source=SOURCE_ORDERS, as_of=as_of))
     for o in mine:
@@ -251,13 +252,13 @@ def orders_section(orders: Sequence[Mapping[str, Any]], symbol: str, as_of: Opti
     return section("orders", "My orders", SOURCE_ORDERS, as_of=as_of, lines=out)
 
 
-def refused_orders(orders: Sequence[Mapping[str, Any]], symbol: str) -> List[Mapping[str, Any]]:
+def refused_orders(orders: Sequence[Mapping[str, Any]], symbol: str) -> list[Mapping[str, Any]]:
     return [o for o in orders if matches(symbol, o.get("symbol")) and o.get("status") in REFUSED]
 
 
 # --- the broker ------------------------------------------------------------------------------------------------------
 
-def _iso(value: Any) -> Optional[str]:
+def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else (str(value) if value else None)
 
 
@@ -272,9 +273,9 @@ def broker_section(status: Mapping[str, Any]) -> Section:
     return section("broker", "Broker", SOURCE_BROKER, as_of=last, lines=[line(text, source=SOURCE_BROKER, as_of=last)])
 
 
-def needs_you(orders: Sequence[Mapping[str, Any]], broker: Optional[Mapping[str, Any]], symbol: str) -> List[Dict[str, Any]]:
+def needs_you(orders: Sequence[Mapping[str, Any]], broker: Mapping[str, Any] | None, symbol: str) -> list[dict[str, Any]]:
     """Facts that need him: a refused order today on this symbol, the broker check pending. No rule is added."""
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     refused = refused_orders(orders, symbol)
     if refused:
         n = len(refused)

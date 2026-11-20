@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import pathlib
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.conclusion import FLAG, FLAGS
 from app.conclusion import sections as S
@@ -45,7 +45,7 @@ def _add(model, **row) -> int:
 
 
 def _trade(who: dict, **over) -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row = dict(tenant_id=who["tenant_id"], user_id=who["user_id"], mode="PAPER", symbol="RELIANCE", strategy_id="manual",
                direction="LONG", entry_time=now - timedelta(minutes=30), entry_price=100.0, quantity=10.0, stop_loss=90.0)
     row.update(over)
@@ -87,7 +87,7 @@ def test_route_needs_a_login_and_every_flag():
 def test_the_read_shows_only_his_own_positions_and_orders_for_the_symbol():
     owner = _who("own")
     other = _who("other")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _trade(owner, mark_price=105.0, mark_time=now - timedelta(minutes=1))
     _trade(owner, symbol="TCS", mark_price=50.0)                                          # another symbol: not shown
     _trade(other, entry_price=1000.0, mark_price=500.0, quantity=100.0)                   # another user's: never shown
@@ -136,7 +136,7 @@ def test_the_broker_check_pending_needs_him_and_says_exits_keep_running():
     async def flag_it(tid: int):
         async with _session_factory() as session:
             tenant = await session.get(Tenant, tid)
-            tenant.broker_uncertain_since = datetime.now(timezone.utc) - timedelta(minutes=5)
+            tenant.broker_uncertain_since = datetime.now(UTC) - timedelta(minutes=5)
             tenant.broker_uncertain_reason = "order 4 FAILED"
             await session.commit()
     who = _who("broker")

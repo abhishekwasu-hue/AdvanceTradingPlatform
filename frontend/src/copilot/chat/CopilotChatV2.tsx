@@ -33,7 +33,7 @@ import { VoiceButtonV2 } from "../language/VoiceButtonV2";
 import { AttachMenu, imageFrom } from "./ChartAttachV2";
 import {
   CHART_SUGGESTIONS, chartPickable, chartQuestion, chartQuestionFor, chatApi, cleanQuestion, composerPlacement, DEFAULT_KEEP, jobCards, marketLineText, MAX_QUESTION, needsKey, numbersCells, quickChips, readingQuestion,
-  hybridPick, keptIsCurrent, restoredTurns, settled, stampText, withChart, withTurn,
+  hybridPick, ideaPrefill, keptIsCurrent, restoredTurns, settled, stampText, withChart, withTurn,
   type ChartSource, type ChatAnswer, type ChatHome, type Conversation, type ConversationTarget, type Turn,
 } from "./model";
 import { chartAnalyzeApi, isFeatureOff } from "../../chartAnalyze/api";
@@ -97,6 +97,8 @@ export interface ChatViewProps {
   focus?: Focus | null;
   /** Owner 13 Nov: leave the item for the general chat. */
   onLeaveFocus?: () => void;
+  /** CP-CHAT: one line above the box after a starter filled it (what to add before sending). */
+  hint?: string | null;
 }
 
 export function Composer({ draft, busy, placement, onDraft, onAsk, placeholder, onAttach, docked = false }: Pick<ChatViewProps, "draft" | "busy" | "placement" | "onDraft" | "onAsk" | "onAttach"> & { placeholder?: string;
@@ -248,6 +250,11 @@ export function FocusHeader({ focus, onLeave }: { focus: Focus; onLeave?: () => 
   );
 }
 
+/** CP-CHAT: an AI reply in words only (no chart number row, no chart reading card) - shown as a chat message. */
+export function chatReply(answer: Pick<ChatAnswer, "source" | "headline" | "structure_card" | "refused">): boolean {
+  return answer.source === "ai" && !answer.headline && !answer.structure_card && !answer.refused;
+}
+
 function Turns({ turns, busy, onAsk }: { turns: readonly Turn[]; busy: boolean; onAsk: (q: string) => void }) {
   const t = useCopilotT();
   return (
@@ -292,7 +299,10 @@ function Turns({ turns, busy, onAsk }: { turns: readonly Turn[]; busy: boolean; 
                     )}
                   </>
                 ) : turn.answer ? (
-                  <div className={`${CARD} p-space-3 md:p-space-4`} data-answer-card>
+                  // CP-CHAT (owner 20 Nov): an AI reply in words reads as a chat message (a soft bubble); a reply with a
+                  // chart reading or its number row keeps its card
+                  <div className={chatReply(turn.answer) ? "max-w-[92%] rounded-panel rounded-tl-sm bg-surface-1 px-space-4 py-space-3" : `${CARD} p-space-3 md:p-space-4`}
+                    data-answer-card data-chat-reply={chatReply(turn.answer) || undefined}>
                     <AnswerV2 answer={turn.answer} onAsk={onAsk} disclaimer={false} />
                     {/* M72 PR-9: the order ticket prepared from his own message (never on a refused question) */}
                     {!turn.answer.refused && <TicketPrepV2 question={turn.question} />}
@@ -308,7 +318,7 @@ function Turns({ turns, busy, onAsk }: { turns: readonly Turn[]; busy: boolean; 
   );
 }
 
-export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false, recentKey = null, focus = null, onLeaveFocus }: ChatViewProps) {
+export function ChatView({ home, homeError, turns, draft, busy, placement, onDraft, onAsk, strip = { status: "loading" }, connect, aiChip, keyOpen = false, onKeyOpen, onAttach, about, compact = false, recentKey = null, focus = null, onLeaveFocus, hint = null }: ChatViewProps) {
   const t = useCopilotT();
   // COP-2 B (owner 11 Nov): "Read chart" asks which chart first - any share or index the chart reader reads.
   const [picking, setPicking] = useState(false);
@@ -479,6 +489,7 @@ export function ChatView({ home, homeError, turns, draft, busy, placement, onDra
           </nav>
         )}
         {!empty && focus && suggestions.length > 0 && suggestionList(false)}
+        {hint && <p role="status" className="text-t13 text-fg" data-idea-hint>{hint}</p>}
         {compact && <div data-compact-composer>{composer}</div>}
         {!compact && composer}
         <p className="text-t12 text-fg-muted" data-disclaimer>{home?.disclaimer ?? t("chat.disclaimer")}</p>
@@ -631,7 +642,24 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
     return () => { live = false; };
   }, [ownKey]);
 
+  // CP-CHAT (owner 20 Nov): a starter that needs his idea (Check my trade, Turn my idea into a strategy) never goes out as
+  // his message - it fills the box, the cursor at its end, and one line says what to add.
+  const [ideaHint, setIdeaHint] = useState(false);
+  useEffect(() => { if (!draft) setIdeaHint(false); }, [draft]);          // the box emptied: the line goes too
+  function fillBox(text: string) {
+    setDraft(text);
+    setIdeaHint(true);
+    requestAnimationFrame(() => {
+      const box = document.getElementById("copilot-question") as HTMLTextAreaElement | null;
+      box?.focus({ preventScroll: true });
+      box?.setSelectionRange(text.length, text.length);
+    });
+  }
+
   async function ask(question: string) {
+    const fill = ideaPrefill(question, home?.jobs ?? []);
+    if (fill !== null) { fillBox(fill); return; }
+    setIdeaHint(false);
     const id = next.current++;
     setTurns((all) => withTurn(all, { id, question, answer: null, error: null, sentAt: new Date().toISOString() }, home?.keep ?? keep));
     setDraft("");
@@ -720,7 +748,7 @@ export function CopilotChatV2({ context = null, starters = [], compact = false, 
           ))}
         </div>
       )}
-      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} recentKey={recentKey} onDraft={setDraft} onAsk={(q) => void ask(q)}
+      <ChatView home={home} homeError={homeError} turns={turns} draft={draft} busy={busy} placement={compact ? "inline" : placement} compact={compact} recentKey={recentKey} onDraft={setDraft} onAsk={(q) => void ask(q)} hint={ideaHint ? t("chat.ideaHint") : null}
         strip={strip} keyOpen={keyOpen} onKeyOpen={setKeyOpen} onAttach={canAttach ? (source) => void attachChart(source) : undefined}
         connect={oneKey ? <ConnectAiPanelV2 /> : undefined} aiChip={aiLabel ? <ConnectAiChip label={aiLabel} /> : undefined}
         about={about ? <AboutChip ctx={about} onClear={() => setAbout(null)} /> : undefined}

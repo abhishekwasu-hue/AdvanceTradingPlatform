@@ -61,6 +61,9 @@ class Job:
     starter: str
     built: bool
     page: Optional[Tuple[str, str]] = None        # (label, path) of the page that does it today, for a job not built yet
+    # CP-CHAT (owner 20 Nov): a job that needs his own idea never sends its starter as his message - its button puts this
+    # text in the box for him to complete, then he sends it himself.
+    prefill: Optional[str] = None
 
 
 JOBS: Tuple[Job, ...] = (
@@ -69,13 +72,14 @@ JOBS: Tuple[Job, ...] = (
     Job("chart", 2, "Chart reader", "Reads a chart's structure per timeframe and its key areas from ATP's zone layers.",
         "Read the NIFTY chart", True),
     Job("trade_check", 3, "Pre-trade check", "Checks a trade idea against your own risk settings and lists what is missing.",
-        "Check my trade idea", True, ("Open your risk limits", "/risk-management")),
+        "Check my trade idea", True, ("Open your risk limits", "/risk-management"), prefill="Check my trade idea: "),
     Job("positions", 4, "Position watch", "Warns when the risk on your open positions rises, and explains why.",
         "How are my open positions?", True, ("Open My positions", "/positions")),
     Job("review", 5, "Post-trade coach", "Reviews each trade, your repeated habits and your week.",
         "Review my last trade", True, ("Open the trade coach", "/copilot/coach")),
     Job("strategy", 6, "Strategy builder", "Turns your own idea into readable rules: a draft paper strategy you review and save yourself.",
-        "Turn my idea into a strategy and test it", True, ("Open the Trading bot page", "/deployments")),
+        "Turn my idea into a strategy and test it", True, ("Open the Trading bot page", "/deployments"),
+        prefill="Turn my idea into a strategy and test it: "),
     Job("option_chain", 7, "Option chain and risk", "Explains the option chain and checks a size against your own risk settings.",
         "What does the option chain show?", True),
     Job("teacher", 8, "Teacher", "Explains a trading concept and shows it on your own chart.",

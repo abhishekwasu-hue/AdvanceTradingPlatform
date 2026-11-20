@@ -25,6 +25,8 @@ export type AnswerJob = JobId | "agent";
 export interface ChatJob {
   id: JobId; number: number; title: string; line: string; starter: string; built: boolean;
   page: { label: string; to: string } | null;
+  /** CP-CHAT (owner 20 Nov): a job that needs his own idea - its starter fills the box with this text, never sends. */
+  prefill?: string | null;
 }
 export interface AiState {
   ready: boolean; title: string | null; line: string | null; settings: string; reason: string | null;
@@ -317,6 +319,22 @@ export function cleanQuestion(text: string): string | null {
   return q.length >= 2 ? q : null;
 }
 
+const bare = (text: string) => text.replace(/\s+/g, " ").trim().replace(/[\s:.?!]+$/, "").toLowerCase();
+
+/**
+ * CP-CHAT (owner 20 Nov: an unfilled template reached the chat as his message): the text to put in the box instead of
+ * sending, when a question is only a job's starter or its prefill with nothing added (a button, a ready question or
+ * the box sent as is); null for any question that carries his own words.
+ */
+export function ideaPrefill(question: string, jobs: readonly Pick<ChatJob, "starter" | "prefill">[]): string | null {
+  const q = bare(question);
+  if (!q) return null;
+  for (const job of jobs) {
+    if (job.prefill && (q === bare(job.starter) || q === bare(job.prefill))) return job.prefill;
+  }
+  return null;
+}
+
 /** Where the question box sits: fixed at the bottom on a phone (as in a chat app), under the starters on a wider screen. */
 export function composerPlacement(width: number): "bottom" | "inline" {
   return width <= PHONE_MAX_WIDTH ? "bottom" : "inline";
@@ -537,9 +555,14 @@ export interface AnswerParts {
  *   stay; the theory (how I read your words, not supported yet, how I build it...) folds.
  * - Any other answer: its sections and tables are the answer and stay.
  */
-export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline" | "structure_card">): AnswerParts {
+export function answerParts(answer: Pick<ChatAnswer, "job" | "sections" | "blocks" | "draft" | "headline" | "structure_card"> & { source?: ChatAnswer["source"] }): AnswerParts {
   const all = answer.sections;
   if (answer.headline || answer.structure_card) return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [], blocksFolded: [...answer.blocks] };
+  // CP-CHAT (owner 20 Nov): the AI's own words already tell the facts - the rule sections behind them fold under Details,
+  // the code-drawn tables stay (a strategy draft keeps its card, below)
+  if (answer.source === "ai" && !(answer.job === "strategy" && answer.draft)) {
+    return { rules: [], settings: [], shown: [], folded: [...all], blocksShown: [...answer.blocks], blocksFolded: [] };
+  }
   if (answer.job === "strategy" && answer.draft) {
     const ruleTexts = new Set((answer.draft.rules ?? []).map((r) => r.text));
     const ruleSections = all.filter((s) => s.lines.length > 0 && s.lines.every((l) => ruleTexts.has(l)));

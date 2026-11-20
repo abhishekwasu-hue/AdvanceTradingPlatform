@@ -19,7 +19,7 @@ def test_auto_answers_in_the_questions_language():
 
 def test_the_analyst_register_replaces_only_the_plain_line_and_keeps_rule_4():
     analyst = L.with_tone(agent.SYSTEM, "analyst")
-    assert "Write like an experienced market analyst" in analyst and "Keep the answer short and plain." not in analyst
+    assert "experienced market analyst in a chat" in analyst and "Keep the answer short and plain." not in analyst
     assert "Never tell the user to buy, sell, enter or exit, and never give price targets." in analyst
     assert "Answer in English only" in analyst
     assert L.with_tone(agent.SYSTEM, "plain") == agent.SYSTEM

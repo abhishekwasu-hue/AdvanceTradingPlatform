@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copilot chat feel</title>
+<!-- CP-CHAT (owner 20 Nov): before = main aa03b79, after = branch claude/copilot-chat-feel. Captured with Playwright on the
+     production build with every /api call mocked (the e2e fixtures): the AI reply text is SCRIPTED to show how each build
+     draws it - the before text in the sections the old prompt asked for, the after text in the chat form the new prompt
+     asks for. No real account, key or order. Tap = "Check my trade" pressed on an empty chat. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.pair.wide { grid-template-columns: 1fr; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair, .trio { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>CP-CHAT: the Copilot replies as a chat</h1>
+<table>
+  <thead><tr><th>Item</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>"Check my trade" tapped</td><td class="bad">"Check my trade idea" sent at once, with no idea in it</td><td class="good">the box fills ("Check my trade idea: "), cursor at the end, one line says what to add; nothing sent</td></tr>
+    <tr><td>Same for "Turn my idea into a strategy"</td><td class="bad">sent at once</td><td class="good">fills the box the same way (job list, help starters, ready questions)</td></tr>
+    <tr><td>Sending the bare prefill</td><td>-</td><td class="good">stays in the box; only his completed idea goes out</td></tr>
+    <tr><td>AI prompt (analyst register)</td><td class="bad">"organise into sections, '## title', Summary first"</td><td class="good">answer first, 1-3 short paragraphs, bullets only for a list, no headings, one short question when something is missing</td></tr>
+    <tr><td>Section chips row</td><td class="bad">on every reply with 3 headings</td><td class="good">only on a long answer (1,500+ characters)</td></tr>
+    <tr><td>Reply look</td><td class="bad">full-width card</td><td class="good">a chat bubble; a chart reading or refusal keeps its card</td></tr>
+    <tr><td>Safety rules</td><td>-</td><td class="good">unchanged word for word (test checks every rule line in both registers and all languages)</td></tr>
+  </tbody>
+</table>
+<h2>1440 px, dark</h2>
+<div class="trio">
+  <figure><figcaption>Before: tap sends, reply in sections</figcaption><img src="cp-chat/before-1440-dark-2-reply.png" alt="Before, 1440 px dark"></figure>
+  <figure><figcaption>After: tap fills the box</figcaption><img src="cp-chat/after-1440-dark-1-tap.png" alt="After tap, 1440 px dark"></figure>
+  <figure><figcaption>After: his idea sent, chat reply</figcaption><img src="cp-chat/after-1440-dark-2-reply.png" alt="After reply, 1440 px dark"></figure>
+</div>
+<h2>1440 px, light</h2>
+<div class="trio">
+  <figure><figcaption>Before: tap sends, reply in sections</figcaption><img src="cp-chat/before-1440-light-2-reply.png" alt="Before, 1440 px light"></figure>
+  <figure><figcaption>After: tap fills the box</figcaption><img src="cp-chat/after-1440-light-1-tap.png" alt="After tap, 1440 px light"></figure>
+  <figure><figcaption>After: his idea sent, chat reply</figcaption><img src="cp-chat/after-1440-light-2-reply.png" alt="After reply, 1440 px light"></figure>
+</div>
+<h2>390 px, dark</h2>
+<div class="trio">
+  <figure><figcaption>Before: tap sends, reply in sections</figcaption><img src="cp-chat/before-390-dark-2-reply.png" alt="Before, 390 px dark"></figure>
+  <figure><figcaption>After: tap fills the box</figcaption><img src="cp-chat/after-390-dark-1-tap.png" alt="After tap, 390 px dark"></figure>
+  <figure><figcaption>After: his idea sent, chat reply</figcaption><img src="cp-chat/after-390-dark-2-reply.png" alt="After reply, 390 px dark"></figure>
+</div>
+<h2>390 px, light</h2>
+<div class="trio">
+  <figure><figcaption>Before: tap sends, reply in sections</figcaption><img src="cp-chat/before-390-light-2-reply.png" alt="Before, 390 px light"></figure>
+  <figure><figcaption>After: tap fills the box</figcaption><img src="cp-chat/after-390-light-1-tap.png" alt="After tap, 390 px light"></figure>
+  <figure><figcaption>After: his idea sent, chat reply</figcaption><img src="cp-chat/after-390-light-2-reply.png" alt="After reply, 390 px light"></figure>
+</div>
+</main>
+</body>
+</html>

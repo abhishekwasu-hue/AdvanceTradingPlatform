@@ -160,6 +160,9 @@ export function HeadlineRow({ h }: { h: AnswerHeadline }) {
  * refusal shows its plain sentence and what to ask instead. Every word and number comes from the server; the page
  * footer carries the one disclaimer (`disclaimer` shows the answer's own line where the card stands alone).
  */
+/** CP-CHAT: the length (characters) from which an answer written in sections shows its jump-to index. */
+export const INDEX_MIN_CHARS = 1500;
+
 /** CH-1b: the "## " section headings of an answer's text, in order (its index). */
 export function answerIndex(lines: readonly string[]): string[] {
   const out: string[] = [];
@@ -215,11 +218,12 @@ export function AnswerV2({ answer, onAsk, disclaimer = true }: { answer: ChatAns
       {/* M72 PR-5 (CP-4): a planner answer that read a chart keeps its checked headline line above the code-drawn card */}
       {card && answer.headline_line && <p className="text-t15 font-semibold text-fg" data-headline-line>{answer.headline_line}</p>}
       {card ? <StructureCardV2 card={card} /> : (
-        <div className="space-y-space-1" data-summary>
+        <div className={answer.source === "ai" ? "space-y-space-2" : "space-y-space-1"} data-summary>
           {(() => {
             // CH-1b: an answer written in sections opens with its index (jump to a section)
+            // CP-CHAT (owner 20 Nov): only a long answer gets it - never a fixed row of chips on every reply
             const index = answerIndex(answer.summary);
-            return index.length >= 3 ? (
+            return index.length >= 3 && answer.summary.join("\n").length >= INDEX_MIN_CHARS ? (
               <nav aria-label="Sections of this answer" data-answer-index className="mb-space-2 flex flex-wrap gap-space-2">
                 {index.map((h) => <a key={h} href={`#${headingId(anchor, h)}`} className={CHIP_ACTION}>{h}</a>)}
               </nav>

@@ -147,7 +147,8 @@ RUN-Q2, RUN-Q3, RUN-Q4 answered by the owner on 14 Nov: moved to docs/archive/OP
 ## TERM-CON: Terminal "Conclusion" panel (20 Nov, docs/plans/terminal-conclusion-PLAN.md; plan only, waits for the owner)
 | ID | Question | Default | Where | Status |
 |---|---|---|---|---|
-| TC-Q1 | A tally line over the readings ("Readings: 3 up · 1 down · 1 range")? | Yes, counts only - no score, no weighting, no verdict | PLAN 3.3 | open (default stated) |
+| TC-Q1 | Show how many readings agree / conflict? | Yes, as the confluence meter (counts with glyphs); no score, no weighting | PLAN 3.3, 6A | open (default stated) |
 | TC-Q2 | Which chart timeframes does the panel read? | The Terminal chart's own TF plus every TF his own saved strategies on this symbol use; each shown separately, never merged | PLAN 3.2 | open (default stated) |
 | TC-Q3 | AI summary: on tap or automatic at every refresh? | On tap ("Summarise", cost shown); never automatic | PLAN 3.4 | open (default stated) |
 | TC-Q4 | Where does the panel sit? | In the "Option seller" and "Quick trade" layouts under the chain (desktop) and a "Conclusion" phone tab; other layouts add it from Layout tools | PLAN 6 | open (default stated) |
+| TC-Q5 | SEBI: how strong may the one lean cue (▲ / ▼ / ◆) look? | Chip-sized, always with "Lean" and its count ("3 of 4"), majority of readings only, tie = sideways; never a hero arrow or "signal" word; legal check before LIVE | PLAN 6A | open (default stated) |

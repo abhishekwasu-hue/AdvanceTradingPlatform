@@ -119,8 +119,8 @@ Terminal (symbol, expiry, chart TF)                     backend/app/conclusion/ 
 - Pairs with the same direction go to **agrees**, opposite directions to **conflicts** (e.g. "15m structure up · OI
   regime bearish (5-min slot 11:25)"). Range / mixed / none are listed, never counted as either.
 - Timeframes are never merged (Z-1u): 15m and 1h are separate readings.
-- **No overall score and no weighting.** Optional tally line ("Readings: 3 up · 1 down · 1 range") — owner decision
-  TC-Q1.
+- **No score and no weighting.** The one visual cue on top is a plain count of these readings (the lean cue and the
+  confluence meter, section 6A; TC-Q1, TC-Q5).
 - **needs_you** only from facts: a failed / rejected order today, broker uncertain, a position expiring today / next
   session, price inside the area of his own stop (his setting), a kill switch engaged.
 
@@ -183,6 +183,72 @@ no sideways scroll (PHONE-1 guard).
 
 ---------------------------------------------------------------------------------------------------------------------
 
+## 6A. GLANCE DESIGN (owner follow-up 20 Nov: "eka najaret ... ishara kafi hota hai")
+
+Goal: the trader reads the panel in **under 2 seconds** without one buy / sell word. The cue is visual and is built
+only from the tokens. The words underneath stay in structure language, and the details sit behind a tap.
+
+**Glance strip** (always visible; the top of the panel on desktop, the top card on phone):
+1. **Lean cue.** It shows an arrow with a matching shape and colour:
+   - ▲ up in `--up`, ▼ down in `--down`, ◆ sideways in `--range` / `--info`;
+   - the word "Lean" and its count ("3 of 4") always sit beside it.
+   It is computed only from the readings in 3.3:
+   - the majority direction of the directional readings;
+   - a tie, or fewer than two directional readings, gives ◆ sideways.
+   It is chip-sized, never a hero-sized verdict. How strong it may look is SEBI-sensitive: TC-Q5.
+2. **Confluence meter.** One segmented bar with one segment per reading:
+   - filled in `--up`, `--down` or `--range`; each segment also carries its arrow glyph, so the meter never relies on colour alone;
+   - the numbers on it: "3 agree · 1 conflicts · 1 range".
+3. **Source chips.** One chip per source, in this order: Chart structure, OI, Strategy signal, Context, Positions, Orders.
+   - Each chip has a lucide icon, a direction glyph (▲ ▼ ◆, or — for none) and a token colour.
+   - Chart structure: one chip per TF, never merged.
+   - Positions: the net bias of his open legs.
+   - Orders: amber `--warn` with ! on a failed or rejected order or when the broker is uncertain; otherwise neutral ✓.
+   - A stale source has a dashed outline and a muted colour, and shows its age on tap.
+   - Tapping a chip opens that section.
+4. **One structure line.** One sentence, at most about 90 characters, built from the facts by rules.py (not by AI), for example:
+   - "Buyers holding above area <low>-<high> · OI supports"
+   - "Structure up on 15m · 1h range · OI mixed"
+   The line passes `signals/language.check`. The area is shown only on his own Terminal (his own surface, CLAUDE.md 3).
+5. **Needs you.** A red / amber row, shown only when something needs him: a failed order, the broker uncertain, or an expiry today.
+
+**Colour-blind and contrast:**
+- `data-cvd="on"` swaps up / down to blue / orange (`styles/tokens.css:73-74`). The glyph and shape always carry the same meaning.
+- Text and icons meet WCAG AA on both themes.
+- The CI guards `check:v2-colours` and the prose guard both cover the new component.
+
+**Desktop mockup** (strip above the sections of section 6):
+```
+┌ Conclusion · NIFTY · <expiry> ───────────────────── <time> ⟳ ┐
+│  ▲ Lean up  3 of 4     [▲][▲][▲][▼][◆]  3 agree · 1 conflicts │
+│  (▲ 15m)(◆ 1h)(▲ OI)(▲ Strategy)(— Context)(▼ Positions)(✓ Orders) │
+│  Buyers holding above area <low>-<high> · OI supports           │
+│  ! 1 order failed today · Open trail                            │
+│  ▸ Chart  ▸ OI  ▸ My positions  ▸ My orders  ▸ Events  (tap)    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Phone 390 mockup** (Conclusion tab; the strip fits without scrolling; chips wrap onto two rows and never scroll sideways):
+```
+┌──────────────────────────────┐
+│ NIFTY · <expiry>   <time> ⟳  │
+│ ▲ Lean up · 3 of 4           │
+│ [▲][▲][▲][▼][◆]              │
+│ (▲15m)(◆1h)(▲OI)(▲Strat)     │
+│ (—Ctx)(▼Pos)(✓Orders)        │
+│ Buyers holding above area    │
+│ <low>-<high> · OI supports   │
+│ ! 1 order failed · Open      │
+│ ▸ Chart        ▸ OI          │
+│ ▸ Positions    ▸ Orders      │
+│ [ Summarise with AI · <c> ]  │
+└──────────────────────────────┘
+```
+Proof in C2:
+- screenshots at 390, 820 and 1440, in dark, light and cvd;
+- the phone layout guard (no sideways scroll) and a contrast check;
+- a "glance test": the strip is fully visible above the fold at 390 x 844.
+
 ## 7. PHASES (one PR each, behind new flag `terminal_conclusion` under `ui_v2` + `terminal`, OFF; migration: none)
 | Phase | Scope | Proof |
 |---|---|---|
@@ -216,4 +282,5 @@ no sideways scroll (PHONE-1 guard).
 | Too much text on phone | three summary rows first, sections folded (OWNER_RULES D.2) |
 
 ## 10. OPEN QUESTIONS (logged in docs/OPEN_QUESTIONS.md, each with a default)
-TC-Q1 tally line · TC-Q2 which chart TFs · TC-Q3 AI summary on tap or automatic · TC-Q4 default placement.
+TC-Q1 tally line (now the confluence meter) · TC-Q2 which chart TFs · TC-Q3 AI summary on tap or automatic ·
+TC-Q4 default placement · TC-Q5 how strong the single lean cue may look (SEBI).

@@ -257,3 +257,28 @@ def test_bt_draw_the_signal_names_its_area_and_only_a1_does():
     other = library.get("D2")
     d2 = TemplateStrategy(other, C.resolve_settings(other, "15m"))
     assert d2._uses_area_gate is False and strat._uses_area_gate is True
+
+
+@pytest.mark.parametrize("seed", [LONG_SEED, SHORT_SEED])
+def test_bt_draw_the_area_drawn_is_the_one_known_at_its_bar(seed):
+    """BT-DRAW 2c, no look-ahead for the drawn area: each entry's area on the full history equals the area on the bars
+    cut at that entry (cached and uncached), and a cache hit gives the same areas as a recomputation."""
+    bars = bars_of(seed)
+    full = S.gate_series(bars, "15m")
+    assert full.areas
+    S.CACHE_ON = False
+    assert S.gate_series(bars, "15m").areas == full.areas
+    for t, area in full.areas.items():
+        assert S.gate_series(bars.iloc[:t + 1], "15m").areas.get(t) == area
+    S.CACHE_ON = True
+    for t, area in full.areas.items():
+        assert S.gate_series(bars.iloc[:t + 1], "15m").areas.get(t) == area
+
+
+def test_bt_draw_the_area_box_starts_at_the_entry_bar():
+    """A1's setup is the gate's entry candle itself (an event, no trigger), so the chart's box starts on the bar the area
+    was read - never earlier."""
+    bars = bars_of(LONG_SEED)
+    strat = TemplateStrategy(A1, C.resolve_settings(A1, "15m"))
+    sig = strat.analyze({strat.label: bars.iloc[:LONG_BAR + 1]}, "S")
+    assert sig.setup_time == pd.Timestamp(bars.index[LONG_BAR]).to_pydatetime()

@@ -1,12 +1,10 @@
-# HANDOVER_NOW (19 Nov)
+# HANDOVER_NOW (20 Nov)
 
-Main f2c263fb (merged 19 Nov: #1114-#1122); deploy pending, migration no; flag `strategy_chart` OFF until the owner turns it on.
-
-Open PRs (draft, CI): #1123 SFC P3 (why), #1124 P4 (stats, stacked), #1126 P5 (builder, stacked), #1125 cash-share
-product NRML->CNC + OPEN_QUESTIONS UPX-TB-Q1 (Upstox TradeButton not in current docs: not built).
+Main 220f53f5; deployed 20 Nov (health OK). SFC P0-P6 all merged; flag `strategy_chart` for the owner to turn on.
+Owner notes 20 Nov: Journal tab shows only with flag `discipline_engine` on; My trades summary counts PAPER only
+(a LIVE section only if he says yes). Upstox TradeButton not built (OPEN_QUESTIONS UPX-TB-Q1).
 
 Next, in order:
-1. Merge #1123 -> #1124 -> #1126 when green (each after the one below it).
-2. SFC P6: audit first (order path): bot form lists only v1 (/api/custom-strategies skips v2 since P5) - add v2 to
-   the deploy picker; worker/runner parity = chart on recorded bars; LIVE only by the owner's switch.
-3. Then the 18 Nov list: BT-DRAW 2c, CA-CHAT, SRV2 P3 (atp-private CI blocker SRV2-Q2).
+1. BT-DRAW 2c: the template's own area band on the test chart (read-only out of area_gate; no gate logic change).
+2. CA-CHAT (approved 18 Nov, OPEN_QUESTIONS CA-CHAT-Q1): Analyze a chart = one Setup dropdown + chat on the same chart.
+3. SRV2 P3: atp-private branch claude/srv2-p3-vision; blocker atp-private CI (SRV2-Q2).

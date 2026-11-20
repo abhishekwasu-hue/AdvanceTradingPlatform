@@ -193,6 +193,7 @@ FLAG_STATUS: dict[str, FlagStatus] = {
     "term_roll": _ready(),
     "term_strike_area": _ready("Reads the stored areas"),
     "term_whatif": _ready(),
+    "terminal_conclusion": _behind("TERM-CON phases C0-C4 (docs/plans/terminal-conclusion-PLAN.md)"),
     "terminal": _ready(),
     "trade_engine": _setup("Private package on the server", HOST, ("signal_engine",)),
     "preopen_charts": _setup("Private package on the server and the signal engine runner settings", HOST),

@@ -12,6 +12,7 @@ positions shown read-only.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 from typing import Any
 
@@ -109,7 +110,12 @@ async def save(session: AsyncSession, user_id: int | None, symbol: str, values: 
     validate = getattr(mod, "validate", None)
     if validate is None:
         raise SettingsUnavailable("The trading agent's settings cannot be checked on this server yet.")
-    clean, errors = await asyncio.to_thread(validate, symbol, raw)
+    stored = await store.get_row(session, mod.STRATEGY_KEY, symbol) or {}
+    # SRV2-Q8: pairs (the swing scale D1 / D2, the engine layer switches) are checked with what is stored; an older package's
+    # validate(symbol, values) takes no stored row.
+    takes_stored = len(inspect.signature(validate).parameters) >= 3
+    args = (symbol, raw, stored) if takes_stored else (symbol, raw)
+    clean, errors = await asyncio.to_thread(validate, *args)
     if errors:
         return {str(k): str(v) for k, v in errors.items()}
     await store.save_row(session, mod.STRATEGY_KEY, symbol, dict(clean), by=user_id)

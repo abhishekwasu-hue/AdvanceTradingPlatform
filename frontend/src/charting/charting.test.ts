@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANCHOR_RULES, DrawingConflict, drawingProblem, drawingsApi, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
 import type { InteractionOptions } from "../chart/chartOptions";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
-import { LayerPrimitive, type DrawingPrimitive } from "./primitives";
+import { LayerPrimitive, SelectionPrimitive, type DrawingPrimitive } from "./primitives";
 import type { EngineEvent } from "./engine";
 
 const T1 = "2026-03-02T04:00:00Z";
@@ -76,6 +76,7 @@ function fakes() {
   const priceLines: { price: number; title: string }[] = [];
   const primitives: DrawingPrimitive[] = [];
   const layerPrimitives: LayerPrimitive[] = [];                  // Z7a-3: layer bands
+  const selections: SelectionPrimitive[] = [];                   // owner 21 Nov: the selected drawing's handles
   const handlers: Record<string, ((p: unknown) => void)[]> = { cross: [], click: [], range: [], data: [] };
   const candles: CandleSeriesLike & { bars: { time: unknown }[]; updates: unknown[] } = {
     bars: [], updates: [],
@@ -88,9 +89,12 @@ function fakes() {
     coordinateToPrice: (y) => (1000 - y) / 5,
     subscribeDataChanged(h) { handlers.data.push(h as (p: unknown) => void); },
     unsubscribeDataChanged(h) { handlers.data = handlers.data.filter((x) => x !== h); },
-    attachPrimitive(p) { if (p instanceof LayerPrimitive) layerPrimitives.push(p); else primitives.push(p); },
+    attachPrimitive(p) {
+      if (p instanceof LayerPrimitive) layerPrimitives.push(p); else if (p instanceof SelectionPrimitive) selections.push(p); else primitives.push(p);
+    },
     detachPrimitive(p) {
       if (p instanceof LayerPrimitive) layerPrimitives.splice(layerPrimitives.indexOf(p), 1);
+      else if (p instanceof SelectionPrimitive) selections.splice(selections.indexOf(p), 1);
       else primitives.splice(primitives.indexOf(p), 1);
     },
   };
@@ -111,8 +115,46 @@ function fakes() {
       coordinateToLogical: (x: number) => x / 8,
     }),
   };
-  return { chart, candles, priceLines, primitives, layerPrimitives, handlers };
+  return { chart, candles, priceLines, primitives, layerPrimitives, selections, handlers };
 }
+
+describe("LightweightEngine: the selected drawing's handles (owner 21 Nov)", () => {
+  it("shows one handles primitive for the selected drawing only, follows its edits and goes with it", () => {
+    const f = fakes();
+    const engine = new LightweightEngine(f.chart, f.candles);
+    engine.addDrawing("a", sample("trendline"));
+    engine.addDrawing("b", sample("hline"));
+    expect(f.selections).toEqual([]);                                                    // nothing selected: no handles
+    engine.setSelectedDrawing("a");
+    expect(f.selections).toHaveLength(1);
+    expect(f.selections[0].drawing?.kind).toBe("trendline");
+    expect(f.primitives[0].drawing.style?.width).toBeUndefined();                         // the line keeps its own width
+    engine.addDrawing("a", { ...sample("trendline"), anchors: [{ t: T1, p: 90 }, { t: T3, p: 95 }] });
+    expect(f.selections[0].drawing?.anchors[0].p).toBe(90);                               // a drag: the handles follow
+    engine.setSelectedDrawing("b");                                                       // a price line has handles too
+    expect(f.selections.map((p) => p.drawing?.kind)).toEqual(["hline"]);
+    engine.removeDrawing("b");
+    expect(f.selections).toEqual([]);
+    engine.setSelectedDrawing("a");
+    engine.setSelectedDrawing(null);
+    expect(f.selections).toEqual([]);
+  });
+
+  it("fills the handles with the chart background token and rings them in the drawing's colour as shown", () => {
+    const f = fakes();
+    const engine = new LightweightEngine(f.chart, f.candles);
+    engine.addDrawing("a", sample("trendline"));
+    engine.setSelectedDrawing("a");
+    expect(f.selections[0].fill).toBeNull();                                              // no theme yet: the drawing's colour
+    engine.setLabelStyle({ fontPx: 12, chip: "rgb(9, 12, 18)", ink: "rgb(194, 202, 216)" });
+    expect(f.selections[0].fill).toBe("rgb(9, 12, 18)");
+    engine.setDefaultDrawingColor("rgb(96, 165, 250)");
+    expect(f.selections).toHaveLength(1);
+    expect(f.selections[0].drawing?.style?.color).toBe("rgb(96, 165, 250)");                // the default colour as shown
+    engine.dispose();
+    expect(f.selections).toEqual([]);
+  });
+});
 
 describe("LightweightEngine (B-lite)", () => {
   it("renders the supported kinds, keeps the others, and loses nothing through serialize/deserialize", () => {

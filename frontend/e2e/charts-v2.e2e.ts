@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api, mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
@@ -28,6 +28,9 @@ test.afterEach(async ({ page }, testInfo) => { await warnOnManySolidBrand(page, 
  *   an off-screen cell does not make.
  * - UI2-4e: an old `?chart=` window link opens the Chart tab under `ui_v2` (its timeframe and exchange; unchanged with
  *   the flag off), and the "Live" / "Price delayed" chip on the Chart tab and the Multi-chart cells (page.clock).
+ * - Owner 21 Nov: the selected drawing's bar (`charts-v2-drawing-bar-1440-<theme>.png`, `charts-v2-drawing-bar-390-<theme>.png`,
+ *   the chart area only): restyle, delete without a question, Undo; docked low on a phone. DRAW_SHOTS=<dir> also writes
+ *   full-page screenshots for the comparison page.
  * Every reply is made-up data (e2e/chartsMocks.ts): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/charts-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -1257,6 +1260,117 @@ test.describe("v2 Charts 390x480 phone: off-screen cells (UI2-4d)", () => {
     await expect.poll(() => calls.candles.filter((c) => c.symbol === "NIFTY BANK" && !c.before).length).toBe(1);
     await cellsReady(page, 2);
   });
+});
+
+// --- Owner 21 Nov ("selected drawing i cant delete or move so make it like tradingview"): the selected drawing's bar --
+
+const drawingBar = (page: Page) => page.locator("[data-drawing-selection-bar]");
+const chartPlot = (page: Page) => page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first();
+const SHOTS_DIR = process.env.DRAW_SHOTS;
+
+/** A trend line drawn with the rail (desktop) or the Draw menu (phone), restyled from the bar: the second swatch,
+ * width 3. The bar stays open with the drawing selected. */
+async function drawRestyled(page: Page, calls: ChartsCalls, phone: boolean) {
+  if (phone) {
+    await page.getByRole("button", { name: "Drawing tools" }).click();
+    await page.getByRole("dialog", { name: "Drawing tools" }).getByRole("button", { name: "Trend line" }).click();
+  } else {
+    await page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Trend line" }).click();
+  }
+  const box = (await chartPlot(page).boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.55);
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.25);
+  await expect.poll(() => calls.drawingPosts.length).toBe(1);
+  const bar = drawingBar(page);
+  await bar.getByRole("button", { name: "Colour" }).click();
+  await bar.getByRole("dialog", { name: "Colour" }).locator("[data-swatch]").nth(1).click();
+  await expect.poll(() => calls.drawingPuts.length).toBe(1);
+  await bar.getByRole("button", { name: "Line width and style" }).click();
+  await bar.getByRole("radio", { name: "Width 3" }).click();
+  await expect.poll(() => calls.drawingPuts.length).toBe(2);
+  await page.keyboard.press("Escape");
+  await expect(bar.getByRole("dialog")).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());      // the resting look for the shot
+  await page.mouse.move(0, 0);
+  return bar;
+}
+
+/** Owner review 21 Nov: the selected drawing's bar never covers the chart's top-left row (the Open / High / Low / Close
+ * readout while the crosshair is on the chart). */
+async function expectBarClearOfReadout(page: Page, scope: Locator) {
+  const readout = scope.locator("[data-chart-readout]").first();
+  await expect(readout).toBeVisible();
+  const toolbar = scope.locator("[data-drawing-selection-bar] [role='toolbar']");
+  await expect.poll(async () => {
+    const [r, b] = [(await readout.boundingBox())!, (await toolbar.boundingBox())!];
+    return r.x < b.x + b.width && r.x + r.width > b.x && r.y < b.y + b.height && r.y + r.height > b.y;
+  }).toBe(false);
+}
+
+test.describe("v2 Charts 1440: the selected drawing's bar", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`a restyled trend line with its bar looks the same (${theme})`, async ({ page }) => {
+      const calls = await open(page, theme);
+      await chartReady(page);
+      const bar = await drawRestyled(page, calls, false);
+      await expect(bar).toBeVisible();
+      const box = (await chartPlot(page).boundingBox())!;
+      await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.7);
+      await expectBarClearOfReadout(page, page.locator("[data-page='charts-v2']"));
+      await page.mouse.move(0, 0);
+      if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/after-charts-1440-${theme}.png`, animations: "disabled" });
+      await expect(page.locator("[data-tour='charts-chart']")).toHaveScreenshot(`charts-v2-drawing-bar-1440-${theme}.png`, SHOT);
+    });
+  }
+
+  test("a horizontal line: no extension offered; width saves, Delete removes it without asking, Undo brings it back", async ({ page }) => {
+    const calls = await open(page, "light");
+    await chartReady(page);
+    await page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Horizontal line" }).click();
+    const box = (await chartPlot(page).boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 4);
+    await expect.poll(() => calls.drawingPosts.length).toBe(1);
+    const bar = drawingBar(page);
+    const toolbar = bar.getByRole("toolbar", { name: "Horizontal line settings" });
+    expect(await toolbar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual([
+      "Colour", "Line width and style", "Lock", "Duplicate", "Delete", "Close"]);
+    await toolbar.getByRole("button", { name: "Line width and style" }).click();
+    await bar.getByRole("radio", { name: "Width 2" }).click();
+    await expect.poll(() => calls.drawingPuts.length).toBe(1);
+    expect(calls.drawingPuts[0]).toMatchObject({ id: 1, drawing: { kind: "hline", style: { width: 2 } } });
+    await toolbar.getByRole("button", { name: "Delete" }).click();
+    await expect.poll(() => calls.drawingDeletes).toEqual([1]);
+    await expect(bar).toHaveCount(0);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);                                   // no question for one drawing
+    await page.getByRole("button", { name: "Undo drawing" }).click();
+    await expect.poll(() => calls.drawingPosts.length).toBe(2);
+    expect(calls.drawingPosts[1]).toMatchObject({ drawing: { kind: "hline", style: { width: 2 } } });
+  });
+});
+
+test.describe("v2 Charts 390: the selected drawing's bar", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  for (const theme of THEMES) {
+    test(`docked low on the chart, 44 px buttons, inside the screen (${theme})`, async ({ page }) => {
+      const calls = await open(page, theme);
+      await chartReady(page);
+      const bar = await drawRestyled(page, calls, true);
+      const toolbar = bar.getByRole("toolbar", { name: "Trend line settings" });
+      const tb = (await toolbar.boundingBox())!;
+      const box = (await chartPlot(page).boundingBox())!;
+      expect(tb.y).toBeGreaterThan(box.y + box.height / 2);
+      expect(tb.x).toBeGreaterThanOrEqual(0);
+      expect(tb.x + tb.width).toBeLessThanOrEqual(390);
+      expect(await toolbar.evaluate((e) => e.scrollWidth - e.clientWidth)).toBeLessThanOrEqual(0);   // every button in view
+      for (const h of await toolbar.getByRole("button").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBeGreaterThanOrEqual(44);
+      await expectPhoneLayout(page);
+      if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/after-charts-390-${theme}.png`, animations: "disabled" });
+      await expect(page.locator("[data-tour='charts-chart']")).toHaveScreenshot(`charts-v2-drawing-bar-390-${theme}.png`, SHOT);
+    });
+  }
 });
 
 test.describe("flag off", () => {

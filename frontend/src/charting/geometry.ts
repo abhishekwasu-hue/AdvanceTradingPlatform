@@ -57,7 +57,8 @@ export interface Rect { x: number; y: number; w: number; h: number }
 export type Dash = "solid" | "dashed" | "dotted";
 export type Shape =
   | { type: "segment"; x1: number; y1: number; x2: number; y2: number; color: string; width: number; dash: Dash }
-  | { type: "rect"; x: number; y: number; w: number; h: number; fill: string; stroke?: string; /** M98 F1: painted above the series */ top?: true }
+  | { type: "rect"; x: number; y: number; w: number; h: number; fill: string; stroke?: string;
+      /** the outline's width and dash (left out: 1 px solid) */ strokeWidth?: number; dash?: Dash; /** M98 F1: painted above the series */ top?: true }
   | { type: "polygon"; points: [number, number][]; fill: string }
   | { type: "text"; x: number; y: number; text: string; color: string; align: "left" | "right" | "center"; baseline: "top" | "middle" | "bottom";
       /** M78: painted above the series (a band label), in this font size. */ top?: true; size?: number }
@@ -200,7 +201,8 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
     case "rectangle": {
       if (!placed(0, "tp") || !placed(1, "tp")) return [];
       const [x1, x2, y1, y2] = [xs[0], xs[1], ys[0], ys[1]] as number[];
-      return [{ type: "rect", x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), fill: withAlpha(color, 0.15), stroke: color }];
+      return [{ type: "rect", x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), fill: withAlpha(color, 0.15), stroke: color,
+                ...(width !== 1 ? { strokeWidth: width } : {}), ...(dash !== "solid" ? { dash } : {}) }];
     }
     case "channel": {
       if (![0, 1, 2].every((i) => placed(i, "tp"))) return [];
@@ -219,15 +221,17 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
     case "fib_extension": {
       const n = d.kind === "fib_retracement" ? 2 : 3;
       if (!Array.from({ length: n }, (_, i) => placed(i, "tp")).every(Boolean)) return [];
-      const left = d.kind === "fib_retracement" ? Math.min(xs[0] as number, xs[1] as number) : (xs[2] as number);
+      const start = d.kind === "fib_retracement" ? Math.min(xs[0] as number, xs[1] as number) : (xs[2] as number);
       const span = Math.abs((xs[1] as number) - (xs[0] as number));
       const right = style.extend === "right" || style.extend === "both" ? c.width
-        : d.kind === "fib_retracement" ? Math.max(xs[0] as number, xs[1] as number) : left + span;
+        : d.kind === "fib_retracement" ? Math.max(xs[0] as number, xs[1] as number) : start + span;
+      const left = style.extend === "left" || style.extend === "both" ? 0 : start;
       const out: Shape[] = [];
       for (const { level, price } of fibLevels(d)) {
         const y = c.y(price);
         if (y == null || !Number.isFinite(y)) continue;
-        out.push(seg(left, y, right, y, { width: 1 }), label(left + 2, y - 2, `${level} (${fmt(price)})`));
+        // the level lines are thin unless the trader picked a width
+        out.push(seg(left, y, right, y, { width: style.width ? width : 1 }), label(start + 2, y - 2, `${level} (${fmt(price)})`));
       }
       return out;
     }

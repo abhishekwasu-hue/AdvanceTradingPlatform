@@ -784,6 +784,21 @@ Owner answer (21 Nov, transliterated; to "in your own saved layouts the panel do
 Note: option B and more - the Conclusion panel is always shown on the Terminal while `terminal_conclusion` is on: every
 preset (Option seller, Option buyer, Quick trade, Multi-chart) and every saved layout of his; it has no Close button and no
 Panels-menu toggle (it can still be moved and resized); the phone tab stays.
+## 21 Nov - owner (English; answer to the P2-8 Journal v2 report: three draft PRs #1147 / #1148 / #1150, CI green, questions JV2-Q1..Q10 with defaults)
+
+> "Default yes and go ahead"
+
+Note: approval. Every JV2 default is decided (JV2-Q1..Q10), and "go ahead" is the owner's ✅ the order
+ATP_SESSION_JOURNAL.md asked for before a merge: #1147 -> #1148 -> #1150 are merged in that order once CI is green.
+Three additive migrations (e3a5c7e9b1d4, f4b6d8a0c2e5, a5c7e9b1d3f6): deploy after 15:30 IST; `discipline_engine` stays
+his switch.
+
+## 21 Nov - owner (English; answer to the P2-8 status "merge #1147 -> #1148 -> #1150 in order on green CI, deploy after 15:30 IST")
+
+> "Default yes"
+
+Note: confirmation of the line above (the same ✅, no new order): the three Journal v2 PRs merge in order once CI is
+green; the deploy runs after 15:30 IST (three additive migrations), then `discipline_engine` on.
 ## 21 Nov - owner (answer to the report on "Jhale ka sarv kam")
 
 > "Default yes and go ahead"

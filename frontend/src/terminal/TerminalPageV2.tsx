@@ -233,6 +233,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   useEffect(() => {
     if (!(conclusionOn && signedIn)) return undefined;
     let live = true;
+    // intentional: best effort - without his bots the panel reads the chart's own timeframe only (the read still works).
     api.listDeployments().then((list) => { if (live) setBots(list); }).catch(() => undefined);
     return () => { live = false; };
   }, [conclusionOn, signedIn]);

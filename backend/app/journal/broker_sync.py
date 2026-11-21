@@ -313,6 +313,21 @@ def due_day(now: datetime, holidays: set[Any]) -> str | None:
     return ist.date().isoformat()
 
 
+async def work_waiting(session: AsyncSession, now: datetime | None = None) -> bool:
+    """Cheap: is a daily sync due now (after the close on a trading day), is the journal on for anyone, and has anyone
+    linked a broker session? The worker starts the background task only then."""
+    from app.journal import FLAG
+    from app.market_data.calendar import family_holidays
+    from app.platform.controls import feature_flags
+    now = now or datetime.now(UTC)
+    entry = (await feature_flags(session)).get(FLAG) or {}
+    if not (entry.get("on") or entry.get("tenants")):
+        return False
+    if due_day(now, set(await family_holidays(session, "NSE"))) is None:
+        return False
+    return await session.scalar(select(BrokerCredentialRecord.id).limit(1)) is not None
+
+
 async def run_due(session: AsyncSession, now: datetime | None = None) -> int:
     """Once a trading day after the close: syncs every user with a linked broker session whose organisation has the
     journal on. Returns how many users were synced. One user's failure never stops the others."""
@@ -368,4 +383,4 @@ def _mark(raw: str | None) -> tuple[str | None, int]:
     return str(value["day"]), tries
 
 
-__all__ = ["ORIGIN", "LABEL", "BrokerFill", "OpenEntry", "plan_sync", "to_fill", "sync_user", "run_due", "due_day"]
+__all__ = ["ORIGIN", "LABEL", "BrokerFill", "OpenEntry", "plan_sync", "to_fill", "sync_user", "run_due", "due_day", "work_waiting"]

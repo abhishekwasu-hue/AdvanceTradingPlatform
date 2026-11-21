@@ -783,7 +783,17 @@ class TradingWorker:
                             await rhythm_deliver.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                         logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
-                    self._spawn_journal_sync(now)
+                    # P2-8: the journal's background task starts only when it has work (a cheap check here), so a cycle
+                    # with nothing to do leaves no task behind
+                    try:
+                        from app.journal import broker_sync
+                        async with self.session_factory() as own:
+                            journal_waiting = await broker_sync.work_waiting(own, now)
+                    except Exception as exc:  # noqa: BLE001 - journal data only; never reaches trading
+                        journal_waiting = False
+                        logger.warning("Journal work check failed: %s", type(exc).__name__)
+                    if journal_waiting:
+                        self._spawn_journal_sync(now)
                 # M72 PR-7 (app/ai/watch.py): the Copilot watch - opt-in information cards about each user's own positions,
                 # short strikes and watchlists, with his own numbers. Flags ui_v2 + copilot_watch. Its own session; read-only
                 # towards trading (no proposal, no order, nothing closed).

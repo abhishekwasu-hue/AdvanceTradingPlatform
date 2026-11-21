@@ -41,6 +41,31 @@ export function conclusionPath(symbol: string, expiry: string | null, tf: string
 export const fetchConclusion = (symbol: string, expiry: string | null, tf: string, also: readonly string[] = [], v?: string) =>
   request<Conclusion>(conclusionPath(symbol, expiry, tf, also, v));
 
+// --- TC-Q2 (owner "Ho", 21 Nov): the timeframes of his own bots on this symbol ----------------------------------------
+
+/** A bot's candle timeframe (deployments store the broker's interval) as the read's timeframe; null when it has none. */
+const BOT_TF: Record<string, string> = { "1min": "1m", "3min": "3m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", day: "1d",
+  "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "1d": "1d" };
+
+export interface BotLike { symbol: string; timeframe: string; status: string }
+
+/** The timeframes his ACTIVE / PAUSED bots on the Terminal's symbol run on (the symbol itself, its spot name such as
+ * "NIFTY 50", or one of its contracts), besides the chart's own - at most two, each read on its own (never merged). */
+export function strategyTimeframes(bots: readonly BotLike[], underlying: string, spotSymbol: string, chartTf: string): string[] {
+  const names = [underlying, spotSymbol].map((s) => s.trim().toUpperCase()).filter(Boolean);
+  const mine = (sym: string) => {
+    const s = sym.trim().toUpperCase();
+    return names.some((n) => s === n || (s.startsWith(n) && /\d/.test(s.charAt(n.length))));
+  };
+  const out: string[] = [];
+  for (const b of bots) {
+    if (b.status === "STOPPED" || !mine(b.symbol)) continue;
+    const tf = BOT_TF[b.timeframe];
+    if (tf && tf !== chartTf && !out.includes(tf)) out.push(tf);
+  }
+  return out.slice(0, 2);
+}
+
 // --- C4: the AI summary, on tap only, on his own key ------------------------------------------------------------------
 
 export interface ConclusionSummary {

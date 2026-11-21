@@ -148,6 +148,16 @@ async def send_user(session: AsyncSession, user: User, prefs: dict[str, Any], no
     return count
 
 
+async def work_waiting(session: AsyncSession) -> bool:
+    """Cheap: has anyone turned a journal message on (Telegram or e-mail)? The worker starts its task only then."""
+    from app.me.prefs import stored_value
+    for raw in await session.scalars(select(UserPrefsRecord.value_json).where(UserPrefsRecord.namespace == PREFS)):
+        prefs = stored_value(PREFS, raw)
+        if prefs.get("telegram") or prefs.get("email"):
+            return True
+    return False
+
+
 async def send_due(session: AsyncSession, now: datetime | None = None, client: httpx.AsyncClient | None = None) -> int:
     """Every opted-in user's due journal messages. One user's failure never stops the others (retried next run)."""
     from app.market_data.calendar import family_holidays
@@ -181,4 +191,4 @@ async def send_due(session: AsyncSession, now: datetime | None = None, client: h
     return sent
 
 
-__all__ = ["PREFS", "SENT", "due", "message", "prompt_text", "send_user", "send_due"]
+__all__ = ["PREFS", "SENT", "due", "message", "prompt_text", "send_user", "send_due", "work_waiting"]

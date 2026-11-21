@@ -186,6 +186,33 @@ def test_messages_carry_no_feelings_and_go_once(flag_on, monkeypatch):  # noqa: 
     assert first == len(sent) and all("check-in" in " ".join(lines) or "Your day" in t for t, lines in sent)
 
 
+def test_delivery_work_waits_only_when_someone_turned_it_on(flag_on):  # noqa: F811
+    from app.db.models import UserPrefsRecord
+    from tests.test_auth_api import _session_factory
+
+    async def check():
+        async with _session_factory() as session:
+            return await deliver.work_waiting(session)
+    assert _run(check()) is False
+    _, uid, tenant = _run(_register_user_and_get_id("p28-wait@example.com"))
+
+    async def opt_in():
+        async with _session_factory() as session:
+            session.add(UserPrefsRecord(tenant_id=tenant, user_id=uid, namespace="journal_delivery", value_json='{"email": true}',
+                                        version=1, updated_at=datetime.now(UTC)))
+            await session.commit()
+    _run(opt_in())
+    try:
+        assert _run(check()) is True
+    finally:
+        async def opt_out():
+            from sqlalchemy import delete
+            async with _session_factory() as session:
+                await session.execute(delete(UserPrefsRecord).where(UserPrefsRecord.user_id == uid))
+                await session.commit()
+        _run(opt_out())
+
+
 def test_journal_tour_id_is_allowed():
     from app.me import prefs
     assert "journal" in prefs.TOUR_IDS

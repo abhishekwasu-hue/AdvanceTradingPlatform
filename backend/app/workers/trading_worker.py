@@ -787,8 +787,10 @@ class TradingWorker:
                     # with nothing to do leaves no task behind
                     try:
                         from app.journal import broker_sync
+                        from app.journal import deliver as journal_deliver
                         async with self.session_factory() as own:
-                            journal_waiting = await broker_sync.work_waiting(own, now)
+                            journal_waiting = (await broker_sync.work_waiting(own, now)
+                                               or await journal_deliver.work_waiting(own))
                     except Exception as exc:  # noqa: BLE001 - journal data only; never reaches trading
                         journal_waiting = False
                         logger.warning("Journal work check failed: %s", type(exc).__name__)

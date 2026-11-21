@@ -45,6 +45,8 @@ from app.db.models import (
     JournalCheckinRecord,
     JournalEntryRecord,
     JournalManualTradeRecord,
+    JournalPlanRecord,
+    JournalProofRecord,
     JournalReflectionRecord,
     JournalSettingsRecord,
     JournalSnapshotRecord,
@@ -303,7 +305,7 @@ async def _erase_journal(session: AsyncSession, user: User) -> None:
     paths = list(await session.scalars(select(JournalAttachmentRecord.image_path).filter_by(**mine)))
     paths += list(await session.scalars(select(JournalSnapshotRecord.image_path).filter_by(**mine)))   # P2-8 J1-2 pictures
     for model in (JournalAttachmentRecord, JournalSnapshotRecord, JournalBrokerFillRecord, JournalCheckinRecord,
-                  JournalReflectionRecord, JournalTagRecord, JournalEntryRecord, JournalManualTradeRecord, JournalSettingsRecord):
+                  JournalReflectionRecord, JournalProofRecord, JournalPlanRecord, JournalTagRecord, JournalEntryRecord, JournalManualTradeRecord, JournalSettingsRecord):
         await session.execute(delete(model).filter_by(**mine))
     for path in paths:
         storage.delete(path)

@@ -274,9 +274,9 @@ class AppearancePrefs(_Prefs):
 # MO2 part C: the pages that have a page tour (frontend src/tours/pages.ts TOUR_IDS, kept equal by a test). An allow-list,
 # so a stored mark is always one of these and the namespace stays small.
 TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot",
-                             "terminal")
+                             "terminal", "journal")
 TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot",
-                 "terminal"]
+                 "terminal", "journal"]
 
 
 def _required_mark(value: datetime) -> datetime:
@@ -765,6 +765,23 @@ class RunnerPrefs(_Prefs):
     offline_telegram: bool = True
 
 
+class JournalDeliveryPrefs(_Prefs):
+    """`journal_delivery` (P2-8 J6, docs/plans/journal-v2-PLAN.md): which journal reviews also go to his own Telegram chat
+    and / or e-mail, and when. Everything OFF until he turns it on (the order: default OFF). `checkin_prompts` = a short
+    "your check-in is waiting" line when one of his trades opens / closes. Times are operational only (never a chart
+    rule): the daily card after `daily_hour` (IST, trading days), the weekly review on `weekly_day` from 09:00 IST, the
+    monthly page on the 1st from 09:00 IST. The messages carry counts and his results, never his feelings or notes. Read
+    by the worker only (app/journal/deliver.py); no order path reads it."""
+    telegram: bool = False
+    email: bool = False
+    daily: bool = False
+    weekly: bool = False
+    monthly: bool = False
+    checkin_prompts: bool = False
+    daily_hour: int = Field(default=17, ge=16, le=22)
+    weekly_day: Literal["SAT", "SUN"] = "SAT"
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
@@ -775,7 +792,7 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
                                        "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs,
                                        "workspace_watch": WorkspaceWatchPrefs, "chart_reader": ChartReaderPrefs,
-                                       "runner": RunnerPrefs}
+                                       "runner": RunnerPrefs, "journal_delivery": JournalDeliveryPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 

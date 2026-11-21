@@ -43,6 +43,8 @@ from app.db.models import (
     JournalCheckinRecord,
     JournalEntryRecord,
     JournalManualTradeRecord,
+    JournalPlanRecord,
+    JournalProofRecord,
     JournalReflectionRecord,
     JournalSnapshotRecord,
     JournalTagRecord,
@@ -80,6 +82,7 @@ _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades
              ("journal_outside_trades", JournalManualTradeRecord), ("journal_broker_fills", JournalBrokerFillRecord),
              ("journal_snapshots", JournalSnapshotRecord),
              ("journal_checkins", JournalCheckinRecord), ("journal_reflections", JournalReflectionRecord),   # P2-8 J2 / J3: his own answers
+             ("journal_proofs", JournalProofRecord), ("journal_plans", JournalPlanRecord),                 # P2-8 J4 / J5
              ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
              ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)

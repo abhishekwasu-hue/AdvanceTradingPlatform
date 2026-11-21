@@ -69,6 +69,8 @@ async function open(page: Page, theme: "light" | "dark") {
   await page.route(/\/api(?:\/v1)?\/journal\/(trades|manual)\/\d+\/chart\?at=(entry|exit)$/, (r) => r.fulfill({ body: PNG, contentType: "image/png" }));
   await page.goto("/analytics/journal");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+  // P2-8 J6: the Journal opens on Today; these checks start on Trades (every build has that tab)
+  await page.locator("#journal-tab-trades").click();
 }
 
 async function noSidewaysScroll(page: Page) {

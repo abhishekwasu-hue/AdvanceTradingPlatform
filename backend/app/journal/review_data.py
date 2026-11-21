@@ -21,7 +21,8 @@ from app.db.models import (
     TradeRecord,
     User,
 )
-from app.journal import entries, service
+from app.journal import capture, entries, service
+from app.journal.detectors import is_systematic_exit
 from app.journal.reviews import Gate, Unit
 from app.journal.settings import DisciplineSettings
 from app.market_data.calendar import IST
@@ -95,9 +96,13 @@ async def units(session: AsyncSession, user: User, start: datetime, end: datetim
         else:
             stop_set = service._has_group_stop(first)
         when = service._utc(first.entry_time)
+        ended = [x for x in (service._utc(leg.exit_time) for leg in legs) if x is not None]
+        plan = capture._loads(journal[first.id].plan_json, {}) if first.id in journal else capture.plan_of(first)
         out.append((when.isoformat() if when else "", Unit(
             id=first.id, kind="trade", symbol=first.symbol, setup=first.strategy_id, entry_time=when.isoformat() if when else None,
-            pnl=rt.pnl, stop_set=stop_set, tags=tuple(sorted({x.tag for x in live})),
+            pnl=rt.pnl, stop_set=stop_set, exit_by_rule=rt.pnl is not None and all(is_systematic_exit(leg.exit_reason) for leg in legs),
+            from_signal=plan.get("entry_source") == "signal",
+            exit_reason=next((leg.exit_reason for leg in legs if leg.exit_reason), None), exit_time=max(ended).isoformat() if ended and rt.pnl is not None else None, tags=tuple(sorted({x.tag for x in live})),
             confirmed=tuple(sorted({x.tag for x in live if x.status == "CONFIRMED"})), mae_amount=mae, mfe_amount=mfe,
             chart=f"/api/journal/trades/{first.id}/chart?at=exit" if first.exit_time else f"/api/journal/trades/{first.id}/chart?at=entry",
             **_answers(c))))
@@ -106,7 +111,8 @@ async def units(session: AsyncSession, user: User, start: datetime, end: datetim
         when = entries._utc(m.entry_time)
         out.append((when.isoformat() if when else "", Unit(
             id=m.id, kind="manual", symbol=m.symbol, setup=m.setup, entry_time=when.isoformat() if when else None,
-            pnl=entries.manual_pnl(m), stop_set=m.stop_loss is not None, chart=f"/api/journal/manual/{m.id}/chart?at=entry", **_answers(c))))
+            pnl=entries.manual_pnl(m), stop_set=m.stop_loss is not None,
+            exit_time=entries._iso(entries._utc(m.exit_time)) if m.exit_time else None, exit_reason=m.exit_reason, chart=f"/api/journal/manual/{m.id}/chart?at=entry", **_answers(c))))
     out.sort(key=lambda x: x[0])
     return [Unit(**{**u.__dict__, "entry_order": i}) for i, (_, u) in enumerate(out)]
 

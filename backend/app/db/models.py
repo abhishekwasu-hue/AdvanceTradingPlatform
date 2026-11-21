@@ -617,6 +617,46 @@ class JournalReflectionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+class JournalProofRecord(Base):
+    """P2-8 J4: his own "My proof" entries and his pins. `fact_key` is an automatic fact's key (computed from his trades by
+    `app/journal/proof.py`; the row only marks it pinned) or "own:<id>" for an entry he wrote himself (`text`). Personal."""
+
+    __tablename__ = "journal_proofs"
+    __table_args__ = (UniqueConstraint("user_id", "fact_key", name="uq_journal_proof_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    fact_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    text: Mapped[str | None] = mapped_column(String(300), nullable=True)                   # his own words (own entries only)
+    happened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class JournalPlanRecord(Base):
+    """P2-8 J5: his own if-then plan ("If <if_text>, then <then_text>", optionally reminded after a stop hit / a loss) or
+    process goal (a process measure, his target share, a week or a month). His own text; ATP never writes a plan for him
+    and never blocks anything because of one. Personal."""
+
+    __tablename__ = "journal_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)                           # IF_THEN / GOAL
+    if_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    then_text: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(10), nullable=False, default="NONE")       # NONE / STOP_HIT / LOSS
+    metric: Mapped[str | None] = mapped_column(String(20), nullable=True)                  # PLAN_FOLLOWED / STOP_KEPT / CHECKED_IN
+    target_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    period: Mapped[str | None] = mapped_column(String(5), nullable=True)                   # WEEK / MONTH
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class JournalImportRecord(Base):
     """M88: one file of outside-ATP trades the trader imported into his journal (a broker tradebook or his own sheet).
     It holds only the file's name, its SHA-256 (the same file is not imported twice), the layout it was read as and the

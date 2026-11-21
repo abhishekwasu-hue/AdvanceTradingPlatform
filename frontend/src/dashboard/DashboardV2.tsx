@@ -15,6 +15,7 @@ import { useColourV2 } from "../ui/colourV2";
 import { useIndexSparks } from "./indexSparks";
 import { useLivePushOn } from "../live/livePush";
 import DailyRhythmCardV2 from "../rhythm/DailyRhythmCardV2";
+import JournalLastGoodV2 from "../journal/JournalLastGoodV2";
 import MyDayCardV2 from "./MyDayCardV2";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
 import MarketStripV2 from "./MarketStripV2";
@@ -146,6 +147,8 @@ export default function DashboardV2(_props: PageProps = {}) {
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:col-span-2 2xl:space-y-space-6" : "lg:col-span-2 lg:space-y-space-6"}`}>
               <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} onHide={hidden.hide} />
               {features.on("daily_rhythm") && <DailyRhythmCardV2 />}
+              {/* P2-8 J4: his last good decision from his own journal (flag discipline_engine) */}
+              {features.on("discipline_engine") && <JournalLastGoodV2 />}
               <OpenPositionsV2 data={positions} />
             </div>
             <div className={`min-w-0 space-y-space-4 ${big ? "2xl:space-y-space-6" : "lg:space-y-space-6"}`}>

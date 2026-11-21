@@ -50,6 +50,10 @@ class Unit:
     chart: str | None = None
     lesson: str | None = None
     entry_order: int = 0                    # position in time (for "after a loss")
+    exit_by_rule: bool = False              # P2-8 J4: closed by one of his own rules (stop, exit level, time rule), not by hand
+    from_signal: bool = False               # P2-8 J4: entered on his own signal / setup (the plan's price came from it)
+    exit_time: str | None = None            # ISO
+    exit_reason: str | None = None          # as recorded (a structure: its first closed leg's)
 
     @property
     def closed(self) -> bool:

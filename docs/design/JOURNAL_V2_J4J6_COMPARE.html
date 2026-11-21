@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal v2 J4-J6</title>
+<!-- P2-8 Journal v2 J4 + J5 + J6 (plan docs/plans/journal-v2-PLAN.md): before = PR 2 (#1148), after = this PR. Captured
+     with Playwright (e2e/journal-j4j6-v2.e2e.ts) on the production build with every /api call mocked: every name and number is MADE UP. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.pair.wide { grid-template-columns: 1fr; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair, .trio { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Journal v2 J4-J6: My proof, plans, delivery</h1>
+<p>Evidence to re-read before the open. His own plans and goals. The journal sent where he chooses.</p>
+<table>
+  <thead><tr><th>Item</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>J6 Page</td><td>opens on Trades; Trades · Stats · Reviews · Settings</td><td class="good">opens on Today; Today · Trades · Reviews · My proof · Plans · Stats · Settings; page tour</td></tr>
+    <tr><td>J4 My proof</td><td>-</td><td class="good">stop kept, process win on a loss, waited for the setup, calm after a loss, exit as planned, streaks, a dip recovered; date + trade; his own entries; pin</td></tr>
+    <tr><td>J4 Today page / after a loss</td><td>-</td><td class="good">"Your last good decision"; "In your last 20 trades you followed your plan in N"</td></tr>
+    <tr><td>J5 If-then plans</td><td>-</td><td class="good">his words; shown before the open; back after a stop hit / loss if he chose; never blocks</td></tr>
+    <tr><td>J5 Process goals</td><td>-</td><td class="good">plan followed / stop kept / checked in; his %; counts until 20 trades</td></tr>
+    <tr><td>J6 Telegram / e-mail</td><td>-</td><td class="good">daily / weekly / monthly + check-in reminders; his times; all OFF by default; no feelings in a message</td></tr>
+  </tbody>
+</table>
+<h2>1440 light</h2>
+<div class="pair"><figure><figcaption>Before (1440, light)</figcaption><img src="journal-v2-j4j6/before-open-1440-light.png" alt="What the Journal opened on before"></figure><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j4j6/after-open-1440-light.png" alt="Journal Today tab"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j4j6/after-proof-1440-light.png" alt="My proof"></figure><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j4j6/after-plans-1440-light.png" alt="Plans"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j4j6/after-delivery-1440-light.png" alt="Send my journal"></figure></div>
+<h2>1440 dark</h2>
+<div class="pair"><figure><figcaption>Before (1440, dark)</figcaption><img src="journal-v2-j4j6/before-open-1440-dark.png" alt="What the Journal opened on before"></figure><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j4j6/after-open-1440-dark.png" alt="Journal Today tab"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j4j6/after-proof-1440-dark.png" alt="My proof"></figure><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j4j6/after-plans-1440-dark.png" alt="Plans"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j4j6/after-delivery-1440-dark.png" alt="Send my journal"></figure></div>
+<h2>390 light</h2>
+<div class="pair"><figure><figcaption>Before (390, light)</figcaption><img src="journal-v2-j4j6/before-open-390-light.png" alt="What the Journal opened on before"></figure><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j4j6/after-open-390-light.png" alt="Journal Today tab"></figure></div>
+<div class="pair"><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j4j6/after-proof-390-light.png" alt="My proof"></figure><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j4j6/after-plans-390-light.png" alt="Plans"></figure></div>
+<div class="pair"><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j4j6/after-delivery-390-light.png" alt="Send my journal"></figure></div>
+<h2>390 dark</h2>
+<div class="pair"><figure><figcaption>Before (390, dark)</figcaption><img src="journal-v2-j4j6/before-open-390-dark.png" alt="What the Journal opened on before"></figure><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j4j6/after-open-390-dark.png" alt="Journal Today tab"></figure></div>
+<div class="pair"><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j4j6/after-proof-390-dark.png" alt="My proof"></figure><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j4j6/after-plans-390-dark.png" alt="Plans"></figure></div>
+<div class="pair"><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j4j6/after-delivery-390-dark.png" alt="Send my journal"></figure></div>
+<p>Made-up data only. No sideways scroll at 390 (asserted in the spec).</p>
+</main>
+</body>
+</html>

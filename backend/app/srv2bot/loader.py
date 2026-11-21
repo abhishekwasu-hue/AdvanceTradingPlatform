@@ -18,7 +18,7 @@ _reason = REASON_ABSENT
 
 
 def load() -> Any | None:
-    """The private bot's namespace: an object with `host` and `runner`, or None."""
+    """The private bot's namespace: an object with `host`, `runner` and `modes` (None in an older package), or None."""
     global _cached, _reason
     if _cached is not _UNSET:
         return _cached
@@ -35,8 +35,12 @@ def load() -> Any | None:
         _reason, _cached = f"could not be loaded ({exc.__class__.__name__})", None
         return None
 
+    try:                                     # SRV2 P3 (ADR-0029): the agent modes; an older private package has none
+        modes = importlib.import_module(MODULE + ".modes")
+    except ImportError:
+        modes = None
     from types import SimpleNamespace
-    _cached = SimpleNamespace(host=host, runner=runner)
+    _cached = SimpleNamespace(host=host, runner=runner, modes=modes)
     return _cached
 
 

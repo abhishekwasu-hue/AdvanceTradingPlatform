@@ -1983,6 +1983,7 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
         await expect(body.locator("[data-chip-source]")).toHaveCount(5);
         await expect(body.locator("[data-need='orders']")).toBeVisible();
         await expect(body.locator("details[data-section][open]")).toHaveCount(0);
+        if (width >= 600) await expect(page.locator("[data-panel-close='conclusion']")).toHaveCount(0);   // owner 21 Nov: always shown
         expect(calls.length).toBeGreaterThan(0);
         expect(new URL(calls[0]).pathname).toMatch(/^\/api(\/v1)?\/terminal\/conclusion$/);   // the real address, never /api/api/...
         expect(new URL(calls[0]).searchParams.get("symbol")).toBe("NIFTY");

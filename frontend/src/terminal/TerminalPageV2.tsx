@@ -34,7 +34,7 @@ import { defaultTerminalApi, type TerminalApi } from "./api";
 import {
   CHOOSER_PANEL_IDS, COLUMNS, DEFAULT_UNDERLYING, EMPTY_PREFS, MAX_HEIGHT, MAX_LAYOUTS, PANELS, PRESETS, PRESET_IDS, activeKey, chainHiddenColumns,
   changed, closePanel, equalWidths, fitToScreen, isPreset, layoutFor, nameProblem, openPanel, readingOrder, remove, rename, resetToPreset, saveAs,
-  saveOver, sizePanel, switchTo, withConclusion, withoutConclusion, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
+  saveOver, sizePanel, switchTo, PINNED_PANELS, withConclusion, withoutConclusion, withoutWatchlist, type Layout, type PanelId, type PanelPlace, type PhoneTab, type SizeResult, type TerminalPrefs,
 } from "./layoutModel";
 import {
   ChartPanelV2, OrderPanelV2, OrdersPanelV2, BotsPanelV2, PayoffPanelV2, PositionsPanelV2, useTerminalTicket, type Read,
@@ -169,8 +169,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const conclusionOn = features.on("ui_v2") && features.on("terminal") && features.on("terminal_conclusion");
   const shownPanels = useMemo(() => {
     const base = watchOn ? working.panels : withoutWatchlist(working.panels);
-    return conclusionOn ? withConclusion(base, working.preset, isPreset(key)) : withoutConclusion(base);
-  }, [watchOn, conclusionOn, working.panels, working.preset, key]);
+    return conclusionOn ? withConclusion(base) : withoutConclusion(base);
+  }, [watchOn, conclusionOn, working.panels]);
   const openIds = useMemo(() => new Set(shownPanels.filter((x) => x.open).map((x) => x.id)), [shownPanels]);
   const wants = (id: PanelId, phoneTab: PhoneTab) => (narrow ? tab === phoneTab : openIds.has(id));
 
@@ -372,7 +372,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
               .map((id) => ({ value: id, label: PRESETS[id].name, group: "Ready layouts" })),
               ...(count > 0 ? Object.entries(prefs.layouts).map(([id, l]) => ({ value: id, label: l.name, group: "Your layouts" })) : [])]}
             panels={<PanelsMenu panels={shownPanels} onToggle={(id, on) => setPanels(on ? openPanel(shownPanels, id) : closePanel(shownPanels, id))}
-              onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} hide={conclusionOn ? undefined : "conclusion"} />}
+              onPanels={setPanels} ids={watchOn ? CHOOSER_PANEL_IDS : CHOOSER_PANEL_IDS.filter((id) => id !== "watchlist")} hide="conclusion" />}
             onSave={save} onSaveAs={() => setAsk({ kind: "save-as", value: "" })} onRename={() => own && setAsk({ kind: "rename", value: own.name })}
             onDelete={() => void del()} onReset={() => setWorking(resetToPreset(working))} resetTitle={`Back to the ${PRESETS[working.preset].name} layout`} />
         </div>} />
@@ -424,7 +424,7 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
       ) : (
         <div data-tour="terminal-panels">
           <TerminalGridV2 panels={shownPanels} preset={working.preset} ready={watchOn ? undefined : withoutWatchlist(PRESETS[working.preset].panels)} onChange={setPanels} onClose={(id) => setPanels(closePanel(shownPanels, id))}
-            render={(place) => panel(place.id, place)} title={title} />
+            render={(place) => panel(place.id, place)} title={title} pinned={conclusionOn ? PINNED_PANELS : undefined} />
         </div>
       )}
 

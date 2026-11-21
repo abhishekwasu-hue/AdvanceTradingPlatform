@@ -757,3 +757,5 @@ each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
 (B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
 his switch alone.
+| 2026-11-21 | "Ho" | Yes to the three open defaults of the last report: (1) make atp-private private again (superseded minutes later, next row); (2) the Terminal Conclusion panel is approved (he turns `terminal_conclusion` on after the deploy and checks it); (3) `strategy_chart` and `discipline_engine` ON (his own admin switches) |
+| 2026-11-21 | "Sadhya public rahu de" | atp-private stays PUBLIC for now (given after the warning that the engine, reader, Method Pack and Trade vision code are world-visible while it is public); supersedes point (1) of "Ho" |

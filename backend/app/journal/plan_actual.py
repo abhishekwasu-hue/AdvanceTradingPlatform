@@ -7,7 +7,8 @@ the plan (no default exit level, no reward:risk rule). Every line describes; non
 """
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from app.journal.detectors import is_trader_exit
 from app.journal.review import advice_in

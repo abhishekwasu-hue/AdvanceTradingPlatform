@@ -765,3 +765,10 @@ his switch alone.
 Note: "do the next work" - continue in roadmap order. TERM-CON, CP-CHAT and BT-DRAW 2c wait only on the owner's deploy
 and checks; SRV2 P3 has its own running session; the next build item is CA-CHAT (approved 18 Nov, OPEN_QUESTIONS
 CA-CHAT-Q1): audit Analyze a chart first, then build behind a flag (branch claude/ca-chat).
+## 21 Nov - TERM-CON follow-up (strategy timeframes)
+
+Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal chart's timeframe - add his strategies' timeframes too? Default: yes, in a small next PR"):
+
+> "Ho"
+
+Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).

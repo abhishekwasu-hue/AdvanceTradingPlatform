@@ -210,3 +210,22 @@ def test_values_for_page_is_used_when_the_package_has_it_and_the_strike_sign_rou
             page = await R.get_srv2_settings("NIFTY", me, s)
             assert {f["key"]: f["value"] for f in page["fields"]}["itm_points"] == 3
     _run(go())
+
+
+def test_srv2_q8_the_stored_row_reaches_a_validate_that_takes_it(monkeypatch):
+    seen = []
+
+    class WithStored(FakeSettings):
+        def validate(self, symbol, values, stored=None):
+            seen.append(dict(stored or {}))
+            return dict(values), {}
+    loader.set_for_tests(_bot(WithStored()))
+    me = _owner(monkeypatch)
+
+    async def go():
+        async with _session_factory() as s:
+            await store.save_row(s, FakeSettings.STRATEGY_KEY, "NIFTY", {"count": 4})
+            await s.commit()
+            await R.put_srv2_settings("NIFTY", R.Srv2SettingsBody(values={"count": 5}), me, s)
+    _run(go())
+    assert len(seen) == 1 and seen[0]["count"] == 4                 # the stored row; an older two-argument validate still works

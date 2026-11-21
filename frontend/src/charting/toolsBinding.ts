@@ -21,9 +21,13 @@ export interface ToolEngine {
   pricePaneHeight?(): number | null;
   addDrawing(id: string, drawing: DrawingV1): void;
   removeDrawing(id: string): void;
+  /** The selected drawing's anchor handles (optional: an engine without it shows no handles). */
+  setSelectedDrawing?(id: string | null): void;
 }
 
-export interface PointerLike { clientX: number; clientY: number; button?: number; pointerId?: number; preventDefault(): void; stopPropagation?(): void }
+export interface PointerLike {
+  clientX: number; clientY: number; button?: number; pointerId?: number; pointerType?: string; preventDefault(): void; stopPropagation?(): void;
+}
 export interface KeyLike { key: string; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean; target?: unknown; preventDefault(): void }
 
 type Listener<E> = (event: E) => void;
@@ -33,6 +37,8 @@ export interface Surface {
   getBoundingClientRect(): { left: number; top: number };
   setPointerCapture?(id: number): void;
   releasePointerCapture?(id: number): void;
+  /** The pointer's look over a drawing (move / pointer); optional (a test surface may have none). */
+  style?: { cursor: string };
 }
 export interface KeySource {
   addEventListener(type: "keydown", fn: Listener<KeyLike>): void;
@@ -40,7 +46,12 @@ export interface KeySource {
 }
 
 export const PREVIEW_ID = "__preview";
-const SELECTED_EXTRA_WIDTH = 1;
+/** Touch (owner 21 Nov, "like TradingView"): a finger held this long on a drawing selects it without moving it, so a
+ * phone reaches the selection toolbar; a finger moving less than `TOUCH_SLOP` pixels is still a tap, not a drag; a
+ * finger hits a drawing within `TOUCH_TOLERANCE` pixels (a mouse within the default 6). */
+export const LONG_PRESS_MS = 500;
+export const TOUCH_SLOP = 8;
+export const TOUCH_TOLERANCE = 14;
 const drawingId = (key: string) => `d:${key}`;
 /** Owner 14 Nov (drawing tools on every chart window): several charts can be bound at once (the Terminal's chart and its
  * chart sheet, an option's CE and PE). The keys go to the chart last pressed on, or whose tool was last picked; before
@@ -53,10 +64,11 @@ function typing(target: unknown): boolean {
   return !!t && (t.isContentEditable === true || ["INPUT", "TEXTAREA", "SELECT"].includes(String(t.tagName ?? "").toUpperCase()));
 }
 
-/** The drawing as shown: the selected one a little bolder (never saved that way). */
+/** The drawing as shown. A selected drawing keeps its own colour and width: the engine's anchor handles mark the
+ * selection (`setSelectedDrawing`), so the line is seen exactly as it will be saved. */
 export function shown(d: DrawingV1, selected: boolean): DrawingV1 {
-  if (!selected) return d;
-  return { ...d, style: { ...d.style, width: Math.min(6, (d.style?.width ?? 1) + SELECTED_EXTRA_WIDTH) } };
+  void selected;
+  return d;
 }
 
 /**
@@ -71,6 +83,13 @@ export function shown(d: DrawingV1, selected: boolean): DrawingV1 {
 export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: Surface, keys: KeySource): () => void {
   let dragging = false;
   let drawn = new Set<string>();
+  // touch: where the finger went down (moves within the slop are not a drag yet), the long-press timer, and a held press
+  // that selected without moving (its moves are ignored until the finger lifts)
+  let touchStart: { x: number; y: number } | null = null;
+  let pressTimer: ReturnType<typeof setTimeout> | null = null;
+  let held = false;
+  let cursor = "";
+  ctl.useBarTimes(() => engine.candleTimes());
 
   const local = (e: PointerLike) => {
     const r = surface.getBoundingClientRect();
@@ -102,10 +121,29 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
     }
     for (const id of drawn) if (!next.has(id)) engine.removeDrawing(id);
     drawn = next;
+    const sel = v.selected != null ? drawingId(v.selected) : null;
+    engine.setSelectedDrawing?.(sel != null && next.has(sel) ? sel : null);
   };
   const unsubscribe = ctl.subscribe(render);
 
+  const setCursor = (next: string) => {
+    if (next === cursor || !surface.style) return;
+    cursor = next;
+    surface.style.cursor = next;
+  };
+  const clearPress = () => {
+    if (pressTimer != null) clearTimeout(pressTimer);
+    pressTimer = null;
+    touchStart = null;
+  };
   const stopDrag = (e?: PointerLike) => {
+    clearPress();
+    if (held) {
+      held = false;
+      engine.setPanning(true);
+      if (e?.pointerId != null) surface.releasePointerCapture?.(e.pointerId);
+      return;
+    }
     if (!dragging) return;
     dragging = false;
     engine.setPanning(true);
@@ -125,7 +163,8 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
     }
     const conv = engine.paneConverters();
     const { x, y } = local(e);
-    const hit = conv ? hitTest(ctl.view().drawings, conv, x, y) : null;
+    const touch = e.pointerType === "touch";
+    const hit = conv ? hitTest(ctl.view().drawings, conv, x, y, touch ? TOUCH_TOLERANCE : undefined) : null;
     if (!hit) {
       ctl.select(null);
       return;
@@ -136,18 +175,50 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
       dragging = true;
       engine.setPanning(false);
       if (e.pointerId != null) surface.setPointerCapture?.(e.pointerId);
+      if (touch) {
+        clearPress();
+        touchStart = { x: e.clientX, y: e.clientY };
+        // held still: the drawing stays selected and does not move (the drag ends without a change: nothing is saved)
+        pressTimer = setTimeout(() => {
+          pressTimer = null;
+          touchStart = null;
+          if (!dragging) return;
+          dragging = false;
+          held = true;
+          void ctl.endDrag();
+        }, LONG_PRESS_MS);
+      }
     }
   };
+  const hover = (e: PointerLike) => {
+    const v = ctl.view();
+    const conv = v.tool || belowPricePane(e) ? null : engine.paneConverters();
+    if (!conv) { setCursor(""); return; }
+    const { x, y } = local(e);
+    const hit = hitTest(v.drawings, conv, x, y);
+    const locked = hit ? v.drawings.find((d) => d.key === hit.key)?.locked : false;
+    setCursor(!hit ? "" : locked || hit.handle != null ? "pointer" : "move");
+  };
   const move = (e: PointerLike) => {
+    if (held) return;
     const pt = point(e);
     if (dragging) {
+      if (touchStart) {                       // a finger still within the slop: a tap or a long press, not a drag yet
+        if (Math.hypot(e.clientX - touchStart.x, e.clientY - touchStart.y) < TOUCH_SLOP) return;
+        clearPress();
+      }
       if (pt) ctl.dragTo(pt, engine.candleTimes());
       return;
     }
     ctl.pointerMove(belowPricePane(e) ? null : pt);
+    if (e.pointerType !== "touch") hover(e);
   };
   const up = (e: PointerLike) => stopDrag(e);
-  const leave = () => { if (!dragging) ctl.pointerMove(null); };
+  const leave = () => {
+    if (dragging || held) return;
+    ctl.pointerMove(null);
+    setCursor("");
+  };
 
   const key = (e: KeyLike) => {
     if (typing(e.target) || (lastSurface.has(keys) && lastSurface.get(keys) !== surface)) return;
@@ -176,8 +247,11 @@ export function bindTools(engine: ToolEngine, ctl: DrawingController, surface: S
     surface.removeEventListener("pointercancel", up);
     surface.removeEventListener("pointerleave", leave);
     keys.removeEventListener("keydown", key);
+    engine.setSelectedDrawing?.(null);
     for (const id of drawn) engine.removeDrawing(id);
     drawn = new Set();
-    if (dragging) engine.setPanning(true);
+    clearPress();
+    if (dragging || held) engine.setPanning(true);
+    setCursor("");
   };
 }

@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DrawingV1, StoredDrawing } from "./drawings";
 import { timeToLogical, type Converters } from "./geometry";
 import { DrawingController, logicalToTime, type DrawingsStore } from "./tools";
-import { PREVIEW_ID, bindTools, shown, type KeyLike, type PointerLike, type Surface, type ToolEngine } from "./toolsBinding";
+import { LONG_PRESS_MS, PREVIEW_ID, TOUCH_SLOP, bindTools, shown, type KeyLike, type PointerLike, type Surface, type ToolEngine } from "./toolsBinding";
 
 // One bar every 15 minutes, 10 px per bar; price 100 at y=500, 10 px per rupee. The pane starts 40 px into the
 // element (a left price scale) and the element sits at (100, 50) on the page.
@@ -37,6 +37,7 @@ type Hub = Map<string, ((e: never) => void)[]>;
 function harness(pricePaneHeight: number | null = null, keyHub?: Hub) {
   const drawn = new Map<string, DrawingV1>();
   const panning: boolean[] = [];
+  const selection: (string | null)[] = [];
   const engine: ToolEngine = {
     toData: (x, y) => ({ t: logicalToTime(times, x / 10) as number, p: 100 + (500 - y) / 10 }),
     paneConverters: () => conv,
@@ -46,6 +47,7 @@ function harness(pricePaneHeight: number | null = null, keyHub?: Hub) {
     pricePaneHeight: () => pricePaneHeight,
     addDrawing: (id, d) => { drawn.set(id, d); },
     removeDrawing: (id) => { drawn.delete(id); },
+    setSelectedDrawing: (id) => { if (selection[selection.length - 1] !== id) selection.push(id); },
   };
   const listeners = new Map<string, ((e: never) => void)[]>();
   const add = (type: string, fn: (e: never) => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]);
@@ -56,6 +58,7 @@ function harness(pricePaneHeight: number | null = null, keyHub?: Hub) {
     getBoundingClientRect: () => ({ left: 100, top: 50 }),
     setPointerCapture: (id) => { captured.push(id); },
     releasePointerCapture: (id) => { captured.splice(captured.indexOf(id), 1); },
+    style: { cursor: "" },
   };
   const hub: Hub = keyHub ?? listeners;
   const keys = (keyHub ? Object.assign(keyHub, {
@@ -75,7 +78,7 @@ function harness(pricePaneHeight: number | null = null, keyHub?: Hub) {
   const ctl = new DrawingController(store, "TCS");
   const unbind = bindTools(engine, ctl, surface, keys);
   const settle = () => new Promise((r) => setTimeout(r, 0));
-  return { drawn, panning, listeners, captured, fire, key, store, ctl, unbind, settle, stopped: () => stopped };
+  return { drawn, panning, selection, surface, listeners, captured, fire, key, store, ctl, unbind, settle, stopped: () => stopped };
 }
 
 describe("bindTools", () => {
@@ -91,7 +94,8 @@ describe("bindTools", () => {
     expect(h.drawn.has(PREVIEW_ID)).toBe(false);
     const saved = [...h.store.rows.values()][0];
     expect(saved.drawing.anchors).toEqual([{ t: new Date(times[2] * 1000).toISOString(), p: 100 }, { t: new Date(times[8] * 1000).toISOString(), p: 103 }]);
-    expect(h.drawn.get("d:1")?.style?.width).toBe(2);                    // selected: shown a little bolder
+    expect(h.drawn.get("d:1")?.style?.width).toBeUndefined();            // selected: its own width (handles mark it)
+    expect(h.selection).toEqual([null, "d:1"]);
   });
 
   it("drags a handle with panning off until release, then saves once", async () => {
@@ -206,8 +210,102 @@ describe("bindTools", () => {
 
   it("the selected look never changes the drawing that is saved", () => {
     const d: DrawingV1 = { kind: "hline", anchors: [{ p: 1 }], style: { width: 6 } };
-    expect(shown(d, true).style?.width).toBe(6);
+    expect(shown(d, true)).toBe(d);                                     // owner 21 Nov: no thicker line, handles instead
     expect(shown(d, false)).toBe(d);
     expect(d.style?.width).toBe(6);
   });
+
+  it("owner 21 Nov: the engine shows handles on the selected drawing only, and none after unbind", async () => {
+    const h = harness();
+    h.ctl.setTool("hline");
+    h.fire("pointerdown", 100, 490);
+    await h.settle();
+    expect(h.selection[h.selection.length - 1]).toBe("d:1");
+    h.fire("pointerdown", 100, 100);                                    // empty chart: the selection clears
+    expect(h.selection[h.selection.length - 1]).toBeNull();
+    h.ctl.select("1");
+    expect(h.selection[h.selection.length - 1]).toBe("d:1");
+    h.unbind();
+    expect(h.selection[h.selection.length - 1]).toBeNull();
+  });
+
+  it("owner 21 Nov: the pointer shows move over a drawing, pointer over a handle, nothing elsewhere or while placing", async () => {
+    const h = harness();
+    await h.store.create("TCS", { kind: "trendline", anchors: [{ t: new Date(times[2] * 1000).toISOString(), p: 100 }, { t: new Date(times[10] * 1000).toISOString(), p: 100 }] });
+    await h.ctl.load();
+    h.fire("pointermove", 60, 500);                                     // on the line, between its anchors
+    expect(h.surface.style?.cursor).toBe("move");
+    h.fire("pointermove", 20, 500);                                     // the first anchor
+    expect(h.surface.style?.cursor).toBe("pointer");
+    h.fire("pointermove", 60, 300);
+    expect(h.surface.style?.cursor).toBe("");
+    h.ctl.setTool("hline");
+    h.fire("pointermove", 60, 500);
+    expect(h.surface.style?.cursor).toBe("");
+  });
+
+  describe("touch", () => {
+    afterEach(() => { vi.useRealTimers(); });
+    const touch = { pointerType: "touch" } as const;
+    const line = async (h: ReturnType<typeof harness>) => {
+      await h.store.create("TCS", { kind: "trendline", anchors: [{ t: new Date(times[2] * 1000).toISOString(), p: 100 }, { t: new Date(times[10] * 1000).toISOString(), p: 100 }] });
+      await h.ctl.load();
+    };
+
+    it("a long press selects the drawing and does not move it, even when the finger moves after it", async () => {
+      const h = harness();
+      await line(h);
+      vi.useFakeTimers();
+      h.fire("pointerdown", 60, 500, touch);
+      expect(h.ctl.view().selected).toBe("1");
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+      h.fire("pointermove", 120, 400, touch);                           // after the long press: ignored
+      expect(h.drawn.get("d:1")?.anchors[0].p).toBe(100);
+      h.fire("pointerup", 120, 400, touch);
+      vi.useRealTimers();
+      await h.settle();
+      expect(h.ctl.view().selected).toBe("1");
+      expect(h.store.rows.get(1)?.version).toBe(1);                     // nothing saved
+      expect(h.panning).toEqual([false, true]);
+      expect(h.captured).toEqual([]);
+    });
+
+    it("a small finger jitter is a tap (selects, saves nothing); a real move drags as before", async () => {
+      const h = harness();
+      await line(h);
+      h.fire("pointerdown", 60, 500, touch);
+      h.fire("pointermove", 60 + TOUCH_SLOP / 2, 501, touch);
+      h.fire("pointerup", 60 + TOUCH_SLOP / 2, 501, touch);
+      await h.settle();
+      expect(h.ctl.view().selected).toBe("1");
+      expect(h.store.rows.get(1)?.version).toBe(1);
+      h.fire("pointerdown", 60, 500, touch);
+      h.fire("pointermove", 60, 450, touch);                            // 5 rupees up
+      h.fire("pointerup", 60, 450, touch);
+      await h.settle();
+      expect(h.store.rows.get(1)?.drawing.anchors.map((a) => a.p)).toEqual([105, 105]);
+    });
+
+    it("a finger reaches a drawing a little further away than a mouse", async () => {
+      const h = harness();
+      await line(h);
+      h.fire("pointerdown", 60, 510);                                   // 10 px off: a mouse misses
+      expect(h.ctl.view().selected).toBeNull();
+      h.fire("pointerdown", 60, 510, touch);
+      expect(h.ctl.view().selected).toBe("1");
+    });
+  });
+
+  it("a copy moves in the chart's bars (the binding passes the engine's bar times)", async () => {
+    const h = harness();
+    await line0(h);
+    await h.ctl.duplicate("1");
+    const copy = h.store.rows.get(2)?.drawing;
+    expect(copy?.anchors[0].t).toBe(new Date(times[5] * 1000).toISOString());      // 3 bars later
+  });
 });
+
+async function line0(h: ReturnType<typeof harness>) {
+  await h.store.create("TCS", { kind: "trendline", anchors: [{ t: new Date(times[2] * 1000).toISOString(), p: 100 }, { t: new Date(times[10] * 1000).toISOString(), p: 110 }] });
+  await h.ctl.load();
+}

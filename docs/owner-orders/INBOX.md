@@ -776,3 +776,11 @@ Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal char
 > "Ho"
 
 Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).
+
+Owner answer (21 Nov, transliterated; to "in your own saved layouts the panel does not open by itself - A keep, B add it there too"):
+
+> "Conclusion panel suddha nehmich disla pahije"
+
+Note: option B and more - the Conclusion panel is always shown on the Terminal while `terminal_conclusion` is on: every
+preset (Option seller, Option buyer, Quick trade, Multi-chart) and every saved layout of his; it has no Close button and no
+Panels-menu toggle (it can still be moved and resized); the phone tab stays.

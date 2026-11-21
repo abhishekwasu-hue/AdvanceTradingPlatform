@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
-import type { LayerData, LayerSegment } from "../charting/engine";
+import type { LayerData, LayerLabel, LayerSegment } from "../charting/engine";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { ChartMarker } from "../charting/markers";
 import type { OHLCVBar, Trade } from "../types";
+import { formatPrice } from "../ui/format";
 import ChartV2 from "./ChartV2";
 import { backtestChartPlan, backtestTimeframe } from "./backtestChart";
 import type { StrategyLines } from "./templateLines";
@@ -12,26 +13,44 @@ import { useChartPrefs } from "./useChartPrefs";
 const TRADES_LAYER = "backtest-trades";
 const INVALIDATION_COLOR = "#dc2626";
 
-/** BT-DRAW: each trade's own stop (where its idea is wrong) as a dashed line from its entry to its exit. Pure. */
-export function tradeLayer(trades: readonly Trade[]): LayerData {
+/** BT-DRAW 2d (owner 21 Nov): a drawn stop / area runs this many bars past the exit, so a trade closed on the next bar
+ * still shows them. Display only. */
+export const DRAW_PAST_EXIT_BARS = 10;
+
+/** BT-DRAW: each trade's own stop (where its idea is wrong) as a dashed line from its entry, with its price; 2c: the area a
+ * level-gate template entered from, boxed from its setup bar (else the entry), with its price range. 2d: both run
+ * `DRAW_PAST_EXIT_BARS` bars past the exit on the test's own bars (without bars: to the exit). Pure. */
+export function tradeLayer(trades: readonly Trade[], bars: readonly { timestamp: string }[] = []): LayerData {
   const sec = (iso: string | null) => (iso ? Math.floor(Date.parse(iso) / 1000) : NaN);
+  const times = bars.map((b) => sec(b.timestamp)).filter(Number.isFinite);
+  const past = (t: number) => {
+    const i = times.findIndex((x) => x >= t);
+    return i < 0 || times.length === 0 ? t : Math.max(t, times[Math.min(i + DRAW_PAST_EXIT_BARS, times.length - 1)]);
+  };
   const segments: LayerSegment[] = [];
+  const labels: LayerLabel[] = [];   // at each drawing's right end, away from the entry / exit marker texts
   for (const t of trades) {
     const t1 = sec(t.entry_time), t2 = sec(t.exit_time);
     if (!Number.isFinite(t1) || !Number.isFinite(t2) || !(t.stop_loss > 0)) continue;
-    segments.push({ t1, p1: t.stop_loss, t2, p2: t.stop_loss, color: INVALIDATION_COLOR, width: 1, style: "dashed" });
+    const end = past(t2);
+    segments.push({ t1, p1: t.stop_loss, t2: end, p2: t.stop_loss, color: INVALIDATION_COLOR, width: 1, style: "dashed" });
+    labels.push({ time: end, price: t.stop_loss, text: `Stop ${formatPrice(t.stop_loss)}`, color: INVALIDATION_COLOR,
+                  position: t.direction === "LONG" ? "below" : "above", inside: true });
   }
-  // BT-DRAW 2c: the area a level-gate template entered from, boxed from its setup bar (else the entry) to the exit
   for (const t of trades) {
     const lo = t.setup_area_low, hi = t.setup_area_high;
-    const a = sec(t.setup_time ?? t.entry_time), b = sec(t.exit_time);
-    if (lo == null || hi == null || !(hi >= lo) || !Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const a = sec(t.setup_time ?? t.entry_time), exit = sec(t.exit_time);
+    if (lo == null || hi == null || !(hi >= lo) || !Number.isFinite(a) || !Number.isFinite(exit)) continue;
+    const b = past(exit);
     const role = t.direction === "LONG" ? "demand" : "supply";
-    for (const [t1, p1, t2, p2] of [[a, hi, b, hi], [a, lo, b, lo], [a, lo, a, hi], [b, lo, b, hi]] as const) {
-      segments.push({ t1, p1, t2, p2, role, width: 1, style: "solid" });
+    for (const [x1, p1, x2, p2] of [[a, hi, b, hi], [a, lo, b, lo], [a, lo, a, hi], [b, lo, b, hi]] as const) {
+      segments.push({ t1: x1, p1, t2: x2, p2, role, width: 1, style: "solid" });
     }
+    const long = t.direction === "LONG";
+    labels.push({ time: b, price: long ? hi : lo, text: `Area ${formatPrice(lo)} – ${formatPrice(hi)}`, role,
+                  position: long ? "above" : "below", inside: true });
   }
-  return { segments };
+  return { segments, labels };
 }
 
 /** BT-DRAW 2c: which area sides the test's trades drew (a long's demand, a short's supply), for the legend swatches. Pure. */
@@ -63,7 +82,7 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const plan = useMemo(() => (lines ? { overlays: [], panes: { volume: true, rsi: false }, named: lines.named } : backtestChartPlan(strategyParams)),
     [lines, strategyParams]);
-  const layer = useMemo(() => tradeLayer(trades), [trades]);
+  const layer = useMemo(() => tradeLayer(trades, candles), [trades, candles]);
   const sides = useMemo(() => areaSides(trades), [trades]);
   useEffect(() => {
     if (!engine) return undefined;
@@ -102,7 +121,7 @@ export default function BacktestChartV2({ candles, symbol, timeframe, markers, s
           )}
           {trades.length > 0 && (
             <li className="inline-flex items-center gap-space-1">
-              <span aria-hidden className="inline-block w-4 border-t border-dashed" style={{ borderColor: INVALIDATION_COLOR }} />Each trade&apos;s stop, from entry to exit
+              <span aria-hidden className="inline-block w-4 border-t border-dashed" style={{ borderColor: INVALIDATION_COLOR }} />Each trade&apos;s stop, from its entry
             </li>
           )}
         </ul>

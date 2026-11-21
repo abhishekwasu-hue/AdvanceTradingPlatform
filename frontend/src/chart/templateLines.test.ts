@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OHLCVBar, Trade } from "../types";
 import { exitMarkerText, templateLines, templateParams } from "./templateLines";
-import { areaSides, tradeLayer } from "./BacktestChartV2";
+import { areaSides, DRAW_PAST_EXIT_BARS, tradeLayer } from "./BacktestChartV2";
 
 /** BT-DRAW (owner 18 Nov): the test chart draws the template's own lines only. Made-up bars. */
 const bars: OHLCVBar[] = Array.from({ length: 80 }, (_, i) => {
@@ -74,5 +74,26 @@ describe("trades on the chart say why they closed and where each idea was wrong"
     expect(areaSides([t])).toEqual(["supply"]);
     expect(areaSides([{ ...t, direction: "LONG" }, t])).toEqual(["demand", "supply"]);
     expect(areaSides([{ ...t, setup_area_high: null }])).toEqual([]);
+  });
+  it("a trade closed on the next bar still shows its stop and area: both run past the exit, with their prices (BT-DRAW 2d)", () => {
+    const sec = (i: number) => Math.floor(Date.parse(bars[i].timestamp) / 1000);
+    const t: Trade = { symbol: "DEMO", strategy_id: "x", direction: "LONG", entry_time: bars[30].timestamp, entry_price: 101, quantity: 1,
+      stop_loss: 99.5, target1: 0, target2: null, exit_time: bars[31].timestamp, exit_price: 99.5, exit_reason: "Stop Loss", pnl: -1.5,
+      charges: 0, setup_time: bars[30].timestamp, setup_area_low: 100, setup_area_high: 100.75 };
+    const segs = tradeLayer([t], bars).segments ?? [];
+    const stop = segs.find((x) => x.style === "dashed");
+    expect(stop).toMatchObject({ t1: sec(30), t2: sec(31 + DRAW_PAST_EXIT_BARS) });
+    const box = segs.filter((x) => x.role === "demand");
+    expect(box[0]).toMatchObject({ t1: sec(30), t2: sec(31 + DRAW_PAST_EXIT_BARS) });
+    // the prices sit at each drawing's right end (away from the entry / exit texts): the stop under a long's line,
+    // the area over its box, in the side's colour
+    expect(tradeLayer([t], bars).labels).toEqual([
+      { time: sec(31 + DRAW_PAST_EXIT_BARS), price: 99.5, text: "Stop 99.50", color: expect.any(String), position: "below", inside: true },
+      { time: sec(31 + DRAW_PAST_EXIT_BARS), price: 100.75, text: "Area 100.00 – 100.75", role: "demand", position: "above", inside: true },
+    ]);
+    // near the last bar it stops at the last bar; without bars, at the exit (as before)
+    const late = tradeLayer([{ ...t, entry_time: bars[77].timestamp, setup_time: bars[77].timestamp, exit_time: bars[78].timestamp }], bars);
+    expect(late.segments?.find((x) => x.style === "dashed")?.t2).toBe(sec(79));
+    expect(tradeLayer([t]).segments?.find((x) => x.style === "dashed")?.t2).toBe(sec(31));
   });
 });

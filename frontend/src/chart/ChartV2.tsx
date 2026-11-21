@@ -167,6 +167,7 @@ export default function ChartV2({
   const [insets, setInsets] = useState<PlotInsets | null>(null);
   const [readout, setReadout] = useState<Readout | null>(null);
   const [bandTip, setBandTip] = useState<BandTipState | null>(null);
+  const [topRow, setTopRow] = useState<HTMLDivElement | null>(null);   // the selected drawing's bar keeps clear of it
   const [, , appTheme] = useAppearance();
   const theme = resolveChartTheme(prefs.theme, appTheme);
   const callbacks = useRef({ onLoadOlder, onEngine, onTools, onBandTip });
@@ -293,7 +294,7 @@ export default function ChartV2({
          style={{ backgroundColor: "rgb(var(--chart-bg))" }}>
       <div ref={plotRef} className="h-full w-full" />
       {(overlays.length > 0 || (marketOpen !== undefined && !!live) || readout) && (
-        <div className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
+        <div ref={setTopRow} data-chart-top-row className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
           {marketOpen !== undefined && <span data-label-avoid className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} push={livePush && symbol ? { symbol, exchange } : null} /></span>}
           {overlays.length > 0 && (
             // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
@@ -314,7 +315,7 @@ export default function ChartV2({
           onReset={() => core.resetView()} onLatest={() => core.scrollToLatest()} />
       )}
       {drawingTools && (
-        <DrawingSelectionBar view={tools.view} controller={tools.controller} insets={insets} root={rootRef.current} showMessage={drawingMessage} />
+        <DrawingSelectionBar view={tools.view} controller={tools.controller} insets={insets} root={rootRef.current} avoid={topRow} showMessage={drawingMessage} />
       )}
       {bandTip && (asSheet(bandTip, plotRef.current?.clientWidth ?? 0)
         ? <BandSheet band={bandTip.band} onClose={() => setBandTip(null)} />

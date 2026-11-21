@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { mockCharts, type ChartsCalls } from "./chartsMocks";
 import { mockApi } from "./mockApi";
@@ -11,7 +11,9 @@ import { expectPhoneLayout } from "./phoneLayout";
  * Charts page for the same symbol.
  * Owner 21 Nov: a selected drawing's bar (colour, line, extension, lock, duplicate, delete, close) at 1440 and 390, every
  * change asserted on the request it sends (`calls.drawingPuts` / `drawingLocks` / `drawingDeletes`).
- * DRAW_SHOTS=<dir>: also writes the 1440 and 390 dark screenshots for the owner; no baseline is kept.
+ * DRAW_SHOTS=<dir>: also writes the 1440 and 390 dark screenshots for the owner; no baseline is kept. With it, the
+ * comparison shots (docs/design/chart-drawing-pro/COMPARE.html) run too: a selected trend line at 1440 and 390, light
+ * and dark, named `<DRAW_PHASE>-terminal-<width>-<theme>.png` (DRAW_PHASE "before" on a build without the bar).
  */
 
 const api = (path: string) => new RegExp(`/api(?:/v1)?${path}`);
@@ -28,16 +30,16 @@ const STATUS = {
   kill_switch: { engaged: false, scope: null, message: "New orders are allowed." }, as_of: "2026-10-27T05:00:00Z",
 };
 
-async function open(page: Page) {
+async function open(page: Page, theme: "dark" | "light" = "dark") {
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
-  await page.addInitScript(() => {
+  await page.addInitScript((t) => {
     try {
-      localStorage.setItem("atp_appearance", JSON.stringify({ theme: "dark" }));
+      localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
       localStorage.setItem("atp_install_dismissed", "1");
       localStorage.setItem("atp_page_intro_dismissed:2", JSON.stringify(["terminal", "charts"]));
       localStorage.setItem("atp_chart_embed_hint:1", "seen");
     } catch { /* storage unavailable */ }
-  });
+  }, theme);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: ON, brokers: CONNECTED });
   const calls = await mockCharts(page);
@@ -98,6 +100,18 @@ test.describe("Terminal drawing tools 1440", () => {
   });
 });
 
+/** Owner review 21 Nov: the selected drawing's bar never covers the chart's top-left row (the Open / High / Low / Close
+ * readout while the crosshair is on the chart). */
+async function expectBarClearOfReadout(page: Page, scope: Locator) {
+  const readout = scope.locator("[data-chart-readout]").first();
+  await expect(readout).toBeVisible();
+  const toolbar = scope.locator("[data-drawing-selection-bar] [role='toolbar']");
+  await expect.poll(async () => {
+    const [r, b] = [(await readout.boundingBox())!, (await toolbar.boundingBox())!];
+    return r.x < b.x + b.width && r.x + r.width > b.x && r.y < b.y + b.height && r.y + r.height > b.y;
+  }).toBe(false);
+}
+
 /** Owner 21 Nov ("selected drawing i cant delete or move so make it like tradingview"): the selected drawing's bar. */
 const barOf = (page: Page) => page.locator("[data-drawing-selection-bar]");
 const anchorsOf = (put: { drawing: Record<string, unknown> }) => JSON.stringify(put.drawing.anchors);
@@ -137,6 +151,9 @@ test.describe("Terminal drawing selection bar 1440", () => {
     const toolbar = bar.getByRole("toolbar", { name: "Trend line settings" });
     expect(await toolbar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual([
       "Colour", "Line width and style", "Extend the line", "Lock", "Duplicate", "Delete", "Close"]);
+    await page.mouse.move(mid.x + 20, mid.y + 60);                                       // crosshair on: the readout shows
+    await expectBarClearOfReadout(page, chartOf(page));
+    await shot(page, "after-terminal-bar", 1440);
     // Clear of the price axis: the bar ends left of the chart's right edge.
     const plotRight = box.x + box.width;
     expect((await toolbar.boundingBox())!.x + (await toolbar.boundingBox())!.width).toBeLessThan(plotRight - 40);
@@ -259,3 +276,45 @@ test.describe("Terminal drawing tools 390", () => {
     await shot(page, "after-terminal-draw-menu", 390);
   });
 });
+
+// The comparison page's Terminal shots (only with DRAW_SHOTS): a trend line drawn and selected; where the bar exists it is
+// restyled from the bar (the second swatch, width 3), as on the Charts page shots.
+for (const [width, height, phone] of [[1440, 900, false], [390, 844, true]] as const) {
+  test.describe(`Terminal drawing comparison shots ${width}`, () => {
+    test.use(phone ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+    for (const theme of ["light", "dark"] as const) {
+      test(`selected trend line (${theme})`, async ({ page }) => {
+        test.skip(!SHOTS, "only for the comparison page (DRAW_SHOTS)");
+        const calls = await open(page, theme);
+        const chart = chartOf(page);
+        if (phone) {
+          const tab = page.getByRole("tab", { name: "Chart" });
+          if (await tab.count()) await tab.first().click();
+          await chart.getByRole("button", { name: "Drawing tools" }).click();
+          await page.getByRole("dialog", { name: "Drawing tools" }).getByRole("button", { name: "Trend line" }).click();
+        } else {
+          await chart.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Trend line" }).click();
+        }
+        const box = (await chart.locator(".tv-lightweight-charts").first().boundingBox())!;
+        await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.55);
+        await page.mouse.click(box.x + box.width * 0.65, box.y + box.height * 0.25);
+        await expect.poll(() => calls.drawingPosts.length).toBe(1);
+        const bar = barOf(page);
+        if (await bar.count()) {
+          await bar.getByRole("button", { name: "Colour" }).click();
+          await bar.getByRole("dialog", { name: "Colour" }).locator("[data-swatch]").nth(1).click();
+          await expect.poll(() => calls.drawingPuts.length).toBe(1);
+          await bar.getByRole("button", { name: "Line width and style" }).click();
+          await bar.getByRole("radio", { name: "Width 3" }).click();
+          await expect.poll(() => calls.drawingPuts.length).toBe(2);
+          await page.keyboard.press("Escape");
+          await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        }
+        if (phone) await chart.scrollIntoViewIfNeeded();
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: `${SHOTS}/${process.env.DRAW_PHASE ?? "after"}-terminal-${width}-${theme}.png`, animations: "disabled" });
+      });
+    }
+  });
+}

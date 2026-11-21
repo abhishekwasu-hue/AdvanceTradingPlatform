@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { api, mockCharts, type ChartsCalls, type ChartsMocks } from "./chartsMocks";
 import { mockApi } from "./mockApi";
 import { readCards, textBudgetProblems, visibleWords } from "./textBudget";
@@ -1295,6 +1295,18 @@ async function drawRestyled(page: Page, calls: ChartsCalls, phone: boolean) {
   return bar;
 }
 
+/** Owner review 21 Nov: the selected drawing's bar never covers the chart's top-left row (the Open / High / Low / Close
+ * readout while the crosshair is on the chart). */
+async function expectBarClearOfReadout(page: Page, scope: Locator) {
+  const readout = scope.locator("[data-chart-readout]").first();
+  await expect(readout).toBeVisible();
+  const toolbar = scope.locator("[data-drawing-selection-bar] [role='toolbar']");
+  await expect.poll(async () => {
+    const [r, b] = [(await readout.boundingBox())!, (await toolbar.boundingBox())!];
+    return r.x < b.x + b.width && r.x + r.width > b.x && r.y < b.y + b.height && r.y + r.height > b.y;
+  }).toBe(false);
+}
+
 test.describe("v2 Charts 1440: the selected drawing's bar", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -1304,6 +1316,10 @@ test.describe("v2 Charts 1440: the selected drawing's bar", () => {
       await chartReady(page);
       const bar = await drawRestyled(page, calls, false);
       await expect(bar).toBeVisible();
+      const box = (await chartPlot(page).boundingBox())!;
+      await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.7);
+      await expectBarClearOfReadout(page, page.locator("[data-page='charts-v2']"));
+      await page.mouse.move(0, 0);
       if (SHOTS_DIR) await page.screenshot({ path: `${SHOTS_DIR}/after-charts-1440-${theme}.png`, animations: "disabled" });
       await expect(page.locator("[data-tour='charts-chart']")).toHaveScreenshot(`charts-v2-drawing-bar-1440-${theme}.png`, SHOT);
     });

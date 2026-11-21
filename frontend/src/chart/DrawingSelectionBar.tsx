@@ -1,5 +1,5 @@
 import { ArrowLeftRight, Check, Copy, Lock, LockOpen, Trash2, Type, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { DrawingStyle } from "../charting/drawings";
 import { styleOf, type DrawingController, type ToolView } from "../charting/tools";
 import { cx } from "../components/primitives/cx";
@@ -12,8 +12,9 @@ import { EXTEND_OPTIONS, LINE_STYLES, WIDTHS, drawingSettings, shownColour, swat
 /**
  * Owner 21 Nov ("selected drawing i cant delete or move so make it like tradingview"): the floating bar of the
  * selected drawing, as pro charting apps have it - colour, line (width and style), extension, text, lock, copy, delete,
- * close. It sits over the chart's top, clear of the price axis (from md); on a phone it docks above the chart's bottom
- * controls. Each change is one `edit` (one undo step); delete asks nothing (Undo brings it back). Only the settings the
+ * close. From md it sits at the chart's top right, clear of the price axis, and steps down below the chart's top-left
+ * row (live chip, legend, the Open / High / Low / Close readout) whenever that row would reach under it, so both stay
+ * visible; on a phone it docks above the chart's bottom controls. Each change is one `edit` (one undo step); delete asks nothing (Undo brings it back). Only the settings the
  * drawing's kind shows are offered (drawingSelection.ts). Nothing here touches an order.
  */
 export interface DrawingSelectionBarProps {
@@ -22,6 +23,8 @@ export interface DrawingSelectionBarProps {
   insets: PlotInsets | null;
   /** The chart's root (its `data-chart-theme`), for the theme's swatches. */
   root: Element | null;
+  /** The chart's top-left row (live chip, legend, crosshair readout): the bar never covers it (from md). */
+  avoid?: Element | null;
   /** The controller's message (locked, not saved) as a short line under the bar; off where the page shows it. */
   showMessage?: boolean;
 }
@@ -31,6 +34,9 @@ type Panel = "colour" | "line" | "extend" | "text" | null;
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const btn = (on = false) => cx("inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-space-1 rounded-control px-space-1 md:min-h-9 md:min-w-9",
   "disabled:opacity-40 disabled:hover:bg-transparent", focus, on ? "bg-surface-3 text-fg ring-1 ring-brand" : "text-fg-muted hover:bg-surface-2 hover:text-fg");
+/** The bar's top from md (px): the chart's top padding, and the gap kept under the top-left row. */
+const BAR_TOP = 8;
+const BAR_GAP = 6;
 const DASH: Record<NonNullable<DrawingStyle["line"]>, string> = { solid: "border-solid", dashed: "border-dashed", dotted: "border-dotted" };
 
 /** A short line in the drawing's width and style, in the current text colour (the Line button and its choices). */
@@ -42,7 +48,7 @@ function Swatch({ colour, size = 16 }: { colour: string; size?: number }) {
   return <span aria-hidden className="inline-block shrink-0 rounded-pill border border-subtle" style={{ width: size, height: size, backgroundColor: colour }} />;
 }
 
-export function DrawingSelectionBar({ view, controller, insets, root, showMessage = true }: DrawingSelectionBarProps) {
+export function DrawingSelectionBar({ view, controller, insets, root, avoid = null, showMessage = true }: DrawingSelectionBarProps) {
   const sel = view?.selected && !view.tool ? controller?.selectedDrawing() ?? null : null;
   const [panel, setPanel] = useState<Panel>(null);
   const [draft, setDraft] = useState("");
@@ -51,6 +57,7 @@ export function DrawingSelectionBar({ view, controller, insets, root, showMessag
   const triggers = useRef<Partial<Record<NonNullable<Panel>, HTMLButtonElement | null>>>({});
   const custom = useRef<HTMLInputElement>(null);
   const panelId = useId();
+  const [top, setTop] = useState(BAR_TOP);
   const key = sel?.key ?? null;
 
   useEffect(() => { setPanel(null); setDraftProblem(null); }, [key]);
@@ -68,6 +75,26 @@ export function DrawingSelectionBar({ view, controller, insets, root, showMessag
     input.addEventListener("change", onChange);
     return () => input.removeEventListener("change", onChange);
   }, [panel, key, controller]);
+
+  // From md: top right; below the top-left row when that row reaches under the bar (it grows with the readout).
+  useLayoutEffect(() => {
+    const bar = ref.current;
+    if (!bar || !root) return undefined;
+    const place = () => {
+      const r = avoid?.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      const base = root.getBoundingClientRect().top;
+      const clash = !!r && r.width > 0 && r.left < b.right && r.right > b.left && r.bottom > base + BAR_TOP;
+      setTop(clash ? Math.ceil(r.bottom - base) + BAR_GAP : BAR_TOP);
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(place);
+    ro.observe(bar);
+    if (avoid) ro.observe(avoid);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, [key, avoid, root]);
 
   if (!sel || !controller || !view) return null;
   const { drawing, locked } = sel;
@@ -109,13 +136,13 @@ export function DrawingSelectionBar({ view, controller, insets, root, showMessag
     </button>
   );
 
-  const vars = { "--bar-right": `${insets?.right ?? 0}px`, "--bar-bottom": `${(insets?.bottom ?? 0) + 60}px` } as CSSProperties;
+  const vars = { "--bar-top": `${top}px`, "--bar-right": `${insets?.right ?? 0}px`, "--bar-bottom": `${(insets?.bottom ?? 0) + 60}px` } as CSSProperties;
   const choice = (on: boolean) => cx("inline-flex min-h-11 items-center justify-center gap-space-1 rounded-control px-space-2 text-t13 md:min-h-9", focus,
     on ? "bg-surface-3 font-semibold text-fg ring-1 ring-brand" : "text-fg hover:bg-surface-2");
 
   return (
     <div data-drawing-selection-bar={drawing.kind} style={vars}
-      className="pointer-events-none absolute inset-x-0 bottom-[var(--bar-bottom)] z-30 flex justify-center px-space-1 md:bottom-auto md:right-[var(--bar-right)] md:top-space-2">
+      className="pointer-events-none absolute inset-x-0 bottom-[var(--bar-bottom)] z-30 flex justify-center px-space-1 md:bottom-auto md:right-[var(--bar-right)] md:top-[var(--bar-top)] md:justify-end md:px-space-2">
       <div ref={ref} onKeyDown={onKey} className="pointer-events-auto relative max-w-full">
         <div role="toolbar" aria-label={`${name} settings`} aria-orientation="horizontal"
           className="flex max-w-full items-center gap-0 overflow-x-auto rounded-panel border border-subtle bg-surface-1 p-space-1 md:gap-space-1 text-t13 text-fg shadow-raised">
@@ -143,7 +170,7 @@ export function DrawingSelectionBar({ view, controller, insets, root, showMessag
 
         {panel && (
           <div id={panelId} role="dialog" aria-label={panel === "colour" ? "Colour" : panel === "line" ? "Line width and style" : panel === "extend" ? "Extend the line" : "Edit the text"}
-            className="absolute bottom-full left-1/2 z-30 mb-space-1 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg shadow-raised md:bottom-auto md:top-full md:mb-0 md:mt-space-1">
+            className="absolute bottom-full left-1/2 z-30 mb-space-1 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg shadow-raised md:bottom-auto md:left-auto md:right-0 md:top-full md:mb-0 md:mt-space-1 md:translate-x-0">
             {panel === "colour" && (
               <div className="flex flex-wrap items-center gap-space-1">
                 {swatchColours(palette).map((c) => (

@@ -950,3 +950,18 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | M95-Q6 | FAQ "cost" with no price decided | "Free during the beta." until Abhi sets a price |
 | M95-Q7 | WhatsApp / Telegram preview proof before deploy | Render at their sizes now; Abhi's real screenshot after deploy |
 
+
+## Moved 21 Nov 2026 (decided) - JV2: Journal v2 (P2-8, docs/plans/journal-v2-PLAN.md)
+| ID | Question | Default (provisional, built) | Status |
+|---|---|---|---|
+| JV2-Q1 | Broker-app sync: when? | Daily 15:45 IST + a button; read-only | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q2 | Synced trades: where? | Outside-ATP entries "From your broker" | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q3 | Chart picture: when stored? | First draw, 30 min after the moment | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q4 | Check-in prompt: where? | Journal card; Telegram / e-mail if on | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q5 | Feelings list | The order's 7; editable | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q6 | First review | After 20 closed (setting); counts before | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q7 | Monthly export | A print-friendly page | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q8 | First-20 rule: Stats tab too? | Reviews only; Stats keeps its numbers | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q9 | Journal opens on? | Today (a trade / week link opens its tab) | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+| JV2-Q10 | Delivery times | Daily 17:00 IST, weekly Sat 09:00, monthly 1st; editable | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
+

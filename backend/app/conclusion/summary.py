@@ -1,4 +1,6 @@
 """TERM-CON C4 (plan 3.4): an optional AI summary of the Conclusion read, on tap only (TC-Q3), on the user's own key.
+Owner 21 Nov ("too much theoretical and boaring"): a glance, not prose - at most 3 lines of at most 8 words, only what stands
+out (the panel shows each "- " line as one row).
 
 The model sees ONLY the deterministic read (the glance and every shown line) - no new data. Its words pass the same
 checks as the Copilot's: every number and symbol must be in those facts (`copilot.grounded`), the output filter, the
@@ -10,10 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
-SUMMARY_PROMPT = """You describe a trading terminal's readings for one symbol to the trader who owns them.
-Write 3 to 5 short sentences in plain English: what the readings agree on, what conflicts, and what needs the trader's
-attention. Describe only. Never recommend, never say what to do, never name an entry, exit, target or stop, never use the
-words buy, sell, target, stop or stop-loss. Use only numbers and symbols that appear in the FACTS.
+SUMMARY_PROMPT = """You write a glance for an experienced trader about his terminal's readings for one symbol.
+At most 3 lines, each starting with "- ", each at most 8 words, numbers first. Only what stands out: a conflict, something
+that needs him, an unusual number. Skip every fact that says nothing (zero, none, quiet, no change, no conflict, allowed).
+If nothing stands out, write one line: "- Nothing stands out". No explanations, no full sentences, no theory.
+Describe only. Never recommend, never say what to do, never name an entry, exit, target or stop, never use the words buy,
+sell, target, stop or stop-loss. Use only numbers and symbols that appear in the FACTS.
 === FACTS ===
 {facts}"""
 QUESTION = "Summarise these readings."
@@ -55,7 +59,7 @@ async def summarize(provider: Any, body: dict[str, Any]) -> tuple[str | None, st
     why = "provider returned no text"
     for _attempt in range(2):
         try:
-            text = (await provider.complete(system, user, max_tokens=400)).strip()
+            text = (await provider.complete(system, user, max_tokens=120)).strip()
         except Exception as exc:  # noqa: BLE001 - the rule lines are always there
             return None, f"provider error: {type(exc).__name__}"
         if not text:

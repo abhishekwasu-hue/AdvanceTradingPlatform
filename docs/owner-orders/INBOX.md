@@ -778,6 +778,13 @@ Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal char
 Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).
 | 2026-11-21 | "Pending job purn kr" | Finish the pending work: for this session SRV2 P2 (per-symbol settings page under one button), P4 (the bot's positions shown read-only in ATP; exits stay Trade's own code, SRV2-Q1 A) and P5 (parity on a Trade replay day + screenshots); P2-8 Journal v2 is already built by another session (#1147 / #1148 / #1150, waiting for the owner's ✅) |
 
+Owner answer (21 Nov, transliterated; to "in your own saved layouts the panel does not open by itself - A keep, B add it there too"):
+
+> "Conclusion panel suddha nehmich disla pahije"
+
+Note: option B and more - the Conclusion panel is always shown on the Terminal while `terminal_conclusion` is on: every
+preset (Option seller, Option buyer, Quick trade, Multi-chart) and every saved layout of his; it has no Close button and no
+Panels-menu toggle (it can still be moved and resized); the phone tab stays.
 ## 21 Nov - owner (English; answer to the P2-8 Journal v2 report: three draft PRs #1147 / #1148 / #1150, CI green, questions JV2-Q1..Q10 with defaults)
 
 > "Default yes and go ahead"
@@ -809,3 +816,4 @@ under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ t
 
 Note: BT-DRAW 2d. The stop is the template's own invalidation (the area's far edge, past the extreme since the visit, by
 "Buffer beyond the far edge" - template card > Settings and rules); no logic change.
+| 2026-11-21 | (Terminal Conclusion screenshot: the AI summary paragraph) "too much theoretical and boaring" | The Conclusion AI summary becomes a glance: at most 3 short lines (at most 8 words each, numbers first), only what stands out (conflicts, what needs him, unusual numbers); facts that say nothing are skipped; one line "Nothing stands out" when nothing does; a one-line footer |

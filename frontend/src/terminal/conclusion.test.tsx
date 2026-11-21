@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ConclusionViewV2, SummaryV2 } from "./ConclusionPanelV2";
+import { ConclusionViewV2, SummaryV2, summaryLines } from "./ConclusionPanelV2";
 import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, strategyTimeframes, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
-import { CHOOSER_PANEL_IDS, PANEL_IDS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
+import { CHOOSER_PANEL_IDS, PANEL_IDS, PINNED_PANELS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
 import pageSource from "./TerminalPageV2.tsx?raw";
 import panelSource from "./ConclusionPanelV2.tsx?raw";
+import gridSource from "./TerminalGridV2.tsx?raw";
 
 const BODY: Conclusion = {
   symbol: "NIFTY", expiry: "2026-11-26", tf: "15m", as_of: "2026-11-20T05:00:00+00:00", fingerprint: "f1",
@@ -72,23 +73,28 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     expect(segments({ up: 1, down: 1, range: 1, none: 1, total: 4 })).toEqual(["up", "down", "range", "none"]);
   });
 
-  it("the layout: a panel id, opened on Option seller and Quick trade while the flag is on, never in a saved layout, a phone tab after Chart", () => {
+  it("the layout: always open on every layout while the flag is on (owner 21 Nov), no Close and no menu toggle; a phone tab after Chart", () => {
     expect(PANEL_IDS).toContain("conclusion");
     expect(CHOOSER_PANEL_IDS).toContain("conclusion");
-    for (const id of ["option_seller", "quick_trade"] as const) {
+    for (const id of ["option_seller", "option_buyer", "quick_trade", "multi_chart"] as const) {
       expect(PRESETS[id].panels.some((x) => x.id === "conclusion")).toBe(false);          // the presets' own geometry is unchanged
-      const shown = withConclusion(presetLayout(id).panels, id, true);
+      const shown = withConclusion(presetLayout(id).panels);
       expect(shown.find((x) => x.id === "conclusion")?.open).toBe(true);
       expect(layoutProblem(shown)).toBeNull();
       expect(withoutConclusion(shown).find((x) => x.id === "conclusion")?.open).toBe(false);
-      expect(withConclusion(presetLayout(id).panels, id, false).some((x) => x.id === "conclusion")).toBe(false);   // his own layout
     }
-    expect(withConclusion(presetLayout("option_buyer").panels, "option_buyer", true).some((x) => x.id === "conclusion")).toBe(false);
+    // his own saved layout with the panel stored closed: shown open again
+    const saved = withConclusion(presetLayout("option_seller").panels).map((x) => (x.id === "conclusion" ? { ...x, open: false } : x));
+    expect(withConclusion(saved).find((x) => x.id === "conclusion")?.open).toBe(true);
+    expect(PINNED_PANELS).toEqual(["conclusion"]);
     expect(phoneTabs(false, true).map((t) => t.key).slice(0, 2)).toEqual(["chart", "conclusion"]);
     expect(phoneTabs(false).map((t) => t.key)).not.toContain("conclusion");
     expect(pageSource).toMatch(/features\.on\("terminal_conclusion"\)/);
-    expect(pageSource).toMatch(/hide=\{conclusionOn \? undefined : "conclusion"\}/);
+    expect(pageSource).toMatch(/hide="conclusion"/);
+    expect(pageSource).toMatch(/pinned=\{conclusionOn \? PINNED_PANELS : undefined\}/);
+    expect(gridSource).toMatch(/!pinned\.includes\(place\.id\)/);
   });
+
 
   it("C3: one timer to the next bar close (NSE bars from 09:15 IST) and the next OI slot - never an interval", () => {
     const at = (iso: string) => Date.parse(iso);
@@ -110,10 +116,12 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     const ask = renderToStaticMarkup(<SummaryV2 busy={false} result={null} failed={false} onAsk={() => undefined} />);
     expect(ask).toContain("Summarise with AI");
     const done = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
-      result={{ ready: true, text: "Most readings lean up.", reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 80, cost_inr: 0.42 } }} />);
-    expect(done).toContain("Most readings lean up.");
-    expect(done).toContain("This summary cost ₹0.42 on your AI key.");
-    expect(done).toContain("Information only, not advice.");
+      result={{ ready: true, text: "- Most readings lean up\n- Expiry in 2 sessions", reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 80, cost_inr: 0.42 } }} />);
+    expect(done).toContain("Most readings lean up");
+    expect((done.match(/<li/g) ?? []).length).toBe(2);                      // owner 21 Nov: a glance, one line per point
+    expect(done).toContain("AI · information only · ₹0.42 on your AI key");
+    expect(summaryLines("- a\n- b\n- c\n- d")).toEqual(["a", "b", "c"]);
+    expect(summaryLines("One plain reply.")).toEqual(["One plain reply."]);
     const nokey = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
       result={{ ready: false, text: null, reason: "Connect your own AI key in Settings to get a summary.", usage: null }} />);
     expect(nokey).toContain("Connect your own AI key");

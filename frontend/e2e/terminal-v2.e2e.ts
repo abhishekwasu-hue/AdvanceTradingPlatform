@@ -1957,7 +1957,7 @@ const conclusionRoute = (calls: string[]) => async (page: Page) => {
     last_error: null, consecutive_failures: 0, open_positions: 0, created_by: null, created_at: NOW }] }));
   // C4: the summary on tap (made-up words; the server checks real ones).
   await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\/summary$/, (r) => { calls.push(`POST ${r.request().url()}`); return r.fulfill({ json: {
-    ready: true, text: "Most readings lean up: the 15-minute structure, OI and your signals agree. Your positions point the other way, and one order was not placed today.",
+    ready: true, text: "- Most readings lean up: 3 of 4\n- Your positions point the other way\n- 1 order not placed today",
     reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 60, cost_inr: 0.42 } } }); });
 };
 
@@ -1983,6 +1983,7 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
         await expect(body.locator("[data-chip-source]")).toHaveCount(5);
         await expect(body.locator("[data-need='orders']")).toBeVisible();
         await expect(body.locator("details[data-section][open]")).toHaveCount(0);
+        if (width >= 600) await expect(page.locator("[data-panel-close='conclusion']")).toHaveCount(0);   // owner 21 Nov: always shown
         expect(calls.length).toBeGreaterThan(0);
         expect(new URL(calls[0]).pathname).toMatch(/^\/api(\/v1)?\/terminal\/conclusion$/);   // the real address, never /api/api/...
         expect(new URL(calls[0]).searchParams.get("symbol")).toBe("NIFTY");
@@ -1992,7 +1993,7 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
         expect(calls.some((c) => c.startsWith("POST"))).toBe(false);          // the AI is never called without a tap
         await body.locator("[data-summary-ask]").click();
         await expect(body.locator("[data-summary-text]")).toContainText("Most readings lean up");
-        await expect(body).toContainText("This summary cost ₹0.42 on your AI key.");
+        await expect(body).toContainText("₹0.42 on your AI key");
         if (width < 600) await expectPhoneLayout(page);
         await body.scrollIntoViewIfNeeded();
         if (CON_SHOTS) {

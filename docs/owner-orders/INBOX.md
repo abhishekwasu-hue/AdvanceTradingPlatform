@@ -757,3 +757,22 @@ each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
 (B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
 his switch alone.
+| 2026-11-21 | "Ho" | Yes to the three open defaults of the last report: (1) make atp-private private again (superseded minutes later, next row); (2) the Terminal Conclusion panel is approved (he turns `terminal_conclusion` on after the deploy and checks it); (3) `strategy_chart` and `discipline_engine` ON (his own admin switches) |
+| 2026-11-21 | "Sadhya public rahu de" | atp-private stays PUBLIC for now (given after the warning that the engine, reader, Method Pack and Trade vision code are world-visible while it is public); supersedes point (1) of "Ho" |
+| 2026-11-21 | "Merge" | Merge the open PRs once CI is green (ATP #1143, #1146; atp-private #21 needs his word in its own session) |
+| 2026-11-21 | "Default yes" | Yes to the open SRV2 P3 defaults: SRV2-Q5 (Automatic + Vision silent = no entry), SRV2-Q6 (gray verdict = Trade's own half rule, advice only), SRV2-Q7 (chart photo on the Telegram card: plotly + kaleido + Chrome in the backend image, own PR), the card status list (built in #1146), atp-private #21 merges on green CI |
+
+## 21 Nov - owner (Marathi, transliterated)
+
+> "pudhil kaam kr"
+
+Note: "do the next work" - continue in roadmap order. TERM-CON, CP-CHAT and BT-DRAW 2c wait only on the owner's deploy
+and checks; SRV2 P3 has its own running session; the next build item is CA-CHAT (approved 18 Nov, OPEN_QUESTIONS
+CA-CHAT-Q1): audit Analyze a chart first, then build behind a flag (branch claude/ca-chat).
+## 21 Nov - TERM-CON follow-up (strategy timeframes)
+
+Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal chart's timeframe - add his strategies' timeframes too? Default: yes, in a small next PR"):
+
+> "Ho"
+
+Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).

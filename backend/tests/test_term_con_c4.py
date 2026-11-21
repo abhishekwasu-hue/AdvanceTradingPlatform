@@ -77,3 +77,13 @@ def test_the_route_without_a_key_says_so_and_needs_the_flags():
     assert got.status_code == 200, got.text
     body = got.json()
     assert body["ready"] is False and body["text"] is None and "AI key" in body["reason"]
+
+
+def test_owner_21_nov_the_summary_is_a_glance_of_at_most_three_short_lines():
+    """Owner 21 Nov ("too much theoretical and boaring"): the prompt asks for at most 3 lines of at most 8 words, only what
+    stands out, no theory; a glance passes the same checks unchanged (the panel shows one row per line)."""
+    p = Fake("- Most readings lean up\n- Your positions point the other way")
+    got, why = _run(SUM.summarize(p, BODY))
+    prompt = " ".join(p.calls[0][0].split())
+    assert got and why == "ok" and "At most 3 lines" in prompt and "at most 8 words" in prompt and "Skip every fact that says nothing" in prompt
+    assert got == "- Most readings lean up\n- Your positions point the other way"

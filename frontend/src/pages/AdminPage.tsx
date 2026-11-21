@@ -9,6 +9,7 @@ import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
 import TraderPackCard from "../admin/TraderPackCard";
+import AgentModeCard from "../admin/AgentModeCard";
 import AiPlatformLimitsCard from "../admin/AiPlatformLimitsCard";
 import CopilotAgentLimitsCard from "../admin/CopilotAgentLimitsCard";
 import AiProviderCard from "../components/AiProviderCard";
@@ -167,6 +168,9 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
 
       {/* Owner decision 23 Oct: "Enable trader features" - the v2 console (ui_v2) only, Controls section. */}
       {section === "controls" && inGroup("features") && <TraderPackCard onChanged={() => { api.adminFlags().then(setFlags).catch((e) => toast.error(errorSentence(e))); refreshFeatures(); }} />}
+
+      {/* SRV2 P3 (ADR-0029): the owner's trading agent mode - only the owner account sees it (server: can_switch). */}
+      {section === "controls" && inGroup("safety") && <AgentModeCard />}
 
       {inGroup("safety") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">

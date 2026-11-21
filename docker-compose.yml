@@ -143,6 +143,9 @@ services:
       LIVE_OWNER_USER_ID: ${LIVE_OWNER_USER_ID:-1}
       HISTORY_INTRADAY_SYMBOLS: ${HISTORY_INTRADAY_SYMBOLS:-}
       HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS: ${HISTORY_INTRADAY_INCLUDE_DEPLOYMENTS:-true}
+      # SRV2 P3 (ADR-0029): the owner's agent-mode switch (Admin -> Controls) writes the bot's Vision settings; the same folder as
+      # the worker's, so the bot reads what he switched (vision.db in SRV2_DATA_DIR).
+      SRV2_DATA_DIR: /data/private/srv2
     # Analyze a chart: users' chart images, private to the backend and the worker (never served by Caddy, never in git;
     # retention and delete are the app's - docs/design/CHART_ANALYZE.md section 3).
     volumes:

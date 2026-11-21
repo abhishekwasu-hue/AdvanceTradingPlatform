@@ -380,3 +380,47 @@ async def admin_verify_email(member_id: int, actor: User = Depends(require_role(
 @users_router.get("/me/trading-status")
 async def my_trading_status(user: User = Depends(get_current_user)) -> dict:
     return {"trading_disabled_reason": user.trading_disabled_reason}
+
+
+# --- SRV2 P3 (owner AGENT-MODES 20 Nov, ADR-0029): the owner's trading agent mode ----------------------------------------------
+# SUPER_ADMIN + a two-factor-verified session (the router's dependencies), and then only the configured owner account: the bot reads
+# his own method and trades his own organisation. `auto` also needs an explicit confirm. Every switch is audited (app/srv2bot/mode.py).
+
+class AgentModeBody(BaseModel):
+    mode: str = Field(..., description="human_confirm | auto")
+    vision_on: bool = True
+    confirm: bool = False
+
+
+NOT_THE_OWNER = "Only the platform owner can change the trading agent's mode."
+
+
+@admin_router.get("/srv2-agent-mode")
+async def get_srv2_agent_mode(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    """The agent mode as stored by the bot, the last audited switch, and whether this admin may switch it."""
+    from app.platform import live_owner
+    from app.srv2bot import mode as agent_mode
+    return {**await agent_mode.read(session), "can_switch": live_owner.is_owner(user)}
+
+
+@admin_router.put("/srv2-agent-mode")
+async def put_srv2_agent_mode(body: AgentModeBody, user: User = Depends(require_role()),
+                              session: AsyncSession = Depends(get_session)) -> dict:
+    from app.platform import live_owner
+    from app.srv2bot import mode as agent_mode
+    if not live_owner.is_owner(user):
+        await write_audit_log(session, None, user.id, agent_mode.EVENT + ".refused", f"to={body.mode} - not the owner")
+        await session.commit()
+        raise HTTPException(status_code=403, detail=NOT_THE_OWNER)
+    if body.mode == "auto" and not body.confirm:
+        raise HTTPException(status_code=400, detail="Confirm the switch to auto: the bot will then place entries itself.")
+    try:
+        await agent_mode.switch(session, user, body.mode, vision_on=body.vision_on, owner=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except agent_mode.ModeUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PermissionError as exc:                          # the private package's second lock (ModeRefused)
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    await session.commit()
+    return {**await agent_mode.read(session), "can_switch": True}

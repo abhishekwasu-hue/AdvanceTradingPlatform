@@ -759,3 +759,5 @@ Note: confirmation, not a new order. The `live_trading` switch ON on production 
 his switch alone.
 | 2026-11-21 | "Ho" | Yes to the three open defaults of the last report: (1) make atp-private private again (superseded minutes later, next row); (2) the Terminal Conclusion panel is approved (he turns `terminal_conclusion` on after the deploy and checks it); (3) `strategy_chart` and `discipline_engine` ON (his own admin switches) |
 | 2026-11-21 | "Sadhya public rahu de" | atp-private stays PUBLIC for now (given after the warning that the engine, reader, Method Pack and Trade vision code are world-visible while it is public); supersedes point (1) of "Ho" |
+| 2026-11-21 | "Merge" | Merge the open PRs once CI is green (ATP #1143, #1146; atp-private #21 needs his word in its own session) |
+| 2026-11-21 | "Default yes" | Yes to the open SRV2 P3 defaults: SRV2-Q5 (Automatic + Vision silent = no entry), SRV2-Q6 (gray verdict = Trade's own half rule, advice only), SRV2-Q7 (chart photo on the Telegram card: plotly + kaleido + Chrome in the backend image, own PR), the card status list (built in #1146), atp-private #21 merges on green CI |

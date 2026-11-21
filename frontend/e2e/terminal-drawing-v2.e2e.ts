@@ -96,6 +96,36 @@ test.describe("Terminal drawing tools 1440", () => {
   });
 });
 
+test.describe("Terminal drawing select, move, delete 1440", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("REPRO select, move and delete a trend line", async ({ page }) => {
+    const calls = await open(page);
+    const chart = chartOf(page);
+    const rail = chart.getByRole("group", { name: "Drawing tools" });
+    await rail.getByRole("button", { name: "Trend line" }).click();
+    const box = (await chart.locator(".tv-lightweight-charts").first().boundingBox())!;
+    const a = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.6 }, b = { x: box.x + box.width * 0.7, y: box.y + box.height * 0.3 };
+    await page.mouse.click(a.x, a.y);
+    await page.mouse.click(b.x, b.y);
+    await expect.poll(() => calls.drawingPosts.length).toBe(1);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    await page.mouse.click(mid.x, mid.y);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/repro-1-selected.png` });
+    await page.mouse.move(mid.x, mid.y);
+    await page.mouse.down();
+    await page.mouse.move(mid.x + 60, mid.y + 40, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(800);
+    console.log("PUTS", calls.drawingPuts.length);
+    await page.mouse.click(mid.x + 60, mid.y + 40);
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(800);
+    console.log("DELETES", calls.drawingDeletes.length);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/repro-2-after.png` });
+  });
+});
+
 test.describe("Terminal drawing tools 390", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 

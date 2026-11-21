@@ -45,6 +45,9 @@ export interface ChartsCalls {
   systemCalls: string[];
   quotes: { symbol: string; exchange: string }[][];
   drawingPosts: Record<string, unknown>[];
+  /** Owner 21 Nov (drawings like a pro charting app): updates (move / restyle), lock switches and single deletes. */
+  drawingPuts: { id: number; drawing: Record<string, unknown> }[];
+  drawingDeletes: number[];
   deleteAll: string[];
   /** UI2-4d: each last-price read's symbol, and the saved layouts' writes. */
   ltpSymbols: string[];
@@ -101,7 +104,7 @@ function madeUpPrice(symbol: string): { ltp: number; change: number } {
 }
 
 export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [], layouts = [], systemLists }: ChartsMocks = {}): Promise<ChartsCalls> {
-  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], systemCalls: [], quotes: [], drawingPosts: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
+  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], systemCalls: [], quotes: [], drawingPosts: [], drawingPuts: [], drawingDeletes: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
   let stored: Record<string, unknown> = prefs;
   let version = 1;
   const sessions = market === "open"
@@ -151,7 +154,24 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
     id: nextDrawing++, symbol, exchange: "NSE", kind: "hline", drawing: { schema: "drawing/1", kind: "hline", anchors: [{ p }] }, version: 1,
     locked: locked.includes(p), updated_at: null, timeframe: null,
   })));
-  await page.route(api("/charts/drawings(/\\d+)?(\\?.*)?$"), (r) => {
+  await page.route(api("/charts/drawings/\\d+(/lock)?(\\?.*)?$"), (r) => {
+    const req = r.request();
+    const url = new URL(req.url());
+    const id = Number(url.pathname.match(/\/drawings\/(\d+)/)?.[1]);
+    const row = saved.find((d) => d.id === id);
+    if (!row) return r.fulfill({ status: 404, json: { detail: "Not found" } });
+    if (req.method() === "DELETE") {
+      calls.drawingDeletes.push(id);
+      saved.splice(saved.indexOf(row), 1);
+      return r.fulfill({ json: { deleted: 1 } });
+    }
+    const body = req.postDataJSON() as { drawing?: Record<string, unknown>; locked?: boolean };
+    if (url.pathname.endsWith("/lock")) row.locked = Boolean(body.locked);
+    else if (body.drawing) { calls.drawingPuts.push({ id, drawing: body.drawing }); row.drawing = body.drawing; }
+    row.version += 1;
+    return r.fulfill({ json: row });
+  });
+  await page.route(api("/charts/drawings(\\?.*)?$"), (r) => {
     const req = r.request();
     const url = new URL(req.url());
     const symbol = url.searchParams.get("symbol");

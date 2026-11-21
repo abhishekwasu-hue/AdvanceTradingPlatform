@@ -138,3 +138,15 @@ def test_backend_installs_from_the_hashed_lock():
     direct = {_req_name(ln) for ln in (backend / "requirements.txt").read_text().splitlines()
               if ln.strip() and not ln.lstrip().startswith("#")}
     assert direct <= pinned, sorted(direct - pinned)
+
+
+def test_srv2_q7_the_image_can_draw_the_bot_chart_photo():
+    """SRV2-Q7 (owner "Default yes" 21 Nov): plotly + kaleido 1.x in the lock, and the image's own Debian chromium as kaleido's
+    browser (BROWSER_PATH), installed in the same apt step that `apt-get upgrade` keeps patched."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    lock = (root / "requirements.lock").read_text()
+    assert "\nplotly==7." in lock and "\nkaleido==1." in lock
+    dockerfile = (root / "Dockerfile").read_text()
+    assert "apt-get install -y --no-install-recommends chromium" in dockerfile
+    assert "ENV BROWSER_PATH=/usr/bin/chromium" in dockerfile

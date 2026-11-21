@@ -81,7 +81,7 @@ export const summarizeConclusion = (symbol: string, expiry: string | null, tf: s
 /** "₹0.42" for this call's cost (from his own key's metering); empty when the call reported none. */
 export function costText(u: ConclusionSummary["usage"]): string {
   if (!u) return "";
-  return `This summary cost ${formatINR(Math.max(u.cost_inr, 0.01), { paise: true })} on your AI key.`;
+  return `${formatINR(Math.max(u.cost_inr, 0.01), { paise: true })} on your AI key`;
 }
 
 // --- C3: refresh on bar close and on a new OI slot, with no polling ---------------------------------------------------

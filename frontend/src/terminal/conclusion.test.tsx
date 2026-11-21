@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ConclusionViewV2, SummaryV2 } from "./ConclusionPanelV2";
+import { ConclusionViewV2, SummaryV2, summaryLines } from "./ConclusionPanelV2";
 import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, strategyTimeframes, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
 import { CHOOSER_PANEL_IDS, PANEL_IDS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
@@ -110,10 +110,12 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     const ask = renderToStaticMarkup(<SummaryV2 busy={false} result={null} failed={false} onAsk={() => undefined} />);
     expect(ask).toContain("Summarise with AI");
     const done = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
-      result={{ ready: true, text: "Most readings lean up.", reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 80, cost_inr: 0.42 } }} />);
-    expect(done).toContain("Most readings lean up.");
-    expect(done).toContain("This summary cost ₹0.42 on your AI key.");
-    expect(done).toContain("Information only, not advice.");
+      result={{ ready: true, text: "- Most readings lean up\n- Expiry in 2 sessions", reason: null, usage: { calls: 1, tokens_input: 900, tokens_output: 80, cost_inr: 0.42 } }} />);
+    expect(done).toContain("Most readings lean up");
+    expect((done.match(/<li/g) ?? []).length).toBe(2);                      // owner 21 Nov: a glance, one line per point
+    expect(done).toContain("AI · information only · ₹0.42 on your AI key");
+    expect(summaryLines("- a\n- b\n- c\n- d")).toEqual(["a", "b", "c"]);
+    expect(summaryLines("One plain reply.")).toEqual(["One plain reply."]);
     const nokey = renderToStaticMarkup(<SummaryV2 busy={false} failed={false} onAsk={() => undefined}
       result={{ ready: false, text: null, reason: "Connect your own AI key in Settings to get a summary.", usage: null }} />);
     expect(nokey).toContain("Connect your own AI key");

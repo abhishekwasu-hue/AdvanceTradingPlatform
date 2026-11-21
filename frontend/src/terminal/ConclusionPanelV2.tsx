@@ -54,14 +54,25 @@ export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, 
     summary={data ? <SummaryV2 busy={shownSum.busy} result={shownSum.result} failed={shownSum.failed} onAsk={ask} /> : null} />;
 }
 
+/** Owner 21 Nov ("too much theoretical"): the summary is a glance - its "- " lines as a short list (a plain reply = one line). */
+export function summaryLines(text: string): string[] {
+  const rows = text.split("\n").map((r) => r.trim()).filter(Boolean);
+  const marked = rows.filter((r) => /^[-•*]/.test(r)).map((r) => r.replace(/^[-•*]\s*/, ""));
+  return (marked.length ? marked : [rows.join(" ")]).slice(0, 3);
+}
+
 /** C4: "Summarise with AI" - his own key, on tap; the words are checked on the server (no advice, only the read's facts). */
 export function SummaryV2({ busy, result, failed, onAsk }: { busy: boolean; result: ConclusionSummary | null; failed: boolean; onAsk: () => void }) {
   return (
     <section aria-label="AI summary" data-summary className="space-y-space-1">
       {result?.text ? (
         <>
-          <p data-summary-text className="rounded-control border border-subtle bg-surface-2 p-space-2 text-fg">{result.text}</p>
-          <p className="text-t12 text-fg-muted">AI summary of the readings above. Information only, not advice. {costText(result.usage)}</p>
+          <ul data-summary-text className="space-y-space-1 rounded-control border border-subtle bg-surface-2 p-space-2 text-t14 font-medium text-fg">
+            {summaryLines(result.text).map((line, i) => (
+              <li key={i} className="flex gap-space-2"><Sparkles size={14} aria-hidden className="mt-0.5 shrink-0 text-ai" />{line}</li>
+            ))}
+          </ul>
+          <p className="text-t12 text-fg-muted">AI · information only · {costText(result.usage)}</p>
         </>
       ) : (
         <>

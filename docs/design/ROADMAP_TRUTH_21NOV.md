@@ -82,3 +82,19 @@ Verdicts: BUILT = on main (often behind a flag, OFF); PARTLY = some parts on mai
 
 Method note: verdicts came from three parallel code searches, re-checked by hand for every "not built" claim (five of
 them were found partly built). A row marked "unverified" was not checked in depth.
+
+## P2-8 Journal v2 - what is on main (for the next build, NEXT-Q1 default)
+
+Order: docs/owner-orders/ATP_SESSION_JOURNAL.md (3 draft PRs, no merge before the owner's ✅).
+
+| Part | On main | Missing |
+|---|---|---|
+| J1-1 broker trades | file import (journal/importer.py, source BROKER), read-only broker book (me/broker_book.py) | automatic sync of trades placed in the broker app into the journal, matched to ATP trades |
+| J1-2 chart picture | journal/trade_chart.py renders a PNG for manual / imported trades | a stored entry / exit snapshot for ATP's own trades, shown in reviews; delete with the account |
+| J1-3 spread view | leg_group_id grouping (journal/service.py, stats.py) | check: one entry with combined P&L, planned vs actual max loss, credit |
+| J1-4 plan vs actual | planned values in capture.py | check: one line per entry showing only differences |
+| J2 check-in | none (no feeling / confidence / plan-followed fields) | all |
+| J3 reviews | weekly review (journal/review.py, WeeklyReviewV2) | daily card, monthly page, feeling / confidence vs result, first-20-trades rule |
+| J4 My proof | none | all |
+| J5 if-then plans, process goals | none | all |
+| J6 delivery, page tabs | journal own tab (#1115) | Telegram / e-mail delivery, tabs Today · Trades · Reviews · My proof · Plans, page tour |

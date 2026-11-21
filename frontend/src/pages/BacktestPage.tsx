@@ -261,7 +261,8 @@ export default function BacktestPage() {
   const strategyNames = useMemo(() => new Map(strategies.map((s) => [s.id, s.name] as const)), [strategies]);
   useEffect(() => { setOptRows([]); setOptResult(null); }, [strategyId]);
   const picked = strategyId.startsWith(TEMPLATE_PICK) ? templates.find((t) => t.id === strategyId.slice(TEMPLATE_PICK.length)) ?? null : null;
-  const tpl = picked ? templateTimeframeFor(picked, { chosen: tplTimeframe, linked: link?.template === picked.id ? link.timeframe : null, storedOnly: !!source.stored }) : null;
+  const fromLink = !!picked && link?.template === picked.id;
+  const tpl = picked ? templateTimeframeFor(picked, { chosen: tplTimeframe, linked: fromLink ? link?.timeframe : null, storedOnly: !!source.stored, fromLink }) : null;
 
   /** The strategy id and timeframe a run uses: a built-in / own strategy as before, a template through the server's
    * adopt pre-fill (it checks the settings and creates nothing). */
@@ -435,6 +436,7 @@ export default function BacktestPage() {
               <label htmlFor="bt-template-timeframe" className="block text-xs text-fg-muted mb-1">Chart timeframe</label>
               <select id="bt-template-timeframe" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={tpl.value} onChange={(e) => { setTplTimeframe(e.target.value); setResult(null); }}>
+                {!tpl.value && <option value="" disabled>Pick a timeframe</option>}
                 {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
@@ -461,7 +463,7 @@ export default function BacktestPage() {
           )}
           <button
             onClick={runBacktest}
-            disabled={(!selected && !picked) || loading}
+            disabled={(!selected && !picked) || (!!picked && !tpl?.value) || loading}
             className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Running…" : "Run Backtest"}

@@ -518,6 +518,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const [exitPick, setExitPick] = useState<ExitPick>(EMPTY_PICK);
   const [mgmtPick, setMgmtPick] = useState<ManagementPick>(EMPTY_MANAGEMENT);   // M99 P2: every option off
   const urlTemplateApplied = useRef(false);
+  // DEF-0: a template link without a timeframe of the template's own picks none for him - he picks it in the form
+  const linkAsksTimeframe = useRef(false);
+  const linkTemplateId = initialTemplate?.template ?? null;
 
   useEffect(() => {
     const t = initialTemplate ? templates.find((x) => x.id === initialTemplate.template) : undefined;
@@ -526,14 +529,19 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     setStrategyId(PICK + t.id);
     // Day-one fix 6 / M68 PR-8: an idea's link never quietly picks an index option - and no symbol at all: he picks it.
     if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTemplateTimeframe(initialTemplate.timeframe);
+    else linkAsksTimeframe.current = true;
   }, [templates, initialTemplate]);
 
   useEffect(() => {
     if (!picked) return;
     if (!picked.timeframes.some((t) => t.value === templateTimeframe)) {
+      if (linkAsksTimeframe.current && picked.id === linkTemplateId) {
+        if (templateTimeframe) setTemplateTimeframe("");
+        return;
+      }
       setTemplateTimeframe(picked.timeframes.some((t) => t.value === TEMPLATE_TIMEFRAME) ? TEMPLATE_TIMEFRAME : picked.default_timeframe ?? "");
     }
-  }, [picked, templateTimeframe]);
+  }, [picked, templateTimeframe, linkTemplateId]);
 
   // The link's settings (the idea library's pre-fill) apply to the template the link named, typed as it declares them.
   const linkSettings = useMemo(() => (picked && initialTemplate && picked.id === initialTemplate.template
@@ -701,11 +709,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         {picked && (
           <div data-template={picked.id}>
             <label htmlFor={ids.timeframe} className={LABEL}>Chart timeframe</label>
-            <Combobox id={ids.timeframe} label="Chart timeframe" value={templateTimeframe} className="w-full"
+            <Combobox id={ids.timeframe} label="Chart timeframe" value={templateTimeframe} className="w-full" placeholder="Pick a timeframe"
               onChange={(v) => { setTemplateTimeframe(v); setResult(null); }} options={picked.timeframes} />
             {/* UX-11 U1: where the settings come from and the template's own notes on demand, word for word; a failure or the wait stays visible. */}
             <div data-template-notes>
-              {adoptFailed ? <p role="alert" className="mt-space-1 text-t13 text-fg-muted">This template cannot be set up just now. Try again in a moment.</p>
+              {!templateTimeframe ? <p role="status" data-template-pick-hint className="mt-space-1 text-t13 text-fg-muted">Pick a chart timeframe first.</p>
+                : adoptFailed ? <p role="alert" className="mt-space-1 text-t13 text-fg-muted">This template cannot be set up just now. Try again in a moment.</p>
                 : !adoption ? <p role="status" className="mt-space-1 text-t13 text-fg-muted">Getting the template ready…</p>
                 : (
                   <Details id="paperbot.template" label="About this template" className="mt-space-1">

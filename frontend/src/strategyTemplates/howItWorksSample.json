@@ -9,7 +9,7 @@
   {
    "key": "reads",
    "label": "A signal reads",
-   "text": "The close broke above the session's opening range on the 5-minute chart; the close is above the session VWAP."
+   "text": "The close broke above the session's opening range on the chart you choose; the close is above the session VWAP."
   },
   {
    "key": "wrong",
@@ -380,8 +380,26 @@
    }
   ],
   "reads": {
-   "long": "The close broke above the session's opening range on the 5-minute chart; the close is above the session VWAP.",
-   "short": "The close broke below the session's opening range on the 5-minute chart; the close is below the session VWAP."
+   "long": "The close broke above the session's opening range on the chart you choose; the close is above the session VWAP.",
+   "short": "The close broke below the session's opening range on the chart you choose; the close is below the session VWAP."
+  },
+  "reads_by_timeframe": {
+   "15m": {
+    "long": "The close broke above the session's opening range on the 15-minute chart; the close is above the session VWAP.",
+    "short": "The close broke below the session's opening range on the 15-minute chart; the close is below the session VWAP."
+   },
+   "1m": {
+    "long": "The close broke above the session's opening range on the 1-minute chart; the close is above the session VWAP.",
+    "short": "The close broke below the session's opening range on the 1-minute chart; the close is below the session VWAP."
+   },
+   "3m": {
+    "long": "The close broke above the session's opening range on the 3-minute chart; the close is above the session VWAP.",
+    "short": "The close broke below the session's opening range on the 3-minute chart; the close is below the session VWAP."
+   },
+   "5m": {
+    "long": "The close broke above the session's opening range on the 5-minute chart; the close is above the session VWAP.",
+    "short": "The close broke below the session's opening range on the 5-minute chart; the close is below the session VWAP."
+   }
   },
   "reference_values": true,
   "rules": [

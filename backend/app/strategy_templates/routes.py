@@ -13,7 +13,8 @@
 * `POST /api/strategy-templates/{template_id}/adopt` - the caller's settings checked (plain messages) and turned into
   the PRE-FILL of the existing trading bot form: the strategy id that carries the settings, the candle timeframe, the
   holding, PAPER. It creates NOTHING: the user reviews the form and saves it (the deployment route), and nothing starts
-  by itself. Templates generate signals only; every execution choice (lots, exits, options) stays in the form.
+  by itself. Templates generate signals only; every execution choice (lots, exits, options) stays in the form. The chart
+  timeframe is the caller's own pick: without one the route answers "Pick a chart timeframe first" (DEF-0).
 
 Nothing is stored here and no order path is reached.
 """
@@ -55,6 +56,9 @@ REFERENCE_LABEL = "Reference values - edit before use"
 # M94-Q7: an intraday template carries no time-of-day rule; the optional window is the user's own operational setting
 WINDOW_NOTE = ("Only between: Not set - the whole session. Your own New entries from / until (Settings › Trade settings) "
                "applies if you set it.")
+
+# DEF-0: adopt without the trader's own chart timeframe is refused in these words (no default is picked for him)
+PICK_TIMEFRAME = "Pick a chart timeframe first"
 
 router = APIRouter(prefix="/api/strategy-templates", tags=["strategy-templates"])
 
@@ -104,19 +108,21 @@ def _param(spec: Any) -> Dict[str, Any]:
     return out
 
 
-def _reads(template: Template, default_timeframe: Optional[str]) -> Dict[str, Optional[str]]:
-    """The sentence a signal of this template says, per side, built from the template's own tokens with the default
-    settings. None for a side the template does not use, when no timeframe can run, or when the sentence fails the guard."""
+def _reads(template: Template, timeframe: Optional[str], neutral: bool = False) -> Dict[str, Optional[str]]:
+    """The sentence a signal of this template says, per side, built from the template's own tokens with the template's
+    usual settings on `timeframe`. `neutral`: the wording before the trader picks a chart timeframe ("on the chart you
+    choose", DEF-0; `timeframe` then only resolves the settings). None for a side the template does not use, when no
+    timeframe can run, or when the sentence fails the guard."""
     out: Dict[str, Optional[str]] = {"long": None, "short": None}
-    if default_timeframe is None:
+    if timeframe is None:
         return out
     try:
-        _, settings = ids.adopt(template, default_timeframe, template.sides_default, {})
+        _, settings = ids.adopt(template, timeframe, template.sides_default, {})
     except TemplateError:
         return out
     sides = ("long", "short") if template.sides_default == "both" else (template.sides_default,)
     for side in sides:
-        text = library.signal_text(template, settings, side)
+        text = library.signal_text(template, settings, side, neutral=neutral)
         out[side] = text if text and not language.guard(text) else None
     return out
 
@@ -128,8 +134,11 @@ def _card(template: Template, available: bool) -> Dict[str, Any]:
         "family_name": FAMILY_NAMES[template.family], "idea": template.idea, "difficulty": template.difficulty,
         "style": template.style,
         "timeframes": [{"value": tf, "label": language.TIMEFRAME_WORDS[tf]} for tf in runnable],
+        # kept for older clients only: the card no longer picks it for the trader (DEF-0) and adopt needs his own pick
         "default_timeframe": runnable[0] if runnable else None, "sides_default": template.sides_default,
-        "reads": _reads(template, runnable[0] if runnable else None),
+        # DEF-0: the card's sentence before he picks a chart timeframe names none; after his pick, that timeframe's own
+        "reads": _reads(template, runnable[0] if runnable else None, neutral=True),
+        "reads_by_timeframe": {tf: _reads(template, tf) for tf in runnable},
         "params": [_param(p) for p in template.params],
         "rules": [c.message for c in template.constraints],
         "available": available,
@@ -174,9 +183,14 @@ async def adopt(template_id: str, body: AdoptBody, user: User = Depends(get_curr
         raise HTTPException(status_code=404, detail="No such strategy template")
     if body.timeframe in template.allowed_timeframes and body.timeframe not in ENGINE_LABEL:
         raise HTTPException(status_code=422, detail={"problems": ["This timeframe is for scans only; pick an intraday or a Daily one"]})
+    if not body.timeframe:
+        # DEF-0: the chart timeframe is the trader's own pick - never the template's first one silently. A strategy saved
+        # earlier carries its timeframe in its id and never comes through here.
+        if not await _available(session, user, template):
+            raise HTTPException(status_code=409, detail={"problems": ["This strategy template is not switched on for your account yet"]})
+        raise HTTPException(status_code=422, detail={"problems": [PICK_TIMEFRAME]})
     try:
-        strategy_id, settings = ids.adopt(template, body.timeframe or next(
-            (tf for tf in template.allowed_timeframes if tf in ENGINE_LABEL), None), body.sides, body.params)
+        strategy_id, settings = ids.adopt(template, body.timeframe, body.sides, body.params)
         strategy = TemplateStrategy(template, settings)
     except TemplateError as exc:
         raise HTTPException(status_code=422, detail={"problems": exc.problems}) from exc

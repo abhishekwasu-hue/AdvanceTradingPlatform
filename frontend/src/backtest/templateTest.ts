@@ -6,6 +6,8 @@ import type { StrategyTemplate } from "../strategyTemplates/api";
 export const TEMPLATE_PICK = "template-pick:";
 
 const DAILY = "1d";
+/** DEF-0: what the page says while a linked template waits for his own chart timeframe. */
+export const PICK_TIMEFRAME_NOTE = "Pick a chart timeframe first.";
 
 export interface TemplateTimeframe {
   /** The timeframe the run uses ("" when none can run here). */
@@ -24,10 +26,12 @@ function words(t: Pick<StrategyTemplate, "timeframes">, value: string): string {
  * - `chosen`: the trader's own pick on the page (wins when the template offers it);
  * - `linked`: the idea's timeframe from the address;
  * - `storedOnly`: no broker prices today, so only ATP's stored Daily history can be read.
+ * - `fromLink`: the address named this template (a template card's "Test it first"): without a timeframe of its own
+ *   nothing is picked for him (DEF-0) - the value stays "" and the note asks him to pick one.
  * Without broker prices an intraday idea is tested on Daily when the template offers Daily, and the note says so.
  */
 export function templateTimeframeFor(t: Pick<StrategyTemplate, "timeframes" | "default_timeframe">,
-  o: { chosen?: string | null; linked?: string | null; storedOnly: boolean }): TemplateTimeframe {
+  o: { chosen?: string | null; linked?: string | null; storedOnly: boolean; fromLink?: boolean }): TemplateTimeframe {
   const offered = (v: string | null | undefined): v is string => !!v && t.timeframes.some((x) => x.value === v);
   const hasDaily = offered(DAILY);
   if (offered(o.chosen)) {
@@ -36,6 +40,7 @@ export function templateTimeframeFor(t: Pick<StrategyTemplate, "timeframes" | "d
     }
     return { value: o.chosen, note: null };
   }
+  if (o.fromLink && !offered(o.linked)) return { value: "", note: PICK_TIMEFRAME_NOTE };
   const wanted = offered(o.linked) ? o.linked : t.default_timeframe && offered(t.default_timeframe) ? t.default_timeframe : t.timeframes[0]?.value ?? "";
   if (!wanted) return { value: "", note: "This template has no timeframe that can be tested yet." };
   if (o.storedOnly && wanted !== DAILY) {

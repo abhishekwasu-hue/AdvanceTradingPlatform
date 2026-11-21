@@ -9,7 +9,7 @@
   {
    "key": "reads",
    "label": "A signal reads",
-   "text": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 5-minute chart."
+   "text": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the chart you choose."
   },
   {
    "key": "wrong",
@@ -348,8 +348,26 @@
    }
   ],
   "reads": {
-   "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 5-minute chart.",
-   "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the 5-minute chart."
+   "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the chart you choose.",
+   "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the chart you choose."
+  },
+  "reads_by_timeframe": {
+   "15m": {
+    "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 15-minute chart.",
+    "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the 15-minute chart."
+   },
+   "1m": {
+    "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 1-minute chart.",
+    "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the 1-minute chart."
+   },
+   "3m": {
+    "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 3-minute chart.",
+    "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the 3-minute chart."
+   },
+   "5m": {
+    "long": "After a stretch below the session VWAP the lows stopped falling and the close turned up through the fast average and the bar before on the 5-minute chart.",
+    "short": "After a stretch above the session VWAP the highs stopped rising and the close turned down through the fast average and the bar before on the 5-minute chart."
+   }
   },
   "reference_values": true,
   "rules": [],

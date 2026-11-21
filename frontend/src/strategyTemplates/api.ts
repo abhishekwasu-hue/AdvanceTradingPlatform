@@ -15,6 +15,9 @@ export interface StrategyTemplate {
   params: TemplateSetting[]; rules: string[]; available: boolean;
   /** The sentence a signal of this template says, per side, from the template's own data (null: none for that side). Absent from an older server. */
   reads?: { long: string | null; short: string | null };
+  /** DEF-0: `reads` names no chart timeframe ("on the chart you choose"); this holds the same sentence per timeframe he can
+   * pick, naming that one (null where the usual settings do not run on it). Absent from an older server. */
+  reads_by_timeframe?: Record<string, { long: string | null; short: string | null }>;
   /** M94 (flag intraday_pack): the defaults are reference values from a study - shown as REFERENCE_LABEL. Absent from an older server. */
   reference_values?: boolean;
 }

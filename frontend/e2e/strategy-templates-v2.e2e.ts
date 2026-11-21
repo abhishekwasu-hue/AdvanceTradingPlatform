@@ -132,7 +132,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     for (const theme of ["light", "dark"] as const) {
       test(`the form with a template picked looks the same (${theme})`, async ({ page }) => {
-        await open(page, { theme, path: "/deployments?template=D2" });
+        await open(page, { theme, path: "/deployments?template=D2&timeframe=15m" });
         await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
         await pickNifty(page);
         await expect(page).toHaveScreenshot(`strategy-templates-v2-${size.name}-${theme}.png`, SHOT);
@@ -141,7 +141,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     for (const theme of ["light", "dark"] as const) {
       test(`the exits for this bot, pre-filled with the template's defaults (${theme})`, async ({ page }) => {
-        await open(page, { theme, path: "/deployments?template=D2", exits: true });
+        await open(page, { theme, path: "/deployments?template=D2&timeframe=15m", exits: true });
         await expect(form(page).locator("[data-template-exits]")).toContainText("Exits for this bot");
         await pickNifty(page);
         await expectChoice(form(page).getByLabel("Stop"), "TEMPLATE_INVALIDATION");          // NIFTY 50: its option
@@ -153,18 +153,18 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     if (size.mobile) {
       test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2" });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m" });
         await expectPhoneLayout(page);
       });
 
       test("with the exits shown: no sideways scroll, 44 px targets", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2", exits: true });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true });
         await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
         await expectPhoneLayout(page);
       });
 
       test("M99 P2: the trade-management options with the ATR trail and both exits on: no sideways scroll", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2", exits: true, management: true });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true, management: true });
         await pickNifty(page);
         const block = form(page).locator("[data-management]");
         await choose(page, block.getByLabel("Trail the stop"), { label: "By ATR from the best price" });
@@ -252,7 +252,7 @@ test.describe("Strategy templates behaviour", () => {
   });
 
   test("the exits: pre-filled with the template's defaults (nothing extra sent); a choice is sent with the same PAPER request", async ({ page }) => {
-    const server = await open(page, { path: "/deployments?template=D2", exits: true });
+    const server = await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true });
     const exits = form(page).locator("[data-template-exits]");
     await expectChoice(exits.getByLabel("Take profit"), "NONE");
     await expectChoiceLabels(page, exits.getByLabel("Take profit"), 
@@ -297,13 +297,25 @@ test.describe("Strategy templates behaviour", () => {
   });
 
   test("an older server without exit choices: no exits block, the request as before", async ({ page }) => {
-    await open(page, { path: "/deployments?template=D2" });
+    await open(page, { path: "/deployments?template=D2&timeframe=15m" });
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
     await expect(form(page).locator("[data-template-exits]")).toHaveCount(0);
   });
 
+  test("DEF-0: a template link without a timeframe picks none for him; nothing is asked of the server until he picks", async ({ page }) => {
+    const server = await open(page, { path: "/deployments?template=D2" });
+    const notes = form(page).locator("[data-template-notes]");
+    await expect(notes).toContainText("Pick a chart timeframe first.");
+    await expect(form(page).getByLabel("Chart timeframe")).toContainText("Pick a timeframe");
+    expect(server.sent.filter((c) => c.url.endsWith("/adopt"))).toHaveLength(0);
+    await expect(form(page).getByRole("button", { name: "Start on paper" })).toBeDisabled();
+    await choose(page, form(page).getByLabel("Chart timeframe"), "1h");
+    await expect(notes).toContainText("Starts with the template's usual settings.");
+    expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h" } });
+  });
+
   test("with the flag off: no template group, the form as before", async ({ page }) => {
-    await open(page, { templatesOff: true, path: "/deployments?template=D2" });
+    await open(page, { templatesOff: true, path: "/deployments?template=D2&timeframe=15m" });
     await expectGroupLabels(page, form(page).getByLabel("Pick a strategy"), "Strategy templates", []);
     await expect(form(page).getByLabel("Chart timeframe")).toHaveCount(0);
   });
@@ -320,7 +332,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
       expect(await textBudgetProblems(page)).toEqual([]);
     });
     test("with a template picked, every card still fits", async ({ page }) => {
-      await open(page, { theme: "light", path: "/deployments?template=D2" });
+      await open(page, { theme: "light", path: "/deployments?template=D2&timeframe=15m" });
       await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
       expect(await textBudgetProblems(page)).toEqual([]);
     });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { paperBotPathFor, templateLinkFromSearch, testPathFor } from "../strategyTemplates/link";
-import { TEMPLATE_PICK, templateTimeframeFor } from "./templateTest";
+import { PICK_TIMEFRAME_NOTE, TEMPLATE_PICK, templateTimeframeFor } from "./templateTest";
 
 const A5 = {
   timeframes: [{ value: "5m", label: "5-minute" }, { value: "15m", label: "15-minute" }, { value: "1d", label: "Daily" }],
@@ -39,6 +39,14 @@ describe("day-one fix 1: a strategy template is tested on Strategies › Test", 
     expect(r.value).toBe("5m");
     expect(r.note).toBe("5-minute bars need prices from your broker: log in on the Broker page, or pick Daily to test on ATP's stored history.");
     expect(templateTimeframeFor(A5, { chosen: "4h", storedOnly: false }).value).toBe("5m");
+  });
+
+  it("DEF-0: a linked template without a timeframe of its own picks none for him and asks", () => {
+    expect(templateTimeframeFor(A5, { fromLink: true, storedOnly: false })).toEqual({ value: "", note: PICK_TIMEFRAME_NOTE });
+    expect(templateTimeframeFor(A5, { fromLink: true, linked: "4h", storedOnly: true })).toEqual({ value: "", note: PICK_TIMEFRAME_NOTE });
+    expect(PICK_TIMEFRAME_NOTE).toBe("Pick a chart timeframe first.");
+    expect(templateTimeframeFor(A5, { fromLink: true, linked: "15m", storedOnly: false })).toEqual({ value: "15m", note: null });
+    expect(templateTimeframeFor(A5, { fromLink: true, chosen: "1d", storedOnly: false })).toEqual({ value: "1d", note: null });   // his pick
   });
 
   it("an intraday-only template without broker prices says so instead of failing later", () => {

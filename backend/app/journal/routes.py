@@ -292,9 +292,11 @@ async def _attach(kind: str, ref_id: int, file: UploadFile | None, user: User, s
 
 
 async def _chart(kind: str, ref_id: int, at: str, user: User, session: AsyncSession) -> Response:
+    from app.journal import snapshots
     ref = await _ref(session, user, kind, ref_id)
     try:
-        png = await entries.chart_png(session, user, ref, at)
+        # P2-8 J1-2: an ATP trade's picture is stored on its first draw and read from the store after that
+        png = await (snapshots.picture(session, user, ref.trade, at) if ref.trade is not None else entries.chart_png(session, user, ref, at))
     except entries.EntryError as exc:
         raise _http(exc) from exc
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
@@ -527,3 +529,17 @@ async def manual_trade_chart_png(manual_id: int, cvd: bool = False, tf: str = Qu
     data = await trade_chart_view.png(session, ref.manual, user=user, tf=tf, cvd=cvd)
     name = f"{ref.manual.symbol.replace(' ', '-')}-trade-{ref.manual.id}.png"
     return Response(content=data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# --- P2-8 J1-1: trades placed in his own broker app -------------------------------------------------------------------
+
+broker_sync_rate_limit = user_rate_limit("journal_broker_sync", limit=6, window_seconds=60)
+
+
+@router.post("/broker-sync", dependencies=[Depends(broker_sync_rate_limit)])
+async def broker_sync_now(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Reads today's trade book of each of his own signed-in broker sessions (read-only) and journals the trades done
+    outside ATP; fills of orders ATP placed are matched to those trades, and nothing is journalled twice."""
+    await _flag(session, user)
+    from app.journal import broker_sync
+    return await broker_sync.sync_user(session, user)

@@ -186,6 +186,35 @@ export interface JournalListRow {
   mae_r: number | null;
   mfe_r: number | null;
   leg_group_id: string | null;
+  /** P2-8 J1-1: "BROKER" = read from his own broker's trade book. */
+  origin?: string | null;
+  /** P2-8 J1-3: a structure's legs folded into this one row. */
+  spread?: SpreadSummary;
+  legs?: SpreadLegRow[];
+}
+
+/** P2-8 J1-3: one structure's combined numbers (from its own legs and the structure facts it was placed with). */
+export interface SpreadSummary {
+  group_id: string | null;
+  structure: string | null;
+  underlying: string | null;
+  legs: number;
+  closed: boolean;
+  net_pnl: number | null;
+  credit: number;
+  credit_kind: "credit" | "debit" | null;
+  planned_max_loss: number | null;
+  actual_loss: number | null;
+  charges: number;
+}
+
+export interface SpreadLegRow {
+  id: number; symbol: string; direction: string; quantity: number; entry_price: number; exit_price: number | null; pnl: number | null;
+}
+
+/** P2-8 J1-1: what one "Sync from broker" did. */
+export interface BrokerSyncResult {
+  brokers: number; read: number; matched: number; added: number; closed: number; already: number; messages: string[]; entry_ids: number[];
 }
 
 export interface JournalFilters {
@@ -302,6 +331,14 @@ export interface JournalEntryFull {
   charts: { entry: string; exit: string | null; trade?: string; trade_image?: string };
   /** M88: a manual entry that came from a file he imported. */
   imported?: boolean;
+  /** P2-8 J1-1: "BROKER" = read from his own broker's trade book. */
+  origin?: string | null;
+  /** P2-8 J1-2: which chart pictures are stored (an ATP trade). */
+  snapshots?: { entry: boolean; exit: boolean };
+  /** P2-8 J1-3: the structure this leg belongs to, with every leg. */
+  spread?: SpreadSummary & { leg_rows: SpreadLegRow[] };
+  /** P2-8 J1-4: plan vs actual, one line per difference (empty = as planned). */
+  plan_actual?: string[];
 }
 
 /** POST /journal/manual: a trade done outside ATP, as the trader records it. */

@@ -16,6 +16,7 @@ from app.db.models import User
 from app.db.session import get_session
 from app.journal import FLAG, stats
 from app.journal import export as journal_export
+from app.journal.spread import fold_rows
 from app.platform.controls import require_flag
 
 router = APIRouter(prefix="/api/journal", tags=["journal"])
@@ -50,7 +51,8 @@ async def journal_entries(f: stats.Filters = Depends(_common), limit: int = Quer
     """The journal list, newest first: date, symbol, setup, net P&L, R, tags, chart link per entry, with the setup and
     tag choices for the filters."""
     loaded = await _load(session, user, f)
-    return {"entries": loaded.rows[:limit], "total": len(loaded.rows), "truncated": loaded.truncated or len(loaded.rows) > limit,
+    rows = fold_rows(loaded.rows, loaded.spreads, f.outcome)     # P2-8 J1-3: a structure's legs are one entry (legs listed under it)
+    return {"entries": rows[:limit], "total": len(rows), "truncated": loaded.truncated or len(rows) > limit,
             "setups": loaded.setups, "tags": loaded.tags, "filters": f.to_dict()}
 
 

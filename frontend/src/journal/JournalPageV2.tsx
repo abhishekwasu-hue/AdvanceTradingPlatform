@@ -34,6 +34,15 @@ const OFF_TEXT = "The journal is not turned on for your account yet.";
 
 const isOff = (e: unknown) => e instanceof ApiError && e.status === 503;
 
+/** "2 trades added, 1 closed. 3 fills matched your ATP trades." - or "No new trades from your broker." */
+export function syncText(added: number, closed: number, matched: number): string {
+  const parts: string[] = [];
+  if (added > 0) parts.push(`${added} ${added === 1 ? "trade" : "trades"} added`);
+  if (closed > 0) parts.push(`${closed} closed`);
+  const head = parts.length > 0 ? `${parts.join(", ")}.` : "No new trades from your broker.";
+  return matched > 0 ? `${head} ${matched} matched your ATP trades.` : head;
+}
+
 export default function JournalPageV2({ api = defaultApi, shareCard = false, recallOn = false, acceptedOn = false, studiesOn = false, settings }: {
   api?: JournalApi; shareCard?: boolean; recallOn?: boolean; settings?: ReactNode;
   /** M77 SX-7 (flag study_export): a "My studies" tab - his saved Copilot studies, in place. */
@@ -58,6 +67,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   const [manualOpen, setManualOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [customTags, setCustomTags] = useState<string[]>([]);
   const refresh = useCallback(() => setRound((r) => r + 1), []);
 
@@ -104,6 +114,17 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
     } catch (e) { toast.error(errorSentence(e)); } finally { setExporting(null); }
   }
 
+  // P2-8 J1-1: today's trades from his own broker sessions into the journal (read-only; nothing is journalled twice)
+  async function syncBroker() {
+    setSyncing(true);
+    try {
+      const r = await api.brokerSync();
+      if (r.messages.length > 0 && r.added === 0 && r.closed === 0) toast.info(r.messages[0]);
+      else toast.success(syncText(r.added, r.closed, r.matched));
+      if (r.added > 0 || r.closed > 0) refresh();
+    } catch (e) { toast.error(errorSentence(e)); } finally { setSyncing(false); }
+  }
+
   const header = <PageHeader title="Journal" section="journal" />;
   if (off) {
     return <div className="space-y-space-4">{header}<CardV2 title="Journal" testId="journal-off"><EmptyStateV2 text={OFF_TEXT} /></CardV2></div>;
@@ -120,7 +141,8 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       <div role="tabpanel" id={`journal-panel-${tab}`} aria-labelledby={`journal-tab-${tab}`}>
         {tab === "trades" && (
           <JournalListV2 state={list} filters={filters} onFilters={changeFilters} api={api} onRetry={refresh}
-            onOpen={(r) => setSheet({ kind: r.kind, id: r.id })} onAddManual={() => setManualOpen(true)} onImport={() => setImportOpen(true)} onMore={() => setLimit((l) => l + PAGE)}
+            onOpen={(r) => setSheet({ kind: r.kind, id: r.id })} onAddManual={() => setManualOpen(true)} onImport={() => setImportOpen(true)}
+            onSyncBroker={syncBroker} syncing={syncing} onMore={() => setLimit((l) => l + PAGE)}
             exportButtons={<ExportButtonsV2 onExport={exportAs} busy={exporting} />} />
         )}
         {tab === "stats" && <JournalStatsV2 state={stats} onRetry={refresh} />}

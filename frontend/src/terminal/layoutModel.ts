@@ -254,15 +254,15 @@ export function withoutConclusion(panels: readonly PanelPlace[]): PanelPlace[] {
   return panels.map((q) => (q.id === "conclusion" && q.open ? { ...q, open: false } : q));
 }
 
-/** TERM-CON C2 (TC-Q4): the presets the Conclusion panel opens in by default while its flag is on. */
-export const CONCLUSION_PRESETS: ReadonlySet<PresetId> = new Set<PresetId>(["option_seller", "quick_trade"]);
-
-/** TERM-CON C2: on Option seller / Quick trade (the preset itself, never a saved layout of his) the Conclusion panel opens
- * in the first free place under the open panels; the preset's own geometry is unchanged. */
-export function withConclusion(panels: readonly PanelPlace[], preset: PresetId, isPresetLayout: boolean): PanelPlace[] {
-  if (!isPresetLayout || !CONCLUSION_PRESETS.has(preset) || panels.some((q) => q.id === "conclusion")) return [...panels];
+/** TERM-CON (owner 21 Nov: "Conclusion panel suddha nehmich disla pahije"): while its flag is on the Conclusion panel is
+ * open on EVERY layout - all presets and every saved layout of his. A layout without it (or with it stored closed) shows
+ * it in its stored place or the first free place under the open panels; the presets' own geometry is unchanged. */
+export function withConclusion(panels: readonly PanelPlace[]): PanelPlace[] {
   return openPanel([...panels], "conclusion");
 }
+
+/** The panels that cannot be closed (no Close button, no Panels-menu toggle): the Conclusion panel, while its flag is on. */
+export const PINNED_PANELS: readonly PanelId[] = ["conclusion"];
 
 /** The panels in reading order (top to bottom, then left to right) - the keyboard and screen-reader order. */
 export function readingOrder(panels: readonly PanelPlace[]): PanelPlace[] {

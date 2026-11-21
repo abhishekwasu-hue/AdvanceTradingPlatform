@@ -757,3 +757,11 @@ each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
 (B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
 his switch alone.
+
+## 21 Nov - owner (Marathi, transliterated)
+
+> "pudhil kaam kr"
+
+Note: "do the next work" - continue in roadmap order. TERM-CON, CP-CHAT and BT-DRAW 2c wait only on the owner's deploy
+and checks; SRV2 P3 has its own running session; the next build item is CA-CHAT (approved 18 Nov, OPEN_QUESTIONS
+CA-CHAT-Q1): audit Analyze a chart first, then build behind a flag (branch claude/ca-chat).

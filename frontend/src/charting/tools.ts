@@ -9,7 +9,7 @@
  * Nothing here touches an order.
  */
 import {
-  ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DeleteAllResult, type DrawingKind, type DrawingV1, type StoredDrawing,
+  ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DeleteAllResult, type DrawingKind, type DrawingStyle, type DrawingV1, type StoredDrawing,
 } from "./drawings";
 import { shapes, timeToLogical, type Converters, type Shape } from "./geometry";
 
@@ -328,6 +328,64 @@ export class DrawingController {
   select(key: string | null) {
     this.selected = key && this.items.has(key) ? key : null;
     this.emit();
+  }
+
+  // --- Contract stubs (owner 21 Nov, drawings like a pro charting app): minimal versions of the engine's edit /
+  // duplicate / selectedDrawing so the selection bar type-checks and runs; the engine work replaces them.
+
+  /** The selected drawing as the user last left it, with its lock; null when nothing is selected. */
+  selectedDrawing(): { key: string; drawing: DrawingV1; locked: boolean } | null {
+    const key = this.selected;
+    const stored = key ? this.items.get(key) : undefined;
+    if (!key || !stored) return null;
+    return { key, drawing: this.current(key) ?? stored.drawing, locked: stored.locked };
+  }
+
+  /** One undoable, saved change of a drawing's style, text or levels. A locked drawing is not changed. */
+  edit(key: string, patch: { style?: Partial<DrawingStyle>; text?: string; levels?: number[] }): Promise<void> {
+    if (!this.items.has(key)) return Promise.resolve();
+    return this.run(async () => {
+      const stored = this.items.get(key);
+      if (!stored) return;
+      if (stored.locked) {
+        this.message = "This drawing is locked. Unlock it to change it.";
+        this.emit();
+        return;
+      }
+      const before = this.current(key) ?? stored.drawing;
+      const after: DrawingV1 = {
+        ...before,
+        ...(patch.style ? { style: { ...before.style, ...patch.style } } : {}),
+        ...(patch.text !== undefined ? { text: patch.text } : {}),
+        ...(patch.levels !== undefined ? { levels: patch.levels } : {}),
+      };
+      const problem = drawingProblem(after);
+      if (problem) {
+        this.message = problem;
+        this.emit();
+        return;
+      }
+      if (await this.save(key, after)) this.record({ key, before, after });
+      this.emit();
+    });
+  }
+
+  /** A copy of a drawing, saved and selected (one undo step). */
+  duplicate(key: string): Promise<void> {
+    if (!this.items.has(key)) return Promise.resolve();
+    return this.run(async () => {
+      const stored = this.items.get(key);
+      if (!stored) return;
+      const copy = this.current(key) ?? stored.drawing;
+      const created = await this.guard(() => this.create(copy));
+      if (created) {
+        const next = String(created.id);
+        this.items.set(next, created);
+        this.selected = next;
+        this.record({ key: next, before: null, after: created.drawing });
+      }
+      this.emit();
+    });
   }
 
   /** Start dragging a handle (an anchor) or, with handle null, the whole drawing. A locked drawing does not move. */

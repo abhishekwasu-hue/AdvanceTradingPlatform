@@ -711,6 +711,24 @@ it. It lifts only after a clean reconciliation, which the worker runs only in a 
 the old Deployments page. PR claude/broker-check: the pause in plain words on the ticket, Terminal and My positions with
 one action, "Check with <broker> now" (the same reconciliation route; it opens LIVE only when the books agree).
 
+## 20 Nov - agentic AI for his own trading: both modes (Marathi, transliterated)
+
+> "agentic AI cha vapar apan swatahsathi tari karu shakto ki nahi tevha SEBI che niyam vagaire cha muddach nahi, ani yasathi apan chart reader sarkhe concept already build kelele aahet bot apan already build kelele aahet vision telegram var sandesh pathavine check karne he sagla kahi apalyakade aahe"
+
+> "billing cha issue ataparyant alela nahi ani ha billing cha issue nahi ha kahitari vegla aahe tumhi swatah check kara karan he apla free repo public aahe shivay automatic trading karnyasathich apan he sagla develop karto aahot yachyamadhye donhihi option pahije bot swatah trade ghene tasech telegram varti sandesh deun human confirmation ne ghene he donhi option apalyala yachyamadhye thevayche aahet apan kahi divas human confirmation ne kam karu nantar jevha apalyala vatel ki nahi ata automatic karu shakto tar auto mode var apan shift karu shakto yasathich tar apan hi sagli bhangad karat aahot"
+
+Note: decided below (DECISIONS 20 Nov AGENT-MODES); docs/adr/0029-owner-agent-modes.md. atp-private CI: the owner says
+it is not billing - to be read from the failed run's annotation (SRV2-Q2).
+
+## 20 Nov - atp-private visibility (Marathi, transliterated)
+
+> "Now public"
+
+> "are tu ata public aahe kalji karu nakos paise bharaychi garaj naste"
+
+Note: atp-private's CI never started since 9 Nov: GitHub's annotation on the failed runs says "The job was not started
+because recent account payments have failed or your spending limit needs to be increased" (private-repo Actions
+minutes). Public repos are not charged, so CI runs now. Decided below (DECISIONS 20 Nov ATP-PRIVATE-PUBLIC).
 ## 20 Nov - Terminal Conclusion panel (decision agent)
 
 > "ok soda ha vishay ata mala he mhanayache aahe ki ATP madhye apan barech features ghetlele aahet terminal banavle aahe sagla banavla aahe parantu trading decision ghenyasathi asa consolidated ek window terminal var asayla pahije jyachyamadhye sagalyancha saar vyavasthit apalyala disel tyala mhanu apan conclusion jya jya condition hotat option change chi condition yet aahe ani chart varchya condition yet aahet mhanje ek agent asa asel jo ya sarvancha data gheun ek decision maker asel tasa agent mala vatate ATP madhye nahi chart reader varun to data ghenar OI analysis varun to data ghenar sobatach adhichya kahi positions aahet kay tyachyavar pan tu lakshat thevnar order zalya ki nahi tyachyavar pan tu laksha thevnar ya ya sandarbhat kahi plan tayar karta yeil ka kiva ATP madhye asa adhich kahi aahe ka jenekarun decision ghene shakya hoil ani ekach panel madhye traderla sagla kahi disel"

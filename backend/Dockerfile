@@ -7,9 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Debian security fixes land in the archive before the python:3.13-slim tag is rebuilt; upgrading
 # the OS packages here keeps the image scanner's fixed-CVE gate green between base-image releases
 # (as `apk upgrade` does for the frontend image).
+#
+# SRV2-Q7 (owner "Default yes" 21 Nov): Debian's chromium is the browser kaleido drives to draw the 15M SRv2 bot's chart photo
+# for its Telegram card (Trade's vision/chart.py, `fig.to_image`). From the distribution, so `apt-get upgrade` keeps it patched
+# with the rest of the OS; kaleido starts it without the sandbox (its default), which runs as the non-root app user.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+ENV BROWSER_PATH=/usr/bin/chromium
 
 # requirements first so dependency installs are cached independently of app code changes.
 # M55 O3: installed from the hashed lock (scripts/lock_requirements.sh) - every package pinned, and pip refuses any

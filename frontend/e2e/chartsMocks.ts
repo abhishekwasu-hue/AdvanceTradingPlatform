@@ -48,6 +48,7 @@ export interface ChartsCalls {
   /** Owner 21 Nov (drawings like a pro charting app): updates (move / restyle), lock switches and single deletes. */
   drawingPuts: { id: number; drawing: Record<string, unknown> }[];
   drawingDeletes: number[];
+  drawingLocks: { id: number; locked: boolean }[];
   deleteAll: string[];
   /** UI2-4d: each last-price read's symbol, and the saved layouts' writes. */
   ltpSymbols: string[];
@@ -104,7 +105,7 @@ function madeUpPrice(symbol: string): { ltp: number; change: number } {
 }
 
 export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [], layouts = [], systemLists }: ChartsMocks = {}): Promise<ChartsCalls> {
-  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], systemCalls: [], quotes: [], drawingPosts: [], drawingPuts: [], drawingDeletes: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
+  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], systemCalls: [], quotes: [], drawingPosts: [], drawingPuts: [], drawingDeletes: [], drawingLocks: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
   let stored: Record<string, unknown> = prefs;
   let version = 1;
   const sessions = market === "open"
@@ -166,7 +167,7 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
       return r.fulfill({ json: { deleted: 1 } });
     }
     const body = req.postDataJSON() as { drawing?: Record<string, unknown>; locked?: boolean };
-    if (url.pathname.endsWith("/lock")) row.locked = Boolean(body.locked);
+    if (url.pathname.endsWith("/lock")) { row.locked = Boolean(body.locked); calls.drawingLocks.push({ id, locked: row.locked }); }
     else if (body.drawing) { calls.drawingPuts.push({ id, drawing: body.drawing }); row.drawing = body.drawing; }
     row.version += 1;
     return r.fulfill({ json: row });

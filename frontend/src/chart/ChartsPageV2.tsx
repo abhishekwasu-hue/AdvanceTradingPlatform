@@ -412,7 +412,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <div ref={setWhySlot} data-strategy-why-slot className="pointer-events-none absolute left-space-3 top-space-12 z-20 max-w-[min(30rem,calc(100%-6.5rem))] md:left-space-12" />
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
-                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} livePush={pushOn} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden} drawingMessage={false}
                 levels={tpl.levels.length ? [...screen.levels, ...tpl.levels] : screen.levels}
                 markers={chartMarkers}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools} onBandTip={setTipBand} captureTouch={fs.on} rememberViewFor={userId}

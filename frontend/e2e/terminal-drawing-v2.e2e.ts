@@ -153,7 +153,6 @@ test.describe("Terminal drawing selection bar 1440", () => {
       "Colour", "Line width and style", "Extend the line", "Lock", "Duplicate", "Delete", "Close"]);
     await page.mouse.move(mid.x + 20, mid.y + 60);                                       // crosshair on: the readout shows
     await expectBarClearOfReadout(page, chartOf(page));
-    await shot(page, "after-terminal-bar", 1440);
     // Clear of the price axis: the bar ends left of the chart's right edge.
     const plotRight = box.x + box.width;
     expect((await toolbar.boundingBox())!.x + (await toolbar.boundingBox())!.width).toBeLessThan(plotRight - 40);

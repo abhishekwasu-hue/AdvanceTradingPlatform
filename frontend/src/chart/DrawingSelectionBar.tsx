@@ -14,8 +14,9 @@ import { EXTEND_OPTIONS, LINE_STYLES, WIDTHS, drawingSettings, shownColour, swat
  * selected drawing, as pro charting apps have it - colour, line (width and style), extension, text, lock, copy, delete,
  * close. From md it sits at the chart's top right, clear of the price axis, and steps down below the chart's top-left
  * row (live chip, legend, the Open / High / Low / Close readout) whenever that row would reach under it, so both stay
- * visible; on a phone it docks above the chart's bottom controls. Each change is one `edit` (one undo step); delete asks nothing (Undo brings it back). Only the settings the
- * drawing's kind shows are offered (drawingSelection.ts). Nothing here touches an order.
+ * visible; on a phone it docks above the chart's bottom controls. Each change is one `edit` (one undo step); delete asks
+ * nothing (Undo brings it back). Only the settings the drawing's kind shows are offered (drawingSelection.ts). Nothing
+ * here touches an order.
  */
 export interface DrawingSelectionBarProps {
   view: ToolView | null;
@@ -170,7 +171,7 @@ export function DrawingSelectionBar({ view, controller, insets, root, avoid = nu
 
         {panel && (
           <div id={panelId} role="dialog" aria-label={panel === "colour" ? "Colour" : panel === "line" ? "Line width and style" : panel === "extend" ? "Extend the line" : "Edit the text"}
-            className="absolute bottom-full left-1/2 z-30 mb-space-1 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg shadow-raised md:bottom-auto md:left-auto md:right-0 md:top-full md:mb-0 md:mt-space-1 md:translate-x-0">
+            className="absolute bottom-full left-1/2 z-30 mb-space-1 w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg shadow-raised md:bottom-auto md:left-auto md:right-0 md:top-full md:mb-0 md:mt-space-1 md:max-w-full md:translate-x-0">
             {panel === "colour" && (
               <div className="flex flex-wrap items-center gap-space-1">
                 {swatchColours(palette).map((c) => (

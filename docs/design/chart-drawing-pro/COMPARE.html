@@ -6,8 +6,9 @@
 <title>Drawing selection bar</title>
 <!-- Owner 21 Nov ("chart drawing tools are not production level, they should hav setting, selected drawing i cant delete or
      move so make it like tradingview"). Before = claude/chart-drawing-pro at bf9e50bf (no bar), after = claude/chart-drawing-toolbar
-     merged with the engine work (a476cf58: anchor handles). Captured with Playwright on the Charts page's made-up bars
-     (e2e/chartsMocks.ts): no real account, price or id. After: e2e/charts-v2.e2e.ts with DRAW_SHOTS. -->
+     merged with the engine work (a476cf58: anchor handles). Captured with Playwright on made-up bars (e2e/chartsMocks.ts):
+     no real account, price or id. Charts page: e2e/charts-v2.e2e.ts with DRAW_SHOTS; Terminal: e2e/terminal-drawing-v2.e2e.ts
+     with DRAW_SHOTS (DRAW_PHASE=before on the bf9e50bf build). -->
 <style>
 :root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
@@ -36,11 +37,13 @@ img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-
     <tr><td>Settings</td><td class="bad">none</td><td class="good">colour (theme swatches + custom), width 1-4, solid / dashed / dotted, extend (trend line, channel), label text</td></tr>
     <tr><td>Delete</td><td class="bad">Delete key only (none on a phone)</td><td class="good">trash on the bar, no question (Undo brings it back)</td></tr>
     <tr><td>Lock / copy</td><td class="bad">-</td><td class="good">lock / unlock, duplicate</td></tr>
+    <tr><td>Desktop place</td><td>-</td><td class="good">top right, clear of the price axis; steps below the top-left row (live chip, legend, Open / High / Low / Close readout) when that row reaches under it, so both stay visible</td></tr>
     <tr><td>Phone</td><td class="bad">-</td><td class="good">docked above the chart's bottom controls, 44 px buttons, all in view at 390</td></tr>
     <tr><td>Where</td><td>-</td><td class="good">every v2 chart: Charts page, Multi-chart cells, the Terminal's chart</td></tr>
   </tbody>
 </table>
 
+<h2 style="font-size:18px">Charts page</h2>
 <h2>Desktop 1440 - light</h2>
 <div class="pair">
   <figure><figcaption>Before: trend line just drawn (selected)</figcaption><img src="before-charts-1440-light.png" alt="Before, desktop light"></figure>
@@ -60,6 +63,27 @@ img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-
 <div class="pair phone">
   <figure><figcaption>Before</figcaption><img src="before-charts-390-dark.png" alt="Before, phone dark"></figure>
   <figure><figcaption>After</figcaption><img src="after-charts-390-dark.png" alt="After, phone dark"></figure>
+</div>
+<h2 style="font-size:18px">Terminal chart panel</h2>
+<h2>Terminal 1440 - light</h2>
+<div class="pair">
+  <figure><figcaption>Before: trend line just drawn (selected)</figcaption><img src="before-terminal-1440-light.png" alt="Terminal before, desktop light"></figure>
+  <figure><figcaption>After: bar under the live chip row, line restyled</figcaption><img src="after-terminal-1440-light.png" alt="Terminal after, desktop light"></figure>
+</div>
+<h2>Terminal 1440 - dark</h2>
+<div class="pair">
+  <figure><figcaption>Before</figcaption><img src="before-terminal-1440-dark.png" alt="Terminal before, desktop dark"></figure>
+  <figure><figcaption>After</figcaption><img src="after-terminal-1440-dark.png" alt="Terminal after, desktop dark"></figure>
+</div>
+<h2>Terminal 390 - light</h2>
+<div class="pair phone">
+  <figure><figcaption>Before</figcaption><img src="before-terminal-390-light.png" alt="Terminal before, phone light"></figure>
+  <figure><figcaption>After</figcaption><img src="after-terminal-390-light.png" alt="Terminal after, phone light"></figure>
+</div>
+<h2>Terminal 390 - dark</h2>
+<div class="pair phone">
+  <figure><figcaption>Before</figcaption><img src="before-terminal-390-dark.png" alt="Terminal before, phone dark"></figure>
+  <figure><figcaption>After</figcaption><img src="after-terminal-390-dark.png" alt="Terminal after, phone dark"></figure>
 </div>
 </main>
 </body>

@@ -4,6 +4,7 @@ import type { LayerData, LayerLabel, LayerSegment } from "../charting/engine";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { ChartMarker } from "../charting/markers";
 import type { OHLCVBar, Trade } from "../types";
+import { formatPrice } from "../ui/format";
 import ChartV2 from "./ChartV2";
 import { backtestChartPlan, backtestTimeframe } from "./backtestChart";
 import type { StrategyLines } from "./templateLines";
@@ -15,7 +16,6 @@ const INVALIDATION_COLOR = "#dc2626";
 /** BT-DRAW 2d (owner 21 Nov): a drawn stop / area runs this many bars past the exit, so a trade closed on the next bar
  * still shows them. Display only. */
 export const DRAW_PAST_EXIT_BARS = 10;
-const price2 = (v: number) => v.toFixed(2);
 
 /** BT-DRAW: each trade's own stop (where its idea is wrong) as a dashed line from its entry, with its price; 2c: the area a
  * level-gate template entered from, boxed from its setup bar (else the entry), with its price range. 2d: both run
@@ -34,7 +34,7 @@ export function tradeLayer(trades: readonly Trade[], bars: readonly { timestamp:
     if (!Number.isFinite(t1) || !Number.isFinite(t2) || !(t.stop_loss > 0)) continue;
     const end = past(t2);
     segments.push({ t1, p1: t.stop_loss, t2: end, p2: t.stop_loss, color: INVALIDATION_COLOR, width: 1, style: "dashed" });
-    labels.push({ time: end, price: t.stop_loss, text: `Stop ${price2(t.stop_loss)}`, color: INVALIDATION_COLOR,
+    labels.push({ time: end, price: t.stop_loss, text: `Stop ${formatPrice(t.stop_loss)}`, color: INVALIDATION_COLOR,
                   position: t.direction === "LONG" ? "below" : "above", inside: true });
   }
   for (const t of trades) {
@@ -47,7 +47,7 @@ export function tradeLayer(trades: readonly Trade[], bars: readonly { timestamp:
       segments.push({ t1: x1, p1, t2: x2, p2, role, width: 1, style: "solid" });
     }
     const long = t.direction === "LONG";
-    labels.push({ time: b, price: long ? hi : lo, text: `Area ${price2(lo)} – ${price2(hi)}`, role,
+    labels.push({ time: b, price: long ? hi : lo, text: `Area ${formatPrice(lo)} – ${formatPrice(hi)}`, role,
                   position: long ? "above" : "below", inside: true });
   }
   return { segments, labels };

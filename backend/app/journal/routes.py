@@ -292,9 +292,11 @@ async def _attach(kind: str, ref_id: int, file: UploadFile | None, user: User, s
 
 
 async def _chart(kind: str, ref_id: int, at: str, user: User, session: AsyncSession) -> Response:
+    from app.journal import snapshots
     ref = await _ref(session, user, kind, ref_id)
     try:
-        png = await entries.chart_png(session, user, ref, at)
+        # P2-8 J1-2: an ATP trade's picture is stored on its first draw and read from the store after that
+        png = await (snapshots.picture(session, user, ref.trade, at) if ref.trade is not None else entries.chart_png(session, user, ref, at))
     except entries.EntryError as exc:
         raise _http(exc) from exc
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
@@ -527,3 +529,337 @@ async def manual_trade_chart_png(manual_id: int, cvd: bool = False, tf: str = Qu
     data = await trade_chart_view.png(session, ref.manual, user=user, tf=tf, cvd=cvd)
     name = f"{ref.manual.symbol.replace(' ', '-')}-trade-{ref.manual.id}.png"
     return Response(content=data, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# --- P2-8 J1-1: trades placed in his own broker app -------------------------------------------------------------------
+
+broker_sync_rate_limit = user_rate_limit("journal_broker_sync", limit=6, window_seconds=60)
+
+
+@router.post("/broker-sync", dependencies=[Depends(broker_sync_rate_limit)])
+async def broker_sync_now(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Reads today's trade book of each of his own signed-in broker sessions (read-only) and journals the trades done
+    outside ATP; fills of orders ATP placed are matched to those trades, and nothing is journalled twice."""
+    await _flag(session, user)
+    from app.journal import broker_sync
+    return await broker_sync.sync_user(session, user)
+
+
+# --- P2-8 J2: the 20-second check-in (his own answers; private: only his own routes read them) ------------------------
+
+class CheckinBody(BaseModel):
+    """Every field optional; a field left out is not touched, null clears it."""
+    model_config = {"extra": "forbid"}
+    feeling_before: str | None = None
+    confidence: int | None = None
+    feeling_after: str | None = None
+    plan_followed: str | None = None
+    mistake: str | None = None
+    lesson: str | None = Field(default=None, max_length=1000)
+    setup_name: str | None = Field(default=None, max_length=300)
+
+
+class CheckinNote(BaseModel):
+    text: str = Field(max_length=1000)
+
+
+class CheckinDismiss(BaseModel):
+    moment: str = Field(pattern=r"^(open|close)$")
+
+
+async def _checkin_view(session: AsyncSession, user: User, ref: entries.Ref) -> dict[str, Any]:
+    from app.journal import checkin
+    s = await journal_settings.load(session, user)
+    default_setup = ref.trade.strategy_id if ref.trade is not None else (ref.manual.setup if ref.manual is not None else None)
+    return checkin.view(await checkin.load(session, user, ref), s, default_setup=default_setup)
+
+
+async def _checkin_get(kind: str, ref_id: int, user: User, session: AsyncSession) -> dict[str, Any]:
+    return await _checkin_view(session, user, await _ref(session, user, kind, ref_id))
+
+
+async def _checkin_put(kind: str, ref_id: int, body: CheckinBody, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    s = await journal_settings.load(session, user)
+    try:
+        await checkin.save(session, user, ref, body.model_dump(exclude_unset=True), s)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return await _checkin_view(session, user, ref)
+
+
+async def _checkin_note(kind: str, ref_id: int, body: CheckinNote, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    try:
+        await checkin.add_note(session, user, ref, body.text)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return await _checkin_view(session, user, ref)
+
+
+async def _checkin_dismiss(kind: str, ref_id: int, body: CheckinDismiss, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    await checkin.dismiss(session, user, ref, body.moment)
+    return {"dismissed": body.moment}
+
+
+@router.get("/trades/{trade_id}/checkin")
+async def trade_checkin(trade_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_get("trade", trade_id, user, session)
+
+
+@router.put("/trades/{trade_id}/checkin")
+async def save_trade_checkin(trade_id: int, body: CheckinBody, user: User = Depends(get_current_user),
+                             session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_put("trade", trade_id, body, user, session)
+
+
+@router.post("/trades/{trade_id}/checkin/notes", status_code=201)
+async def trade_checkin_note(trade_id: int, body: CheckinNote, user: User = Depends(get_current_user),
+                             session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_note("trade", trade_id, body, user, session)
+
+
+@router.post("/trades/{trade_id}/checkin/dismiss")
+async def trade_checkin_dismiss(trade_id: int, body: CheckinDismiss, user: User = Depends(get_current_user),
+                                session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_dismiss("trade", trade_id, body, user, session)
+
+
+@router.get("/manual/{manual_id}/checkin")
+async def manual_checkin(manual_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_get("manual", manual_id, user, session)
+
+
+@router.put("/manual/{manual_id}/checkin")
+async def save_manual_checkin(manual_id: int, body: CheckinBody, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_put("manual", manual_id, body, user, session)
+
+
+@router.post("/manual/{manual_id}/checkin/notes", status_code=201)
+async def manual_checkin_note(manual_id: int, body: CheckinNote, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_note("manual", manual_id, body, user, session)
+
+
+@router.post("/manual/{manual_id}/checkin/dismiss")
+async def manual_checkin_dismiss(manual_id: int, body: CheckinDismiss, user: User = Depends(get_current_user),
+                                 session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_dismiss("manual", manual_id, body, user, session)
+
+
+@router.get("/checkins/waiting")
+async def checkins_waiting(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His entries opened / closed in the last days whose check-in half is not answered (or put off with "Not now")."""
+    await _flag(session, user)
+    from app.journal import checkin
+    return {"waiting": await checkin.waiting(session, user)}
+
+
+# --- P2-8 J3: daily / weekly / monthly reviews (his own trades; the first-20 rule) -----------------------------------
+
+MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+@router.get("/daily")
+async def daily_review(day: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"), user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """One day's card (IST day; default today): trades, result, plan followed, feelings, confirmed tags, one fact
+    done well."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    from app.market_data.calendar import IST
+    try:
+        the_day = datetime.fromisoformat(day).date() if day else datetime.now(IST).date()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="day must be a date (YYYY-MM-DD)") from exc
+    s = await journal_settings.load(session, user)
+    start, end = review_data.day_bounds(the_day)
+    units = await review_data.units(session, user, start, end)
+    return reviews.daily_card(the_day.isoformat(), units, await review_data.gate(session, user, s), s.feelings)
+
+
+@router.get("/review/extras")
+async def weekly_extras(week: str | None = Query(default=None, pattern=WEEK_PATTERN), user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The weekly review's additions: plan followed, feeling / confidence vs result, the most frequent mistake, the
+    biggest moves, the notable trades and his answer to the week's question."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    label, start, end = service.week_bounds(_week_or_422(week))
+    s = await journal_settings.load(session, user)
+    units = await review_data.units(session, user, start, end)
+    return reviews.weekly_extras(label, units, await review_data.gate(session, user, s), s.feelings,
+                                 await review_data.answer_of(session, user, label))
+
+
+@router.get("/monthly")
+async def monthly_review(month: str | None = Query(default=None, pattern=MONTH_PATTERN), user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The month: the discipline score and plan followed week by week, best / worst setup by his own numbers, totals."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    from app.market_data.calendar import IST
+    label = month or datetime.now(IST).strftime("%Y-%m")
+    start, end = review_data.month_bounds(label)
+    s = await journal_settings.load(session, user)
+    units = await review_data.units(session, user, start, end)
+    g = await review_data.gate(session, user, s)
+    weeks = []
+    for week in review_data.month_weeks(label):
+        data = await service.refresh_week(session, user, week)
+        w_units = await review_data.units(session, user, data["start"], data["end"])
+        weeks.append({"week": week, "score": data["score"]["score"], "plan": reviews.plan_counts(w_units, g.needed),
+                      "trades": len(w_units)})
+    return reviews.monthly(label, units, g, weeks, await review_data.answer_of(session, user, label))
+
+
+class ReflectionBody(BaseModel):
+    period: str = Field(pattern=r"^\d{4}-(W\d{2}|0[1-9]|1[0-2])$")
+    answer: str = Field(max_length=1000)
+
+
+@router.put("/reflection")
+async def save_reflection(body: ReflectionBody, user: User = Depends(get_current_user),
+                          session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His answer to a week's / month's reflection question (his own words; empty removes it)."""
+    await _flag(session, user)
+    from app.journal import review_data
+    return {"period": body.period, "answer": await review_data.save_answer(session, user, body.period, body.answer)}
+
+
+# --- P2-8 J4: My proof -------------------------------------------------------------------------------------------------
+
+class OwnProofBody(BaseModel):
+    text: str = Field(max_length=1000)
+    happened_on: str | None = Field(default=None, max_length=10)
+
+
+class PinBody(BaseModel):
+    key: str = Field(max_length=80)
+    pinned: bool
+
+
+@router.get("/proof")
+async def my_proof(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Facts of good process from his own trades (last 90 days) and his own entries, pinned first. Facts only."""
+    await _flag(session, user)
+    from app.journal import plans
+    return await plans.proof_page(session, user)
+
+
+@router.post("/proof", status_code=201)
+async def add_my_proof(body: OwnProofBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        row = await plans.add_own_proof(session, user, body.text, body.happened_on)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return {"id": row.id, "key": row.fact_key}
+
+
+@router.put("/proof/pin")
+async def pin_my_proof(body: PinBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        await plans.pin(session, user, body.key, body.pinned)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return {"key": body.key, "pinned": body.pinned}
+
+
+@router.delete("/proof/{proof_id}")
+async def remove_my_proof(proof_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    if not await plans.remove_own_proof(session, user, proof_id):
+        raise HTTPException(status_code=404, detail="No such entry")
+    return {"deleted": proof_id}
+
+
+# --- P2-8 J5: if-then plans and process goals (his own words) ----------------------------------------------------------
+
+class PlanBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    kind: str = Field(max_length=10)
+    if_text: str | None = Field(default=None, max_length=1000)
+    then_text: str | None = Field(default=None, max_length=1000)
+    trigger: str | None = Field(default=None, max_length=10)
+    metric: str | None = Field(default=None, max_length=20)
+    target_pct: int | None = None
+    period: str | None = Field(default=None, max_length=5)
+
+
+class PlanPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+    if_text: str | None = Field(default=None, max_length=1000)
+    then_text: str | None = Field(default=None, max_length=1000)
+    trigger: str | None = Field(default=None, max_length=10)
+    metric: str | None = Field(default=None, max_length=20)
+    target_pct: int | None = None
+    period: str | None = Field(default=None, max_length=5)
+    active: bool | None = None
+
+
+@router.get("/plans")
+async def my_plans(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His if-then plans and process goals, with each active goal's progress (counts; a share only on enough trades)."""
+    await _flag(session, user)
+    from app.journal import plans
+    s = await journal_settings.load(session, user)
+    return {"plans": [plans.plan_dict(r) for r in await plans.plans_of(session, user)],
+            "goals": await plans.goals_progress(session, user, s)}
+
+
+@router.post("/plans", status_code=201)
+async def add_my_plan(body: PlanBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        row = await plans.add_plan(session, user, body.model_dump())
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return plans.plan_dict(row)
+
+
+@router.patch("/plans/{plan_id}")
+async def change_my_plan(plan_id: int, body: PlanPatch, user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    row = await plans.own_plan(session, user, plan_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such plan")
+    try:
+        row = await plans.update_plan(session, row, body.model_dump(exclude_unset=True))
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return plans.plan_dict(row)
+
+
+@router.delete("/plans/{plan_id}")
+async def remove_my_plan(plan_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    row = await plans.own_plan(session, user, plan_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such plan")
+    await session.delete(row)
+    await session.commit()
+    return {"deleted": plan_id}
+
+
+@router.get("/today")
+async def journal_today(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The Journal's Today tab: his if-then plans, the ones a recent stop hit / loss brings back, his goals, his last
+    good decision and, after a loss, how often he followed his plan in his last trades."""
+    await _flag(session, user)
+    from app.journal import plans
+    s = await journal_settings.load(session, user)
+    return await plans.today(session, user, s)

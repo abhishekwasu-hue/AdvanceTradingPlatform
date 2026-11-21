@@ -141,7 +141,9 @@ def test_stats_own_org_manual_included_and_labelled(world):
 def test_entries_list_filters(world):
     a, q = world["a"], f"date_from={world['from']}"
     body = client.get(f"/api/journal/entries?{q}", headers=a).json()
-    assert body["total"] == 5                                                  # 4 trade rows (2 legs) + 1 manual
+    assert body["total"] == 4                     # 3 ATP entries (P2-8 J1-3: the structure's 2 legs are one) + 1 manual
+    (structure,) = [e for e in body["entries"] if e.get("spread")]
+    assert len(structure["legs"]) == 2 and structure["pnl"] == 60.0 and structure["outcome"] == "win"
     manual = [e for e in body["entries"] if e["kind"] == "manual"]
     assert len(manual) == 1 and manual[0]["outside_atp"] and manual[0]["source"] == "OUTSIDE_ATP" and manual[0]["r_multiple"] == 0.8
     assert body["setups"] == ["Buyer area", "Seller area"] and "early_exit" in body["tags"] and "fomo_entry" not in body["tags"]
@@ -153,7 +155,7 @@ def test_entries_list_filters(world):
     assert [e["id"] for e in by_tag["entries"]] == [world["win"]]
     assert client.get(f"/api/journal/entries?{q}&tag=fomo_entry", headers=a).json()["total"] == 0
     losses = client.get(f"/api/journal/entries?{q}&outcome=loss", headers=a).json()
-    assert sorted(e["pnl"] for e in losses["entries"]) == [-40.0, -20.0]       # a losing leg is a losing row
+    assert sorted(e["pnl"] for e in losses["entries"]) == [-20.0]     # P2-8 J1-3: the structure won, so its losing leg is not a loss
     assert client.get(f"/api/journal/stats?{q}&outcome=loss", headers=a).json()["totals"]["trades"] == 1   # the structure won
     assert client.get("/api/journal/entries?outcome=maybe", headers=a).status_code == 422
     assert client.get("/api/journal/entries?date_from=2026-10-10&date_to=2026-10-01", headers=a).status_code == 422

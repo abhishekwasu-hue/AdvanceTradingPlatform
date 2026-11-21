@@ -185,6 +185,7 @@ class Loaded:
     truncated: bool
     setups: list[str]                   # every setup / tag among the rows before the setup / tag / outcome filters (the
     tags: list[str]                     # filter choices)
+    spreads: dict[str, dict[str, Any]] = field(default_factory=dict)   # P2-8 J1-3: leg_group_id -> the structure's summary
 
 
 def _tag_names(tags: Sequence[JournalTagRecord], own: Sequence[str]) -> frozenset[str]:
@@ -253,6 +254,8 @@ async def load(session: AsyncSession, user: User, f: Filters) -> Loaded:
                          exit_reason=m.exit_reason, tags=[], user_tags=own, notes=m.notes,
                          attachments=len(files.get(("manual", m.id), [])), chart=f"/api/journal/manual/{m.id}/chart?at=entry",
                          mae_r=None, mfe_r=None, leg_group_id=None, names=frozenset(str(x) for x in own), risk=risk))
+        rows[-1]["source_label"] = entries.source_label(m)
+        rows[-1]["origin"] = m.origin
     rows.sort(key=lambda r: (r["entry_time"] or "", r["kind"], r["id"]), reverse=True)
     setups = sorted({r["setup"] for r in rows if r["setup"]})
     tag_choices = sorted({n for r in rows for n in r["_names"]})
@@ -264,7 +267,9 @@ async def load(session: AsyncSession, user: User, f: Filters) -> Loaded:
     for r in rows:
         r.pop("_names", None)
         r.pop("_risk", None)
-    return Loaded(rows=rows, decisions=decisions, truncated=truncated, setups=setups, tags=tag_choices)
+    from app.journal.spread import spread_summary
+    spreads = {str(legs[0].leg_group_id): spread_summary(legs) for unit, legs in units.items() if unit.startswith("g:") and legs}
+    return Loaded(rows=rows, decisions=decisions, truncated=truncated, setups=setups, tags=tag_choices, spreads=spreads)
 
 
 def _row(*, names: frozenset[str], risk: float | None = None, r: float | None, **values: Any) -> dict[str, Any]:

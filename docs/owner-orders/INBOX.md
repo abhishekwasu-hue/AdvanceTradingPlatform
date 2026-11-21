@@ -784,3 +784,10 @@ Owner answer (21 Nov, transliterated; to "in your own saved layouts the panel do
 Note: option B and more - the Conclusion panel is always shown on the Terminal while `terminal_conclusion` is on: every
 preset (Option seller, Option buyer, Quick trade, Multi-chart) and every saved layout of his; it has no Close button and no
 Panels-menu toggle (it can still be moved and resized); the phone tab stays.
+## 21 Nov - owner (answer to the report on "Jhale ka sarv kam")
+
+> "Default yes and go ahead"
+
+Note: approves the stated defaults - NEXT-Q1 (build P2-8 Journal v2), CP-CHAT-Q1 (rule sections behind AI words fold
+under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ to merge the P2-8 Journal v2 PRs in order
+(#1147, #1148, #1150) once CI is green. Their migrations deploy only after 15:30 IST (DECISIONS 25 Oct).

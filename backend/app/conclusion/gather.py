@@ -45,20 +45,42 @@ def remember(key: tuple[Any, ...], body: dict[str, Any], now: float) -> None:
     _cache[key] = (now + CACHE_SECONDS, body)
 
 
+def chart_key(symbol: str) -> str:
+    """The stored-history key the chart reading takes ("NIFTY" -> "NSE_INDEX:NIFTY50"), the same mapping the Copilot's
+    tools and My day use (app/ai/tools/copilot.lake_key); a name the reader cannot take stays as it is."""
+    from app.ai.tools.copilot import lake_key
+    try:
+        return lake_key(symbol)
+    except Exception:  # noqa: BLE001 - an unknown name: the reader says "not available" for it
+        return symbol
+
+
 async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> dict[str, Any] | None | str:
     from app.charts.read_chart import read_chart
     try:
-        return await read_chart(instrument=symbol, tf=tf, user=user, session=session)  # type: ignore[arg-type]
+        return await read_chart(instrument=chart_key(symbol), tf=tf, user=user, session=session)  # type: ignore[arg-type]
     except HTTPException as exc:
         return "off" if exc.status_code == 404 else "na"
 
 
-async def _oi(session: AsyncSession, user: User, symbol: str) -> dict[str, Any] | None | str:
-    from app.option_chain.routes import banner
+async def _oi(session: AsyncSession, user: User, symbol: str, now: datetime | None = None) -> dict[str, Any] | None | str:
+    """Today's OI banner; when today has no stored slot (market closed, a holiday, before the first slot) the LAST
+    session's banner, marked `last_session` with its date - never presented as today's."""
+    from app.market_data.calendar import family_holidays, last_session_close
+    from app.option_chain import routes as oc
     try:
-        return await banner(symbol, user=user, session=session)
+        today = await oc.banner(symbol, user=user, session=session)
     except HTTPException as exc:
         return "off" if exc.status_code == 404 else "na"
+    if today.get("banner"):
+        return today
+    underlying = oc._underlying(symbol)  # noqa: SLF001 - the banner route's own name rule
+    exchange = await oc._exchange(session, user.tenant_id, underlying)  # noqa: SLF001
+    close = last_session_close(now or datetime.now(UTC), await family_holidays(session, exchange), exchange)
+    if close is None or close.date().isoformat() == today.get("date"):
+        return today
+    last = oc._banner_from(underlying, *await oc._day_view(session, user, underlying, close.date()))  # noqa: SLF001
+    return {**last, "last_session": close.date().isoformat()} if last.get("banner") else today
 
 
 async def _positions(session: AsyncSession, user: User) -> list[dict[str, Any]]:
@@ -124,7 +146,7 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     read_at = now.isoformat()
     symbol = symbol.strip().upper()
     chart = await _safe(session, "chart", _chart(session, user, symbol, tf))
-    oi = await _safe(session, "oi", _oi(session, user, symbol))
+    oi = await _safe(session, "oi", _oi(session, user, symbol, now))
     positions = await _safe(session, "positions", _positions(session, user))
     orders = await _safe(session, "orders", _orders(session, user))
     signals = await _safe(session, "signals", _signals(session, user))

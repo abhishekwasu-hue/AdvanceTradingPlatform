@@ -757,3 +757,11 @@ each, flag `terminal_conclusion` OFF under `ui_v2` + `terminal`.
 Note: confirmation, not a new order. The `live_trading` switch ON on production is the owner's own, intended setting
 (B1: LIVE through ATP for his organisation only, DECISIONS 14 Nov). Sessions do not flag it as an issue again; it stays
 his switch alone.
+
+## 21 Nov - TERM-CON follow-up (strategy timeframes)
+
+Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal chart's timeframe - add his strategies' timeframes too? Default: yes, in a small next PR"):
+
+> "Ho"
+
+Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).

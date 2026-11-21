@@ -1951,6 +1951,10 @@ const CON_ON = { ...ON, terminal_conclusion: true };
 const CON_SHOTS = process.env.CONCLUSION_SHOTS;
 const conclusionRoute = (calls: string[]) => async (page: Page) => {
   await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\?/, (r) => { calls.push(r.request().url()); return r.fulfill({ json: CONCLUSION }); });
+  // TC-Q2: one made-up bot of his on the Terminal's symbol, on 60-minute candles -> the read also asks for 1h.
+  await page.route(/\/api(?:\/v1)?\/deployments(\?.*)?$/, (r) => r.fulfill({ json: [{ id: 7, symbol: "NIFTY 50", timeframe: "60min", status: "ACTIVE",
+    strategy_id: "custom:1", exchange: "NSE", mode: "PAPER", broker_name: null, pause_reason: null, last_evaluated_at: null, last_signal_at: null,
+    last_error: null, consecutive_failures: 0, open_positions: 0, created_by: null, created_at: NOW }] }));
   // C4: the summary on tap (made-up words; the server checks real ones).
   await page.route(/\/api(?:\/v1)?\/terminal\/conclusion\/summary$/, (r) => { calls.push(`POST ${r.request().url()}`); return r.fulfill({ json: {
     ready: true, text: "Most readings lean up: the 15-minute structure, OI and your signals agree. Your positions point the other way, and one order was not placed today.",
@@ -1982,6 +1986,7 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
         expect(calls.length).toBeGreaterThan(0);
         expect(new URL(calls[0]).pathname).toMatch(/^\/api(\/v1)?\/terminal\/conclusion$/);   // the real address, never /api/api/...
         expect(new URL(calls[0]).searchParams.get("symbol")).toBe("NIFTY");
+        await expect.poll(() => calls.some((c) => new URL(c.replace(/^POST /, "")).searchParams.getAll("also").includes("1h"))).toBe(true);
         const text = (await body.innerText()).toLowerCase();
         for (const word of [" buy ", " sell ", "target", "stop-loss"]) expect(text).not.toContain(word);
         expect(calls.some((c) => c.startsWith("POST"))).toBe(false);          // the AI is never called without a tap

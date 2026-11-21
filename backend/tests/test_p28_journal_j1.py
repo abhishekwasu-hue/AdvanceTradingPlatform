@@ -222,6 +222,22 @@ def test_worker_retries_a_failed_read_at_most_three_times(monkeypatch):
             _flag_named(name, value)
 
 
+def test_the_worker_starts_the_journal_task_only_when_work_waits():
+    after_close = datetime(2026, 11, 20, 10, 20, tzinfo=UTC)
+
+    async def check(at):
+        async with _session_factory() as session:
+            return await broker_sync.work_waiting(session, at)
+    before = _flag_named("discipline_engine", None)
+    try:
+        assert _run(check(after_close)) is False                                # the journal is off for everyone
+        _flag_named("discipline_engine", {"on": True, "tenants": []})
+        assert _run(check(after_close - timedelta(hours=1))) is False           # 14:50 IST: not due
+        assert _run(check(datetime(2026, 11, 21, 10, 20, tzinfo=UTC))) is False  # a Saturday
+    finally:
+        _flag_named("discipline_engine", before)
+
+
 def test_snapshot_view_lists_both_points():
     assert snapshots.view([SimpleNamespace(at="exit")]) == {"entry": False, "exit": True}
 
@@ -330,3 +346,11 @@ def test_account_export_and_erase_cover_the_new_tables():
     from app.retention import service
     src = inspect.getsource(service._erase_journal)
     assert "JournalSnapshotRecord" in src and "JournalBrokerFillRecord" in src
+
+
+def test_a_worker_cycle_with_no_journal_work_leaves_no_background_task(monkeypatch):
+    """CI regression: a task left running when the test's event loop closed broke the shared test database."""
+    from tests.test_phase_ax_first_paper_day import _FakeBroker, _worker
+    worker = _worker(monkeypatch, _FakeBroker())
+    _run(worker.run_cycle(now=datetime(2026, 11, 20, 10, 20, tzinfo=UTC)))     # 15:50 IST on a trading day, journal off
+    assert worker._journal_sync_task is None

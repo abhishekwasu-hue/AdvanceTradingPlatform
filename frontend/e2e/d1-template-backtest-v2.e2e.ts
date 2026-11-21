@@ -81,12 +81,14 @@ async function mockWorld(page: Page) {
     posts.push({ url: "/backtest", body: { strategy_id: b.strategy_id, base_timeframe: b.base_timeframe, data_source: b.data_source } });
     const bars = walk(250);
     // BT-DRAW 2c: a long's demand area under its bar, a short's supply area above it
-    const trade = (i: number, pnl: number, long = true) => ({ symbol: b.symbol, strategy_id: b.strategy_id, direction: long ? "LONG" : "SHORT",
+    // BT-DRAW 2d: the short closes on the next bar (its stop and area still show, past the exit)
+    const trade = (i: number, pnl: number, long = true, held = 6) => ({ symbol: b.symbol, strategy_id: b.strategy_id, direction: long ? "LONG" : "SHORT",
       entry_time: bars[i].timestamp, entry_price: bars[i].close, quantity: 10, stop_loss: long ? bars[i].low : bars[i].high, target1: null,
-      target2: null, exit_time: bars[i + 6].timestamp, exit_price: bars[i + 6].close, exit_reason: "SIGNAL", pnl, charges: 12,
+      target2: null, exit_time: bars[i + held].timestamp, exit_price: bars[i + held].close, exit_reason: "SIGNAL", pnl, charges: 12,
       entry_reasons: ["Example: a level broke and the price came back to it and held."], setup_time: bars[i - 4].timestamp,
-      setup_area_low: long ? bars[i].low - 1 : bars[i].high, setup_area_high: long ? bars[i].low : bars[i].high + 1 });
-    const trades = [trade(40, 180), trade(95, -120, false), trade(150, 240)];
+      // the idea is wrong beyond the area's far edge: a long's stop under its area, a short's over it
+      setup_area_low: long ? bars[i].low + 0.5 : bars[i].high - 1.5, setup_area_high: long ? bars[i].low + 1.5 : bars[i].high - 0.5 });
+    const trades = [trade(40, 180), trade(95, -120, false, 1), trade(150, 240)];
     return route.fulfill({ json: { ...(S.backtest as object), strategy_id: b.strategy_id, symbol: b.symbol, total_trades: 3, winning_trades: 2, losing_trades: 1,
       win_rate: 66.7, net_pnl: 300, gross_profit: 420, gross_loss: -120, profit_factor: 3.5, max_drawdown: 120, avg_win: 210, avg_loss: -120, expectancy: 100,
       trades, equity_curve: [0, 180, 60, 300], analytics: null, run_id: null } });
@@ -151,7 +153,7 @@ for (const size of [{ width: 390, height: 844, phone: true }, { width: 1440, hei
         expect(posts.some((p) => p.url.startsWith("/deployments"))).toBe(false);
         // BT-DRAW (owner 18 Nov): a price-structure template draws no default EMA pair; each trade's stop and why it closed
         await expect(panel.locator("[data-backtest-structure]")).toHaveText("This strategy reads price structure only; no indicator lines are drawn.");
-        await expect(panel.locator("[data-backtest-legend]")).toContainText("Each trade's stop, from entry to exit");
+        await expect(panel.locator("[data-backtest-legend]")).toContainText("Each trade's stop, from its entry");
         await expect(panel.locator("[data-backtest-named]")).toHaveCount(0);
         await expect(panel.locator("[data-entry-why]").first()).toHaveText("Example: a level broke and the price came back to it and held.");
         await expect(panel.locator("[data-exit-why]").first()).toHaveText("SIGNAL");

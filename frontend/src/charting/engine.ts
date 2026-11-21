@@ -39,7 +39,9 @@ export interface LayerSegment {
 }
 /** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. M97 PR-4: `inside` - drawn only
  * when its point is on the pane (a tapped zone's "Leg-out" of a candle left of the bars shown is not cut in half). */
-export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below"; inside?: boolean }
+export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below"; inside?: boolean;
+  /** BT-DRAW 2d: painted in the theme's buyer / seller colour, as a segment's `role`. */
+  role?: BandRole }
 /** M98 F1: a candle mark (a tapped zone's leg-in / base / leg-out): an outlined box around exactly the chart bars of the
  * candle [time, end) - `time` its start as the chart stamps bars, `end` the start of the next one of its timeframe -
  * from its low to its high, and an optional text above or below the box. `role` paints it in the buyer / seller colour. */

@@ -12,7 +12,7 @@
  */
 import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from "../chart/chartOptions";
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
-import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerMark, LayerSegment, StudyLine, StudySpec } from "./engine";
+import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerLabel, LayerMark, LayerSegment, StudyLine, StudySpec } from "./engine";
 import { DEFAULT_COLOR, bandLeft, barSpan, layerShapes, markLabelRects, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
@@ -275,6 +275,12 @@ export class LightweightEngine implements ChartEngine {
     return color ? { ...s, color } : s;
   };
 
+  /** BT-DRAW 2d: a label with a `role` in the theme's buyer / seller colour, as a segment's. */
+  private themedLabel = (l: LayerLabel): LayerLabel => {
+    const color = l.role ? this.zoneColors[l.role] : undefined;
+    return color ? { ...l, color } : l;
+  };
+
   /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
    * (interpolated between bars, extrapolated past the last one), so an anchor is exact on any timeframe. */
   toData(x: number, y: number): DataPoint | null {
@@ -375,6 +381,7 @@ export class LightweightEngine implements ChartEngine {
         // clear of them, by the same placement those layers paint with
         const names = [...this.layers].flatMap(([key, l]) => (key !== id && l.marks.length ? markLabelRects(l.marks, cc) : []));
         return layerShapes({ ...shapes, bands: shapes.bands.map(this.themedBand), segments: shapes.segments.map(this.themedSegment),
+                             labels: shapes.labels.map(this.themedLabel),
                              marks: shapes.marks.map(this.themedMark) }, names.length ? { ...cc, labelBlocks: names } : cc);
       }, (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);

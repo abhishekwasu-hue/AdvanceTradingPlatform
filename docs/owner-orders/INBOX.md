@@ -800,3 +800,12 @@ green; the deploy runs after 15:30 IST (three additive migrations), then `discip
 Note: approves the stated defaults - NEXT-Q1 (build P2-8 Journal v2), CP-CHAT-Q1 (rule sections behind AI words fold
 under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ to merge the P2-8 Journal v2 PRs in order
 (#1147, #1148, #1150) once CI is green. Their migrations deploy only after 15:30 IST (DECISIONS 25 Oct).
+
+## 21 Nov - owner (screenshots: A1 test, one long closed by its stop on the next candle; area box and stop line too thin to see; asked how the stop was hit and where its setting is)
+
+> "stop loss ksa hitt jhala setting kuthe hoti, full confused"
+
+> "ok" (to: run the drawn stop line and area box 10 candles past the exit, write the area's price range on the box and the stop's price on its line - display only)
+
+Note: BT-DRAW 2d. The stop is the template's own invalidation (the area's far edge, past the extreme since the visit, by
+"Buffer beyond the far edge" - template card > Settings and rules); no logic change.

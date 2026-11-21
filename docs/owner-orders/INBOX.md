@@ -807,3 +807,4 @@ green; the deploy runs after 15:30 IST (three additive migrations), then `discip
 Note: approves the stated defaults - NEXT-Q1 (build P2-8 Journal v2), CP-CHAT-Q1 (rule sections behind AI words fold
 under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ to merge the P2-8 Journal v2 PRs in order
 (#1147, #1148, #1150) once CI is green. Their migrations deploy only after 15:30 IST (DECISIONS 25 Oct).
+| 2026-11-21 | "handover update krne" | docs/HANDOVER_NOW.md updated: what merged today, the open PRs, the new ATP_PRIVATE_REF and the owner's deploy (after 15:30 IST, migration yes) |

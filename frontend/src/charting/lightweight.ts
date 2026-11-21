@@ -14,7 +14,7 @@ import { DEFAULT_INTERACTION, interactionOptions, type InteractionOptions } from
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { BandRole, ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerBand, LayerData, LayerMark, LayerSegment, StudyLine, StudySpec } from "./engine";
 import { DEFAULT_COLOR, bandLeft, barSpan, layerShapes, markLabelRects, timeToLogical, type BandLabelStyle, type BandRef, type Converters, type Rect } from "./geometry";
-import { DrawingPrimitive, LayerPrimitive } from "./primitives";
+import { DrawingPrimitive, LayerPrimitive, SelectionPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
 // The slice of the lightweight-charts API this adapter uses (structural, so tests can pass a fake).
@@ -30,8 +30,8 @@ export interface CandleSeriesLike {
   data(): readonly { time: unknown }[];
   subscribeDataChanged(handler: () => void): void;
   unsubscribeDataChanged(handler: () => void): void;
-  attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
-  detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
+  attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive | SelectionPrimitive): void;
+  detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive | SelectionPrimitive): void;
 }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number }; sourceEvent?: unknown }
 export interface ChartLike {
@@ -87,6 +87,8 @@ export class LightweightEngine implements ChartEngine {
   private zoneColors: Partial<Record<BandRole, string>> = {};  // M75 W-1: the chart theme's buyer / seller area colours
   private labelAvoid: readonly Rect[] = [];                    // M75 W-1: pane rectangles layer labels keep clear of
   private labelStyle: BandLabelStyle | undefined;              // M78: band labels' font size, chip and fallback ink (chart tokens)
+  private selectedId: string | null = null;                    // the drawing whose anchor handles are shown
+  private selection: SelectionPrimitive | null = null;
 
   /** `panning` (R4): the owner of the gesture options (the v2 `ChartCore`), asked to suspend / resume them. Without
    * one (ProChart) the engine writes the default gesture options itself, as full objects. */
@@ -215,6 +217,34 @@ export class LightweightEngine implements ChartEngine {
     if (JSON.stringify(style) === JSON.stringify(this.labelStyle)) return;
     this.labelStyle = { ...style };
     this.refreshLayers();
+    this.paintSelection(false);
+  }
+
+  /** The drawing tools' selection: round handles at the drawing's anchors, above every drawing, filled with the chart
+   * background (the label chip token) and ringed in the drawing's colour as shown. null: no handles. The drawing itself
+   * is drawn as it is (its own colour and width). */
+  setSelectedDrawing(id: string | null) {
+    if (id === this.selectedId) return;
+    this.selectedId = id;
+    this.paintSelection(true);
+  }
+
+  /** `reattach`: put the handles on top again (a new selection, or the selected drawing was drawn anew). */
+  private paintSelection(reattach: boolean) {
+    const d = this.selectedId != null ? this.drawings.get(this.selectedId) : undefined;
+    if (this.selection && (reattach || !d || this.disposed)) {
+      this.candles.detachPrimitive(this.selection);
+      this.selection = null;
+    }
+    if (!d || this.disposed) return;
+    const shown = this.themed(d);
+    const fill = this.labelStyle?.chip ?? null;
+    if (this.selection) {
+      this.selection.set(shown, fill);
+      return;
+    }
+    this.selection = new SelectionPrimitive(shown, (w, h) => this.converters(w, h), fill);
+    this.candles.attachPrimitive(this.selection);
   }
 
   /** M78 (F5): the band under a pane point - a band label's chip first, then the thinnest band whose price range
@@ -314,11 +344,13 @@ export class LightweightEngine implements ChartEngine {
     if (current?.kind === "primitive" && drawing.kind !== "hline") {     // same primitive, new anchors: no re-attach
       this.drawings.set(id, drawing);
       current.primitive.setDrawing(this.themed(drawing));
+      if (id === this.selectedId) this.paintSelection(false);
       return;
     }
     this.removeDrawing(id);
     this.drawings.set(id, drawing);
     this.rendered.set(id, this.draw(drawing));
+    if (id === this.selectedId) this.paintSelection(true);
   }
 
   updateDrawing(id: string, drawing: DrawingV1) {
@@ -332,6 +364,7 @@ export class LightweightEngine implements ChartEngine {
     if (r?.kind === "primitive") this.candles.detachPrimitive(r.primitive);
     this.rendered.delete(id);
     this.drawings.delete(id);
+    if (id === this.selectedId) this.paintSelection(false);
   }
 
   private themed(d: DrawingV1): DrawingV1 {

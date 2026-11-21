@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DrawingV1 } from "./drawings";
 import { extendSegment, fibLevels, positionStats, shapes, timeToLogical, withAlpha, type Converters, type Shape } from "./geometry";
-import { paint, type PaintContext } from "./primitives";
+import { DASH, HANDLE_RADIUS, paint, paintHandles, SelectionPrimitive, type HandleContext, type PaintContext } from "./primitives";
 
 // A linear chart: one bar every 15 minutes from T0, 10 px per bar; price 100 at y=500, 10 px per rupee (up is smaller y).
 const T0 = Date.parse("2026-03-02T03:45:00Z") / 1000;
@@ -127,5 +127,87 @@ describe("painter", () => {
     expect(calls.some((c) => c.startsWith("fill(") || c === "closePath()")).toBe(false);     // a 2-point polygon is skipped
     expect(calls).toContain("fillText(R:R 2.40,5,6)");
     expect(calls[calls.length - 1]).toBe("restore()");
+  });
+});
+
+/** A context that records every call and every property set, in order. */
+function recorder() {
+  const calls: string[] = [];
+  const ctx = new Proxy({} as Record<string, unknown>, {
+    get: (target, key: string) => (key in target ? target[key] : (...args: unknown[]) => { calls.push(`${key}(${args.join(",")})`); }),
+    set: (target, key: string, value) => { target[key] = value; calls.push(`${key}=${String(value)}`); return true; },
+  });
+  return { calls, ctx };
+}
+
+describe("owner 21 Nov: line style, width and extend as set", () => {
+  const two = [{ t: iso(2), p: 100 }, { t: iso(6), p: 104 }];
+
+  it("each line style paints its own dash pattern", () => {
+    expect(DASH).toEqual({ solid: [], dashed: [6, 4], dotted: [2, 3] });
+    for (const line of ["solid", "dashed", "dotted"] as const) {
+      const [seg] = of(shapes({ kind: "trendline", anchors: two, style: { line, width: 3 } }, conv), "segment");
+      expect([seg.dash, seg.width]).toEqual([line, 3]);
+      const { calls, ctx } = recorder();
+      paint(ctx as unknown as PaintContext, [seg]);
+      expect(calls).toContain(`setLineDash(${DASH[line].join(",")})`);
+      expect(calls).toContain("lineWidth=3");
+    }
+  });
+
+  it("a rectangle's outline and a Fibonacci's levels take the width and the line style", () => {
+    const [rect] = of(shapes({ kind: "rectangle", anchors: two, style: { line: "dotted", width: 2 } }, conv), "rect");
+    expect([rect.dash, rect.strokeWidth]).toEqual(["dotted", 2]);
+    const { calls, ctx } = recorder();
+    paint(ctx as unknown as PaintContext, [rect]);
+    expect(calls).toContain("setLineDash(2,3)");
+    expect(calls).toContain("lineWidth=2");
+    const plain = of(shapes({ kind: "rectangle", anchors: two }, conv), "rect")[0];
+    expect("dash" in plain || "strokeWidth" in plain).toBe(false);                 // a plain box stays as it was
+    const fib = of(shapes({ kind: "fib_retracement", anchors: two, style: { line: "dashed", width: 3 } }, conv), "segment");
+    expect(fib.every((s) => s.dash === "dashed" && s.width === 3)).toBe(true);
+    expect(of(shapes({ kind: "fib_retracement", anchors: two }, conv), "segment").every((s) => s.width === 1)).toBe(true);
+  });
+
+  it("extend reaches the pane edges for a trend line and a channel, and a Fibonacci's levels", () => {
+    for (const [extend, x1, x2] of [["none", 20, 60], ["left", 0, 60], ["right", 20, 400], ["both", 0, 400]] as const) {
+      const [seg] = of(shapes({ kind: "trendline", anchors: two, style: { extend } }, conv), "segment");
+      expect([seg.x1, seg.x2], extend).toEqual([x1, x2]);
+      const chan = of(shapes({ kind: "channel", anchors: [...two, { t: iso(4), p: 98 }], style: { extend } }, conv), "segment");
+      expect([chan[0].x1, chan[0].x2, chan[1].x1, chan[1].x2], extend).toEqual([x1, x2, x1, x2]);
+      const fib = of(shapes({ kind: "fib_retracement", anchors: two, style: { extend } }, conv), "segment")[0];
+      expect([fib.x1, fib.x2], extend).toEqual([x1, x2]);
+    }
+  });
+});
+
+describe("owner 21 Nov: the selected drawing's handles", () => {
+  it("a round handle at each anchor, filled and ringed with the given colours", () => {
+    const { calls, ctx } = recorder();
+    paintHandles(ctx as unknown as HandleContext, [{ x: 10, y: 20 }, { x: 30, y: 40 }], { fill: "rgb(9, 12, 18)", ring: "#112233" });
+    expect(calls.filter((c) => c.startsWith("arc("))).toEqual([`arc(10,20,${HANDLE_RADIUS},0,${Math.PI * 2})`, `arc(30,40,${HANDLE_RADIUS},0,${Math.PI * 2})`]);
+    expect(calls).toContain("fillStyle=rgb(9, 12, 18)");
+    expect(calls).toContain("strokeStyle=#112233");
+    expect(calls[0]).toBe("save()");
+    expect(calls[calls.length - 1]).toBe("restore()");
+  });
+
+  it("the selection primitive paints the drawing's handles, and nothing without a drawing", () => {
+    const run = (prim: SelectionPrimitive) => {
+      const { calls, ctx } = recorder();
+      const target = { useMediaCoordinateSpace: (fn: (s: { context: unknown; mediaSize: { width: number; height: number } }) => void) =>
+        fn({ context: ctx, mediaSize: { width: 400, height: 600 } }) };
+      prim.paneViews()[0].renderer()?.draw(target as never);
+      return calls;
+    };
+    const d: DrawingV1 = { kind: "trendline", anchors: [{ t: iso(2), p: 100 }, { t: iso(6), p: 104 }], style: { color: "#112233" } };
+    const prim = new SelectionPrimitive(d, () => conv, "rgb(1, 2, 3)");
+    const calls = run(prim);
+    expect(calls.filter((c) => c.startsWith("arc(")).map((c) => c.split(",").slice(0, 2).join(","))).toEqual(["arc(20,500", "arc(60,460"]);
+    expect(calls).toContain("strokeStyle=#112233");                              // ringed in the drawing's own colour
+    expect(calls).toContain("fillStyle=rgb(1, 2, 3)");                           // filled with the chart background
+    prim.set(null, null);
+    expect(run(prim)).toEqual([]);
+    expect(prim.paneViews()[0].zOrder?.()).toBe("top");
   });
 });

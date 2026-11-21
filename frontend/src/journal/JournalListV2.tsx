@@ -1,4 +1,4 @@
-import { FileDown, FileUp, Plus, SlidersHorizontal } from "lucide-react";
+import { FileDown, FileUp, Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CardV2, EmptyStateV2, LoadingRowsV2 } from "../dashboard/CardV2";
 import { BUTTON_SECONDARY, FIELD, LABEL } from "../trading/PartsV2";
@@ -59,8 +59,15 @@ function when(iso: string | null): { date: string; time: string } {
   return iso ? { date: formatDateIST(iso), time: formatTimeIST(iso) } : { date: "–", time: "" };
 }
 
+/** P2-8 J1-3: a structure's legs are one row; this chip says how many. */
+function LegsChip({ row }: { row: JournalListRow }) {
+  return row.legs && row.legs.length > 1 ? <span className={chipClass({ variant: "outline" })} data-spread-row>{row.legs.length} legs</span> : null;
+}
+
 function SourceChip({ row }: { row: JournalListRow }) {
-  if (row.outside_atp) return <span className={chipClass({ tone: "warn", variant: "tint" })} data-outside-atp>Outside ATP</span>;
+  if (row.outside_atp) {
+    return <span className={chipClass({ tone: "warn", variant: "tint" })} data-outside-atp>{row.origin === "BROKER" ? "From your broker" : "Outside ATP"}</span>;
+  }
   return row.mode ? <span className={chipClass({ variant: "outline" })}>{row.mode === "PAPER" ? "Paper" : row.mode === "LIVE" ? "Live" : row.mode}</span> : null;
 }
 
@@ -83,6 +90,7 @@ function RowCardV2({ row, api, onOpen }: { row: JournalListRow; api: Pick<Journa
           <span className="mt-space-1 flex flex-wrap items-center gap-space-1 text-t12 text-fg-muted">
             <span className="font-tabular">{w.date} {w.time}</span>
             <SourceChip row={row} />
+            <LegsChip row={row} />
             <TagChipsV2 tags={entryTags(row)} max={2} />
           </span>
         </span>
@@ -118,6 +126,7 @@ function RowsTableV2({ rows, api, onOpen }: { rows: readonly JournalListRow[]; a
                   <button type="button" className="text-left font-semibold text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                     onClick={(e) => { e.stopPropagation(); onOpen(r); }}>{r.symbol}</button>
                   <span className="ml-space-2"><SourceChip row={r} /></span>
+                  <span className="ml-space-1"><LegsChip row={r} /></span>
                 </td>
                 <td className="py-space-2 pr-space-3 text-fg">{r.setup ?? "–"}{r.timeframe && <span className="block text-t12 text-fg-muted">{r.timeframe}</span>}</td>
                 <td className="whitespace-nowrap py-space-2 pr-space-3 text-right"><PnlV2 value={r.pnl} /></td>
@@ -145,11 +154,15 @@ export function ExportButtonsV2({ onExport, busy }: { onExport: (format: "csv" |
   );
 }
 
-export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, onImport, onRetry, onMore, api, exportButtons }: {
+export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, onImport, onSyncBroker, syncing = false, onRetry, onMore, api,
+  exportButtons }: {
   state: ListState; filters: JournalFilters; onFilters: (f: JournalFilters) => void; onOpen: (r: JournalListRow) => void;
   onAddManual: () => void; onRetry: () => void; onMore: () => void; api: Pick<JournalApi, "image">; exportButtons: ReactNode;
   /** M88: "Import from a file" beside "Add a trade done outside ATP". */
   onImport?: () => void;
+  /** P2-8 J1-1: "Sync from broker" - today's trades from his own broker sessions. */
+  onSyncBroker?: () => void;
+  syncing?: boolean;
 }) {
   const phone = useMediaQuery(PHONE_QUERY);
   const [choices, setChoices] = useState<{ setups: string[]; tags: string[] }>({ setups: [], tags: [] });
@@ -171,6 +184,11 @@ export function JournalListV2({ state, filters, onFilters, onOpen, onAddManual, 
             {onImport && (
               <button type="button" className={BUTTON_SECONDARY} onClick={onImport} data-import-trades>
                 <FileUp size={16} aria-hidden />Import from a file
+              </button>
+            )}
+            {onSyncBroker && (
+              <button type="button" className={BUTTON_SECONDARY} onClick={onSyncBroker} disabled={syncing} data-broker-sync>
+                <RefreshCw size={16} aria-hidden />{syncing ? "Syncing…" : "Sync from broker"}
               </button>
             )}
           </span>

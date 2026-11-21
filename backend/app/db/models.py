@@ -520,6 +520,139 @@ class JournalManualTradeRecord(Base):
     user_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # M88: the file import this entry came from (`journal_imports.id`); null = typed in by hand
     import_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # P2-8 J1-1: "BROKER" = read from his own broker's trade book by the journal sync (journal_broker_fills); null = typed
+    # in by hand or imported from a file
+    origin: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalBrokerFillRecord(Base):
+    """P2-8 J1-1: one fill read from the trader's own broker trade book by the journal sync (read-only; no order call).
+    `status` MATCHED = the fill of an order ATP placed for him (`trade_id`; that trade already has its journal entry);
+    ENTRY = written into an outside-ATP journal entry (`manual_trade_id`). The unique key makes every re-run skip a fill
+    it has seen, so nothing is journalled twice; a removed entry keeps its fills (they do not come back). Personal."""
+
+    __tablename__ = "journal_broker_fills"
+    __table_args__ = (UniqueConstraint("user_id", "broker", "fill_id", name="uq_journal_broker_fill"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker: Mapped[str] = mapped_column(String(30), nullable=False)
+    fill_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Price, nullable=False)
+    filled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    manual_trade_id: Mapped[int | None] = mapped_column(ForeignKey("journal_manual_trades.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class JournalSnapshotRecord(Base):
+    """P2-8 J1-2: the stored chart picture of one ATP trade at its entry or exit (server-drawn from the bars that end
+    at that instant, with the entry / exit / stop marks). The file sits in the private store; the row holds its path.
+    Personal; erased with the account."""
+
+    __tablename__ = "journal_snapshots"
+    __table_args__ = (UniqueConstraint("trade_id", "at", name="uq_journal_snapshot_trade_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=False)
+    at: Mapped[str] = mapped_column(String(5), nullable=False)                             # entry / exit
+    image_path: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class JournalCheckinRecord(Base):
+    """P2-8 J2: the trader's own 20-second check-in on one journal entry (an ATP trade or an outside-ATP one). Every
+    field is optional and only what he typed or tapped: nothing is inferred, scored or filled in for him, and no
+    detector ever writes here (his "plan followed" answer sits beside the auto tags, never replaced by them).
+    PRIVATE: read only by its owner's own routes; never logged, never on an admin page, never in an analytics export;
+    in his account export and erased with his account."""
+
+    __tablename__ = "journal_checkins"
+    __table_args__ = (UniqueConstraint("user_id", "trade_id", name="uq_journal_checkin_trade"),
+                      UniqueConstraint("user_id", "manual_trade_id", name="uq_journal_checkin_manual"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=True)
+    manual_trade_id: Mapped[int | None] = mapped_column(ForeignKey("journal_manual_trades.id", ondelete="CASCADE"), nullable=True)
+    feeling_before: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)                 # 1-5, his own tap
+    during_json: Mapped[str | None] = mapped_column(Text, nullable=True)                   # [{"at", "text"}]: his notes while open
+    feeling_after: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    plan_followed: Mapped[str | None] = mapped_column(String(7), nullable=True)            # YES / PARTLY / NO
+    mistake: Mapped[str | None] = mapped_column(String(30), nullable=True)                 # a behaviour tag, "other" or his own
+    lesson: Mapped[str | None] = mapped_column(String(300), nullable=True)                 # "what I would do the same / differently"
+    setup_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dismissed_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())   # "Not now" on the open prompt
+    dismissed_close: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())  # "Not now" on the close prompt
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalReflectionRecord(Base):
+    """P2-8 J3: his answer to a review's one reflection question (a week "2026-W47" or a month "2026-11"). His own
+    words; private like the check-in."""
+
+    __tablename__ = "journal_reflections"
+    __table_args__ = (UniqueConstraint("user_id", "period", name="uq_journal_reflection_period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    period: Mapped[str] = mapped_column(String(10), nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalProofRecord(Base):
+    """P2-8 J4: his own "My proof" entries and his pins. `fact_key` is an automatic fact's key (computed from his trades by
+    `app/journal/proof.py`; the row only marks it pinned) or "own:<id>" for an entry he wrote himself (`text`). Personal."""
+
+    __tablename__ = "journal_proofs"
+    __table_args__ = (UniqueConstraint("user_id", "fact_key", name="uq_journal_proof_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    fact_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    text: Mapped[str | None] = mapped_column(String(300), nullable=True)                   # his own words (own entries only)
+    happened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class JournalPlanRecord(Base):
+    """P2-8 J5: his own if-then plan ("If <if_text>, then <then_text>", optionally reminded after a stop hit / a loss) or
+    process goal (a process measure, his target share, a week or a month). His own text; ATP never writes a plan for him
+    and never blocks anything because of one. Personal."""
+
+    __tablename__ = "journal_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)                           # IF_THEN / GOAL
+    if_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    then_text: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(10), nullable=False, default="NONE")       # NONE / STOP_HIT / LOSS
+    metric: Mapped[str | None] = mapped_column(String(20), nullable=True)                  # PLAN_FOLLOWED / STOP_KEPT / CHECKED_IN
+    target_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    period: Mapped[str | None] = mapped_column(String(5), nullable=True)                   # WEEK / MONTH
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 

@@ -792,3 +792,10 @@ his switch.
 
 Note: confirmation of the line above (the same ✅, no new order): the three Journal v2 PRs merge in order once CI is
 green; the deploy runs after 15:30 IST (three additive migrations), then `discipline_engine` on.
+## 21 Nov - owner (answer to the report on "Jhale ka sarv kam")
+
+> "Default yes and go ahead"
+
+Note: approves the stated defaults - NEXT-Q1 (build P2-8 Journal v2), CP-CHAT-Q1 (rule sections behind AI words fold
+under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ to merge the P2-8 Journal v2 PRs in order
+(#1147, #1148, #1150) once CI is green. Their migrations deploy only after 15:30 IST (DECISIONS 25 Oct).

@@ -45,6 +45,7 @@ from app.journal.settings import DisciplineSettings, clean_label
 MANUAL_SOURCE = "OUTSIDE_ATP"          # how a manual entry is marked everywhere it is shown
 MANUAL_LABEL = "Manual - done outside ATP"
 IMPORTED_LABEL = "Imported - done outside ATP"   # M88: a manual entry that came from a file he imported
+BROKER_LABEL = "From your broker - done outside ATP"   # P2-8 J1-1: read from his own broker's trade book
 NOTES_MAX = 5000                       # the same limit as PATCH /api/trades/{id}/journal
 KINDS = ("UNDERLYING", "OPTION", "FUTURE")
 FUTURE_SLACK = timedelta(minutes=5)    # a manual trade cannot be entered in the future (clock skew allowed)
@@ -450,6 +451,13 @@ def trade_payload(trade: TradeRecord, entry: JournalEntryRecord | None, tags: Se
     return out
 
 
+def source_label(row: JournalManualTradeRecord) -> str:
+    """How an outside-ATP entry is marked: synced from his broker (P2-8 J1-1), imported from a file, or typed by hand."""
+    if row.origin == "BROKER":
+        return BROKER_LABEL
+    return IMPORTED_LABEL if row.import_id is not None else MANUAL_LABEL
+
+
 def manual_payload(row: JournalManualTradeRecord, s: DisciplineSettings, *, attachments: Sequence[JournalAttachmentRecord] = ()) -> dict[str, Any]:
     entry_time, exit_time = _utc(row.entry_time), _utc(row.exit_time)
     pnl = manual_pnl(row)
@@ -461,7 +469,7 @@ def manual_payload(row: JournalManualTradeRecord, s: DisciplineSettings, *, atta
                       "quantity": float(row.quantity), "at": _iso(exit_time), "reason": row.exit_reason})
     return {
         "kind": "manual", "id": row.id, "manual": True, "trade_id": None, "source": MANUAL_SOURCE,
-        "source_label": IMPORTED_LABEL if row.import_id is not None else MANUAL_LABEL, "imported": row.import_id is not None,
+        "source_label": source_label(row), "imported": row.import_id is not None, "origin": row.origin,
         "symbol": row.symbol, "exchange": row.exchange, "mode": None, "direction": row.direction, "setup": row.setup,
         "instrument_kind": row.instrument_kind, "entry_time": _iso(entry_time), "exit_time": _iso(exit_time),
         "plan_view": {"setup": row.setup, "timeframe": row.timeframe, "area": [row.area] if row.area else None,
@@ -483,13 +491,30 @@ def manual_payload(row: JournalManualTradeRecord, s: DisciplineSettings, *, atta
 
 async def trade_entry(session: AsyncSession, user: User, trade: TradeRecord, s: DisciplineSettings) -> dict[str, Any]:
     """One ATP trade's full journal entry (created from the trade row when missing)."""
+    from app.db.models import JournalSnapshotRecord
+    from app.journal import plan_actual, snapshots, spread
     entry = await _journal_entry(session, trade)
     await session.commit()
     tags = list(await session.scalars(select(JournalTagRecord).where(JournalTagRecord.trade_id == trade.id, JournalTagRecord.user_id == user.id)
                                       .order_by(JournalTagRecord.tag)))
     files = (await attachments_of(session, user, [Ref(trade=trade)])).get(("trade", trade.id), [])
     timeframe = (await deployment_timeframes(session, [trade])).get(trade.deployment_id or -1)
-    return trade_payload(trade, entry, tags, s, attachments=files, timeframe=timeframe)
+    out = trade_payload(trade, entry, tags, s, attachments=files, timeframe=timeframe)
+    # P2-8 J1-2 / J1-3 / J1-4: the stored pictures, the structure as one entry, plan vs actual
+    out["snapshots"] = snapshots.view(list(await session.scalars(select(JournalSnapshotRecord).where(
+        JournalSnapshotRecord.trade_id == trade.id, JournalSnapshotRecord.user_id == user.id))))
+    if trade.leg_group_id:
+        legs = list(await session.scalars(select(TradeRecord).where(
+            TradeRecord.leg_group_id == trade.leg_group_id, TradeRecord.user_id == user.id, TradeRecord.tenant_id == user.tenant_id)
+            .order_by(TradeRecord.id)))
+        summary = spread.spread_summary(legs)
+        out["spread"] = {**summary, "leg_rows": [{"id": leg.id, "symbol": leg.symbol, "direction": leg.direction,
+                                                  "quantity": leg.quantity, "entry_price": leg.entry_price,
+                                                  "exit_price": leg.exit_price, "pnl": leg.pnl} for leg in legs]}
+        out["plan_actual"] = plan_actual.for_spread(summary)
+    else:
+        out["plan_actual"] = plan_actual.for_trade(trade, out["plan"] or {}, out["stop_history"] or [])
+    return out
 
 
 async def manual_entry(session: AsyncSession, user: User, row: JournalManualTradeRecord, s: DisciplineSettings) -> dict[str, Any]:
@@ -504,7 +529,7 @@ async def entry_payload(session: AsyncSession, user: User, ref: Ref, s: Discipli
     return await manual_entry(session, user, ref.manual, s)
 
 
-# --- chart snapshots (server-rendered, never stored) -------------------------------------------------------------------
+# --- chart snapshots (server-rendered; ATP trades' pictures are stored by snapshots.py) -------------------------------------------------------------------
 
 @dataclass
 class ChartPlan:

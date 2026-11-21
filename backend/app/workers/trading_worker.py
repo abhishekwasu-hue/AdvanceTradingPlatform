@@ -304,6 +304,7 @@ class TradingWorker:
         self._last_eod_summary_day = None
         self._last_watch_check: Optional[datetime] = None      # M72 PR-7: the Copilot watch
         self._last_rhythm_check: Optional[datetime] = None     # MO4: the daily rhythm's Telegram sends
+        self._journal_sync_task: asyncio.Task[None] | None = None   # P2-8 J1-1: the daily broker -> journal sync
         self._last_settlement_check: Optional[datetime] = None  # TM Part 7: the physical-settlement warnings
         self._last_runner_check: Optional[datetime] = None      # Runner S3: the "runner offline" alert
         self._last_onboarding_check: Optional[datetime] = None  # C13: the first-week onboarding e-mails
@@ -444,6 +445,8 @@ class TradingWorker:
             srv2_job.stop_services()                 # SRV2 P3: the Vision / Telegram threads stop with the worker
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
+        if self._journal_sync_task is not None and not self._journal_sync_task.done():
+            self._journal_sync_task.cancel()             # P2-8: synced again on the next run (fills are unique)
         if self._daily_report_task is not None and not self._daily_report_task.done():
             self._daily_report_task.cancel()         # M88-R: the day's row stays "running" until stale, then it is retried
 
@@ -782,6 +785,19 @@ class TradingWorker:
                             await rhythm_deliver.send_due(own, now)
                     except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
                         logger.warning("Daily rhythm sends failed: %s", type(exc).__name__)
+                    # P2-8: the journal's background task starts only when it has work (a cheap check here), so a cycle
+                    # with nothing to do leaves no task behind
+                    try:
+                        from app.journal import broker_sync
+                        from app.journal import deliver as journal_deliver
+                        async with self.session_factory() as own:
+                            journal_waiting = (await broker_sync.work_waiting(own, now)
+                                               or await journal_deliver.work_waiting(own))
+                    except Exception as exc:  # noqa: BLE001 - journal data only; never reaches trading
+                        journal_waiting = False
+                        logger.warning("Journal work check failed: %s", type(exc).__name__)
+                    if journal_waiting:
+                        self._spawn_journal_sync(now)
                 # M72 PR-7 (app/ai/watch.py): the Copilot watch - opt-in information cards about each user's own positions,
                 # short strikes and watchlists, with his own numbers. Flags ui_v2 + copilot_watch. Its own session; read-only
                 # towards trading (no proposal, no order, nothing closed).
@@ -2140,6 +2156,33 @@ class TradingWorker:
 
         self._daily_report_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_journal_sync(self, now: datetime) -> None:
+        """P2-8 J1-1 (app/journal/broker_sync.py): once a trading day after the close, each user's own broker trade book
+        (read-only) into his journal; then J6 (app/journal/deliver.py) his opted-in journal messages. A background task with
+        its own sessions - one at a time. It places, blocks or changes no order and no exit; the cycle never waits for it."""
+        if self._journal_sync_task is not None and not self._journal_sync_task.done():
+            return
+
+        async def run() -> None:
+            try:
+                from app.journal import broker_sync
+                async with self.session_factory() as own:
+                    synced = await broker_sync.run_due(own, now)
+                if synced:
+                    logger.info("Journal broker sync: %d users", synced)
+            except Exception as exc:  # noqa: BLE001 - journal data only; never reaches trading
+                logger.warning("Journal broker sync failed: %s", type(exc).__name__)
+            try:
+                # P2-8 J6 (app/journal/deliver.py): his journal reviews / check-in prompts on his own Telegram / e-mail,
+                # only when he turned them on (default OFF)
+                from app.journal import deliver
+                async with self.session_factory() as own:
+                    await deliver.send_due(own, now)
+            except Exception as exc:  # noqa: BLE001 - a message never reaches trading
+                logger.warning("Journal delivery failed: %s", type(exc).__name__)
+
+        self._journal_sync_task = asyncio.get_running_loop().create_task(run())
 
     def _spawn_engine_runner(self, now: datetime) -> None:
         """M66 EN-3a: the signal engine runner (app/workers/engine_runner.py) as a background task with its own session -

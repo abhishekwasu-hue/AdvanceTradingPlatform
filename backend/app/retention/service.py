@@ -41,9 +41,15 @@ from app.db.models import (
     BrokerCredentialRecord,
     FeedbackRecord,
     JournalAttachmentRecord,
+    JournalBrokerFillRecord,
+    JournalCheckinRecord,
     JournalEntryRecord,
     JournalManualTradeRecord,
+    JournalPlanRecord,
+    JournalProofRecord,
+    JournalReflectionRecord,
     JournalSettingsRecord,
+    JournalSnapshotRecord,
     JournalTagRecord,
     LlmCallRecord,
     LoginEventRecord,
@@ -297,7 +303,9 @@ async def _erase_journal(session: AsyncSession, user: User) -> None:
     from app.chart_analyze import storage
     mine = {"user_id": user.id, "tenant_id": user.tenant_id}
     paths = list(await session.scalars(select(JournalAttachmentRecord.image_path).filter_by(**mine)))
-    for model in (JournalAttachmentRecord, JournalTagRecord, JournalEntryRecord, JournalManualTradeRecord, JournalSettingsRecord):
+    paths += list(await session.scalars(select(JournalSnapshotRecord.image_path).filter_by(**mine)))   # P2-8 J1-2 pictures
+    for model in (JournalAttachmentRecord, JournalSnapshotRecord, JournalBrokerFillRecord, JournalCheckinRecord,
+                  JournalReflectionRecord, JournalProofRecord, JournalPlanRecord, JournalTagRecord, JournalEntryRecord, JournalManualTradeRecord, JournalSettingsRecord):
         await session.execute(delete(model).filter_by(**mine))
     for path in paths:
         storage.delete(path)

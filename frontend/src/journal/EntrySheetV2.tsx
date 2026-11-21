@@ -14,6 +14,7 @@ import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import type { JournalApi } from "./api";
 import { TAG_HELP, minutesText, tagLabel } from "./format";
 import { OwnImageV2, PnlV2, RV2, TEXTAREA } from "./JournalPartsV2";
+import { CheckinV2 } from "./CheckinV2";
 import { TradeChartV2 } from "./TradeChartV2";
 import type { EntryKind, JournalEntryFull, TagStatus } from "./types";
 
@@ -109,9 +110,11 @@ export function entryActions(api: EditorApi, entry: JournalEntryFull) {
 
 const price = (v: number | null | undefined) => (v == null ? "–" : formatNumber(v, 2));
 
-export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, extra }: {
+export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, extra, checkinOn = true }: {
   entry: JournalEntryFull; api: JournalApi; customTags: readonly string[]; onChanged: (e: JournalEntryFull) => void; onRemoved: () => void;
   extra?: (e: JournalEntryFull) => ReactNode;
+  /** P2-8 J2: the 20-second check-in section (the tests of the older parts turn it off). */
+  checkinOn?: boolean;
 }) {
   const toast = useToast();
   const [notes, setNotes] = useState(entry.notes ?? "");
@@ -172,6 +175,12 @@ export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, ex
             : <ul className="list-disc space-y-space-1 pl-space-5 text-t14 text-fg" data-plan-actual="diff">
               {entry.plan_actual.map((line) => <li key={line}>{line}</li>)}
             </ul>}
+        </Section>
+      )}
+
+      {checkinOn && (
+        <Section title="Your check-in" testId="checkin">
+          <CheckinV2 api={api} kind={entry.kind} id={entry.id} closed={entry.exit_time != null} />
         </Section>
       )}
 

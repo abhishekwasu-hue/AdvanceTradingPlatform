@@ -572,6 +572,51 @@ class JournalSnapshotRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class JournalCheckinRecord(Base):
+    """P2-8 J2: the trader's own 20-second check-in on one journal entry (an ATP trade or an outside-ATP one). Every
+    field is optional and only what he typed or tapped: nothing is inferred, scored or filled in for him, and no
+    detector ever writes here (his "plan followed" answer sits beside the auto tags, never replaced by them).
+    PRIVATE: read only by its owner's own routes; never logged, never on an admin page, never in an analytics export;
+    in his account export and erased with his account."""
+
+    __tablename__ = "journal_checkins"
+    __table_args__ = (UniqueConstraint("user_id", "trade_id", name="uq_journal_checkin_trade"),
+                      UniqueConstraint("user_id", "manual_trade_id", name="uq_journal_checkin_manual"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=True)
+    manual_trade_id: Mapped[int | None] = mapped_column(ForeignKey("journal_manual_trades.id", ondelete="CASCADE"), nullable=True)
+    feeling_before: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)                 # 1-5, his own tap
+    during_json: Mapped[str | None] = mapped_column(Text, nullable=True)                   # [{"at", "text"}]: his notes while open
+    feeling_after: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    plan_followed: Mapped[str | None] = mapped_column(String(7), nullable=True)            # YES / PARTLY / NO
+    mistake: Mapped[str | None] = mapped_column(String(30), nullable=True)                 # a behaviour tag, "other" or his own
+    lesson: Mapped[str | None] = mapped_column(String(300), nullable=True)                 # "what I would do the same / differently"
+    setup_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dismissed_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())   # "Not now" on the open prompt
+    dismissed_close: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())  # "Not now" on the close prompt
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalReflectionRecord(Base):
+    """P2-8 J3: his answer to a review's one reflection question (a week "2026-W47" or a month "2026-11"). His own
+    words; private like the check-in."""
+
+    __tablename__ = "journal_reflections"
+    __table_args__ = (UniqueConstraint("user_id", "period", name="uq_journal_reflection_period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    period: Mapped[str] = mapped_column(String(10), nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class JournalImportRecord(Base):
     """M88: one file of outside-ATP trades the trader imported into his journal (a broker tradebook or his own sheet).
     It holds only the file's name, its SHA-256 (the same file is not imported twice), the layout it was read as and the

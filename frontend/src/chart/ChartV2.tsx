@@ -12,6 +12,7 @@ import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type Level
 import { ViewMemory } from "./viewMemory";
 import { ChartReadout, ChartViewControls } from "./ChartViewControls";
 import { INITIAL_VIEW, type Readout, type ViewState } from "./gestures";
+import { DrawingSelectionBar } from "./DrawingSelectionBar";
 import { LiveChip } from "./LiveChip";
 import { readChartPalette, resolveChartTheme } from "./chartTheme";
 import { foldLive, type ChartBar, type TimeframeId } from "./timeframes";
@@ -60,6 +61,9 @@ export interface ChartV2Props {
   drawingTools?: boolean;
   onEngine?: (engine: LightweightEngine | null) => void;
   onTools?: (tools: ReturnType<typeof useDrawingTools>) => void;
+  /** Owner 21 Nov: the selected drawing's bar shows the controller's message (locked, not saved) under it; off where
+   * the page shows that message itself (the Charts page's status line). */
+  drawingMessage?: boolean;
   /** M97 PR-4: the band whose tooltip opened (null when it closed) - a layer highlights what the band is made of. */
   onBandTip?: (band: BandRef | null) => void;
   /** PR 2: the floating Auto / Reset / Latest controls (default on; a Multi-chart cell shows them while it is active). */
@@ -154,7 +158,7 @@ export function BandSheet({ band, onClose }: { band: BandRef; onClose: () => voi
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, onEngine, onTools, onBandTip, viewControls = true, captureTouch = false, rememberViewFor = null, className = "h-[480px]",
+  marketOpen, livePush = false, levels = NO_LEVELS, areas = NO_AREAS, markers = NO_MARKERS, onLoadOlder, volumeLabel = "Volume", emptyText = "Prices for this timeframe load as they arrive.", drawingTools = true, drawingMessage = true, onEngine, onTools, onBandTip, viewControls = true, captureTouch = false, rememberViewFor = null, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -308,6 +312,9 @@ export default function ChartV2({
       {viewControls && core && insets && candles.length > 0 && (
         <ChartViewControls view={view} insets={insets} onAuto={() => core.setAutoScale(!view.autoScale)}
           onReset={() => core.resetView()} onLatest={() => core.scrollToLatest()} />
+      )}
+      {drawingTools && (
+        <DrawingSelectionBar view={tools.view} controller={tools.controller} insets={insets} root={rootRef.current} showMessage={drawingMessage} />
       )}
       {bandTip && (asSheet(bandTip, plotRef.current?.clientWidth ?? 0)
         ? <BandSheet band={bandTip.band} onClose={() => setBandTip(null)} />

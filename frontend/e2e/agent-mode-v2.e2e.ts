@@ -5,7 +5,7 @@ import { installDiagnostics } from "./diagnostics";
 /**
  * SRV2 P3 (owner AGENT-MODES 20 Nov, ADR-0029): the owner's "My trading agent" card in Admin -> Controls -> Safety.
  * "Ask me first" (the default) -> "Automatic" asks for one confirm, then the card shows Automatic, the Vision switch and the
- * last audited change. Another admin (can_switch false) sees no card.
+ * last audited change; the recent Telegram cards are listed in plain words. Another admin (can_switch false) sees no card.
  * - Baselines (NEW): `agent-mode-<ask|auto>-v2-{1440,390}-{light,dark}.png` (the card alone).
  * Every reply is made up. After an intended change: `npx playwright test --project=phone e2e/agent-mode-v2.e2e.ts --update-snapshots`.
  */
@@ -14,7 +14,12 @@ const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout
 
 async function withAgent(page: Page, theme: Theme, canSwitch = true) {
   const sent: unknown[] = [];
-  let state = { installed: true, mode: "human_confirm", vision_on: true, can_switch: canSwitch, last: null as unknown };
+  const cards = [
+    { signal_id: "a", symbol: "NIFTY", status: "PENDING_HUMAN", deadline: null, created_at: "2026-11-21T03:58:00+00:00", decided_at: null, executed_at: null },
+    { signal_id: "b", symbol: "BANKNIFTY", status: "EXECUTED", deadline: null, created_at: "2026-11-21T03:30:00+00:00", decided_at: "2026-11-21T03:31:00+00:00", executed_at: "2026-11-21T03:31:00+00:00" },
+    { signal_id: "c", symbol: "NIFTY", status: "EXPIRED", deadline: null, created_at: "2026-11-20T09:00:00+00:00", decided_at: null, executed_at: null },
+  ];
+  let state = { installed: true, mode: "human_confirm", vision_on: true, can_switch: canSwitch, last: null as unknown, cards };
   await openAdmin(page, "/admin?section=controls&group=safety", {
     theme,
     routes: async (p) => {

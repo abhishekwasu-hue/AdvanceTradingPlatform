@@ -52,13 +52,49 @@ async def last_switch(session: AsyncSession) -> dict[str, Any] | None:
 
 
 async def read(session: AsyncSession) -> dict[str, Any]:
-    """{installed, mode, vision_on, last}. Not installed: the default mode is shown and nothing can be switched."""
+    """{installed, mode, vision_on, last, cards}. Not installed: the default mode is shown and nothing can be switched."""
     try:
         modes = _modes()
     except ModeUnavailable:
-        return {"installed": False, "mode": DEFAULT, "vision_on": True, "last": await last_switch(session)}
+        return {"installed": False, "mode": DEFAULT, "vision_on": True, "last": await last_switch(session), "cards": []}
     mode, vision_on = await asyncio.to_thread(modes.current)
-    return {"installed": True, "mode": mode, "vision_on": bool(vision_on), "last": await last_switch(session)}
+    return {"installed": True, "mode": mode, "vision_on": bool(vision_on), "last": await last_switch(session),
+            "cards": await cards(modes)}
+
+
+CARD_FIELDS = ("signal_id", "symbol", "direction", "level", "setup_tf", "signal_ts", "created_at", "status", "verdict", "deadline",
+               "decided_at", "decided_by", "decision_reason", "executed_at", "exec_note")
+
+
+async def cards(modes: Any, limit: int = 20) -> list[dict[str, Any]]:
+    """The bot's recent Telegram cards, newest first, read-only (an older private package without `cards`: none)."""
+    read_cards = getattr(modes, "cards", None)
+    if read_cards is None:
+        return []
+    try:
+        rows = await asyncio.to_thread(read_cards, limit)
+    except Exception:  # noqa: BLE001 - a broken store never breaks the admin page
+        return []
+    return [_with_ist({k: (r or {}).get(k) for k in CARD_FIELDS}) for r in rows or []][:limit]
+
+
+TIME_FIELDS = ("signal_ts", "created_at", "deadline", "decided_at", "executed_at")
+
+
+def _with_ist(card: dict[str, Any]) -> dict[str, Any]:
+    """Trade's store writes IST wall-clock times without an offset; send them with +05:30 so the page shows the same clock."""
+    from datetime import datetime, timedelta, timezone
+    ist = timezone(timedelta(hours=5, minutes=30))
+    for k in TIME_FIELDS:
+        v = card.get(k)
+        if not isinstance(v, str) or not v:
+            continue
+        try:
+            t = datetime.fromisoformat(v)
+        except ValueError:
+            continue
+        card[k] = (t if t.tzinfo else t.replace(tzinfo=ist)).isoformat()
+    return card
 
 
 async def _audit(session: AsyncSession, user_id: int | None, record: dict[str, Any]) -> None:

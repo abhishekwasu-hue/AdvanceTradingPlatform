@@ -29,4 +29,14 @@ describe("SRV2 P3: agent mode card", () => {
     expect((html.match(/disabled=""/g) ?? []).length).toBe(2);
     expect(html).toContain("not installed on this server");
   });
+  it("lists the recent cards in plain words, without any order wording", () => {
+    const s: AgentModeStatus = { ...base, cards: [
+      { signal_id: "a", symbol: "NIFTY", status: "PENDING_HUMAN", deadline: null, created_at: "2026-11-21T04:00:00+00:00", decided_at: null, executed_at: null },
+      { signal_id: "b", symbol: "BANKNIFTY", status: "EXPIRED", deadline: null, created_at: "2026-11-21T03:00:00+00:00", decided_at: null, executed_at: null },
+    ] };
+    const html = renderToStaticMarkup(<AgentModeView status={s} />);
+    expect(html).toContain("Needs your ✅");
+    expect(html).toContain("Expired, no entry");
+    expect(html).not.toMatch(/\b(buy|sell|target|stop-loss)\b/i);
+  });
 });

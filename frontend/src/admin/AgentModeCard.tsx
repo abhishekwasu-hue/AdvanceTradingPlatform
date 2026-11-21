@@ -15,8 +15,12 @@ import { formatDateTimeIST } from "../ui/format";
  * this; LIVE stays his own switch.
  */
 export type AgentMode = "human_confirm" | "auto";
+export interface AgentCard {
+  signal_id: string | null; symbol: string | null; status: string | null; deadline: string | null; created_at: string | null;
+  decided_at: string | null; executed_at: string | null;
+}
 export interface AgentModeStatus {
-  installed: boolean; mode: AgentMode; vision_on: boolean; can_switch: boolean;
+  installed: boolean; mode: AgentMode; vision_on: boolean; can_switch: boolean; cards?: AgentCard[];
   last: { by: number | null; at: string | null; from: string | null; to: string | null; vision_on: boolean | null } | null;
 }
 
@@ -27,6 +31,22 @@ export const agentModeApi = {
 };
 
 const LABEL: Record<AgentMode, string> = { human_confirm: "Ask me first", auto: "Automatic" };
+
+/** The card's state in plain words, coloured by meaning (entered = up, rejected = down, waiting = warn). */
+export const CARD_STATE: Record<string, { label: string; tone: string }> = {
+  QUEUED: { label: "Vision is reading", tone: "text-fg-muted" },
+  PENDING_HUMAN: { label: "Needs your ✅", tone: "text-warn" },
+  APPROVED: { label: "Approved", tone: "text-up" },
+  EXECUTED: { label: "Entered", tone: "text-up" },
+  REJECTED: { label: "Rejected", tone: "text-down" },
+  EXPIRED: { label: "Expired, no entry", tone: "text-fg-muted" },
+  SHADOWED: { label: "Recorded only", tone: "text-fg-muted" },
+};
+
+function cardWhen(c: AgentCard): string {
+  const t = c.executed_at ?? c.decided_at ?? c.created_at;
+  return t ? formatDateTimeIST(t, { year: false }) : "";
+}
 
 export function lastLine(status: AgentModeStatus): string | null {
   const l = status.last;
@@ -62,6 +82,21 @@ export function AgentModeView({ status, busy = false, onPick }: {
         </label>
       )}
       {!status.installed && <p className="text-fg-muted">The trading agent is not installed on this server.</p>}
+      {(status.cards?.length ?? 0) > 0 && (
+        <ul className="divide-y divide-border border-y border-border" aria-label="Recent cards" data-agent-cards>
+          {status.cards!.map((c, i) => {
+            const st = CARD_STATE[c.status ?? ""] ?? { label: c.status ?? "", tone: "text-fg-muted" };
+            return (
+              <li key={c.signal_id ?? i} data-agent-card={c.status ?? ""}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-space-2 py-space-1">
+                <span className="min-w-0 truncate"><span className="font-semibold text-fg">{c.symbol}</span>
+                  <span className="text-fg-muted"> · {cardWhen(c)}</span></span>
+                <span className={`whitespace-nowrap font-semibold ${st.tone}`}>{st.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {line && <p className="text-fg-muted" data-agent-mode-last>{line}</p>}
       <Details id="admin.agent-mode" className="mt-0">
         Ask me first: each setup comes to Telegram as a card, and only your ✅ places the entry; no ✅ in time means no entry.

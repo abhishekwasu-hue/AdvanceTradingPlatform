@@ -46,6 +46,10 @@ class FakeModes:
         self.stored = (mode, bool(vision_on) if mode == "auto" else True)
         return {"from": before[0], "to": mode, "vision_on": self.stored[1], "at": "now"}
 
+    def cards(self, limit=50):
+        return [{"signal_id": "s1", "symbol": "NIFTY", "status": "PENDING_HUMAN", "deadline": "10:05", "secret": "x",
+                 "created_at": "2026-11-21 09:30:00"}][:limit]
+
     def ensure_default(self, by):
         if self.stored is not None:
             return None
@@ -173,3 +177,27 @@ def test_an_existing_auto_is_never_reset_by_the_default():
             assert await agent_mode.ensure_default(s, 1) is None
     _run(go())
     assert modes.calls == [] and modes.current() == ("auto", True)
+
+
+def test_the_cards_are_listed_read_only_with_known_fields_only(monkeypatch):
+    me = _owner(monkeypatch)
+    loader.set_for_tests(_bot(FakeModes())[0])
+
+    async def go():
+        async with _session_factory() as s:
+            got = await platform_routes.get_srv2_agent_mode(me, s)
+            assert got["cards"][0]["status"] == "PENDING_HUMAN" and got["cards"][0]["symbol"] == "NIFTY"
+            assert "secret" not in got["cards"][0]
+            assert got["cards"][0]["created_at"] == "2026-11-21T09:30:00+05:30"      # Trade's IST wall clock, with its offset
+            assert got["cards"][0]["deadline"] == "10:05"                             # not a timestamp: left as it is
+    _run(go())
+
+    class Broken(FakeModes):
+        def cards(self, limit=50):
+            raise OSError("store unreadable")
+    loader.set_for_tests(_bot(Broken())[0])
+
+    async def broken():
+        async with _session_factory() as s:
+            assert (await platform_routes.get_srv2_agent_mode(me, s))["cards"] == []
+    _run(broken())

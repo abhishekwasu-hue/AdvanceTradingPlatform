@@ -26,7 +26,7 @@ defusedxml==0.7.1
 Pillow>=13.0.0,<14.0   # 13.0.0: the 12.x CVEs pip-audit lists (incl. CVE-2026-25990) fixed
 # HB0: R2 history import (Parquet files over the S3 API) - used only by `python -m app.market_lake.r2_import`.
 pyarrow>=17.0,<27.0
-boto3>=1.34,<2.0
+boto3>=1.43.119,<2.0
 # A2: the error tracker's SDK (app/observability/error_tracker.py) - used only when ERROR_TRACKER_DSN is set.
 sentry-sdk>=2.19,<3.0
 # AUD-G2.1: OpenTelemetry tracing (app/observability/tracing.py) - used only when OTEL_EXPORTER_OTLP_ENDPOINT is set.

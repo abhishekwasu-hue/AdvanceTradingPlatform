@@ -165,6 +165,8 @@ def oi_section(resp: Mapping[str, Any], expiry: str | None) -> Section:
     note = None
     if expiry and b.get("expiry") and str(b["expiry"]) != str(expiry):
         note = f"The OI banner reads the {b['expiry']} expiry; the Terminal shows {expiry}."
+    if resp.get("last_session"):
+        note = ((note + " ") if note else "") + f"No OI slot today yet: the last session's reading ({resp['last_session']})."
     status = "stale" if resp.get("stale") else "ok"
     if status == "stale" and resp.get("age_minutes") is not None:
         note = ((note + " ") if note else "") + f"Last OI reading {resp['age_minutes']} minutes ago."
@@ -175,7 +177,7 @@ def oi_reading(resp: Mapping[str, Any]) -> dict[str, Any] | None:
     b = resp.get("banner")
     if not b:
         return None
-    return {"source": "oi", "label": "OI", "tf": None, "direction": OI_DIRECTION.get(str(b.get("direction") or "NEUTRAL"), "none"),
+    return {"source": "oi", "label": "OI (last session)" if resp.get("last_session") else "OI", "tf": None, "direction": OI_DIRECTION.get(str(b.get("direction") or "NEUTRAL"), "none"),
             "as_of": b.get("slot"), "stale": bool(resp.get("stale"))}
 
 

@@ -166,7 +166,7 @@ def test_share_follows_the_first_20_rule():
 
 def test_done_well_is_one_fact_from_his_own_trades():
     assert reviews.done_well([]) is None
-    assert reviews.done_well([_u(1, 100), _u(2, -50)]) == "Stop kept on all 2 trades."
+    assert reviews.done_well([_u(1, 100), _u(2, -50)]) == "Stop was kept on all 2 trades."
     no_stop = dict(stop_set=False)
     assert reviews.done_well([_u(1, -50, plan_followed="YES", **no_stop)]) == "Plan followed on a losing trade (DEMO1)."
     assert reviews.done_well([_u(1, 50, plan_followed="YES", **no_stop), _u(2, 10, **no_stop)]) == "Plan followed on all 1 trade you answered."
@@ -210,6 +210,11 @@ def test_monthly_best_and_worst_setup_with_small_sample_label():
     assert "Best setup by your numbers: Buyer area (+₹350, 2 trades, small sample)." in m["lines"]
     assert m["gate"]["note"] == "Not enough trades yet (3 of 20)." and m["weeks"][0]["score"] == 80
     assert reviews.monthly("2026-11", [], Gate(0, 20), [])["lines"] == ["No trades this month."]
+
+
+def test_the_done_well_line_survives_the_advice_guard():
+    card = reviews.daily_card("d", [_u(1, 100.0), _u(2, -50.0)], Gate(2, 20))
+    assert card["done_well"] == "Stop was kept on all 2 trades."                    # "Stop kept ..." would read as a command
 
 
 def test_every_generated_line_passes_the_advice_guard():

@@ -25,7 +25,7 @@ const CHECKIN: Checkin = { feeling_before: "calm", confidence: 4, feeling_after:
   mistakes: ["revenge_trade", "fomo_entry", "averaging_loser", "moved_stop_against", "no_stop", "overtrading", "early_exit", "held_through_event", "other"],
   plan_answers: ["YES", "PARTLY", "NO"], answered: true };
 const DAILY: DailyCard = { day: "2032-03-17", trades: 3, closed: 2, net_pnl: 820, plan: PLAN, feelings: [{ feeling: "calm", count: 2 }, { feeling: "unsure", count: 1 }],
-  confirmed_tags: [{ tag: "early_exit", label: "Early exit", count: 1 }], done_well: "Stop kept on all 2 trades.", lines: [], gate: GATE,
+  confirmed_tags: [{ tag: "early_exit", label: "Early exit", count: 1 }], done_well: "Stop was kept on all 2 trades.", lines: [], gate: GATE,
   entries: [{ kind: "trade", id: 1, symbol: "DEMOA", pnl: 1360 }, { kind: "trade", id: 2, symbol: "DEMOB", pnl: -540 }] };
 const EXTRAS: WeeklyExtras = { week: "2032-W11", gate: GATE, plan: PLAN,
   feelings: [{ value: "calm", trades: 3, wins: 2, losses: 1, net_pnl: 1080, avg_pnl: 360, win_rate: null, small: true },
@@ -41,7 +41,7 @@ const MONTH: MonthlyReview = { month: "2032-03", gate: GATE, trades: 7, closed: 
   setups: [{ setup: "Buyer area", trades: 4, net_pnl: 2600, win_rate: null, small: true }, { setup: "Seller area", trades: 2, net_pnl: -460, win_rate: null, small: true }],
   best_setup: null, worst_setup: null,
   lines: ["7 trades, 6 closed; result +₹2,140.", "Plan followed: 2 of 3 answered.", "Best setup by your numbers: Buyer area (+₹2,600, 4 trades, small sample)."],
-  done_well: "Stop kept on all 6 trades.", question: "Which one habit from this month do you want to keep?", answer: null };
+  done_well: "Stop was kept on all 6 trades.", question: "Which one habit from this month do you want to keep?", answer: null };
 
 async function open(page: Page, theme: "light" | "dark") {
   await page.clock.install({ time: new Date("2032-03-17T18:00:00+05:30") });
@@ -117,7 +117,7 @@ for (const size of SIZES) {
         if (BEFORE) return;
 
         await page.locator("[data-period='day']").click();
-        await expect(page.locator("[data-block='daily-card']")).toContainText("Done well: Stop kept on all 2 trades.");
+        await expect(page.locator("[data-block='daily-card']")).toContainText("Done well: Stop was kept on all 2 trades.");
         await noSidewaysScroll(page);
         await shot("day");
         await page.locator("[data-period='month']").click();

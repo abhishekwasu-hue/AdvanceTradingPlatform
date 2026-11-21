@@ -85,13 +85,13 @@ const PLAN = { yes: 2, partly: 1, no: 0, answered: 3, unanswered: 1, rate: null 
 describe("P2-8 J3 reviews", () => {
   it("daily card: the first-20 note, tiles, the fact done well, and an empty day", () => {
     const d: DailyCard = { day: "2032-03-17", trades: 3, closed: 2, net_pnl: 80, plan: PLAN, feelings: [{ feeling: "calm", count: 2 }],
-      confirmed_tags: [{ tag: "early_exit", label: "Early exit", count: 1 }], done_well: "Stop kept on all 2 trades.", lines: [], gate: GATE,
+      confirmed_tags: [{ tag: "early_exit", label: "Early exit", count: 1 }], done_well: "Stop was kept on all 2 trades.", lines: [], gate: GATE,
       entries: [{ kind: "trade", id: 1, symbol: "DEMOA", pnl: 120 }] };
     const t = text(html(<DailyCardV2 state={{ status: "ok", data: d }} day="2032-03-17" onStep={() => undefined} onRetry={() => undefined} onOpen={() => undefined} />));
     expect(t).toContain("Not enough trades yet (7 of 20).");
     expect(t).toContain("2 of 3");
     expect(t).not.toContain("%");                                                    // no share below the setting
-    expect(t).toContain("Done well: Stop kept on all 2 trades.");
+    expect(t).toContain("Done well: Stop was kept on all 2 trades.");
     const empty = text(html(<DailyCardV2 state={{ status: "ok", data: { ...d, trades: 0, entries: [] } }} day="2032-03-17" onStep={() => undefined}
       onRetry={() => undefined} onOpen={() => undefined} />));
     expect(empty).toContain("No trades on this day.");

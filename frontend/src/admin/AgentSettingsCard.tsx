@@ -19,7 +19,7 @@ import { formatDateTimeIST, formatSignedINR } from "../ui/format";
 export type FieldType = "bool" | "int" | "float" | "choice" | "multi" | "text";
 export interface AgentField {
   key: string; label: string; group: string; type: FieldType; choices?: string[] | null; unit?: string | null; help?: string | null;
-  strikes?: boolean | null; value: unknown; saved: boolean;
+  strikes?: boolean | number | null; min?: number | null; max?: number | null; value: unknown; saved: boolean;
 }
 export interface AgentSettings {
   installed: boolean; symbol: string; symbols: string[]; signal_symbols: string[]; fields: AgentField[]; has_fields?: boolean;
@@ -40,7 +40,7 @@ export const agentSettingsApi = {
 };
 
 const GROUPS: { id: string; label: string }[] = [
-  { id: "entry", label: "Entry" }, { id: "exit", label: "Exit" }, { id: "mode", label: "Mode" },
+  { id: "entry", label: "Entry" }, { id: "exit", label: "Exit" }, { id: "mode", label: "Engine & alerts" },
 ];
 
 /** Only the fields he changed, in the type the field declares (a blank number is not sent). */
@@ -84,7 +84,7 @@ function FieldInput({ f, value, onChange, error }: { f: AgentField; value: unkno
   } else {
     const numeric = f.type === "int" || f.type === "float";
     control = <input id={id} className={`${base} ${border}`} inputMode={numeric ? "decimal" : undefined} type={numeric ? "number" : "text"}
-      step={f.type === "float" ? "any" : undefined} value={value === null || value === undefined ? "" : String(value)}
+      step={f.type === "float" ? "any" : undefined} min={f.min ?? undefined} max={f.max ?? undefined} value={value === null || value === undefined ? "" : String(value)}
       onChange={(e) => onChange(e.target.value)} aria-invalid={Boolean(error)} />;
   }
   return (

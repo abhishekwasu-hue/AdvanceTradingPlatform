@@ -29,10 +29,11 @@ class FakeSettings:
     SIGNAL_SYMBOLS_CHOICES = ("NIFTY", "BANKNIFTY")
     SIGNAL_SYMBOLS_DEFAULT = ("NIFTY",)
     STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
-    DEFAULTS = {"enabled_flag": True, "depth_points": 100, "count": 2, "hidden": 7}
+    DEFAULTS = {"enabled_flag": True, "depth_points": 100, "count": 2, "hidden": 7, "itm_points": 200}
     FIELDS = [
         {"key": "enabled_flag", "label": "On", "group": "entry", "type": "bool"},
         {"key": "depth_points", "label": "Depth", "group": "entry", "type": "int", "strikes": True, "unit": "strikes"},
+        {"key": "itm_points", "label": "From ATM", "group": "entry", "type": "int", "strikes": -1, "min": -10, "max": 5},
         {"key": "count", "label": "Count", "group": "exit", "type": "int"},
     ]
     seen: list = []
@@ -114,7 +115,8 @@ def test_the_page_shows_his_value_else_the_default_and_strikes_in_strikes(monkey
             await s.commit()
             page = await R.get_srv2_settings("banknifty", me, s)
             by = {f["key"]: f for f in page["fields"]}
-            assert set(by) == {"enabled_flag", "depth_points", "count"}               # "hidden" is not a page field
+            assert set(by) == {"enabled_flag", "depth_points", "count", "itm_points"}  # "hidden" is not a page field
+            assert by["itm_points"]["value"] == -2 and by["itm_points"]["min"] == -10     # points = -strikes x step: 200 -> -2
             assert by["count"]["value"] == 4 and by["count"]["saved"] is True
             assert by["depth_points"]["value"] == 1 and by["depth_points"]["saved"] is False   # 100 points / 100 step
             assert page["signal_symbols"] == ["NIFTY"] and page["symbols"] == ["NIFTY", "BANKNIFTY"]
@@ -190,4 +192,21 @@ def test_an_absent_package_shows_nothing_and_a_save_answers_409(monkeypatch):
             with pytest.raises(HTTPException) as exc:
                 await R.put_srv2_settings("NIFTY", R.Srv2SettingsBody(values={"count": 2}), me, s)
             assert exc.value.status_code == 409
+    _run(go())
+
+
+def test_values_for_page_is_used_when_the_package_has_it_and_the_strike_sign_round_trips(monkeypatch):
+    class WithPage(FakeSettings):
+        def values_for_page(self, symbol, stored=None):
+            return {**self.merged(symbol, stored), "count": 99}
+    loader.set_for_tests(_bot(WithPage()))
+    me = _owner(monkeypatch)
+
+    async def go():
+        async with _session_factory() as s:
+            assert {f["key"]: f["value"] for f in (await R.get_srv2_settings("NIFTY", me, s))["fields"]}["count"] == 99
+            await R.put_srv2_settings("NIFTY", R.Srv2SettingsBody(values={"itm_points": 3}), me, s)      # 3 strikes OTM
+            assert (await store.get_row(s, FakeSettings.STRATEGY_KEY, "NIFTY"))["itm_points"] == -150    # = -3 x 50
+            page = await R.get_srv2_settings("NIFTY", me, s)
+            assert {f["key"]: f["value"] for f in page["fields"]}["itm_points"] == 3
     _run(go())

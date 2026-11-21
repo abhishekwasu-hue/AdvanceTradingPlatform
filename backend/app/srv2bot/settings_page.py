@@ -45,15 +45,22 @@ def symbols(mod: Any) -> list[str]:
     return list(getattr(mod, "SIGNAL_SYMBOLS_CHOICES", ()) or ())
 
 
+def _factor(field: dict[str, Any], step: int) -> int:
+    """Points per shown strike: `strikes` is the sign the bot uses (Trade stores points = -strikes x step: sign -1); True means +1."""
+    sign = field.get("strikes")
+    return (-1 if sign == -1 else 1) * step
+
+
 def _display(field: dict[str, Any], value: Any, step: int) -> Any:
-    if field.get("strikes") and isinstance(value, (int, float)) and step:
-        return round(value / step, 4)
+    if field.get("strikes") and isinstance(value, (int, float)) and not isinstance(value, bool) and step:
+        shown = value / _factor(field, step)
+        return int(shown) if shown == int(shown) else round(shown, 4)
     return value
 
 
 def _stored_units(field: dict[str, Any], value: Any, step: int) -> Any:
     if field.get("strikes") and isinstance(value, (int, float)) and not isinstance(value, bool):
-        return value * step
+        return value * _factor(field, step)
     return value
 
 
@@ -67,14 +74,15 @@ async def read(session: AsyncSession, symbol: str) -> dict[str, Any]:
     if symbol not in choices:
         raise ValueError(f"The symbol must be one of: {', '.join(choices)}.")
     stored = await store.get_row(session, mod.STRATEGY_KEY, symbol) or {}
-    values = mod.merged(symbol, stored)
+    page_values = getattr(mod, "values_for_page", None)          # the values the bot reads (helper defaults included)
+    values = page_values(symbol, stored) if page_values is not None else mod.merged(symbol, stored)
     step = _step(mod, symbol)
     fields = []
     for f in getattr(mod, "FIELDS", None) or []:
         key = f.get("key")
         if key not in values:
             continue
-        fields.append({**{k: f.get(k) for k in ("key", "label", "group", "type", "choices", "unit", "help", "strikes")},
+        fields.append({**{k: f.get(k) for k in ("key", "label", "group", "type", "choices", "unit", "help", "strikes", "min", "max")},
                        "value": _display(f, values[key], step), "saved": key in stored})
     sig_row = await store.get_row(session, *SIGNAL_SYMBOLS_ROW) or {}
     try:

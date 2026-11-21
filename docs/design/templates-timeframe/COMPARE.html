@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Templates timeframe pick</title>
+<!-- Owner order 21 Nov (DEF-0): the Templates list picked no timeframe for the trader. Before = main today, after = branch
+     claude/templates-timeframe-pick. Captured with Playwright on the production build, every /api call mocked; the four
+     cards are the built-in templates' own card data (B1, B10, D2, A1) as the server sends them. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 28px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.pair.phone { grid-template-columns: repeat(2, minmax(0, 390px)); }
+figure { margin: 0; min-width: 0; } figcaption { font-weight: 600; margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 8px; display: block; }
+@media (max-width: 700px) { .pair, .pair.phone { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Templates: the trader picks the chart timeframe</h1>
+<p>Strategies › Templates. Before, every card read "on the 5-minute chart" and both buttons quietly used the template's first timeframe. After, nothing is picked for him.</p>
+
+<table>
+<thead><tr><th>Part of the card</th><th>Before</th><th>After</th></tr></thead>
+<tbody>
+<tr><td>"A signal reads"</td><td class="bad">"... on the 5-minute chart" (the first timeframe)</td><td class="good">"... on the chart you choose", then "... on the 15-minute chart" after his pick</td></tr>
+<tr><td>Timeframes</td><td class="bad">A plain text list, server order (5-minute, 15-minute, 3-minute)</td><td class="good">Chips, none selected, shortest first; 44 px on a phone, they wrap</td></tr>
+<tr><td>Use on the trading bot / Test it first</td><td class="bad">Links with the first timeframe</td><td class="good">Disabled with "Pick a chart timeframe to use or test it." until he picks; then they carry his pick</td></tr>
+<tr><td>Server (adopt)</td><td class="bad">No timeframe: used the template's first one</td><td class="good">No timeframe: "Pick a chart timeframe first"</td></tr>
+</tbody>
+</table>
+
+<h2>Desktop 1440 · light</h2>
+<div class="pair">
+<figure><figcaption>Before</figcaption><img src="before-1440-light.png" alt="Templates list before, desktop, light"></figure>
+<figure><figcaption>After (nothing picked)</figcaption><img src="after-1440-light.png" alt="Templates list after, desktop, light"></figure>
+</div>
+
+<h2>Desktop 1440 · dark</h2>
+<div class="pair">
+<figure><figcaption>Before</figcaption><img src="before-1440-dark.png" alt="Templates list before, desktop, dark"></figure>
+<figure><figcaption>After (nothing picked)</figcaption><img src="after-1440-dark.png" alt="Templates list after, desktop, dark"></figure>
+</div>
+
+<h2>Phone 390 · light</h2>
+<div class="pair phone">
+<figure><figcaption>Before</figcaption><img src="before-390-light.png" alt="Templates list before, phone, light"></figure>
+<figure><figcaption>After (nothing picked)</figcaption><img src="after-390-light.png" alt="Templates list after, phone, light"></figure>
+</div>
+
+<h2>Phone 390 · dark</h2>
+<div class="pair phone">
+<figure><figcaption>Before</figcaption><img src="before-390-dark.png" alt="Templates list before, phone, dark"></figure>
+<figure><figcaption>After (nothing picked)</figcaption><img src="after-390-dark.png" alt="Templates list after, phone, dark"></figure>
+</div>
+
+<h2>After he picks 15-minute (Range breakout)</h2>
+<p>The chip is selected, the sentence names 15-minute, both buttons are on and carry <code>timeframe=15m</code>.</p>
+<div class="pair">
+<figure><figcaption>Desktop · light</figcaption><img src="after-picked-1440-light.png" alt="Card after picking 15-minute, desktop, light"></figure>
+<figure><figcaption>Desktop · dark</figcaption><img src="after-picked-1440-dark.png" alt="Card after picking 15-minute, desktop, dark"></figure>
+</div>
+<div class="pair phone">
+<figure><figcaption>Phone · light</figcaption><img src="after-picked-390-light.png" alt="Card after picking 15-minute, phone, light"></figure>
+<figure><figcaption>Phone · dark</figcaption><img src="after-picked-390-dark.png" alt="Card after picking 15-minute, phone, dark"></figure>
+</div>
+<p>On the phone the bottom bar sits over the last card in the full-section capture only (the page itself scrolls past it; the phone layout test passes: no sideways scroll, 44 px targets).</p>
+</main>
+</body>
+</html>

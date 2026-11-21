@@ -59,7 +59,7 @@ const gutterKey = (g: Gutter) => `${g.axis}:${[...g.before, ...g.after].join("|"
 const same = (a: readonly PanelPlace[], b: readonly PanelPlace[]) =>
   a.length === b.length && a.every((q, i) => q.id === b[i].id && q.x === b[i].x && q.y === b[i].y && q.w === b[i].w && q.h === b[i].h && q.open === b[i].open);
 
-export function TerminalGridV2({ panels, preset, ready, onChange, onClose, render, title }: {
+export function TerminalGridV2({ panels, preset, ready, onChange, onClose, render, title, pinned = [] }: {
   panels: readonly PanelPlace[];
   /** The ready layout the working one came from: a double-click on a line puts its sizes back (T4-4). */
   preset: PresetId;
@@ -67,6 +67,8 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
   ready?: readonly PanelPlace[];
   onChange: (panels: PanelPlace[]) => void;
   onClose: (id: PanelId) => void;
+  /** TERM-CON (owner 21 Nov): panels that are always shown - no Close button. */
+  pinned?: readonly PanelId[];
   render: (place: PanelPlace) => ReactNode;
   /** The panel's title (a chart shows its symbol). */
   title: (place: PanelPlace) => string;
@@ -282,10 +284,12 @@ export function TerminalGridV2({ panels, preset, ready, onChange, onClose, rende
                     <Move size={14} aria-hidden />
                   </button>
                 )}
+                {!pinned.includes(place.id) && (
                 <button type="button" onClick={() => onClose(place.id)} aria-label={`Close ${name}`} title="Close this panel" data-panel-close={place.id}
                   className="inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
                   <X size={16} aria-hidden />
                 </button>
+                )}
               </header>
               {/* Collapsed (another panel maximised): only the title shows; the content stays as it was for the restore. */}
               <div className={cx("min-h-0 flex-1 overflow-auto p-space-3", collapsed && "hidden")}>{render(place)}</div>

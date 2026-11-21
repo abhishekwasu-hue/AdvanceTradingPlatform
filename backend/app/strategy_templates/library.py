@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from app.strategy_templates import language
 from app.strategy_templates.compile import Settings
@@ -74,7 +74,7 @@ def archived() -> List[Template]:
     return [t for _, t in sorted(_archive().items())]
 
 
-def signal_text(template: Template, settings: Settings, side: str, context_timeframe: Optional[str] = None, *,
+def signal_text(template: Template, settings: Settings, side: str, context_timeframe: str | None = None, *,
                 neutral: bool = False) -> str:
     """The signal's sentence in structure words (section 6): the side's tokens whose `when` setting is on. `neutral`: the
     template card's wording before the trader picks a chart timeframe ("on the chart you choose", DEF-0)."""

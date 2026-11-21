@@ -345,7 +345,7 @@ def _neutral(text: str) -> str:
     return text.replace(f"{_NO_TIMEFRAME} ", "").replace(_NO_TIMEFRAME, "")
 
 
-def render(tokens: Sequence[str], *, timeframe: Optional[str], context_timeframe: Optional[str] = None, wave_timeframe: Optional[str] = None,
+def render(tokens: Sequence[str], *, timeframe: str | None, context_timeframe: str | None = None, wave_timeframe: str | None = None,
            higher_timeframe: Optional[str] = None) -> str:
     """The sentence for a signal: the phrases joined with "; ", capitalised, ending with a full stop. `timeframe` None:
     the neutral wording of a template card before the trader picks a chart timeframe ("on the chart you choose", DEF-0)."""

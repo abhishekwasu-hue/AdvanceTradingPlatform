@@ -108,7 +108,7 @@ def _param(spec: Any) -> Dict[str, Any]:
     return out
 
 
-def _reads(template: Template, timeframe: Optional[str], neutral: bool = False) -> Dict[str, Optional[str]]:
+def _reads(template: Template, timeframe: str | None, neutral: bool = False) -> Dict[str, str | None]:
     """The sentence a signal of this template says, per side, built from the template's own tokens with the template's
     usual settings on `timeframe`. `neutral`: the wording before the trader picks a chart timeframe ("on the chart you
     choose", DEF-0; `timeframe` then only resolves the settings). None for a side the template does not use, when no

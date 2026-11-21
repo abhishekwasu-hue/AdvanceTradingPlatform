@@ -968,3 +968,7 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | JV2-Q9 | Journal opens on? | Today (a trade / week link opens its tab) | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
 | JV2-Q10 | Delivery times | Daily 17:00 IST, weekly Sat 09:00, monthly 1st; editable | decided 21 Nov "Default yes and go ahead" (DECISIONS) |
 
+## TPL-TF: Templates card - the trader picks the chart timeframe (21 Nov, DEF-0)
+| ID | Question | Default | Where | Status |
+|---|---|---|---|---|
+| TPL-TF-Q1 | The trading bot form started a template picked INSIDE the form (its strategy list, no link) on 15-minute (or the template's first timeframe), and Strategies › Test did the same for a template picked from its list. Remove those in-form defaults too? | Done in PR #1161: a template picked anywhere starts with NO chart timeframe - the same chips as the card (none picked), Start / Run disabled with "Pick a chart timeframe first." until he picks; another template starts empty again; Strategies › Test's native select for it is replaced by the chips. Stored strategies keep their timeframe. | frontend/src/paperbot/PaperBotV2.tsx, frontend/src/pages/BacktestPage.tsx, frontend/src/backtest/templateTest.ts | closed 21 Nov (parent session: the owner's order is general, "trader select karel") |

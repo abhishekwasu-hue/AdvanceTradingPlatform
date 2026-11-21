@@ -54,14 +54,38 @@ export function chipOrder<T extends { value: string }>(timeframes: readonly T[])
 }
 
 /** The template's timeframes as chips (none selected at first); they wrap on a phone, 44 px tall. */
-export function TimeframeChips({ t, picked, onPick, labelId }: {
-  t: Pick<StrategyTemplate, "id" | "name" | "timeframes">; picked: string | null; onPick: (tf: string) => void; labelId: string;
+export function TimeframeChips({ t, picked, onPick, labelId, describedBy }: {
+  t: Pick<StrategyTemplate, "id" | "timeframes">; picked: string | null; onPick: (tf: string) => void; labelId: string; describedBy?: string;
 }) {
   return (
-    <div role="group" aria-labelledby={labelId} data-template-timeframe-chips={t.id} className="mt-space-1 flex flex-wrap gap-space-2">
+    <div role="group" aria-labelledby={labelId} aria-describedby={describedBy} data-template-timeframe-chips={t.id} data-chip-group
+      data-chip-value={picked ?? ""} className="mt-space-1 flex flex-wrap gap-space-2">
       {chipOrder(t.timeframes).map((tf) => (
-        <FilterChip key={tf.value} selected={picked === tf.value} onClick={() => onPick(tf.value)}>{tf.label}</FilterChip>
+        <FilterChip key={tf.value} value={tf.value} selected={picked === tf.value} onClick={() => onPick(tf.value)}>{tf.label}</FilterChip>
       ))}
+    </div>
+  );
+}
+
+/** What a form says while a template waits for his chart timeframe (the trading bot form, Strategies › Test; DEF-0). */
+export const PICK_FIRST = "Pick a chart timeframe first.";
+
+/** A form's template timeframe field: the label, the chips (none picked at first) and PICK_FIRST until he picks. */
+export function TemplateTimeframeField({ t, picked, onPick, labelClassName, hint = true }: {
+  t: Pick<StrategyTemplate, "id" | "timeframes">; picked: string | null; onPick: (tf: string) => void;
+  /** The form's own label style. */
+  labelClassName?: string;
+  /** Show PICK_FIRST under the chips while nothing is picked (off where the form says it elsewhere). */
+  hint?: boolean;
+}) {
+  const labelId = useId();
+  const hintId = useId();
+  const p = offeredPick(t, picked);
+  return (
+    <div data-template-timeframe-field={t.id}>
+      <div id={labelId} className={labelClassName ?? "text-t13 font-semibold text-fg-muted"}>{PICK_LABEL}</div>
+      <TimeframeChips t={t} picked={p} onPick={onPick} labelId={labelId} describedBy={!p && hint ? hintId : undefined} />
+      {!p && hint && <p id={hintId} data-template-pick-hint className="mt-space-1 text-t13 text-fg-muted">{PICK_FIRST}</p>}
     </div>
   );
 }

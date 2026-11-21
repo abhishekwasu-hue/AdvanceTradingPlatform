@@ -186,11 +186,23 @@ test.describe("Strategy templates behaviour", () => {
     const strategy = form(page).getByLabel("Pick a strategy");
     await expectGroupLabels(page, strategy, "Strategy templates", ["Moving-average crossover", "Range breakout"]);
     await choose(page, strategy, { label: "Range breakout" });
-    await expectChoice(form(page).getByLabel("Chart timeframe"), "15m");
+    // DEF-0: a template picked in the form's own list starts with NO chart timeframe; nothing is asked of the server yet
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Pick a chart timeframe first.");
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Pick a chart timeframe first.");
+    await expect(form(page).getByRole("button", { name: "Start on paper" })).toBeDisabled();
+    expect(server.sent.filter((c) => c.url.endsWith("/adopt"))).toHaveLength(0);
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await expect(form(page)).toContainText("A signal on the first close beyond a range");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Nothing starts until you confirm it.");
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
     expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/B1/adopt", body: { timeframe: "15m" } });
+    // another template starts empty again (his pick belonged to Range breakout)
+    await choose(page, strategy, { label: "Moving-average crossover" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await choose(page, strategy, { label: "Range breakout" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await choose(page, form(page).getByLabel("Chart timeframe"), "1d");
     await expect(form(page)).toContainText("Held for days");
     await choose(page, form(page).getByLabel("Pick a symbol"), "RELIANCE");
@@ -206,6 +218,8 @@ test.describe("Strategy templates behaviour", () => {
   test("REV-H3: a seller pack on an index starts with nothing chosen; Start waits, with the reason, until the user chooses", async ({ page }) => {
     const server = await open(page, { packs: true });
     await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Trend side pack" });
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Pick a chart timeframe first.");       // DEF-0: his pick first
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY 50");
     await expect(form(page).locator("[data-construction]")).toContainText("The strategy only gives the side. Nothing is chosen for you.");
     const start = form(page).getByRole("button", { name: "Start on paper" });
@@ -239,7 +253,11 @@ test.describe("Strategy templates behaviour", () => {
     expect(server.sent.filter((c) => c.url.endsWith("/adopt")).at(-1)).toEqual(
       { method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h", params: { fast: 5 } } });
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
+    // DEF-0: another template starts with no chart timeframe (the link's belonged to its own template)
     await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Range breakout" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Pick a chart timeframe first.");
+    await choose(page, form(page).getByLabel("Chart timeframe"), "1h");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
     expect(server.sent.at(-1)?.body).toEqual({ timeframe: "1h" });
   });
@@ -306,7 +324,8 @@ test.describe("Strategy templates behaviour", () => {
     const server = await open(page, { path: "/deployments?template=D2" });
     const notes = form(page).locator("[data-template-notes]");
     await expect(notes).toContainText("Pick a chart timeframe first.");
-    await expect(form(page).getByLabel("Chart timeframe")).toContainText("Pick a timeframe");
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).getByLabel("Chart timeframe").getByRole("button")).toHaveText(["5-minute", "15-minute", "1-hour", "Daily"]);
     expect(server.sent.filter((c) => c.url.endsWith("/adopt"))).toHaveLength(0);
     await expect(form(page).getByRole("button", { name: "Start on paper" })).toBeDisabled();
     await choose(page, form(page).getByLabel("Chart timeframe"), "1h");

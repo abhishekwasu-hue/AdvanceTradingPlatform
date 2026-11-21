@@ -100,11 +100,13 @@ export function Chip({ tone = "neutral", variant = "tint", shape = "pill", icon,
  * A filter chip (Signals, Option chain, Idea Library filters): selected = the brand outline with a light tint, every
  * other chip outlined. A real toggle button (`aria-pressed`), 44 px tall on a phone, 32 px with a mouse.
  */
-export function FilterChip({ selected, onClick, children, className, disabled }: {
+export function FilterChip({ selected, onClick, children, className, disabled, value }: {
   selected: boolean; onClick: () => void; children: ReactNode; className?: string; disabled?: boolean;
+  /** The chip's value as `data-value` (a chip group used as a field: tests pick it by value). */
+  value?: string;
 }) {
   return (
-    <button type="button" aria-pressed={selected} onClick={onClick} disabled={disabled}
+    <button type="button" aria-pressed={selected} onClick={onClick} disabled={disabled} data-value={value}
       className={cx("inline-flex h-11 shrink-0 items-center gap-space-1 rounded-pill border px-space-3 text-t14 font-medium transition-colors duration-fast md:h-8",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50",
         selected ? "border-brand bg-brand/10 text-brand" : "border-border text-fg-muted hover:bg-surface-2 hover:text-fg", className)}>

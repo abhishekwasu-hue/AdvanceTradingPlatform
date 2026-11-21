@@ -151,5 +151,4 @@ RUN-Q2, RUN-Q3, RUN-Q4 answered by the owner on 14 Nov: moved to docs/archive/OP
 ## TPL-TF: Templates card - the trader picks the chart timeframe (21 Nov, DEF-0)
 | ID | Question | Default | Where | Status |
 |---|---|---|---|---|
-| TPL-TF-Q1 | The trading bot form still starts a template picked INSIDE the form (its strategy list, no link) on 15-minute (or the template's first timeframe), and Strategies › Test does the same for a template picked from its list. Remove those in-form defaults too? | Not changed in this PR (the order named the Templates card; its links now always carry his pick, and a link without one picks none). Remove the in-form default only on the owner's word. | frontend/src/paperbot/PaperBotV2.tsx (TEMPLATE_TIMEFRAME), frontend/src/backtest/templateTest.ts | open (default) |
 | TPL-TF-Q2 | "Show on a chart" (the how-it-works sheet) and its chart overlay still start on the template's first timeframe when he has not picked one (a drawing only; no strategy is set up). | Kept; with his pick the chart opens on it. | frontend/src/strategyTemplates/HowItWorks.tsx, POST /api/strategy-templates/{id}/overlay | open (default) |

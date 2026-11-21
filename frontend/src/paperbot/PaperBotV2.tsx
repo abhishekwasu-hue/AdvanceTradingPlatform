@@ -46,6 +46,7 @@ import { showsReferenceLabel, templatesApi, type StrategyTemplate, type Template
 import { ReferenceLabel } from "../strategyTemplates/TemplateLibrarySection";
 import { handoffFromState, withTestedContract } from "../strategyFlow/model";
 import { settingRows, templateLinkFromSearch, testPathFor, typedSettings, type TemplateLink } from "../strategyTemplates/link";
+import { offeredPick, PICK_FIRST, TemplateTimeframeField } from "../strategyTemplates/TimeframePick";
 import {
   EMPTY_PICK, effectivePick, exitClass, exitNotes, exitProblem, stopOptions, targetOptions, templateExitsBody, type ExitPick, type StopSource,
   type TargetRule,
@@ -93,8 +94,6 @@ const OTHER = "__other__";
 const SYMBOL_ROWS: readonly PickedSymbol[] = SYMBOLS.map((s) => ({ symbol: s, exchange: "NSE" }));
 /** A strategy template in the strategy list (its strategy id comes from the server once the template is picked). */
 const PICK = "template-pick:";
-/** The chart timeframe a template starts on when it offers it (a template's settings stay its own defaults here). */
-const TEMPLATE_TIMEFRAME = "15m";
 
 /** Strategy templates step 2: `?template=D2` opens the form with that template picked; the idea library's "Adopt as a
  * paper strategy" (IDEA-1) adds `timeframe` and `set.<key>` settings as the pre-fill (strategyTemplates/link.ts). */
@@ -469,7 +468,7 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   /** Job 6: the strategy the trader just saved from the Copilot's draft, its symbol and the size his idea named. */
   preselect?: Preselect | null;
 }) {
-  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), timeframe: useId(), stop: useId(),
+  const ids = { strategy: useId(), symbol: useId(), other: useId(), line: useId(), defaults: useId(), stop: useId(),
     target: useId(), times: useId(), wave: useId(), share: useId(), level: useId(), exitNotes: useId(), construction: useId(), width: useId(), startWhy: useId(),
     entry: useId(), band: useId(), expiry: useId(), strike: useId(), offset: useId(), lots: useId(), mode: useId() };
   const [useDefaults, setUseDefaults] = useState(true);
@@ -511,16 +510,16 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   // Strategy templates step 2: the picked template, its chart timeframe and the server's pre-fill for them (nothing is
   // created until "Start on paper"; the template keeps its usual settings here).
   const picked = strategyId.startsWith(PICK) ? templates.find((t) => t.id === strategyId.slice(PICK.length)) ?? null : null;
-  const [templateTimeframe, setTemplateTimeframe] = useState("");
+  // DEF-0 (owner: "trader select karel"): a template starts with NO chart timeframe - his pick belongs to the template he
+  // picked it for; another template starts empty again.
+  const [tfPick, setTfPick] = useState<{ id: string; tf: string } | null>(null);
+  const templateTimeframe = picked && tfPick?.id === picked.id ? offeredPick(picked, tfPick.tf) ?? "" : "";
   const [adoption, setAdoption] = useState<TemplateAdoption | null>(null);
   const [adoptFailed, setAdoptFailed] = useState(false);
   // Section 5: the template's exits as the user's own choice (empty = the template's defaults)
   const [exitPick, setExitPick] = useState<ExitPick>(EMPTY_PICK);
   const [mgmtPick, setMgmtPick] = useState<ManagementPick>(EMPTY_MANAGEMENT);   // M99 P2: every option off
   const urlTemplateApplied = useRef(false);
-  // DEF-0: a template link without a timeframe of the template's own picks none for him - he picks it in the form
-  const linkAsksTimeframe = useRef(false);
-  const linkTemplateId = initialTemplate?.template ?? null;
 
   useEffect(() => {
     const t = initialTemplate ? templates.find((x) => x.id === initialTemplate.template) : undefined;
@@ -528,20 +527,9 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
     urlTemplateApplied.current = true;
     setStrategyId(PICK + t.id);
     // Day-one fix 6 / M68 PR-8: an idea's link never quietly picks an index option - and no symbol at all: he picks it.
-    if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTemplateTimeframe(initialTemplate.timeframe);
-    else linkAsksTimeframe.current = true;
+    // DEF-0: the link's own timeframe is his pick; without one nothing is picked.
+    if (initialTemplate.timeframe && t.timeframes.some((x) => x.value === initialTemplate.timeframe)) setTfPick({ id: t.id, tf: initialTemplate.timeframe });
   }, [templates, initialTemplate]);
-
-  useEffect(() => {
-    if (!picked) return;
-    if (!picked.timeframes.some((t) => t.value === templateTimeframe)) {
-      if (linkAsksTimeframe.current && picked.id === linkTemplateId) {
-        if (templateTimeframe) setTemplateTimeframe("");
-        return;
-      }
-      setTemplateTimeframe(picked.timeframes.some((t) => t.value === TEMPLATE_TIMEFRAME) ? TEMPLATE_TIMEFRAME : picked.default_timeframe ?? "");
-    }
-  }, [picked, templateTimeframe, linkTemplateId]);
 
   // The link's settings (the idea library's pre-fill) apply to the template the link named, typed as it declares them.
   const linkSettings = useMemo(() => (picked && initialTemplate && picked.id === initialTemplate.template
@@ -552,6 +540,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const pickedId = picked?.id ?? null;
   useEffect(() => { setExitPick(EMPTY_PICK); }, [pickedId]);
   useEffect(() => { setMgmtPick(EMPTY_MANAGEMENT); }, [pickedId]);                // M99 P2: every option off again
+  // DEF-0: picking another strategy forgets his timeframe pick, so a template picked again starts empty too
+  useEffect(() => { setTfPick((p) => (p && p.id !== pickedId ? null : p)); }, [pickedId]);
 
   useEffect(() => {
     setAdoption(null); setAdoptFailed(false);
@@ -662,7 +652,8 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
   const summary = startSummaryParts(symbol, info, sentWithMode);
   const entryWhy = askEntry && !style ? ENTRY_STYLE_MISSING : askBand && band === null ? BAND_MISSING
     : askLots && botLots === null ? (stockBot ? SHARES_MISSING : LOTS_MISSING) : askMode && !entryModePick ? MODE_MISSING : null;
-  const startWhy = (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? optionWhy ?? entryWhy : null);
+  // DEF-0: a template waits for his chart timeframe - said beside Start too
+  const startWhy = (picked && !templateTimeframe ? PICK_FIRST : null) ?? (effectiveId ? constructionProblem(sentWithMode) : null) ?? (effectiveId ? optionWhy ?? entryWhy : null);
   const widthLabel = (s: OptionStrategy | undefined) => (s && (WINGED_STRUCTURES.includes(s) || s === "LONG_BUTTERFLY") ? "Wing width" : "Short strike distance");
   const setExit = (patch: Partial<ExitPick>) => { setExitPick((p) => ({ ...(exitsNow ?? p), ...patch })); setResult(null); };
 
@@ -708,12 +699,12 @@ export function StartBotV2({ library, custom, hasBroker, firstField, onStarted, 
         </div>
         {picked && (
           <div data-template={picked.id}>
-            <label htmlFor={ids.timeframe} className={LABEL}>Chart timeframe</label>
-            <Combobox id={ids.timeframe} label="Chart timeframe" value={templateTimeframe} className="w-full" placeholder="Pick a timeframe"
-              onChange={(v) => { setTemplateTimeframe(v); setResult(null); }} options={picked.timeframes} />
+            {/* DEF-0: the template's timeframes as chips, none picked; Start waits for his pick (the note below says so). */}
+            <TemplateTimeframeField t={picked} picked={templateTimeframe || null} labelClassName={LABEL} hint={false}
+              onPick={(tf) => { setTfPick({ id: picked.id, tf }); setResult(null); }} />
             {/* UX-11 U1: where the settings come from and the template's own notes on demand, word for word; a failure or the wait stays visible. */}
             <div data-template-notes>
-              {!templateTimeframe ? <p role="status" data-template-pick-hint className="mt-space-1 text-t13 text-fg-muted">Pick a chart timeframe first.</p>
+              {!templateTimeframe ? <p role="status" data-template-pick-hint className="mt-space-1 text-t13 text-fg-muted">{PICK_FIRST}</p>
                 : adoptFailed ? <p role="alert" className="mt-space-1 text-t13 text-fg-muted">This template cannot be set up just now. Try again in a moment.</p>
                 : !adoption ? <p role="status" className="mt-space-1 text-t13 text-fg-muted">Getting the template ready…</p>
                 : (

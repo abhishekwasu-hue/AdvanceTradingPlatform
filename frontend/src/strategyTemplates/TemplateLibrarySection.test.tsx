@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { LibraryView } from "../pages/StrategyLibraryV2";
 import { REFERENCE_LABEL, showsReferenceLabel, type StrategyTemplate } from "./api";
 import { TemplateCard, TemplateLibraryView, templateRows } from "./TemplateLibrarySection";
-import { PICK_HINT, PICK_LABEL, chipOrder, offeredPick, readsFor, templateLinksFor } from "./TimeframePick";
+import { PICK_FIRST, PICK_HINT, PICK_LABEL, TemplateTimeframeField, chipOrder, offeredPick, readsFor, templateLinksFor } from "./TimeframePick";
+import { readFileSync } from "node:fs";
 
 /** P2-3: the Templates section. Made-up templates only. */
 const TF = [{ value: "15m", label: "15-minute" }, { value: "1d", label: "Daily" }];
@@ -62,6 +63,27 @@ describe("P2-3: the Templates section", () => {
     const none = renderToStaticMarkup(<TemplateCard t={NAMED} reference={false} how={false} />);
     expect(none).toContain("crossed above the slow one on the chart you choose.");
     expect(none).not.toContain("Daily chart");
+  });
+
+  it("DEF-0: the forms' timeframe field (trading bot form, Strategies › Test) starts empty and asks; his pick is selected", () => {
+    const none = renderToStaticMarkup(<TemplateTimeframeField t={NAMED} picked={null} onPick={noop} />);
+    expect(none).toContain(PICK_LABEL);
+    expect(none).toContain('data-chip-value=""');
+    expect(none).not.toContain('aria-pressed="true"');
+    expect(none).toContain(PICK_FIRST);
+    expect(none).toContain('data-value="15m"');
+    expect(none).toMatch(/role="group" aria-labelledby="[^"]+" aria-describedby="[^"]+"/);
+    const quiet = renderToStaticMarkup(<TemplateTimeframeField t={NAMED} picked={null} onPick={noop} hint={false} />);
+    expect(quiet).not.toContain(PICK_FIRST);                                       // the form says it beside Start instead
+    const picked = renderToStaticMarkup(<TemplateTimeframeField t={NAMED} picked="1d" onPick={noop} />);
+    expect(picked).toContain('data-chip-value="1d"');
+    expect(picked.split('aria-pressed="true"')[1]).toMatch(/^[^>]*>Daily</);
+    expect(picked).not.toContain(PICK_FIRST);
+    expect(renderToStaticMarkup(<TemplateTimeframeField t={NAMED} picked="4h" onPick={noop} />)).toContain('data-chip-value=""');   // not offered
+    expect(readFileSync("src/paperbot/PaperBotV2.tsx", "utf8")).not.toMatch(/TEMPLATE_TIMEFRAME|default_timeframe/);
+    const test = readFileSync("src/pages/BacktestPage.tsx", "utf8");
+    expect(test).not.toContain("bt-template-timeframe");                            // no native select for it any more
+    expect(test).toContain("<TemplateTimeframeField");
   });
 
   it("DEF-0: the sentence and the links follow only a timeframe the template offers", () => {

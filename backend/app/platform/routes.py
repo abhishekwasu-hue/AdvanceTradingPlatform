@@ -424,3 +424,75 @@ async def put_srv2_agent_mode(body: AgentModeBody, user: User = Depends(require_
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     await session.commit()
     return {**await agent_mode.read(session), "can_switch": True}
+
+
+# --- SRV2 P2 + P4 ("Pending job purn kr" 21 Nov): the owner's bot settings per symbol, and the bot's positions read-only --------------
+# The settings are his own method's: read and written only by the configured owner account (403 for every other admin, audited).
+
+class Srv2SettingsBody(BaseModel):
+    values: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Srv2SignalSymbolsBody(BaseModel):
+    symbols: List[str]
+
+
+NOT_THE_OWNER_SETTINGS = "Only the platform owner can see or change the trading agent's settings."
+
+
+async def _owner_or_403(session: AsyncSession, user: User, what: str) -> None:
+    from app.platform import live_owner
+    from app.srv2bot import settings_page
+    if not live_owner.is_owner(user):
+        await write_audit_log(session, None, user.id, settings_page.EVENT + ".refused", f"{what} - not the owner")
+        await session.commit()
+        raise HTTPException(status_code=403, detail=NOT_THE_OWNER_SETTINGS)
+
+
+@admin_router.get("/srv2-settings/{symbol}")
+async def get_srv2_settings(symbol: str, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.srv2bot import settings_page
+    await _owner_or_403(session, user, f"read {symbol}")
+    try:
+        return await settings_page.read(session, symbol.upper())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@admin_router.put("/srv2-settings/{symbol}")
+async def put_srv2_settings(symbol: str, body: Srv2SettingsBody, user: User = Depends(require_role()),
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    from app.srv2bot import settings_page
+    await _owner_or_403(session, user, f"save {symbol}")
+    try:
+        errors = await settings_page.save(session, user.id, symbol.upper(), body.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except settings_page.SettingsUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if errors:
+        raise HTTPException(status_code=422, detail={"errors": errors})
+    await session.commit()
+    return await settings_page.read(session, symbol.upper())
+
+
+@admin_router.put("/srv2-signal-symbols")
+async def put_srv2_signal_symbols(body: Srv2SignalSymbolsBody, user: User = Depends(require_role()),
+                                  session: AsyncSession = Depends(get_session)) -> dict:
+    from app.srv2bot import settings_page
+    await _owner_or_403(session, user, "save signal symbols")
+    try:
+        clean = await settings_page.save_signal_symbols(session, user.id, body.symbols)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except settings_page.SettingsUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    return {"signal_symbols": clean}
+
+
+@admin_router.get("/srv2-positions")
+async def get_srv2_positions(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.srv2bot import settings_page
+    await _owner_or_403(session, user, "read positions")
+    return await settings_page.positions()

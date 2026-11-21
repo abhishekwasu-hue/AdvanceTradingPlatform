@@ -199,6 +199,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/live-orgs/{tenant_id}"): "admin",          # M55 S1b: the owner's LIVE grant
     ("GET", "/api/admin/controls/srv2-agent-mode"): "admin",              # SRV2 P3: the owner's agent mode
     ("PUT", "/api/admin/controls/srv2-agent-mode"): "admin",
+    ("GET", "/api/admin/controls/srv2-settings/{symbol}"): "admin",     # SRV2 P2: the owner's bot settings
+    ("PUT", "/api/admin/controls/srv2-settings/{symbol}"): "admin",
+    ("PUT", "/api/admin/controls/srv2-signal-symbols"): "admin",
+    ("GET", "/api/admin/controls/srv2-positions"): "admin",              # SRV2 P4: the bot's positions, read-only
     ("PUT", "/api/admin/controls/maintenance"): "admin",
     ("GET", "/api/admin/controls/marketplace-terms"): "admin",
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",

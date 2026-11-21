@@ -78,7 +78,7 @@ async def cards(modes: Any, limit: int = 20) -> list[dict[str, Any]]:
     return [_with_ist({k: (r or {}).get(k) for k in CARD_FIELDS}) for r in rows or []][:limit]
 
 
-TIME_FIELDS = ("signal_ts", "created_at", "deadline", "decided_at", "executed_at")
+TIME_FIELDS = ("signal_ts", "created_at", "deadline", "decided_at", "executed_at", "opened_at", "closed_at")
 
 
 def _with_ist(card: dict[str, Any]) -> dict[str, Any]:

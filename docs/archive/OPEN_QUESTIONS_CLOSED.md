@@ -940,6 +940,9 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | SRV2-Q2 | atp-private CI fails within seconds on main since 9 Nov with no log (likely Actions minutes / billing on the private repo) | owner checks GitHub Billing -> Actions; atp-private PRs #18 / #19 wait (merge only on green) | atp-private | closed 20 Nov (duplicate of the row above; DECISIONS ATP-PRIVATE-PUBLIC) |
 
 ## Moved 21 Nov 2026 (approved 10 Nov) - M95: Front door + link preview (10 Nov, docs/design/M95_FRONT_DOOR.md section 2)
+
+<!-- moved from docs/OPEN_QUESTIONS.md on 21 Nov: approved by the owner 10 Nov ("Yes default", DECISIONS) -->
+## M95: Front door + link preview (10 Nov, docs/design/M95_FRONT_DOOR.md section 2)
 | ID | Question | Default - APPROVED by the owner 10 Nov ("Yes default", DECISIONS) |
 |---|---|---|
 | M95-Q1 | Public surface rule (no names, no prices, charts older than 3 months) vs real screenshots, last-close chain and chart in F1-F3 | Index data only, as of a date at least 3 months old, price figures and axes hidden; the guest demo is a frozen dated snapshot |

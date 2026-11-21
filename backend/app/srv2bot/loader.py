@@ -18,7 +18,7 @@ _reason = REASON_ABSENT
 
 
 def load() -> Any | None:
-    """The private bot's namespace: an object with `host`, `runner` and `modes` (None in an older package), or None."""
+    """The private bot's namespace: `host`, `runner`, and `modes` / `settings` / `positions` (None in an older package), or None."""
     global _cached, _reason
     if _cached is not _UNSET:
         return _cached
@@ -35,12 +35,16 @@ def load() -> Any | None:
         _reason, _cached = f"could not be loaded ({exc.__class__.__name__})", None
         return None
 
-    try:                                     # SRV2 P3 (ADR-0029): the agent modes; an older private package has none
-        modes = importlib.import_module(MODULE + ".modes")
-    except ImportError:
-        modes = None
+    optional: dict[str, Any] = {}
+    # SRV2 P3 (ADR-0029): the agent modes; P2 / P4: the settings (field list, validation) and the read-only positions.
+    # An older private package has some of them only: the missing ones are None and their pages say so.
+    for name in ("modes", "settings", "positions"):
+        try:
+            optional[name] = importlib.import_module(f"{MODULE}.{name}")
+        except ImportError:
+            optional[name] = None
     from types import SimpleNamespace
-    _cached = SimpleNamespace(host=host, runner=runner, modes=modes)
+    _cached = SimpleNamespace(host=host, runner=runner, **optional)
     return _cached
 
 

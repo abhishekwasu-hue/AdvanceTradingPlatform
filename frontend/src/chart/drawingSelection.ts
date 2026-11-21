@@ -1,17 +1,18 @@
 /**
  * Owner 21 Nov (drawings like a pro charting app): what the selection bar offers for a selected drawing, without
- * React. Each kind gets only the settings its picture honours (geometry.ts): a line's colour, width and style; the
- * extension for a trend line and a channel (a ray already runs past its second point); a label's colour and text; a
- * position (a planning drawing in its own profit / loss tints) only lock, copy and delete.
+ * React. Each kind gets only the settings its picture honours (geometry.ts): colour, width and style for lines, boxes
+ * and Fibonacci levels; the extension for a trend line and a channel (a ray already runs past its second point); a
+ * label's colour and text; a position (a planning drawing in its own profit / loss tints) only lock, copy and delete.
+ * Widths stop at 4, what the chart draws (geometry.ts), although the store takes up to WIDTH_MAX.
  */
-import type { DrawingKind, DrawingStyle, DrawingV1 } from "../charting/drawings";
+import { EXTENDS as EXTEND_IDS, LINE_STYLES as LINE_IDS, type DrawingKind, type DrawingStyle, type DrawingV1 } from "../charting/drawings";
 import { DEFAULT_COLOR } from "../charting/geometry";
 import type { ChartPalette } from "./chartTheme";
 
 export interface DrawingSettings { colour: boolean; line: boolean; extend: boolean; text: boolean }
 
-const LINES: readonly DrawingKind[] = ["trendline", "ray", "hline", "vline", "measure", "channel"];
-const COLOURED: readonly DrawingKind[] = [...LINES, "rectangle", "fib_retracement", "fib_extension", "text"];
+const LINES: readonly DrawingKind[] = ["trendline", "ray", "hline", "vline", "measure", "channel", "rectangle", "fib_retracement", "fib_extension"];
+const COLOURED: readonly DrawingKind[] = [...LINES, "text"];
 const EXTENDS: readonly DrawingKind[] = ["trendline", "channel"];
 
 export function drawingSettings(kind: DrawingKind): DrawingSettings {
@@ -19,12 +20,12 @@ export function drawingSettings(kind: DrawingKind): DrawingSettings {
 }
 
 export const WIDTHS = [1, 2, 3, 4] as const;
-export const LINE_STYLES: readonly { id: NonNullable<DrawingStyle["line"]>; label: string }[] = [
-  { id: "solid", label: "Solid" }, { id: "dashed", label: "Dashed" }, { id: "dotted", label: "Dotted" },
-];
-export const EXTEND_OPTIONS: readonly { id: NonNullable<DrawingStyle["extend"]>; label: string }[] = [
-  { id: "none", label: "No extension" }, { id: "left", label: "Extend left" }, { id: "right", label: "Extend right" }, { id: "both", label: "Extend both ways" },
-];
+const LINE_LABELS: Record<NonNullable<DrawingStyle["line"]>, string> = { solid: "Solid", dashed: "Dashed", dotted: "Dotted" };
+const EXTEND_LABELS: Record<NonNullable<DrawingStyle["extend"]>, string> = {
+  none: "No extension", left: "Extend left", right: "Extend right", both: "Extend both ways",
+};
+export const LINE_STYLES = LINE_IDS.map((id) => ({ id, label: LINE_LABELS[id] }));
+export const EXTEND_OPTIONS = EXTEND_IDS.map((id) => ({ id, label: EXTEND_LABELS[id] }));
 
 /** `rgb(r, g, b)`, `rgba(...)` or `#rrggbb` as lower-case `#rrggbb` (the stored form); null for anything else. */
 export function toHex(css: string): string | null {

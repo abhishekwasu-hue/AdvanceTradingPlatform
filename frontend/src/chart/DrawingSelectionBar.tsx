@@ -1,7 +1,7 @@
 import { ArrowLeftRight, Check, Copy, Lock, LockOpen, Trash2, Type, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { DrawingStyle } from "../charting/drawings";
-import type { DrawingController, ToolView } from "../charting/tools";
+import { styleOf, type DrawingController, type ToolView } from "../charting/tools";
 import { cx } from "../components/primitives/cx";
 import { drawingNote } from "./chartsPage";
 import type { PlotInsets } from "./chartCore";
@@ -74,9 +74,9 @@ export function DrawingSelectionBar({ view, controller, insets, root, showMessag
   const can = drawingSettings(drawing.kind);
   const palette = readChartPalette(root);
   const colour = shownColour(drawing, palette);
-  const width = Math.min(4, Math.max(1, drawing.style?.width ?? 1));
-  const line = drawing.style?.line ?? "solid";
-  const extend = drawing.style?.extend ?? "none";
+  const style = styleOf(drawing);
+  const width = Math.min(4, Math.max(1, style.width));
+  const { line, extend } = style;
   const name = toolLabel(drawing.kind);
   const message = showMessage ? drawingNote(view.message) : null;
 

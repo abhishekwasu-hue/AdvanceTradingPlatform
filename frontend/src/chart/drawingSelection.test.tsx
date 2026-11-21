@@ -52,7 +52,8 @@ describe("drawing settings per kind", () => {
     expect(drawingSettings("channel")).toEqual({ colour: true, line: true, extend: true, text: false });
     expect(drawingSettings("ray")).toEqual({ colour: true, line: true, extend: false, text: false });
     expect(drawingSettings("hline")).toEqual({ colour: true, line: true, extend: false, text: false });
-    expect(drawingSettings("rectangle")).toEqual({ colour: true, line: false, extend: false, text: false });
+    expect(drawingSettings("rectangle")).toEqual({ colour: true, line: true, extend: false, text: false });
+    expect(drawingSettings("fib_retracement")).toEqual({ colour: true, line: true, extend: false, text: false });
     expect(drawingSettings("text")).toEqual({ colour: true, line: false, extend: false, text: true });
     expect(drawingSettings("long_position")).toEqual({ colour: false, line: false, extend: false, text: false });
     for (const kind of Object.keys(ANCHOR_RULES) as DrawingKind[]) expect(drawingSettings(kind)).toBeTruthy();

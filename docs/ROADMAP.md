@@ -263,7 +263,7 @@ Order: FN0 first (audit, no code), then FN1 -> FN7 as listed; max 3 in progress;
 | P2-5 | not started | Analyze a chart ON (beta) | - |
 | P2-6 | not started | help centre + page tours complete | - |
 | P2-7 | not started | positions for options sellers + Performance page | - |
-| P2-8 | in progress (NEXT-Q1 default, 21 Nov) | plan docs/plans/journal-v2-PLAN.md; PR 1 J1 #1147 draft; PR 2 J2+J3 (check-in, day / week / month reviews, first-20 rule) draft; PR 3 J4-J6 next; no merge before the owner's ✅ | #1147, claude/journal-v2-j2j3 |
+| P2-8 | in progress (NEXT-Q1 default, 21 Nov) | plan docs/plans/journal-v2-PLAN.md; PR 1 J1 #1147, PR 2 J2+J3 #1148, PR 3 J4-J6 (My proof, if-then plans, goals, Telegram / e-mail, tabs, tour) drafts, migrations; no merge before the owner's ✅ | #1147, #1148, claude/journal-v2-j4j6 |
 | M45 | merged (MA-3..MA-6 #580, MB-7 #600); owner decides the `multi_account` flag; LIVE fan-out only on his words (audit 6 Nov) | MA-1a #568, MA-1b #569, MA-2 #571 merged; MA-3/4/5 PAPER fan-out, one exit, checks + alerts + retry (migration f1b3d5e7a9c2) #576; MA-6 ticket "Run on" + practice accounts page in review; then flag decision + deploy (owner's one command); LIVE fan-out only on the owner's LIVE words | MA-6 PR |
 | P3-1 | waiting for owner | the R2 bucket + key escrow, then the restore drill | - |
 | P3-2 | not started (parallel) | monitoring + alerts (parts built, row 17) | - |

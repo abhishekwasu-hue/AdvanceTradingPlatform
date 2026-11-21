@@ -5,6 +5,7 @@ import type {
   ChecklistItem, DisciplineSettings, EntryKind, JournalAttachment, JournalEntryFull, JournalFilters, JournalList, JournalSettingsResponse,
   ImportMapping, ImportPreview, ImportResult, JournalStatsResponse, JournalTag, JournalWeek, JournalWeekV2, ManualTradeBody, TagStatus,
   TradeChart, WeeklyReview, BrokerSyncResult, Checkin, CheckinBody, DailyCard, MonthlyReview, WaitingCheckin, WeeklyExtras,
+  GoalProgress, JournalDelivery, JournalPlan, JournalToday, PlanBody, ProofPage,
 } from "./types";
 
 /** The query string of the journal filters (empty values left out; manual entries are in unless asked otherwise). */
@@ -115,6 +116,26 @@ export const journalApi = {
   monthly: (month?: string) => request<MonthlyReview>(`/journal/monthly${month ? `?month=${month}` : ""}`),
   saveReflection: (period: string, answer: string) =>
     request<{ period: string; answer: string | null }>("/journal/reflection", { method: "PUT", body: JSON.stringify({ period, answer }) }),
+
+  // P2-8 J4: My proof (facts from his trades + his own entries; pins)
+  proof: () => request<ProofPage>("/journal/proof"),
+  addProof: (text: string, happenedOn?: string) =>
+    request<{ id: number; key: string }>("/journal/proof", { method: "POST", body: JSON.stringify({ text, happened_on: happenedOn || null }) }),
+  pinProof: (key: string, pinned: boolean) =>
+    request<{ key: string; pinned: boolean }>("/journal/proof/pin", { method: "PUT", body: JSON.stringify({ key, pinned }) }),
+  removeProof: (id: number) => request<{ deleted: number }>(`/journal/proof/${id}`, { method: "DELETE" }),
+
+  // P2-8 J5: his if-then plans and process goals; J6: the Today tab
+  plans: () => request<{ plans: JournalPlan[]; goals: GoalProgress[] }>("/journal/plans"),
+  addPlan: (body: PlanBody) => request<JournalPlan>("/journal/plans", { method: "POST", body: JSON.stringify(body) }),
+  changePlan: (id: number, body: Partial<PlanBody>) => request<JournalPlan>(`/journal/plans/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  removePlan: (id: number) => request<{ deleted: number }>(`/journal/plans/${id}`, { method: "DELETE" }),
+  today: () => request<JournalToday>("/journal/today"),
+
+  // P2-8 J6: where his reviews go (his own Telegram chat / e-mail; all OFF until he turns them on)
+  delivery: async (): Promise<JournalDelivery> => (await request<{ prefs: { journal_delivery: JournalDelivery } }>("/me/prefs")).prefs.journal_delivery,
+  saveDelivery: (value: JournalDelivery) =>
+    request<{ value: JournalDelivery }>("/me/prefs/journal_delivery", { method: "PUT", body: JSON.stringify(value) }),
 };
 
 function importForm(file: Blob, name: string, mapping?: ImportMapping): FormData {

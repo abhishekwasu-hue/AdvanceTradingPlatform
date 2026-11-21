@@ -20,7 +20,10 @@ import { journalTarget } from "./recall";
 import { MyStudiesV2 } from "../study/MyStudiesV2";
 import SimilarSetupsV2 from "./SimilarSetupsV2";
 import { DailyCardV2, MonthlyV2, PeriodSwitchV2, WeeklyExtrasV2, shiftDay, shiftMonth, type Load, type ReviewPeriod } from "./ReviewsV2";
-import type { DailyCard, JournalFilters, MonthlyReview, WaitingCheckin, WeeklyExtras } from "./types";
+import { PlansV2 } from "./PlansV2";
+import { ProofV2 } from "./ProofV2";
+import { DeliveryV2, TodayTabV2 } from "./TodayTabV2";
+import type { DailyCard, GoalProgress, JournalFilters, JournalPlan, JournalToday, MonthlyReview, ProofPage, WaitingCheckin, WeeklyExtras } from "./types";
 import { WaitingCheckinsV2 } from "./WaitingCheckinsV2";
 import { WeeklyReviewV2, type WeekState } from "./WeeklyReviewV2";
 
@@ -35,7 +38,7 @@ export function istToday(now: Date = new Date()): string {
  * on a figure says how it is worked out. Behind `discipline_engine` like the rest of the journal (503 while it is off).
  */
 
-type Tab = "trades" | "stats" | "review" | "studies" | "settings";
+type Tab = "today" | "trades" | "review" | "proof" | "plans" | "stats" | "studies" | "settings";
 const PAGE = 200;
 const OFF_TEXT = "The journal is not turned on for your account yet.";
 
@@ -61,7 +64,8 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   // M75 NAV-5a: the router's address (the journal in an in-place panel has its own).
   const here = useAddress();
   const [target0] = useState(() => journalTarget(here.search, here.hash));
-  const [tab, setTab] = useState<Tab>(target0.week ? "review" : "trades");
+  // P2-8 J6: Today first; a link to one trade opens Trades, a link to a week opens Reviews
+  const [tab, setTab] = useState<Tab>(target0.week ? "review" : target0.tradeId ? "trades" : "today");
   const [filters, setFilters] = useState<JournalFilters>({});
   const [limit, setLimit] = useState(PAGE);
   const [list, setList] = useState<ListState>({ status: "loading" });
@@ -83,6 +87,10 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   const [daily, setDaily] = useState<Load<DailyCard>>({ status: "loading" });
   const [extras, setExtras] = useState<Load<WeeklyExtras>>({ status: "loading" });
   const [monthly, setMonthly] = useState<Load<MonthlyReview>>({ status: "loading" });
+  // P2-8 J4 / J5 / J6: My proof, his plans and the Today tab
+  const [todayState, setTodayState] = useState<Load<JournalToday>>({ status: "loading" });
+  const [proofState, setProofState] = useState<Load<ProofPage>>({ status: "loading" });
+  const [plansState, setPlansState] = useState<Load<{ plans: JournalPlan[]; goals: GoalProgress[] }>>({ status: "loading" });
   const [customTags, setCustomTags] = useState<string[]>([]);
   const refresh = useCallback(() => setRound((r) => r + 1), []);
 
@@ -137,6 +145,28 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
     return () => { alive = false; };
   }, [api, tab, period, day, week, month, round, fail]);
 
+  useEffect(() => {
+    let alive = true;
+    if (tab === "today") {
+      api.today().then((data) => { if (alive) setTodayState({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setTodayState); });
+      api.daily(istToday()).then((data) => { if (alive) setDaily({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setDaily); });
+    } else if (tab === "proof") {
+      api.proof().then((data) => { if (alive) setProofState({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setProofState); });
+    } else if (tab === "plans") {
+      api.plans().then((data) => { if (alive) setPlansState({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setPlansState); });
+    }
+    return () => { alive = false; };
+  }, [api, tab, round, fail]);
+
+  async function act(work: () => Promise<unknown>, done?: string): Promise<boolean> {
+    try {
+      await work();
+      if (done) toast.success(done);
+      refresh();
+      return true;
+    } catch (e) { toast.error(errorSentence(e)); return false; }
+  }
+
   async function saveAnswer(periodLabel: string, text: string) {
     try {
       await api.saveReflection(periodLabel, text);
@@ -184,10 +214,32 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       {header}
       {shareCard && <PageDishV2 page="journal" />}
       {shareCard && <DisciplineCardV2 />}
+      <div data-tour="journal-tabs">
       <PageTabs label="Journal" value={tab} onChange={setTab} idPrefix="journal"
-        items={[{ key: "trades", label: "Trades" }, { key: "stats", label: "Stats" }, { key: "review", label: "Reviews", short: "Review" },
+        items={[{ key: "today", label: "Today" }, { key: "trades", label: "Trades" }, { key: "review", label: "Reviews", short: "Review" },
+          { key: "proof", label: "My proof", short: "Proof" }, { key: "plans", label: "Plans" }, { key: "stats", label: "Stats" },
           ...(studiesOn ? [{ key: "studies" as const, label: "My studies", short: "Studies" }] : []), { key: "settings", label: "Settings" }]} />
+      </div>
       <div role="tabpanel" id={`journal-panel-${tab}`} aria-labelledby={`journal-tab-${tab}`}>
+        {tab === "today" && (
+          <div className="space-y-space-4">
+            <TodayTabV2 state={todayState} onRetry={refresh} onOpen={(kind, id) => setSheet({ kind, id })} />
+            <WaitingCheckinsV2 items={waiting} onOpen={(kind, id) => setSheet({ kind, id })} onDismiss={dismissWaiting} />
+            <DailyCardV2 state={daily} day={istToday()} onStep={(by) => { setDay(shiftDay(istToday(), by)); setPeriod("day"); setTab("review"); }}
+              onRetry={refresh} onOpen={(kind, id) => setSheet({ kind, id })} />
+          </div>
+        )}
+        {tab === "proof" && (
+          <ProofV2 state={proofState} onRetry={refresh} onOpen={(kind, id) => setSheet({ kind, id })}
+            onPin={(item) => { void act(() => api.pinProof(item.key, !item.pinned)); }}
+            onAdd={(text, on) => act(() => api.addProof(text, on), "Added to My proof.")}
+            onRemove={async (item) => { if (item.id != null) await act(() => api.removeProof(item.id as number), "Removed."); }} />
+        )}
+        {tab === "plans" && (
+          <PlansV2 state={plansState} onRetry={refresh} onAdd={(body) => act(() => api.addPlan(body), "Saved.")}
+            onToggle={(p) => { void act(() => api.changePlan(p.id, { active: !p.active })); }}
+            onRemove={async (p) => { await act(() => api.removePlan(p.id), "Removed."); }} />
+        )}
         {tab === "trades" && <WaitingCheckinsV2 items={waiting} onOpen={(kind, id) => setSheet({ kind, id })} onDismiss={dismissWaiting} />}
         {tab === "trades" && (
           <JournalListV2 state={list} filters={filters} onFilters={changeFilters} api={api} onRetry={refresh}
@@ -216,6 +268,7 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
         {tab === "settings" && (
           <div className="space-y-space-4">
             <OwnListsV2 api={api} onSaved={(d) => setCustomTags(d.settings.custom_tags ?? [])} />
+            <DeliveryV2 api={api} />
             {settings}
           </div>
         )}

@@ -1,11 +1,10 @@
-# HANDOVER_NOW (20 Nov, TERM-CON merged)
+# HANDOVER_NOW (21 Nov, P2-8 Journal v2 built as 3 draft PRs)
 
-TERM-CON (Terminal "Conclusion" panel, plan docs/plans/terminal-conclusion-PLAN.md) is merged: C0 #1135 read,
-C1 #1137 glance rules / signals / risk / events, C2 #1139 panel, C3 #1140 refresh (bar close + OI slot, no polling),
-C4 #1141 AI summary on tap (own key). Flag `terminal_conclusion` OFF; no migration. Proof: docs/design/TERM_CON_COMPARE.html.
-Notes: presets unchanged (panel opens on Option seller / Quick trade while the flag is on); TC-Q2 `also=` timeframes
-are served but the panel does not send his strategies' timeframes yet.
+P2-8 (order ATP_SESSION_JOURNAL.md, plan docs/plans/journal-v2-PLAN.md) is built, stacked, NOT merged (the order: no
+merge before the owner's ✅): #1147 J1 (broker sync, stored chart picture, spread as one entry, plan vs actual) ->
+#1148 J2+J3 (private check-in, day / week / month reviews, first-20 rule) -> PR 3 J4-J6 (My proof, if-then plans,
+goals, Telegram / e-mail OFF by default, tabs, tour). Three migrations (e3a5c7e9b1d4, f4b6d8a0c2e5, a5c7e9b1d3f6),
+all additive, ROLLBACK_SAFE; deploy after 15:30 IST. Flags: ui_v2 + discipline_engine. Proof:
+docs/design/JOURNAL_V2_J1_COMPARE.html, _J2J3_, _J4J6_. Questions JV2-Q1..Q10.
 
-Next, in order:
-1. Deploy; the owner turns `terminal_conclusion` on and checks the Terminal on desktop + phone; ✅.
-2. BT-DRAW 2c deploy + owner check; CA-CHAT; SRV2 P3.
+Next: the owner's ✅ per PR -> merge in order -> deploy after 15:30 -> discipline_engine on -> check on phone.

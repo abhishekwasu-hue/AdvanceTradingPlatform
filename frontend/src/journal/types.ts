@@ -471,3 +471,46 @@ export interface MonthlyReview {
   worst_setup: { setup: string; net_pnl: number; trades: number; small: boolean } | null;
   lines: string[]; done_well: string | null; question: string; answer: string | null;
 }
+
+// --- P2-8 J4: My proof ---------------------------------------------------------------------------------------------------
+
+export interface ProofItem {
+  key: string; id?: number; kind: string; text: string; at: string | null; entry_kind: EntryKind | null; entry_id: number | null;
+  chart: string | null; own: boolean; pinned: boolean;
+}
+
+export interface ProofFact { key: string; kind: string; text: string; at: string | null; entry_kind: EntryKind | null; entry_id: number | null; chart: string | null }
+
+export interface ProofPage { items: ProofItem[]; last_good: ProofFact | null; after_loss: string | null; days: number }
+
+// --- P2-8 J5: if-then plans and process goals ----------------------------------------------------------------------------
+
+export type PlanTrigger = "NONE" | "STOP_HIT" | "LOSS";
+export type GoalMetric = "PLAN_FOLLOWED" | "STOP_KEPT" | "CHECKED_IN";
+
+export interface JournalPlan {
+  id: number; kind: "IF_THEN" | "GOAL"; if_text: string | null; then_text: string | null; trigger: PlanTrigger;
+  metric: GoalMetric | null; metric_label: string | null; target_pct: number | null; period: "WEEK" | "MONTH" | null; active: boolean;
+}
+
+export interface GoalProgress {
+  id: number; period: "WEEK" | "MONTH"; metric: GoalMetric; label: string; target_pct: number; done: number; base: number;
+  pct: number | null; reached: boolean; small: boolean;
+}
+
+export type PlanBody = Partial<Omit<JournalPlan, "id" | "metric_label">> & { kind: "IF_THEN" | "GOAL" };
+
+export interface JournalToday {
+  plans: JournalPlan[];
+  reminders: (JournalPlan & { because: string; entry_kind: EntryKind; entry_id: number })[];
+  goals: GoalProgress[];
+  last_good: ProofFact | null;
+  after_loss: string | null;
+}
+
+// --- P2-8 J6: delivery choices (user_prefs `journal_delivery`, all OFF by default) -----------------------------------------
+
+export interface JournalDelivery {
+  telegram: boolean; email: boolean; daily: boolean; weekly: boolean; monthly: boolean; checkin_prompts: boolean;
+  daily_hour: number; weekly_day: "SAT" | "SUN";
+}

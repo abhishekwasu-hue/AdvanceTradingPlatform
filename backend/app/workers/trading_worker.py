@@ -2145,8 +2145,8 @@ class TradingWorker:
 
     def _spawn_journal_sync(self, now: datetime) -> None:
         """P2-8 J1-1 (app/journal/broker_sync.py): once a trading day after the close, each user's own broker trade book
-        (read-only) into his journal, as a background task with its own session - one at a time. It places, blocks or
-        changes no order and no exit; the cycle never waits for it."""
+        (read-only) into his journal; then J6 (app/journal/deliver.py) his opted-in journal messages. A background task with
+        its own sessions - one at a time. It places, blocks or changes no order and no exit; the cycle never waits for it."""
         if self._journal_sync_task is not None and not self._journal_sync_task.done():
             return
 
@@ -2159,6 +2159,14 @@ class TradingWorker:
                     logger.info("Journal broker sync: %d users", synced)
             except Exception as exc:  # noqa: BLE001 - journal data only; never reaches trading
                 logger.warning("Journal broker sync failed: %s", type(exc).__name__)
+            try:
+                # P2-8 J6 (app/journal/deliver.py): his journal reviews / check-in prompts on his own Telegram / e-mail,
+                # only when he turned them on (default OFF)
+                from app.journal import deliver
+                async with self.session_factory() as own:
+                    await deliver.send_due(own, now)
+            except Exception as exc:  # noqa: BLE001 - a message never reaches trading
+                logger.warning("Journal delivery failed: %s", type(exc).__name__)
 
         self._journal_sync_task = asyncio.get_running_loop().create_task(run())
 

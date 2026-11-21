@@ -138,6 +138,9 @@ A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
          (("POST", "/api/journal/trades/{trade_id}/attachments"), ("POST", "/api/journal/manual/{manual_id}/attachments"))),
         ("the planted attachment row has no file in the private store (404 'No such image'); the other organisation still gets "
          "404 (M62; tests/test_m62_journal_layer.py reads a real one)", (("GET", "/api/journal/attachments/{attachment_id}"),)),
+        ("the planted proof row is a pin of an automatic fact (its fact_key is not 'own:...'), and only an entry he wrote "
+         "himself can be removed (404 'No such entry', by design); the other organisation still gets 404 and changes nothing "
+         "(P2-8 J4; tests/test_p28_journal_j4j6.py removes a real own entry)", (("DELETE", "/api/journal/proof/{proof_id}"),)),
         ("no candles are stored for the planted trade, so no snapshot can be drawn (404); the other organisation still gets "
          "404 (M62; tests/test_m62_journal_layer.py draws one from stored candles)",
          (("GET", "/api/journal/trades/{trade_id}/chart"), ("GET", "/api/journal/manual/{manual_id}/chart"))),

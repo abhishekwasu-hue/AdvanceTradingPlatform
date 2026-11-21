@@ -74,14 +74,16 @@ open, grep by ID. Of those, these wait for the owner: SIG1-1, OKT-9, KN-1, GW-1,
 ## JV2: Journal v2 (P2-8, docs/plans/journal-v2-PLAN.md)
 | ID | Question | Default (provisional, built) | Status |
 |---|---|---|---|
-| JV2-Q1 | When are broker-app trades synced (Upstox gives only today's fills)? | Daily after the close (15:45 IST) + a "Sync from broker" button; read-only | open |
-| JV2-Q2 | Where do synced trades live? | Outside-ATP entries "From your broker"; never an order / position row | open |
-| JV2-Q3 | When is the chart picture stored? | On its first draw; served from the store after that | open |
-| JV2-Q4 | Check-in prompt: where? | Journal card now; Telegram / e-mail in PR 3 | open |
-| JV2-Q5 | Feelings list | calm, confident, unsure, anxious, excited, fearful, FOMO; editable | open |
-| JV2-Q6 | First formal review | After 20 closed trades (setting); fewer: counts only | open |
+| JV2-Q1 | Broker-app sync: when? | Daily 15:45 IST + a button; read-only | open |
+| JV2-Q2 | Synced trades: where? | Outside-ATP entries "From your broker" | open |
+| JV2-Q3 | Chart picture: when stored? | First draw, 30 min after the moment | open |
+| JV2-Q4 | Check-in prompt: where? | Journal card; Telegram / e-mail if on | open |
+| JV2-Q5 | Feelings list | The order's 7; editable | open |
+| JV2-Q6 | First review | After 20 closed (setting); counts before | open |
 | JV2-Q7 | Monthly export | A print-friendly page | open |
 | JV2-Q8 | First-20 rule: Stats tab too? | Reviews only; Stats keeps its numbers | open |
+| JV2-Q9 | Journal opens on? | Today (a trade / week link opens its tab) | open |
+| JV2-Q10 | Delivery times | Daily 17:00 IST, weekly Sat 09:00, monthly 1st; editable | open |
 
 ## LIVE-1: one live switch (owner order 11 Nov, BINDING; PR `claude/live-1-one-switch`)
 | ID | Question | Default (provisional, until Abhi answers) |

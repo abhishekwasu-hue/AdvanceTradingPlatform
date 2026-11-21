@@ -50,6 +50,10 @@ class Unit:
     chart: str | None = None
     lesson: str | None = None
     entry_order: int = 0                    # position in time (for "after a loss")
+    exit_by_rule: bool = False              # P2-8 J4: closed by one of his own rules (stop, exit level, time rule), not by hand
+    from_signal: bool = False               # P2-8 J4: entered on his own signal / setup (the plan's price came from it)
+    exit_time: str | None = None            # ISO
+    exit_reason: str | None = None          # as recorded (a structure: its first closed leg's)
 
     @property
     def closed(self) -> bool:
@@ -121,7 +125,7 @@ def done_well(units: Sequence[Unit]) -> str | None:
     if not closed:
         return None
     if all(u.stop_set and "moved_stop_against" not in u.tags and "no_stop" not in u.tags for u in closed):
-        return f"Stop kept on all {_n(len(closed), 'trade')}."
+        return f"Stop was kept on all {_n(len(closed), 'trade')}."
     answered = [u for u in closed if u.plan_followed]
     for u in closed:
         if u.pnl is not None and u.pnl < 0 and u.plan_followed == "YES":

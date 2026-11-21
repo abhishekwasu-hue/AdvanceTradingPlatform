@@ -730,3 +730,136 @@ async def save_reflection(body: ReflectionBody, user: User = Depends(get_current
     await _flag(session, user)
     from app.journal import review_data
     return {"period": body.period, "answer": await review_data.save_answer(session, user, body.period, body.answer)}
+
+
+# --- P2-8 J4: My proof -------------------------------------------------------------------------------------------------
+
+class OwnProofBody(BaseModel):
+    text: str = Field(max_length=1000)
+    happened_on: str | None = Field(default=None, max_length=10)
+
+
+class PinBody(BaseModel):
+    key: str = Field(max_length=80)
+    pinned: bool
+
+
+@router.get("/proof")
+async def my_proof(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Facts of good process from his own trades (last 90 days) and his own entries, pinned first. Facts only."""
+    await _flag(session, user)
+    from app.journal import plans
+    return await plans.proof_page(session, user)
+
+
+@router.post("/proof", status_code=201)
+async def add_my_proof(body: OwnProofBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        row = await plans.add_own_proof(session, user, body.text, body.happened_on)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return {"id": row.id, "key": row.fact_key}
+
+
+@router.put("/proof/pin")
+async def pin_my_proof(body: PinBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        await plans.pin(session, user, body.key, body.pinned)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return {"key": body.key, "pinned": body.pinned}
+
+
+@router.delete("/proof/{proof_id}")
+async def remove_my_proof(proof_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    if not await plans.remove_own_proof(session, user, proof_id):
+        raise HTTPException(status_code=404, detail="No such entry")
+    return {"deleted": proof_id}
+
+
+# --- P2-8 J5: if-then plans and process goals (his own words) ----------------------------------------------------------
+
+class PlanBody(BaseModel):
+    model_config = {"extra": "forbid"}
+    kind: str = Field(max_length=10)
+    if_text: str | None = Field(default=None, max_length=1000)
+    then_text: str | None = Field(default=None, max_length=1000)
+    trigger: str | None = Field(default=None, max_length=10)
+    metric: str | None = Field(default=None, max_length=20)
+    target_pct: int | None = None
+    period: str | None = Field(default=None, max_length=5)
+
+
+class PlanPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+    if_text: str | None = Field(default=None, max_length=1000)
+    then_text: str | None = Field(default=None, max_length=1000)
+    trigger: str | None = Field(default=None, max_length=10)
+    metric: str | None = Field(default=None, max_length=20)
+    target_pct: int | None = None
+    period: str | None = Field(default=None, max_length=5)
+    active: bool | None = None
+
+
+@router.get("/plans")
+async def my_plans(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His if-then plans and process goals, with each active goal's progress (counts; a share only on enough trades)."""
+    await _flag(session, user)
+    from app.journal import plans
+    s = await journal_settings.load(session, user)
+    return {"plans": [plans.plan_dict(r) for r in await plans.plans_of(session, user)],
+            "goals": await plans.goals_progress(session, user, s)}
+
+
+@router.post("/plans", status_code=201)
+async def add_my_plan(body: PlanBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    try:
+        row = await plans.add_plan(session, user, body.model_dump())
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return plans.plan_dict(row)
+
+
+@router.patch("/plans/{plan_id}")
+async def change_my_plan(plan_id: int, body: PlanPatch, user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    row = await plans.own_plan(session, user, plan_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such plan")
+    try:
+        row = await plans.update_plan(session, row, body.model_dump(exclude_unset=True))
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return plans.plan_dict(row)
+
+
+@router.delete("/plans/{plan_id}")
+async def remove_my_plan(plan_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    await _flag(session, user)
+    from app.journal import plans
+    row = await plans.own_plan(session, user, plan_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such plan")
+    await session.delete(row)
+    await session.commit()
+    return {"deleted": plan_id}
+
+
+@router.get("/today")
+async def journal_today(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The Journal's Today tab: his if-then plans, the ones a recent stop hit / loss brings back, his goals, his last
+    good decision and, after a loss, how often he followed his plan in his last trades."""
+    await _flag(session, user)
+    from app.journal import plans
+    s = await journal_settings.load(session, user)
+    return await plans.today(session, user, s)

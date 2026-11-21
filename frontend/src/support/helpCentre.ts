@@ -45,10 +45,11 @@ export const TOUR_PAGES: Record<TourId, { name: string; path: string }> = {
   settings: { name: "Settings", path: "/settings" },
   copilot: { name: "AI Copilot", path: "/copilot" },
   terminal: { name: "Terminal", path: "/terminal" },
+  journal: { name: "Journal", path: "/positions/results/journal" },
 };
 
 /** Trading Terminal T1: page tips of a page behind a feature flag, listed only while that flag is on. */
-export const TOUR_FLAGS: Partial<Record<TourId, string>> = { terminal: "terminal" };
+export const TOUR_FLAGS: Partial<Record<TourId, string>> = { terminal: "terminal", journal: "discipline_engine" };
 
 const safePage = (page: string | undefined): string | undefined =>
   page && page.startsWith("/") && !page.startsWith("//") ? page : undefined;

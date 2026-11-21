@@ -441,6 +441,8 @@ class TradingWorker:
             self._preopen_task.cancel()              # the day's claimed row stays "running"; the next day sends again
         if self._srv2_task is not None and not self._srv2_task.done():
             self._srv2_task.cancel()                 # SRV2: the bot's own store keeps its state; the next worker carries on
+            from app.srv2bot import job as srv2_job
+            srv2_job.stop_services()                 # SRV2 P3: the Vision / Telegram threads stop with the worker
         if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
             self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
         if self._journal_sync_task is not None and not self._journal_sync_task.done():

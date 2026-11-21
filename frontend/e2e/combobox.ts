@@ -27,6 +27,13 @@ export async function comboOptions(page: Page, combobox: Locator): Promise<Locat
 export async function choose(page: Page, field: Locator, pick: string | { label: string }): Promise<void> {
   const tag = await field.evaluate((e) => e.tagName);
   if (tag === "SELECT") { await field.selectOption(pick); return; }
+  // DEF-0: a chip group used as a field (a template's chart timeframe): press the chip, by value or label
+  if (await field.evaluate((e) => e.hasAttribute("data-chip-group"))) {
+    const chip = typeof pick === "string" ? field.locator(`[data-value='${pick}']`) : field.getByRole("button", { name: pick.label, exact: true });
+    await chip.click();
+    if (typeof pick === "string") await expect(field).toHaveAttribute("data-chip-value", pick);
+    return;
+  }
   // CT-1 C6: the one SymbolPicker (a text field): type the symbol and press Enter, as a user does.
   if (tag === "INPUT" && typeof pick === "string") { await field.fill(pick); await field.press("Enter"); await expect(field).toHaveValue(pick); return; }
   await field.click();
@@ -41,6 +48,7 @@ export async function choose(page: Page, field: Locator, pick: string | { label:
 export async function expectChoice(field: Locator, value: string): Promise<void> {
   const tag = await field.evaluate((e) => e.tagName);
   if (tag === "SELECT" || tag === "INPUT") await expect(field).toHaveValue(value);       // CT-1 C6: the SymbolPicker is a field
+  else if (await field.evaluate((e) => e.hasAttribute("data-chip-group"))) await expect(field).toHaveAttribute("data-chip-value", value);
   else await expect(field).toHaveAttribute("data-combobox", value);
 }
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from app.strategy_templates import language
 from app.strategy_templates.compile import Settings
@@ -74,13 +74,15 @@ def archived() -> List[Template]:
     return [t for _, t in sorted(_archive().items())]
 
 
-def signal_text(template: Template, settings: Settings, side: str, context_timeframe: Optional[str] = None) -> str:
-    """The signal's sentence in structure words (section 6): the side's tokens whose `when` setting is on."""
+def signal_text(template: Template, settings: Settings, side: str, context_timeframe: str | None = None, *,
+                neutral: bool = False) -> str:
+    """The signal's sentence in structure words (section 6): the side's tokens whose `when` setting is on. `neutral`: the
+    template card's wording before the trader picks a chart timeframe ("on the chart you choose", DEF-0)."""
     text = template.chosen_text(settings.params)
     parts = text.long if side == "long" else text.short
     tokens = [p.token for p in parts if p.when is None or bool(settings.params.get(p.when))]
     tf_words = {placeholder: settings.params.get(key) for placeholder, key in language.TIMEFRAME_SETTING_PLACEHOLDERS.items()}
-    return language.render(tokens, timeframe=settings.timeframe, context_timeframe=context_timeframe, **tf_words)
+    return language.render(tokens, timeframe=None if neutral else settings.timeframe, context_timeframe=context_timeframe, **tf_words)
 
 
 __all__ = ["TEMPLATES_DIR", "ARCHIVE_DIR", "templates", "get", "get_version", "archived", "signal_text"]

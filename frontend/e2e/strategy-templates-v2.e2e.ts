@@ -132,7 +132,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     for (const theme of ["light", "dark"] as const) {
       test(`the form with a template picked looks the same (${theme})`, async ({ page }) => {
-        await open(page, { theme, path: "/deployments?template=D2" });
+        await open(page, { theme, path: "/deployments?template=D2&timeframe=15m" });
         await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
         await pickNifty(page);
         await expect(page).toHaveScreenshot(`strategy-templates-v2-${size.name}-${theme}.png`, SHOT);
@@ -141,7 +141,7 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     for (const theme of ["light", "dark"] as const) {
       test(`the exits for this bot, pre-filled with the template's defaults (${theme})`, async ({ page }) => {
-        await open(page, { theme, path: "/deployments?template=D2", exits: true });
+        await open(page, { theme, path: "/deployments?template=D2&timeframe=15m", exits: true });
         await expect(form(page).locator("[data-template-exits]")).toContainText("Exits for this bot");
         await pickNifty(page);
         await expectChoice(form(page).getByLabel("Stop"), "TEMPLATE_INVALIDATION");          // NIFTY 50: its option
@@ -153,18 +153,18 @@ for (const size of [{ name: "1440", width: 1440, height: 900, mobile: false }, {
 
     if (size.mobile) {
       test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2" });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m" });
         await expectPhoneLayout(page);
       });
 
       test("with the exits shown: no sideways scroll, 44 px targets", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2", exits: true });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true });
         await choose(page, form(page).getByLabel("Take profit"), { label: "At a multiple of my risk" });
         await expectPhoneLayout(page);
       });
 
       test("M99 P2: the trade-management options with the ATR trail and both exits on: no sideways scroll", async ({ page }) => {
-        await open(page, { path: "/deployments?template=D2", exits: true, management: true });
+        await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true, management: true });
         await pickNifty(page);
         const block = form(page).locator("[data-management]");
         await choose(page, block.getByLabel("Trail the stop"), { label: "By ATR from the best price" });
@@ -186,11 +186,23 @@ test.describe("Strategy templates behaviour", () => {
     const strategy = form(page).getByLabel("Pick a strategy");
     await expectGroupLabels(page, strategy, "Strategy templates", ["Moving-average crossover", "Range breakout"]);
     await choose(page, strategy, { label: "Range breakout" });
-    await expectChoice(form(page).getByLabel("Chart timeframe"), "15m");
+    // DEF-0: a template picked in the form's own list starts with NO chart timeframe; nothing is asked of the server yet
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Pick a chart timeframe first.");
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Pick a chart timeframe first.");
+    await expect(form(page).getByRole("button", { name: "Start on paper" })).toBeDisabled();
+    expect(server.sent.filter((c) => c.url.endsWith("/adopt"))).toHaveLength(0);
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await expect(form(page)).toContainText("A signal on the first close beyond a range");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Nothing starts until you confirm it.");
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
     expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/B1/adopt", body: { timeframe: "15m" } });
+    // another template starts empty again (his pick belonged to Range breakout)
+    await choose(page, strategy, { label: "Moving-average crossover" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await choose(page, strategy, { label: "Range breakout" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await choose(page, form(page).getByLabel("Chart timeframe"), "1d");
     await expect(form(page)).toContainText("Held for days");
     await choose(page, form(page).getByLabel("Pick a symbol"), "RELIANCE");
@@ -206,6 +218,8 @@ test.describe("Strategy templates behaviour", () => {
   test("REV-H3: a seller pack on an index starts with nothing chosen; Start waits, with the reason, until the user chooses", async ({ page }) => {
     const server = await open(page, { packs: true });
     await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Trend side pack" });
+    await expect(form(page).locator("[data-start-why]")).toHaveText("Pick a chart timeframe first.");       // DEF-0: his pick first
+    await choose(page, form(page).getByLabel("Chart timeframe"), "15m");
     await choose(page, form(page).getByLabel("Pick a symbol"), "NIFTY 50");
     await expect(form(page).locator("[data-construction]")).toContainText("The strategy only gives the side. Nothing is chosen for you.");
     const start = form(page).getByRole("button", { name: "Start on paper" });
@@ -239,7 +253,11 @@ test.describe("Strategy templates behaviour", () => {
     expect(server.sent.filter((c) => c.url.endsWith("/adopt")).at(-1)).toEqual(
       { method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h", params: { fast: 5 } } });
     expect(server.sent.filter((c) => c.url === "/deployments")).toHaveLength(0);
+    // DEF-0: another template starts with no chart timeframe (the link's belonged to its own template)
     await choose(page, form(page).getByLabel("Pick a strategy"), { label: "Range breakout" });
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).locator("[data-template-notes]")).toContainText("Pick a chart timeframe first.");
+    await choose(page, form(page).getByLabel("Chart timeframe"), "1h");
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
     expect(server.sent.at(-1)?.body).toEqual({ timeframe: "1h" });
   });
@@ -252,7 +270,7 @@ test.describe("Strategy templates behaviour", () => {
   });
 
   test("the exits: pre-filled with the template's defaults (nothing extra sent); a choice is sent with the same PAPER request", async ({ page }) => {
-    const server = await open(page, { path: "/deployments?template=D2", exits: true });
+    const server = await open(page, { path: "/deployments?template=D2&timeframe=15m", exits: true });
     const exits = form(page).locator("[data-template-exits]");
     await expectChoice(exits.getByLabel("Take profit"), "NONE");
     await expectChoiceLabels(page, exits.getByLabel("Take profit"), 
@@ -297,13 +315,26 @@ test.describe("Strategy templates behaviour", () => {
   });
 
   test("an older server without exit choices: no exits block, the request as before", async ({ page }) => {
-    await open(page, { path: "/deployments?template=D2" });
+    await open(page, { path: "/deployments?template=D2&timeframe=15m" });
     await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
     await expect(form(page).locator("[data-template-exits]")).toHaveCount(0);
   });
 
+  test("DEF-0: a template link without a timeframe picks none for him; nothing is asked of the server until he picks", async ({ page }) => {
+    const server = await open(page, { path: "/deployments?template=D2" });
+    const notes = form(page).locator("[data-template-notes]");
+    await expect(notes).toContainText("Pick a chart timeframe first.");
+    await expectChoice(form(page).getByLabel("Chart timeframe"), "");
+    await expect(form(page).getByLabel("Chart timeframe").getByRole("button")).toHaveText(["5-minute", "15-minute", "1-hour", "Daily"]);
+    expect(server.sent.filter((c) => c.url.endsWith("/adopt"))).toHaveLength(0);
+    await expect(form(page).getByRole("button", { name: "Start on paper" })).toBeDisabled();
+    await choose(page, form(page).getByLabel("Chart timeframe"), "1h");
+    await expect(notes).toContainText("Starts with the template's usual settings.");
+    expect(server.sent.at(-1)).toEqual({ method: "POST", url: "/strategy-templates/D2/adopt", body: { timeframe: "1h" } });
+  });
+
   test("with the flag off: no template group, the form as before", async ({ page }) => {
-    await open(page, { templatesOff: true, path: "/deployments?template=D2" });
+    await open(page, { templatesOff: true, path: "/deployments?template=D2&timeframe=15m" });
     await expectGroupLabels(page, form(page).getByLabel("Pick a strategy"), "Strategy templates", []);
     await expect(form(page).getByLabel("Chart timeframe")).toHaveCount(0);
   });
@@ -320,7 +351,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) 
       expect(await textBudgetProblems(page)).toEqual([]);
     });
     test("with a template picked, every card still fits", async ({ page }) => {
-      await open(page, { theme: "light", path: "/deployments?template=D2" });
+      await open(page, { theme: "light", path: "/deployments?template=D2&timeframe=15m" });
       await expect(form(page).locator("[data-template-notes]")).toContainText("Starts with the template's usual settings.");
       expect(await textBudgetProblems(page)).toEqual([]);
     });

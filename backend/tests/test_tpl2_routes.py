@@ -104,17 +104,19 @@ def test_adopt_is_a_pre_fill_only():
     assert again["strategy_id"] == body["strategy_id"]                                # the same settings, the same id
     daily = client.post("/api/strategy-templates/D2/adopt", headers=org["headers"], json={"timeframe": "1d"}).json()
     assert daily["deployment"]["timeframe"] == "day" and daily["deployment"]["holding"] == "SWING"
-    deep = client.post("/api/strategy-templates/D2/adopt", headers=org["headers"], json={"params": {"swing_degree": 2}}).json()
+    deep = client.post("/api/strategy-templates/D2/adopt", headers=org["headers"], json={"timeframe": "15m", "params": {"swing_degree": 2}}).json()
     assert any("history" in n for n in deep["notes"])                                  # R6: the fetch-dependent note
 
 
 @pytest.mark.parametrize("body, status, words", [
-    ({"params": {"fast": 30, "slow": 20}}, 422, "fewer bars than the slow one"),
-    ({"params": {"fast": 0}}, 422, "between 2 and 200"),
-    ({"params": {"nonsense": 1}}, 422, "unknown setting"),
+    ({"timeframe": "15m", "params": {"fast": 30, "slow": 20}}, 422, "fewer bars than the slow one"),
+    ({"timeframe": "15m", "params": {"fast": 0}}, 422, "between 2 and 200"),
+    ({"timeframe": "15m", "params": {"nonsense": 1}}, 422, "unknown setting"),
     ({"timeframe": "2h"}, 422, "timeframe must be one of"),
     ({"timeframe": "1w"}, 422, "must be one of"),
     ({"sides": "sideways"}, 422, ""),
+    ({}, 422, "Pick a chart timeframe first"),                                    # DEF-0: no default timeframe
+    ({"params": {"fast": 5}}, 422, "Pick a chart timeframe first"),
 ])
 def test_adopt_refuses_bad_settings_in_plain_words(body, status, words):
     org = _org("bad", FLAG)
@@ -176,3 +178,43 @@ def test_every_card_reads_in_guarded_words_from_its_own_data():
         if card["sides_default"] == "short":
             assert card["reads"]["long"] is None
     assert any(c["reads"]["long"] for c in cards)
+
+
+def test_def0_the_card_reads_name_no_timeframe_until_he_picks_one():
+    """DEF-0 (owner: the trader picks the timeframe): `reads` names no chart timeframe ("the chart you choose");
+    `reads_by_timeframe` holds the same sentence for each timeframe he can pick, naming that one."""
+    from app.strategy_templates import language
+    org = _org("reads-def0", FLAG)
+    cards = {c["id"]: c for c in client.get("/api/strategy-templates", headers=org["headers"]).json()["templates"]}
+    for card in cards.values():
+        offered = [t["value"] for t in card["timeframes"]]
+        assert list(card["reads_by_timeframe"]) == offered, card["id"]
+        for side in ("long", "short"):
+            neutral = card["reads"][side]
+            if neutral is None:
+                continue
+            assert not any(f"{w} chart" in neutral for w in language.TIMEFRAME_WORDS.values()), (card["id"], neutral)
+            named_any = False
+            for tf in offered:
+                named = card["reads_by_timeframe"][tf][side]
+                if named is None:            # the usual settings do not run on this timeframe (e.g. E1 on Daily): none
+                    continue
+                named_any = True
+                assert language.guard(named) == [], (card["id"], tf, named)
+                if language.CHOSEN_CHART in neutral:
+                    assert f"the {language.TIMEFRAME_WORDS[tf]} " in named and language.CHOSEN_CHART not in named
+            assert named_any, (card["id"], side)
+    d2 = cards["D2"]
+    assert d2["reads"]["long"] == "The fast moving average crossed above the slow one on the chart you choose."
+    assert d2["reads_by_timeframe"]["15m"]["long"] == "The fast moving average crossed above the slow one on the 15-minute chart."
+
+
+def test_def0_the_neutral_wording_covers_every_token():
+    from app.strategy_templates import language
+    for token, phrase in language.TOKENS.items():
+        text = language.render([token], timeframe=None)
+        assert "\x00" not in text and language.guard(text) == [], (token, text)
+        if "{timeframe}" in phrase:
+            assert language.CHOSEN_CHART in text, (token, text)
+            assert language.CHOSEN_CHART not in language.render([token], timeframe="15m"), token     # named: unchanged
+    assert language.render(["range_broken_upward"], timeframe="5m") == "The close broke out above the range on the 5-minute chart."

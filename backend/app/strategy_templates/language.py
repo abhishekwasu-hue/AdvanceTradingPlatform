@@ -332,15 +332,31 @@ def guard(text: str) -> List[str]:
                                   forbidden=FORBIDDEN_WORDS)
 
 
-def render(tokens: Sequence[str], *, timeframe: str, context_timeframe: Optional[str] = None, wave_timeframe: Optional[str] = None,
+# DEF-0 (owner, the Templates list: the trader picks the chart timeframe): before he picks one, a card's sentence names
+# none - the signal timeframe's phrases read "the chart you choose" (the engine and every real signal keep naming it).
+CHOSEN_CHART = "the chart you choose"
+_NO_TIMEFRAME = "\x00"
+_NEUTRAL_PHRASES = ((f"the {_NO_TIMEFRAME} chart", CHOSEN_CHART), (f"the {_NO_TIMEFRAME} structure", f"the structure on {CHOSEN_CHART}"))
+
+
+def _neutral(text: str) -> str:
+    for marked, words in _NEUTRAL_PHRASES:
+        text = text.replace(marked, words)
+    return text.replace(f"{_NO_TIMEFRAME} ", "").replace(_NO_TIMEFRAME, "")
+
+
+def render(tokens: Sequence[str], *, timeframe: str | None, context_timeframe: str | None = None, wave_timeframe: str | None = None,
            higher_timeframe: Optional[str] = None) -> str:
-    """The sentence for a signal: the phrases joined with "; ", capitalised, ending with a full stop."""
-    words = {"timeframe": TIMEFRAME_WORDS[timeframe],
+    """The sentence for a signal: the phrases joined with "; ", capitalised, ending with a full stop. `timeframe` None:
+    the neutral wording of a template card before the trader picks a chart timeframe ("on the chart you choose", DEF-0)."""
+    words = {"timeframe": TIMEFRAME_WORDS[timeframe] if timeframe else _NO_TIMEFRAME,
              "context_timeframe": TIMEFRAME_WORDS[context_timeframe] if context_timeframe else "higher-timeframe",
              "wave_timeframe": TIMEFRAME_WORDS[wave_timeframe] if wave_timeframe else "wave-count",
              "higher_timeframe": TIMEFRAME_WORDS[higher_timeframe] if higher_timeframe else "higher-timeframe"}
     phrases = [TOKENS[t].format(**words) for t in tokens]
     text = "; ".join(phrases)
+    if not timeframe:
+        text = _neutral(text)
     return (text[:1].upper() + text[1:] + ".") if text else ""
 
 
@@ -355,5 +371,5 @@ def wave_words(label: Optional[str]) -> str:
     return WAVE_WORDS.get(label) or TYPE_WORDS.get(label) or CLARITY_WORDS.get(label) or LINE_WORDS.get(label) or ""
 
 
-__all__ = ["TOKENS", "TIMEFRAME_WORDS", "FORBIDDEN_WORDS", "PLACEHOLDERS", "TIMEFRAME_SETTING_PLACEHOLDERS", "WAVE_WORDS", "TYPE_WORDS",
+__all__ = ["TOKENS", "TIMEFRAME_WORDS", "CHOSEN_CHART", "FORBIDDEN_WORDS", "PLACEHOLDERS", "TIMEFRAME_SETTING_PLACEHOLDERS", "WAVE_WORDS", "TYPE_WORDS",
            "CLARITY_WORDS", "LINE_WORDS", "guard", "render", "unknown_tokens", "wave_words"]

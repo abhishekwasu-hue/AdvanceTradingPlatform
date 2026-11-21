@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { errorSentence } from "../api/errors";
 import { Sheet, Skeleton } from "../components/primitives";
-import { LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
+import { LINK_SECONDARY } from "../dashboard/CardV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { Chip } from "../ui/Chip";
 import { Details } from "../ui/Details";
 import { LibraryFold, SettingList } from "../ui/LibraryChips";
 import { templatesApi, type HowItWorks } from "./api";
-import { chartPathFor, paperBotPathFor, scannerPathFor, testPathFor } from "./link";
+import { chartPathFor, scannerPathFor } from "./link";
 import { SchematicSvg } from "./Schematic";
 import { templateRows } from "./TemplateLibrarySection";
+import { offeredPick, readsFor, TemplatePickActions } from "./TimeframePick";
 
 /**
  * M94 F15 (flag `intraday_pack`, family H): a template's "how it works" - ONE screen, every word from the template's own
@@ -17,11 +18,14 @@ import { templateRows } from "./TemplateLibrarySection";
  * walk, the setup scanner, the chart overlay, the settings (folded) and the order's footer. Opened from the template card
  * (`/strategies?how=H6`). Signals only: nothing starts from here.
  */
-export function HowItWorksView({ how }: { how: HowItWorks }) {
+export function HowItWorksView({ how, initialPick = null }: { how: HowItWorks; initialPick?: string | null }) {
   const t = how.template;
   const rows = templateRows(t);
   const scans = (["long", "short"] as const).filter((side) => how.scanner[side]);
-  const link = { template: t.id, timeframe: t.default_timeframe, params: {} };
+  // DEF-0: no chart timeframe is picked for him; his pick names it in the signal's sentence and goes with both buttons
+  const [picked, setPicked] = useState<string | null>(initialPick);
+  const pick = offeredPick(t, picked);
+  const lineText = (key: string, text: string) => (key === "reads" && pick ? readsFor(t, pick)[0] ?? text : text);
   return (
     <div data-how-it-works={t.id} className="space-y-space-4">
       <div className="flex flex-wrap items-center gap-space-2">
@@ -32,7 +36,7 @@ export function HowItWorksView({ how }: { how: HowItWorks }) {
         {how.lines.map((l) => (
           <div key={l.key} data-how-line={l.key} className="min-w-0">
             <dt className="text-t13 font-semibold text-fg-muted">{l.label}</dt>
-            <dd className="m-0 break-words text-t14 text-fg">{l.text}</dd>
+            <dd className="m-0 break-words text-t14 text-fg">{lineText(l.key, l.text)}</dd>
           </div>
         ))}
       </dl>
@@ -45,16 +49,14 @@ export function HowItWorksView({ how }: { how: HowItWorks }) {
         </section>
       )}
       {t.available ? (
-        <div className="flex flex-wrap gap-space-2" data-how-links>
-          <InPlaceLink to={paperBotPathFor(link)} className={LINK_PRIMARY} data-use-template={t.id}>Use on the trading bot</InPlaceLink>
-          <InPlaceLink to={testPathFor(link)} className={LINK_SECONDARY} data-test-template={t.id}>Test it first</InPlaceLink>
+        <TemplatePickActions t={t} picked={pick} onPick={setPicked}>
           {scans.map((side) => (
             <InPlaceLink key={side} to={scannerPathFor(t.id, side)} className={LINK_SECONDARY} data-how-scanner={side}>
               {scans.length > 1 ? `Setup scanner (${side === "long" ? "upward" : "downward"})` : "Setup scanner"}
             </InPlaceLink>
           ))}
-          <InPlaceLink to={chartPathFor(t.id, t.default_timeframe)} className={LINK_SECONDARY} data-how-chart>Show on a chart</InPlaceLink>
-        </div>
+          <InPlaceLink to={chartPathFor(t.id, pick ?? t.default_timeframe)} className={LINK_SECONDARY} data-how-chart>Show on a chart</InPlaceLink>
+        </TemplatePickActions>
       ) : (
         <p data-template-off className="text-t13 text-fg-muted">Not switched on for your account yet</p>
       )}

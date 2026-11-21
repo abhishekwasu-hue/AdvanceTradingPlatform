@@ -19,6 +19,7 @@ import { useFeatures, useUiV2 } from "../ui/useFeatures";
 import { templatesApi, type StrategyTemplate } from "../strategyTemplates/api";
 import { templateLinkFromSearch, typedSettings, type TemplateLink } from "../strategyTemplates/link";
 import { TEMPLATE_PICK, templateTimeframeFor } from "../backtest/templateTest";
+import { TemplateTimeframeField } from "../strategyTemplates/TimeframePick";
 import { exitMarkerText, templateLines, templateParams } from "../chart/templateLines";
 
 const SETUP_COLOR = "#7c3aed";
@@ -259,7 +260,8 @@ export default function BacktestPage() {
   const selected = useMemo(() => strategies.find((s) => s.id === strategyId), [strategies, strategyId]);
   const optParams = useMemo(() => optimisableParams(selected?.default_params), [selected]);
   const strategyNames = useMemo(() => new Map(strategies.map((s) => [s.id, s.name] as const)), [strategies]);
-  useEffect(() => { setOptRows([]); setOptResult(null); }, [strategyId]);
+  // DEF-0: another strategy starts with no chart timeframe of his again (a template never gets one picked for him)
+  useEffect(() => { setOptRows([]); setOptResult(null); setTplTimeframe(""); }, [strategyId]);
   const picked = strategyId.startsWith(TEMPLATE_PICK) ? templates.find((t) => t.id === strategyId.slice(TEMPLATE_PICK.length)) ?? null : null;
   const tpl = picked ? templateTimeframeFor(picked, { chosen: tplTimeframe, linked: link?.template === picked.id ? link.timeframe : null, storedOnly: !!source.stored }) : null;
 
@@ -432,11 +434,9 @@ export default function BacktestPage() {
           </div>
           {picked && tpl && (
             <div data-template-test={picked.id}>
-              <label htmlFor="bt-template-timeframe" className="block text-xs text-fg-muted mb-1">Chart timeframe</label>
-              <select id="bt-template-timeframe" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
-                value={tpl.value} onChange={(e) => { setTplTimeframe(e.target.value); setResult(null); }}>
-                {picked.timeframes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+              {/* DEF-0: the template's timeframes as chips, none picked; the note under the form asks until he picks. */}
+              <TemplateTimeframeField t={picked} picked={tpl.value || null} labelClassName="block text-xs text-fg-muted mb-1" hint={false}
+                onPick={(tf) => { setTplTimeframe(tf); setResult(null); }} />
             </div>
           )}
           <div>
@@ -461,7 +461,7 @@ export default function BacktestPage() {
           )}
           <button
             onClick={runBacktest}
-            disabled={(!selected && !picked) || loading}
+            disabled={(!selected && !picked) || (!!picked && !tpl?.value) || loading}
             className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Running…" : "Run Backtest"}

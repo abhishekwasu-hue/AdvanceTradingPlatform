@@ -1,11 +1,13 @@
-# HANDOVER_NOW (21 Nov, P2-8 Journal v2 approved)
+# HANDOVER_NOW (21 Nov, late)
 
-P2-8 (order ATP_SESSION_JOURNAL.md, plan docs/plans/journal-v2-PLAN.md): #1147 J1 -> #1148 J2+J3 -> #1150 J4-J6,
-merged 21 Nov in order on green CI (owner "Default yes and go ahead" = ✅). Three additive migrations
-(e3a5c7e9b1d4, f4b6d8a0c2e5, a5c7e9b1d3f6), ROLLBACK_SAFE; deploy after 15:30 IST. Flags: ui_v2 + discipline_engine.
-Proof: docs/design/JOURNAL_V2_J1_COMPARE.html, _J2J3_, _J4J6_. Questions JV2-Q1..Q10.
-Roadmap truth audit: docs/design/ROADMAP_TRUTH_21NOV.md (owner check list in its first table).
+Merged: P2-8 Journal v2 (#1147/#1148/#1150, 3 migrations); #1157 Conclusion glance; #1158 SRV2-Q8 ATP; SRV2 P2+P4 settings + positions card (#1154; atp-private
+#22, #23, #24 = SRV2-Q8 advanced engine fields). ATP_PRIVATE_REF = e3767d47f337f6addb9eed8f4867d6a817cac441.
+SRV2 P5: atp-private docs/SRV2_P5_PARITY.md; SRV2-Q9 = both bots PAPER on one live day (owner).
 
-Next:
-1. Owner: deploy after 15:30 IST (migration yes), discipline_engine on, check the Journal on phone; the check list.
-2. SRV2 continues in its own session.
+Open PRs (merge on green CI):
+- #1161 templates: the trader picks the timeframe (no default).
+- #1164 drawings like a pro app: handles + selection bar (colour, width, style, extend, lock,
+  duplicate, delete). Open: inline text tool instead of the browser prompt (default yes).
+
+Owner: deploy after 15:30 IST (migration yes) with the new ATP_PRIVATE_REF; flags srv2_bot,
+terminal_conclusion, discipline_engine on; check Journal, agent cards, Conclusion on phone.

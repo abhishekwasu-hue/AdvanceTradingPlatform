@@ -6,7 +6,8 @@
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from "lightweight-charts";
 import type { DrawingV1 } from "./drawings";
-import { BAND_LABEL_FONT_PX, LABEL_FONT_PX, shapes, type BandRef, type Converters, type Rect, type Shape } from "./geometry";
+import { BAND_LABEL_FONT_PX, DEFAULT_COLOR, LABEL_FONT_PX, shapes, type BandRef, type Converters, type Rect, type Shape } from "./geometry";
+import { handles } from "./tools";
 
 /** The slice of CanvasRenderingContext2D the painter uses (structural, so tests can record calls). */
 export type PaintContext = Pick<CanvasRenderingContext2D,
@@ -14,7 +15,8 @@ export type PaintContext = Pick<CanvasRenderingContext2D,
 > & { strokeStyle: unknown; fillStyle: unknown; lineWidth: number; font: string; textAlign: CanvasTextAlign; textBaseline: CanvasTextBaseline };
 
 const labelFont = (px: number = LABEL_FONT_PX) => `${px}px sans-serif`;
-const DASH: Record<string, number[]> = { solid: [], dashed: [6, 4], dotted: [2, 3] };
+/** The canvas dash pattern of each `style.line`. */
+export const DASH: Record<string, number[]> = { solid: [], dashed: [6, 4], dotted: [2, 3] };
 
 export function paint(ctx: PaintContext, list: readonly Shape[]): void {
   ctx.save();
@@ -32,8 +34,8 @@ export function paint(ctx: PaintContext, list: readonly Shape[]): void {
         ctx.fillStyle = s.fill;
         ctx.fillRect(s.x, s.y, s.w, s.h);
         if (s.stroke) {
-          ctx.setLineDash([]);
-          ctx.lineWidth = 1;
+          ctx.setLineDash(DASH[s.dash ?? "solid"] ?? []);
+          ctx.lineWidth = s.strokeWidth ?? 1;
           ctx.strokeStyle = s.stroke;
           ctx.strokeRect(s.x, s.y, s.w, s.h);
         }
@@ -173,4 +175,68 @@ export class LayerPrimitive implements ISeriesPrimitive<Time> {
 
   /** M78 (F5): the pane size of the last paint (null before the first one). */
   paneSize(): { width: number; height: number } | null { return this.size; }
+}
+
+/** The anchor handles of the selected drawing: a round dot at each anchor, ringed in the drawing's colour. */
+export const HANDLE_RADIUS = 5;
+export const HANDLE_RING = 2;
+
+export type HandleContext = Pick<CanvasRenderingContext2D, "save" | "restore" | "beginPath" | "arc" | "fill" | "stroke" | "setLineDash">
+  & { strokeStyle: unknown; fillStyle: unknown; lineWidth: number };
+
+/** The colours of the handles: `fill` inside (the chart background token, so a handle reads on either theme), `ring`
+ * around it (the drawing's colour as shown). */
+export interface HandleColors { fill: string; ring: string }
+
+export function paintHandles(ctx: HandleContext, points: readonly { x: number; y: number }[], colors: HandleColors): void {
+  ctx.save();
+  try {
+    ctx.setLineDash([]);
+    ctx.lineWidth = HANDLE_RING;
+    ctx.fillStyle = colors.fill;
+    ctx.strokeStyle = colors.ring;
+    for (const p of points) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  } finally {
+    ctx.restore();
+  }
+}
+
+/** The selected drawing's handles, painted above every drawing (one primitive per chart; the engine sets what it shows).
+ * `fill` null: the handles are filled with the drawing's colour (an engine never given the chart's background). */
+export class SelectionPrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+  private readonly views: readonly IPrimitivePaneView[];
+
+  constructor(public drawing: DrawingV1 | null, readonly converters: ConvertersFor, public fill: string | null = null) {
+    const renderer: IPrimitivePaneRenderer = {
+      draw: (target: CanvasRenderingTarget2D) => {
+        target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          const d = this.drawing;
+          const c = d ? this.converters(mediaSize.width, mediaSize.height) : null;
+          if (!d || !c) return;
+          const ring = d.style?.color ?? DEFAULT_COLOR;
+          paintHandles(context, handles(d, c), { ring, fill: this.fill ?? ring });
+        });
+      },
+    };
+    this.views = [{ zOrder: () => "top", renderer: () => renderer }];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>) {
+    this.requestUpdate = param.requestUpdate;
+    param.requestUpdate();
+  }
+  detached() { this.requestUpdate = null; }
+  paneViews() { return this.views; }
+
+  set(drawing: DrawingV1 | null, fill: string | null) {
+    this.drawing = drawing;
+    this.fill = fill;
+    this.requestUpdate?.();
+  }
 }

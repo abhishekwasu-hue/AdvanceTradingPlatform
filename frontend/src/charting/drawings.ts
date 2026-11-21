@@ -49,6 +49,13 @@ export interface StoredDrawing {
 /** "Delete all" on one symbol (UI2-4a1): the ids removed; locked drawings are kept and counted. */
 export interface DeleteAllResult { deleted: number; kept_locked: number; ids: number[] }
 
+/** The backend's limits (backend/app/charts/drawings.py `Style` / `Drawing`). */
+export const TEXT_MAX = 200;
+export const LEVELS_MAX = 20;
+export const WIDTH_MAX = 6;
+export const LINE_STYLES: readonly NonNullable<DrawingStyle["line"]>[] = ["solid", "dashed", "dotted"];
+export const EXTENDS: readonly NonNullable<DrawingStyle["extend"]>[] = ["none", "left", "right", "both"];
+
 /** The backend's rules, checked before a request so the user sees the problem at once (the server checks again). */
 export function drawingProblem(d: DrawingV1): string | null {
   const need = ANCHOR_RULES[d.kind];
@@ -62,7 +69,13 @@ export function drawingProblem(d: DrawingV1): string | null {
   if (d.levels && !d.kind.startsWith("fib_")) return "levels apply to Fibonacci drawings only";
   if (d.kind === "text" && !(d.text ?? "").trim()) return "a text drawing needs text";
   if (d.text && /[<>]/.test(d.text)) return "text may not contain < or >";
-  if (d.style?.color && !/^#[0-9a-fA-F]{6}$/.test(d.style.color)) return "colour must be #rrggbb";
+  if (d.text && d.text.length > TEXT_MAX) return `text may be at most ${TEXT_MAX} characters`;
+  if (d.levels && (d.levels.length > LEVELS_MAX || !d.levels.every(Number.isFinite))) return `levels must be at most ${LEVELS_MAX} numbers`;
+  const s = d.style;
+  if (s?.color !== undefined && !/^#[0-9a-fA-F]{6}$/.test(s.color)) return "colour must be #rrggbb";
+  if (s?.width !== undefined && !(Number.isInteger(s.width) && s.width >= 1 && s.width <= WIDTH_MAX)) return `width must be a whole number from 1 to ${WIDTH_MAX}`;
+  if (s?.line !== undefined && !LINE_STYLES.includes(s.line)) return "line must be solid, dashed or dotted";
+  if (s?.extend !== undefined && !EXTENDS.includes(s.extend)) return "extend must be none, left, right or both";
   return null;
 }
 

@@ -9,6 +9,7 @@ import {
 } from "./link";
 import { schematicMarks, schematicY } from "./Schematic";
 import { TemplateLibraryView, hasHowItWorks } from "./TemplateLibrarySection";
+import { PICK_HINT } from "./TimeframePick";
 
 /** M94 F15: a template's "how it works" screen, on the server's own answers (backend tests/test_m94_pr6_pages.py checks
  * both samples are what the route serves). */
@@ -64,7 +65,18 @@ describe("M94 F15: the how it works screen", () => {
     expect(html).toContain('href="/screener?template=H6&amp;side=short"');
     expect(text(html)).toContain("Setup scanner (upward)");
     expect(html).toContain('href="/charts?tpl=H6&amp;tpltf=5m"');
-    expect(html).toContain('href="/deployments?template=H6&amp;timeframe=5m"');
+    // DEF-0: no chart timeframe is picked for him - the trading bot and Test wait for his pick, with the hint
+    expect(html).not.toContain('href="/deployments');
+    expect(html).not.toContain('href="/strategies/test');
+    expect(text(html)).toContain(PICK_HINT);
+    expect(html).toContain("data-template-timeframe-chips");
+    expect(text(html.split('data-how-line="reads"')[1].split("</div>")[0])).toContain("on the chart you choose");
+    const picked = renderToStaticMarkup(<HowItWorksView how={H6} initialPick="15m" />);
+    expect(picked).toContain('href="/deployments?template=H6&amp;timeframe=15m"');
+    expect(picked).toContain('href="/strategies/test?template=H6&amp;timeframe=15m"');
+    expect(picked).toContain('href="/charts?tpl=H6&amp;tpltf=15m"');
+    expect(text(picked.split('data-how-line="reads"')[1].split("</div>")[0])).toContain("on the 15-minute chart");
+    expect(text(picked)).not.toContain(PICK_HINT);
     const fold = html.split('data-library-fold="how-settings"')[1];
     expect(html.split('data-library-fold="how-settings"')[0].endsWith("<details ")).toBe(true);     // folded: a closed <details>
     expect(html.split('data-library-fold="how-settings"')[0].slice(-30)).not.toContain("open");

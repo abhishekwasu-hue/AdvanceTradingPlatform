@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useInRouterContext, useLocation, useNavigate } from "react-router";
 import { errorSentence } from "../api/errors";
-import { LINK_PRIMARY, LINK_SECONDARY } from "../dashboard/CardV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
 import { Skeleton } from "../components/primitives";
 import { CARD } from "../dashboard/CardV2";
@@ -12,7 +11,8 @@ import type { SettingRow } from "../ui/strategyLabels";
 import { useFeatures } from "../ui/useFeatures";
 import { REFERENCE_LABEL, showsReferenceLabel, templatesApi, type StrategyTemplate } from "./api";
 import { HowItWorksSheet } from "./HowItWorks";
-import { HOW_PARAM, howPathFor, paperBotPathFor, templateIdOf, testPathFor } from "./link";
+import { HOW_PARAM, howPathFor, templateIdOf } from "./link";
+import { readsFor, TemplatePickActions } from "./TimeframePick";
 
 /**
  * P2-3: the strategy templates under Strategies > Library (flag `strategy_templates`). Every sentence about a template
@@ -110,9 +110,11 @@ export function TemplateLibraryView({ templates, error, family, onFamily, intrad
   );
 }
 
-function TemplateCard({ t, reference, how }: { t: StrategyTemplate; reference: boolean; how: boolean }) {
-  const link = { template: t.id, timeframe: t.default_timeframe, params: {} };
-  const reads = [t.reads?.long, t.reads?.short].filter((s): s is string => !!s);
+/** One template card. DEF-0: no chart timeframe is picked for him (`initialPick` only for a static render: tests, the
+ * comparison page); his pick names the timeframe in the sentence and goes with both buttons. */
+export function TemplateCard({ t, reference, how, initialPick = null }: { t: StrategyTemplate; reference: boolean; how: boolean; initialPick?: string | null }) {
+  const [picked, setPicked] = useState<string | null>(initialPick);
+  const reads = readsFor(t, picked);
   const rows = templateRows(t);
   const timeframes = t.timeframes.map((tf) => tf.label).join(", ");
   return (
@@ -131,18 +133,17 @@ function TemplateCard({ t, reference, how }: { t: StrategyTemplate; reference: b
           </ul>
         </div>
       )}
-      {timeframes && <p data-template-timeframes className="mt-space-2 text-t13 text-fg-muted">{timeframes}</p>}
+      {!t.available && timeframes && <p data-template-timeframes className="mt-space-2 text-t13 text-fg-muted">{timeframes}</p>}
       {how && (
         <InPlaceLink to={howPathFor(t.id)} data-how-link={t.id} aria-label={`How it works: ${t.name}`}
           className="mt-space-2 inline-flex min-h-11 items-center rounded-control text-t14 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-8">
           How it works
         </InPlaceLink>
       )}
-      {t.available ? (
-        <div className="mt-space-3 flex flex-wrap items-center gap-space-2">
-          <InPlaceLink to={paperBotPathFor(link)} className={LINK_PRIMARY} data-use-template={t.id} aria-label={`Use on the trading bot: ${t.name}`}>Use on the trading bot</InPlaceLink>
-          <InPlaceLink to={testPathFor(link)} className={LINK_SECONDARY} data-test-template={t.id} aria-label={`Test it first: ${t.name}`}>Test it first</InPlaceLink>
-        </div>
+      {t.available && t.timeframes.length > 0 ? (
+        <TemplatePickActions t={t} picked={picked} onPick={setPicked} className="mt-space-3" />
+      ) : t.available ? (
+        <p data-template-off className="mt-space-3 text-t13 text-fg-muted">No chart timeframe can run this template yet</p>
       ) : (
         <p data-template-off className="mt-space-3 text-t13 text-fg-muted">Not switched on for your account yet</p>
       )}

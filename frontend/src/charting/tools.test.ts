@@ -370,3 +370,127 @@ describe("review follow-up: queued edits read the state they run on", () => {
     expect(t.view().drawings[0].drawing.anchors[0].p).toBe(130);
   });
 });
+
+describe("owner 21 Nov: settings, copy and the selection toolbar's contract", () => {
+  const line = async (t: ReturnType<typeof setup>) => {
+    t.ctl.setTool("trendline");
+    await t.ctl.click(pt(2, 100));
+    await t.ctl.click(pt(6, 110));
+    t.store.calls = [];
+  };
+
+  it("edit merges the style into the stored drawing, saves it with its version as one undo step; undo / redo restore it", async () => {
+    const t = setup();
+    await line(t);
+    await t.ctl.edit("1", { style: { color: "#ff0000", width: 3 } });
+    await t.ctl.edit("1", { style: { line: "dashed", extend: "right", width: undefined } });
+    expect(t.store.calls).toEqual(["update 1@1", "update 1@2"]);
+    expect(t.store.rows.get(1)?.drawing.style).toEqual({ color: "#ff0000", width: 3, line: "dashed", extend: "right" });
+    expect(t.store.rows.get(1)?.drawing.anchors).toEqual(normalize({ kind: "trendline", anchors: [{ t: iso(2), p: 100 }, { t: iso(6), p: 110 }] }).anchors);
+    await t.ctl.undo();
+    expect(t.store.rows.get(1)?.drawing.style).toEqual({ color: "#ff0000", width: 3 });
+    await t.ctl.undo();
+    expect(t.store.rows.get(1)?.drawing.style).toBeUndefined();
+    await t.ctl.redo();
+    await t.ctl.redo();
+    expect(t.store.rows.get(1)?.drawing.style).toEqual({ color: "#ff0000", width: 3, line: "dashed", extend: "right" });
+    expect(t.store.calls.filter((c) => c.startsWith("update"))).toHaveLength(6);
+  });
+
+  it("edit changes a text drawing's text and a Fibonacci's levels; undo brings the old text back", async () => {
+    const t = setup();
+    t.ctl.setTool("text", "first");
+    await t.ctl.click(pt(2, 100));
+    await t.ctl.edit("1", { text: "second" });
+    expect(t.store.rows.get(1)?.drawing.text).toBe("second");
+    await t.ctl.undo();
+    expect(t.store.rows.get(1)?.drawing.text).toBe("first");
+    t.ctl.setTool("fib_retracement");
+    await t.ctl.click(pt(2, 100));
+    await t.ctl.click(pt(6, 110));
+    await t.ctl.edit("2", { levels: [0, 0.5, 1] });
+    expect(t.store.rows.get(2)?.drawing.levels).toEqual([0, 0.5, 1]);
+  });
+
+  it("a locked drawing is not changed; a patch the backend would refuse is shown and not sent; a no-op saves nothing", async () => {
+    const t = setup();
+    await line(t);
+    await t.ctl.edit("1", { style: { color: "red" } });
+    expect(t.view().message).toBe("colour must be #rrggbb");
+    await t.ctl.edit("1", { style: { width: 9 } });
+    expect(t.view().message).toMatch(/width must be a whole number from 1 to 6/);
+    await t.ctl.edit("1", { style: { line: "wavy" as never } });
+    expect(t.view().message).toMatch(/line must be/);
+    await t.ctl.edit("1", { text: "a <b>" });
+    expect(t.view().message).toBe("text may not contain < or >");
+    await t.ctl.edit("1", { levels: [0.5] });
+    expect(t.view().message).toBe("levels apply to Fibonacci drawings only");
+    expect(t.store.calls).toEqual([]);
+    // the server fills in the default style: the same values written out are no change
+    t.store.rows.set(1, { ...t.store.rows.get(1)!, drawing: { ...t.store.rows.get(1)!.drawing, style: { color: "#2962ff", width: 1, line: "solid", extend: "none" } } });
+    await t.ctl.load();
+    await t.ctl.edit("1", { style: { color: "#2962FF", width: 1 } });
+    await t.ctl.edit("1", {});
+    expect(t.store.calls).toEqual(["list"]);
+    expect(t.view().canUndo).toBe(false);
+    t.ctl.select("1");
+    await t.ctl.toggleLock();
+    await t.ctl.edit("1", { style: { color: "#00ff00" } });
+    expect(t.view().message).toBe("This drawing is locked. Unlock it to change it.");
+    expect(t.store.calls).toEqual(["list", "lock 1 true"]);
+    await t.ctl.edit("nope", { style: { color: "#00ff00" } });                   // an unknown drawing: nothing happens
+    expect(t.store.calls).toEqual(["list", "lock 1 true"]);
+  });
+
+  it("an edit that conflicts with another tab shows the latest version and keeps no undo step", async () => {
+    const t = setup();
+    await line(t);
+    t.store.rows.set(1, { ...t.store.rows.get(1)!, version: 4, drawing: { ...t.store.rows.get(1)!.drawing, style: { color: "#00ff00" } } });
+    await t.ctl.edit("1", { style: { color: "#ff0000" } });
+    expect(t.view().message).toMatch(/changed in another window/);
+    expect(t.view().drawings[0].drawing.style?.color).toBe("#00ff00");
+  });
+
+  it("duplicate saves a copy a few bars later and a little lower, selected and unlocked; undo removes it", async () => {
+    const t = setup();
+    t.ctl.useBarTimes(() => times);
+    await line(t);
+    t.ctl.select("1");
+    await t.ctl.toggleLock();                                                     // a locked drawing can be copied
+    await t.ctl.duplicate("1");
+    const copy = t.store.rows.get(2)!;
+    expect(copy.locked).toBe(false);
+    expect(copy.drawing.anchors).toEqual(normalize({ kind: "trendline", anchors: [{ t: iso(5), p: 99 }, { t: iso(9), p: 109 }] }).anchors);
+    expect(t.ctl.view().selected).toBe("2");
+    expect(t.ctl.selectedDrawing()).toMatchObject({ key: "2", locked: false, drawing: { kind: "trendline" } });
+    await t.ctl.undo();
+    expect(t.store.rows.has(2)).toBe(false);
+    expect(t.ctl.selectedDrawing()).toBeNull();
+    await t.ctl.redo();
+    expect(t.view().drawings).toHaveLength(2);
+  });
+
+  it("a copy of a price-only or time-only drawing moves on its one axis; without bar times the time stays", async () => {
+    const t = setup();
+    t.ctl.setTool("hline");
+    await t.ctl.click(pt(3, 200));
+    await t.ctl.duplicate("1");
+    expect(t.store.rows.get(2)?.drawing.anchors).toEqual([{ p: 199.6 }]);
+    t.ctl.setTool("vline");
+    await t.ctl.click(pt(3, 100));
+    await t.ctl.duplicate("3");
+    expect(t.store.rows.get(4)?.drawing.anchors).toEqual(t.store.rows.get(3)?.drawing.anchors);
+  });
+
+  it("selectedDrawing is the selection as shown, with its lock; null without a selection", async () => {
+    const t = setup();
+    expect(t.ctl.selectedDrawing()).toBeNull();
+    await line(t);
+    t.ctl.beginDrag("1", 0, pt(2, 100));
+    t.ctl.dragTo(pt(2, 104), times);
+    expect(t.ctl.selectedDrawing()?.drawing.anchors[0].p).toBe(104);             // a drag in progress is what is shown
+    t.ctl.cancel();
+    t.ctl.select(null);
+    expect(t.ctl.selectedDrawing()).toBeNull();
+  });
+});

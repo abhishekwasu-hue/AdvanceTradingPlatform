@@ -9,9 +9,10 @@
  * Nothing here touches an order.
  */
 import {
-  ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DeleteAllResult, type DrawingKind, type DrawingV1, type StoredDrawing,
+  ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DeleteAllResult, type DrawingKind, type DrawingStyle, type DrawingV1,
+  type StoredDrawing,
 } from "./drawings";
-import { shapes, timeToLogical, type Converters, type Shape } from "./geometry";
+import { DEFAULT_COLOR, shapes, timeToLogical, type Converters, type Shape } from "./geometry";
 
 /** A pointer position in data space: time in epoch seconds (UTC), price. */
 export interface DataPoint { t: number; p: number }
@@ -24,12 +25,66 @@ const toSec = (value: string | undefined) => (value ? Date.parse(value) / 1000 :
 export function sameDrawing(a: DrawingV1, b: DrawingV1): boolean {
   if (a.kind !== b.kind || a.anchors.length !== b.anchors.length || (a.text ?? "") !== (b.text ?? "")) return false;
   if (JSON.stringify(a.levels ?? null) !== JSON.stringify(b.levels ?? null)) return false;
+  if (JSON.stringify(styleOf(a)) !== JSON.stringify(styleOf(b))) return false;
   return a.anchors.every((x, i) => {
     const y = b.anchors[i];
     const tx = x.t === undefined ? null : toSec(x.t);
     const ty = y.t === undefined ? null : toSec(y.t);
     return tx === ty && (x.p ?? null) === (y.p ?? null);
   });
+}
+
+/** A drawing's style with the backend's defaults filled in (the server returns every field; a new drawing has none). */
+export function styleOf(d: DrawingV1): Required<DrawingStyle> {
+  const s = d.style ?? {};
+  return { color: (s.color ?? DEFAULT_COLOR).toLowerCase(), width: s.width ?? 1, line: s.line ?? "solid", extend: s.extend ?? "none" };
+}
+
+/** What `DrawingController.edit` may change: the style (merged field by field), the text, the Fibonacci levels. */
+export interface DrawingPatch { style?: Partial<DrawingStyle>; text?: string; levels?: number[] }
+
+/** The drawing with a patch merged in; a style field set to undefined is left as it was. */
+export function patched(d: DrawingV1, patch: DrawingPatch): DrawingV1 {
+  const out: DrawingV1 = { ...d };
+  if (patch.style) {
+    const style: DrawingStyle = { ...d.style };
+    for (const [k, v] of Object.entries(patch.style) as [keyof DrawingStyle, never][]) if (v !== undefined) style[k] = v;
+    out.style = style;
+  }
+  if (patch.text !== undefined) out.text = patch.text;
+  if (patch.levels !== undefined) out.levels = [...patch.levels];
+  return out;
+}
+
+/** How far a copy (`duplicate`) sits from its original: this many bars later, and this share of the drawing's own price
+ * range lower (a drawing with no price range: this share of its price). */
+export const COPY_BARS = 3;
+export const COPY_RANGE_SHARE = 0.1;
+export const COPY_PRICE_SHARE = 0.002;
+
+/** The drawing moved `bars` bars later on the chart's bar times (no times: time unchanged) and `dp` in price. */
+export function offsetDrawing(d: DrawingV1, bars: number, dp: number, times: readonly number[]): DrawingV1 {
+  return {
+    ...d,
+    anchors: d.anchors.map((a) => {
+      const out: Anchor = {};
+      if (a.t !== undefined) {
+        const l = timeToLogical(times, toSec(a.t));
+        const t = l == null ? null : logicalToTime(times, l + bars);
+        out.t = t == null ? a.t : iso(t);
+      }
+      if (a.p !== undefined) out.p = a.p + dp;
+      return out;
+    }),
+  };
+}
+
+/** Where a copy of `d` goes: a few bars later and a little lower, so it is seen next to the original. */
+export function copyOf(d: DrawingV1, times: readonly number[]): DrawingV1 {
+  const prices = d.anchors.flatMap((a) => (a.p !== undefined && Number.isFinite(a.p) ? [a.p] : []));
+  const range = prices.length ? Math.max(...prices) - Math.min(...prices) : 0;
+  const dp = range > 0 ? range * COPY_RANGE_SHARE : prices.length ? Math.abs(prices[0]) * COPY_PRICE_SHARE : 0;
+  return offsetDrawing(d, COPY_BARS, -dp, times);
 }
 
 /** The anchor a point makes for one anchor rule: time and price, price only, or time only. */
@@ -201,6 +256,7 @@ export class DrawingController {
   private message: string | null = null;
   private listeners = new Set<(view: ToolView) => void>();
   private queue: Promise<unknown> = Promise.resolve();
+  private barTimes: () => readonly number[] = () => [];
 
   /** `timeframe` (UI2-4a1): the chart's timeframe, recorded on each new drawing; it changes with `setTimeframe`
    * without reloading, because every timeframe shows the same drawings (CHP-1). */
@@ -208,6 +264,11 @@ export class DrawingController {
 
   setTimeframe(timeframe: string | undefined) {
     this.timeframe = timeframe;
+  }
+
+  /** The chart's bar times (the binding passes the engine's), so a copy moves in bars, not seconds. */
+  useBarTimes(times: () => readonly number[]) {
+    this.barTimes = times;
   }
 
   /** A new drawing on the server, with the chart's timeframe when it has one. */
@@ -328,6 +389,65 @@ export class DrawingController {
   select(key: string | null) {
     this.selected = key && this.items.has(key) ? key : null;
     this.emit();
+  }
+
+  /** The selected drawing as shown (a drag or a save in flight included), or null: what the selection toolbar edits. */
+  selectedDrawing(): { key: string; drawing: DrawingV1; locked: boolean } | null {
+    const key = this.selected;
+    return key ? this.view().drawings.find((d) => d.key === key) ?? null : null;
+  }
+
+  /** Changes a drawing's style, text or Fibonacci levels (the selection toolbar's settings): one save through the same
+   * path as a drag (version, conflict), one undo step. A locked drawing is not changed; a patch the backend would refuse
+   * is shown and not sent; a patch that changes nothing saves nothing. Read when the queued work runs, so it builds on
+   * an edit still being saved. */
+  edit(key: string, patch: DrawingPatch): Promise<void> {
+    if (!this.items.has(key)) return Promise.resolve();
+    return this.run(async () => {
+      const stored = this.items.get(key);
+      if (!stored) return;
+      if (stored.locked) {
+        this.message = "This drawing is locked. Unlock it to change it.";
+        this.emit();
+        return;
+      }
+      const before = stored.drawing;
+      const after = patched(before, patch);
+      if (sameDrawing(after, before)) return;
+      const problem = drawingProblem(after);
+      if (problem) {
+        this.message = problem;
+        this.emit();
+        return;
+      }
+      if (await this.save(key, after)) this.record({ key, before, after });
+      this.emit();
+    });
+  }
+
+  /** A copy of a drawing a few bars later and a little lower, saved as a new drawing (unlocked) and selected; undo
+   * removes it. */
+  duplicate(key: string): Promise<void> {
+    if (!this.items.has(key)) return Promise.resolve();
+    return this.run(async () => {
+      const source = this.items.get(key);
+      if (!source) return;
+      const copy = copyOf(source.drawing, this.barTimes());
+      const problem = drawingProblem(copy);
+      if (problem) {
+        this.message = problem;
+        this.emit();
+        return;
+      }
+      const stored = await this.guard(() => this.create(copy));
+      if (stored) {
+        const next = String(stored.id);
+        this.items.set(next, stored);
+        this.selected = next;
+        this.record({ key: next, before: null, after: stored.drawing });
+      }
+      this.emit();
+    });
   }
 
   /** Start dragging a handle (an anchor) or, with handle null, the whole drawing. A locked drawing does not move. */

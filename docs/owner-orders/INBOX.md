@@ -777,3 +777,11 @@ Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal char
 
 Note: build TC-Q2 fully - the panel sends the timeframes of his own bots on the Terminal's symbol (`also=`, at most two).
 | 2026-11-21 | "Pending job purn kr" | Finish the pending work: for this session SRV2 P2 (per-symbol settings page under one button), P4 (the bot's positions shown read-only in ATP; exits stay Trade's own code, SRV2-Q1 A) and P5 (parity on a Trade replay day + screenshots); P2-8 Journal v2 is already built by another session (#1147 / #1148 / #1150, waiting for the owner's ✅) |
+
+## 21 Nov - owner (answer to the report on "Jhale ka sarv kam")
+
+> "Default yes and go ahead"
+
+Note: approves the stated defaults - NEXT-Q1 (build P2-8 Journal v2), CP-CHAT-Q1 (rule sections behind AI words fold
+under Details), CP-CHAT-Q2 (no third sectioned style) - and is the owner's ✅ to merge the P2-8 Journal v2 PRs in order
+(#1147, #1148, #1150) once CI is green. Their migrations deploy only after 15:30 IST (DECISIONS 25 Oct).

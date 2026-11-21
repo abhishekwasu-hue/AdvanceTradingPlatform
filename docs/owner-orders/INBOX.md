@@ -785,3 +785,10 @@ Note: approval. Every JV2 default is decided (JV2-Q1..Q10), and "go ahead" is th
 ATP_SESSION_JOURNAL.md asked for before a merge: #1147 -> #1148 -> #1150 are merged in that order once CI is green.
 Three additive migrations (e3a5c7e9b1d4, f4b6d8a0c2e5, a5c7e9b1d3f6): deploy after 15:30 IST; `discipline_engine` stays
 his switch.
+
+## 21 Nov - owner (English; answer to the P2-8 status "merge #1147 -> #1148 -> #1150 in order on green CI, deploy after 15:30 IST")
+
+> "Default yes"
+
+Note: confirmation of the line above (the same ✅, no new order): the three Journal v2 PRs merge in order once CI is
+green; the deploy runs after 15:30 IST (three additive migrations), then `discipline_engine` on.

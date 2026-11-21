@@ -4,7 +4,7 @@ import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
 import type {
   ChecklistItem, DisciplineSettings, EntryKind, JournalAttachment, JournalEntryFull, JournalFilters, JournalList, JournalSettingsResponse,
   ImportMapping, ImportPreview, ImportResult, JournalStatsResponse, JournalTag, JournalWeek, JournalWeekV2, ManualTradeBody, TagStatus,
-  TradeChart, WeeklyReview,
+  TradeChart, WeeklyReview, BrokerSyncResult,
 } from "./types";
 
 /** The query string of the journal filters (empty values left out; manual entries are in unless asked otherwise). */
@@ -96,6 +96,8 @@ export const journalApi = {
   importFile: async (file: Blob, name: string, mapping?: ImportMapping): Promise<ImportResult> =>
     (await authed("/journal/import", { method: "POST", body: importForm(file, name, mapping) })).json() as Promise<ImportResult>,
   tradeChart: (serverPath: string) => request<TradeChart>(apiPath(serverPath)),
+  // P2-8 J1-1: today's trades from his own broker sessions (read-only), journalled once
+  brokerSync: () => request<BrokerSyncResult>("/journal/broker-sync", { method: "POST" }),
 };
 
 function importForm(file: Blob, name: string, mapping?: ImportMapping): FormData {

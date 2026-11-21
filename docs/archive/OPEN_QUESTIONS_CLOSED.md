@@ -936,3 +936,15 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | ID | Question | Default | Where | Status |
 |---|---|---|---|---|
 | CA-CHAT-Q1 | Analyze a chart: setup dropdown + AI chat (owner 18 Nov). Shape? | One "Setup" dropdown on the page (My method for the owner only, the book strategies with their rules, "My own conditions"); below the result a chat box on the SAME chart: the trader writes his conditions in plain words, the AI answers each one as met / not met / unclear with the evidence and marks it on the chart; the user's own AI key; cost per message shown; answers pass the signal-language guard (no buy / sell / target words); one thread per analysis, kept in My analyses. Built after the strategy-flow and journal fixes. | INBOX 18 Nov | decided 18 Nov "default yes" (DECISIONS) |
+
+## Moved 21 Nov 2026 (approved 10 Nov) - M95: Front door + link preview (10 Nov, docs/design/M95_FRONT_DOOR.md section 2)
+| ID | Question | Default - APPROVED by the owner 10 Nov ("Yes default", DECISIONS) |
+|---|---|---|
+| M95-Q1 | Public surface rule (no names, no prices, charts older than 3 months) vs real screenshots, last-close chain and chart in F1-F3 | Index data only, as of a date at least 3 months old, price figures and axes hidden; the guest demo is a frozen dated snapshot |
+| M95-Q2 | Google keys set on the production server? (not known) | Big Google button only when the server reports Google on; else email first |
+| M95-Q3 | "Ask for an invite" when self_signup is OFF (does not exist) | Email + note stored for the admin, per-IP limited; migration (one table) |
+| M95-Q4 | MR / HI strings vs the English-only guard (OD-2) | The order is the approval; one allow-listed front-door namespace; Abhi checks the Marathi |
+| M95-Q5 | One og:description: how to make it Marathi-friendly | English + the same sentence in Marathi |
+| M95-Q6 | FAQ "cost" with no price decided | "Free during the beta." until Abhi sets a price |
+| M95-Q7 | WhatsApp / Telegram preview proof before deploy | Render at their sizes now; Abhi's real screenshot after deploy |
+

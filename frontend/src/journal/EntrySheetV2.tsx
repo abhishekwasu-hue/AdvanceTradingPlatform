@@ -25,6 +25,40 @@ import type { EntryKind, JournalEntryFull, TagStatus } from "./types";
 
 export interface EntryTarget { kind: EntryKind; id: number }
 
+/** The sheet's title: a structure's name for a spread leg (P2-8 J1-3), else the symbol. */
+export function sheetTitle(e: JournalEntryFull): string {
+  return e.spread ? `${e.spread.underlying ?? e.symbol} ${e.spread.structure ?? "spread"}` : e.symbol;
+}
+
+function manualChip(e: JournalEntryFull): string {
+  if (e.origin === "BROKER") return "From your broker";
+  return e.imported ? "Imported" : "Outside ATP";
+}
+
+/** P2-8 J1-3: the structure as one entry - combined P&L, what the entry took in or paid, max loss planned vs taken. */
+function SpreadV2({ spread }: { spread: NonNullable<JournalEntryFull["spread"]> }) {
+  const money = (v: number | null) => (v == null ? "–" : formatINR(v, { paise: true }));
+  const credit = spread.credit_kind === "debit" ? "Debit paid" : "Credit received";
+  return (
+    <Section title={`${spread.underlying ? `${spread.underlying} ` : ""}${spread.structure ?? "spread"} · ${spread.legs} legs`} testId="spread">
+      <Pairs rows={[
+        ["Legs", String(spread.legs)], ["Combined P&L", spread.net_pnl == null ? "Open" : <PnlV2 value={spread.net_pnl} paise />],
+        [credit, money(Math.abs(spread.credit))], ["Planned max loss", spread.planned_max_loss == null ? "Not defined" : money(spread.planned_max_loss)],
+        ["Loss taken", spread.actual_loss == null ? "–" : money(spread.actual_loss)], ["Charges", money(spread.charges)],
+      ]} />
+      <ul className="mt-space-3 space-y-space-1" data-spread-legs>
+        {spread.leg_rows.map((leg) => (
+          <li key={leg.id} className="flex flex-wrap items-baseline justify-between gap-space-2 text-t13">
+            <span className="min-w-0 truncate text-fg">{leg.direction === "SHORT" ? "Short" : "Long"} · {leg.symbol}</span>
+            <span className="font-tabular text-fg-muted">{formatNumber(leg.quantity, 0)} × {formatNumber(leg.entry_price, 2)}</span>
+            <PnlV2 value={leg.pnl} />
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
 const NOTES_MAX = 5000;
 
 function Section({ title, children, testId }: { title: string; children: ReactNode; testId?: string }) {
@@ -110,7 +144,9 @@ export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, ex
         <AskAiAbout ctx={{ symbol: entry.symbol, object: entry.kind === "trade" ? { kind: "journal", id: entry.id } : undefined, page: "journal" }} />
       </div>
 
-      <Section title="Plan (as recorded)" testId="plan">
+      {entry.spread && <SpreadV2 spread={entry.spread} />}
+
+      <Section title={entry.spread ? `This leg: ${entry.symbol}` : "Plan (as recorded)"} testId="plan">
         <Pairs rows={[
           ["Setup", p.setup ?? "–"], ["Timeframe", p.timeframe ?? "–"], ["Planned entry", price(p.entry)],
           ["Invalidation", price(p.invalidation)], ["Target", price(p.target)],
@@ -128,6 +164,16 @@ export function EntryEditorV2({ entry, api, customTags, onChanged, onRemoved, ex
           ...(exc ? [["MAE / MFE", `${exc.mae_r == null ? "–" : `${formatNumber(exc.mae_r, 2)}R`} / ${exc.mfe_r == null ? "–" : `${formatNumber(exc.mfe_r, 2)}R`}`] as [string, ReactNode]] : []),
         ]} />
       </Section>
+
+      {entry.plan_actual && (
+        <Section title="Plan vs actual" testId="plan-actual">
+          {entry.plan_actual.length === 0
+            ? <p className="text-t14 text-fg-muted" data-plan-actual="same">Went as planned.</p>
+            : <ul className="list-disc space-y-space-1 pl-space-5 text-t14 text-fg" data-plan-actual="diff">
+              {entry.plan_actual.map((line) => <li key={line}>{line}</li>)}
+            </ul>}
+        </Section>
+      )}
 
       <Section title="Notes" testId="notes">
         <textarea className={`${TEXTAREA} h-28`} value={notes} maxLength={NOTES_MAX} aria-label="Notes"
@@ -267,8 +313,8 @@ export function EntrySheetV2({ target, api, customTags, onClose, onChanged, extr
     return () => { alive = false; };
   }, [api, target, round]);
   const title = state.status === "ok"
-    ? <span className="flex flex-wrap items-center gap-space-2">{state.entry.symbol}
-      {state.entry.manual && <span className={chipClass({ tone: "warn" })}>{state.entry.imported ? "Imported" : "Outside ATP"}</span>}</span>
+    ? <span className="flex flex-wrap items-center gap-space-2">{sheetTitle(state.entry)}
+      {state.entry.manual && <span className={chipClass({ tone: "warn" })}>{manualChip(state.entry)}</span>}</span>
     : "Journal entry";
   return (
     <Sheet open={target !== null} onOpenChange={(o) => { if (!o) onClose(); }} side={phone ? "bottom" : "right"} title={title}>

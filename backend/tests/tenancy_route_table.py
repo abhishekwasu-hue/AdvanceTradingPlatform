@@ -693,6 +693,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # M88: the import reads only the uploaded file and the caller's own manual entries / imports; it writes his own rows
     ("POST", "/api/journal/import/preview"): "self: any member may preview a file of his own trades; it reads only his own journal entries",
     ("POST", "/api/journal/import"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/broker-sync"): ("self: P2-8 J1-1 - reads the caller's own broker sessions' trade books (read-only) into "
+                                           "his own journal; never another member's session or entries"),
     ("GET", "/api/journal/manual/{manual_id}/trade-chart"): "member: the chart of the caller's own manual entry only (Daily bars from the shared EOD files)",
     ("GET", "/api/journal/manual/{manual_id}/trade-chart.png"): "member: the chart image of the caller's own manual entry only",
     ("GET", "/api/journal/attachments/{attachment_id}"): "member: the caller's own journal image only",

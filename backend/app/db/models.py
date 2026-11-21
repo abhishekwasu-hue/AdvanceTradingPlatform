@@ -520,8 +520,56 @@ class JournalManualTradeRecord(Base):
     user_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # M88: the file import this entry came from (`journal_imports.id`); null = typed in by hand
     import_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # P2-8 J1-1: "BROKER" = read from his own broker's trade book by the journal sync (journal_broker_fills); null = typed
+    # in by hand or imported from a file
+    origin: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalBrokerFillRecord(Base):
+    """P2-8 J1-1: one fill read from the trader's own broker trade book by the journal sync (read-only; no order call).
+    `status` MATCHED = the fill of an order ATP placed for him (`trade_id`; that trade already has its journal entry);
+    ENTRY = written into an outside-ATP journal entry (`manual_trade_id`). The unique key makes every re-run skip a fill
+    it has seen, so nothing is journalled twice; a removed entry keeps its fills (they do not come back). Personal."""
+
+    __tablename__ = "journal_broker_fills"
+    __table_args__ = (UniqueConstraint("user_id", "broker", "fill_id", name="uq_journal_broker_fill"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker: Mapped[str] = mapped_column(String(30), nullable=False)
+    fill_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Price, nullable=False)
+    filled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    manual_trade_id: Mapped[int | None] = mapped_column(ForeignKey("journal_manual_trades.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class JournalSnapshotRecord(Base):
+    """P2-8 J1-2: the stored chart picture of one ATP trade at its entry or exit (server-drawn from the bars that end
+    at that instant, with the entry / exit / stop marks). The file sits in the private store; the row holds its path.
+    Personal; erased with the account."""
+
+    __tablename__ = "journal_snapshots"
+    __table_args__ = (UniqueConstraint("trade_id", "at", name="uq_journal_snapshot_trade_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=False)
+    at: Mapped[str] = mapped_column(String(5), nullable=False)                             # entry / exit
+    image_path: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class JournalImportRecord(Base):

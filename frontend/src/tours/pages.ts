@@ -5,7 +5,7 @@ import type { ShellKey } from "../shell/navModel";
  * page to decide whether to show the "?" button; the steps themselves live in src/tours/content/ and load with the tour
  * engine, on demand. The server allow-lists the same ids (backend app/me/prefs.py TOUR_IDS, a test keeps them equal).
  */
-export const TOUR_IDS = ["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot", "terminal"] as const;
+export const TOUR_IDS = ["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot", "terminal", "journal"] as const;
 
 export type TourId = (typeof TOUR_IDS)[number];
 
@@ -22,6 +22,7 @@ const BY_KEY: Partial<Record<ShellKey, TourId>> = {
   settings: "settings",
   copilot: "copilot",
   terminal: "terminal",
+  journal: "journal",
 };
 
 /**

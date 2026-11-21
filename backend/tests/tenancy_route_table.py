@@ -117,6 +117,7 @@ S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own t
 S_OWN_JOURNAL_LAYER = ("self: the caller's own journal entries only (notes, own tags, checklist, images, manual outside-ATP "
                        "entries) - journal data; never an order, a position or a broker call")
 S_READ_MARKS = "self: read marks are per user"
+S_OWN_CHECKIN_READ = ("member: the caller's own check-in only (P2-8 J2, private: another member, an admin included, gets 404)")
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
 S_FEEDBACK = "self: sends product feedback (rate limited)"
 S_REPORT = ("self: Report a problem - the caller's own scrubbed message and a closed list of context fields into the feedback "
@@ -699,6 +700,30 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # M88: the import reads only the uploaded file and the caller's own manual entries / imports; it writes his own rows
     ("POST", "/api/journal/import/preview"): "self: any member may preview a file of his own trades; it reads only his own journal entries",
     ("POST", "/api/journal/import"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/trades/{trade_id}/checkin"): S_OWN_CHECKIN_READ,
+    ("PUT", "/api/journal/trades/{trade_id}/checkin"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/trades/{trade_id}/checkin/notes"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/trades/{trade_id}/checkin/dismiss"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/manual/{manual_id}/checkin"): S_OWN_CHECKIN_READ,
+    ("PUT", "/api/journal/manual/{manual_id}/checkin"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/manual/{manual_id}/checkin/notes"): S_OWN_JOURNAL_LAYER,
+    ("POST", "/api/journal/manual/{manual_id}/checkin/dismiss"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/checkins/waiting"): "member: the caller's own entries waiting for his check-in only",
+    ("GET", "/api/journal/daily"): "member: the day's card over the caller's own journal only",
+    ("GET", "/api/journal/review/extras"): "member: the week's additions over the caller's own journal only",
+    ("GET", "/api/journal/monthly"): "member: the month over the caller's own journal only",
+    ("PUT", "/api/journal/reflection"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/proof"): "member: the caller's own proof facts and entries only",
+    ("POST", "/api/journal/proof"): S_OWN_JOURNAL_LAYER,
+    ("PUT", "/api/journal/proof/pin"): S_OWN_JOURNAL_LAYER,
+    ("DELETE", "/api/journal/proof/{proof_id}"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/plans"): "member: the caller's own if-then plans and goals only",
+    ("POST", "/api/journal/plans"): S_OWN_JOURNAL_LAYER,
+    ("PATCH", "/api/journal/plans/{plan_id}"): S_OWN_JOURNAL_LAYER,
+    ("DELETE", "/api/journal/plans/{plan_id}"): S_OWN_JOURNAL_LAYER,
+    ("GET", "/api/journal/today"): "member: the Journal's Today over the caller's own journal only",
+    ("POST", "/api/journal/broker-sync"): ("self: P2-8 J1-1 - reads the caller's own broker sessions' trade books (read-only) into "
+                                           "his own journal; never another member's session or entries"),
     ("GET", "/api/journal/manual/{manual_id}/trade-chart"): "member: the chart of the caller's own manual entry only (Daily bars from the shared EOD files)",
     ("GET", "/api/journal/manual/{manual_id}/trade-chart.png"): "member: the chart image of the caller's own manual entry only",
     ("GET", "/api/journal/attachments/{attachment_id}"): "member: the caller's own journal image only",

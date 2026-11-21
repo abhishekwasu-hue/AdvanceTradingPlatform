@@ -39,7 +39,14 @@ from app.db.models import (
     CustomStrategyRecord,
     ExperienceOptOutRecord,
     FeedbackRecord,
+    JournalBrokerFillRecord,
+    JournalCheckinRecord,
     JournalEntryRecord,
+    JournalManualTradeRecord,
+    JournalPlanRecord,
+    JournalProofRecord,
+    JournalReflectionRecord,
+    JournalSnapshotRecord,
     JournalTagRecord,
     LlmCallRecord,
     LoginEventRecord,
@@ -69,7 +76,14 @@ KEY_ERASE_REQUESTS = "account_erase_requests"          # platform_controls: {"re
 _SECRET_WORDS = ("password", "secret", "encrypted", "token", "hash")
 # Each dataset: (file name, model). Only the caller's own rows (user_id) inside their organisation.
 _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades", TradeRecord), ("journal_entries", JournalEntryRecord),
-             ("journal_tags", JournalTagRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
+             ("journal_tags", JournalTagRecord),
+             # P2-8: his outside-ATP entries (typed, imported, synced from his broker), the broker fills read and the
+             # stored chart pictures (their rows; the image files stay in the private store)
+             ("journal_outside_trades", JournalManualTradeRecord), ("journal_broker_fills", JournalBrokerFillRecord),
+             ("journal_snapshots", JournalSnapshotRecord),
+             ("journal_checkins", JournalCheckinRecord), ("journal_reflections", JournalReflectionRecord),   # P2-8 J2 / J3: his own answers
+             ("journal_proofs", JournalProofRecord), ("journal_plans", JournalPlanRecord),                 # P2-8 J4 / J5
+             ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
              ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)
              ("studies", CopilotStudyRecord),

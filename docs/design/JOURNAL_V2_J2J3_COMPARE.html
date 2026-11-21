@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal v2 J2 J3</title>
+<!-- P2-8 Journal v2 J2 + J3 (plan docs/plans/journal-v2-PLAN.md): before = PR 1 (#1147), after = this PR. Captured with
+     Playwright (e2e/journal-j2j3-v2.e2e.ts) on the production build with every /api call mocked: every name and number is MADE UP. -->
+<style>
+:root { color-scheme: light; --bg: 247 248 250; --fg: 15 23 42; --muted: 91 100 117; --line: 227 230 235; --up: 10 125 85; --down: 210 44 61; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: 11 14 20; --fg: 226 232 240; --muted: 148 163 184; --line: 37 43 61; --up: 34 197 94; --down: 239 68 68; }
+body { margin: 0; padding: 16px; background: rgb(var(--bg)); color: rgb(var(--fg)); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+p, li { color: rgb(var(--muted)); }
+table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgb(var(--line)); vertical-align: top; }
+.bad { color: rgb(var(--down)); font-weight: 600; } .good { color: rgb(var(--up)); font-weight: 600; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.pair.wide { grid-template-columns: 1fr; }
+figure { margin: 0; } figcaption { font-size: 12px; color: rgb(var(--muted)); margin-bottom: 4px; }
+img { max-width: 100%; height: auto; border: 1px solid rgb(var(--line)); border-radius: 6px; display: block; }
+@media (max-width: 640px) { .pair, .trio { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Journal v2 J2 + J3: check-in and reviews</h1>
+<p>About 20 seconds per trade, only in his own words. Short reviews built from his own trades.</p>
+<table>
+  <thead><tr><th>Item</th><th>Before</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>J2 prompt at open / close</td><td>-</td><td class="good">"20-second check-in" card on Trades; Check in / Not now; never blocks</td></tr>
+    <tr><td>J2 check-in fields</td><td>-</td><td class="good">feeling + confidence, notes while open, feeling after, plan followed, what went off plan, one line, setup; all optional</td></tr>
+    <tr><td>Privacy</td><td colspan="2">only he reads it (admin / teammate = 404, tested); never logged; not in admin pages or analytics exports; in his export; erased with his account</td></tr>
+    <tr><td>J3 Day</td><td>-</td><td class="good">trades, result, plan followed, feelings, tags he confirmed, one fact done well</td></tr>
+    <tr><td>J3 Week</td><td>score + trades only</td><td class="good">+ plan followed, results by feeling / confidence, top mistake, biggest move, notable trades, his answer</td></tr>
+    <tr><td>J3 Month</td><td>-</td><td class="good">score + plan week by week, by setup, best / weakest, Print</td></tr>
+    <tr><td>First-20 rule</td><td>-</td><td class="good">"Not enough trades yet (N of 20)"; counts, never a share, below his setting; "small sample" label</td></tr>
+  </tbody>
+</table>
+<h2>1440 light</h2>
+<div class="pair">
+  <figure><figcaption>Before (1440, light)</figcaption><img src="journal-v2-j2j3/before-trades-1440-light.png" alt="Trades tab before"></figure>
+  <figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j2j3/after-trades-1440-light.png" alt="Trades tab after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (1440, light)</figcaption><img src="journal-v2-j2j3/before-checkin-1440-light.png" alt="Entry sheet before"></figure>
+  <figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j2j3/after-checkin-1440-light.png" alt="Entry sheet after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (1440, light)</figcaption><img src="journal-v2-j2j3/before-week-1440-light.png" alt="Reviews, week before"></figure>
+  <figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j2j3/after-week-1440-light.png" alt="Reviews, week after"></figure>
+</div>
+<div class="pair"><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j2j3/after-day-1440-light.png" alt="Reviews, day"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, light)</figcaption><img src="journal-v2-j2j3/after-month-1440-light.png" alt="Reviews, month"></figure></div>
+<h2>1440 dark</h2>
+<div class="pair">
+  <figure><figcaption>Before (1440, dark)</figcaption><img src="journal-v2-j2j3/before-trades-1440-dark.png" alt="Trades tab before"></figure>
+  <figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j2j3/after-trades-1440-dark.png" alt="Trades tab after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (1440, dark)</figcaption><img src="journal-v2-j2j3/before-checkin-1440-dark.png" alt="Entry sheet before"></figure>
+  <figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j2j3/after-checkin-1440-dark.png" alt="Entry sheet after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (1440, dark)</figcaption><img src="journal-v2-j2j3/before-week-1440-dark.png" alt="Reviews, week before"></figure>
+  <figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j2j3/after-week-1440-dark.png" alt="Reviews, week after"></figure>
+</div>
+<div class="pair"><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j2j3/after-day-1440-dark.png" alt="Reviews, day"></figure></div>
+<div class="pair"><figure><figcaption>After (1440, dark)</figcaption><img src="journal-v2-j2j3/after-month-1440-dark.png" alt="Reviews, month"></figure></div>
+<h2>390 light</h2>
+<div class="pair">
+  <figure><figcaption>Before (390, light)</figcaption><img src="journal-v2-j2j3/before-trades-390-light.png" alt="Trades tab before"></figure>
+  <figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j2j3/after-trades-390-light.png" alt="Trades tab after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (390, light)</figcaption><img src="journal-v2-j2j3/before-checkin-390-light.png" alt="Entry sheet before"></figure>
+  <figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j2j3/after-checkin-390-light.png" alt="Entry sheet after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (390, light)</figcaption><img src="journal-v2-j2j3/before-week-390-light.png" alt="Reviews, week before"></figure>
+  <figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j2j3/after-week-390-light.png" alt="Reviews, week after"></figure>
+</div>
+<div class="pair"><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j2j3/after-day-390-light.png" alt="Reviews, day"></figure></div>
+<div class="pair"><figure><figcaption>After (390, light)</figcaption><img src="journal-v2-j2j3/after-month-390-light.png" alt="Reviews, month"></figure></div>
+<h2>390 dark</h2>
+<div class="pair">
+  <figure><figcaption>Before (390, dark)</figcaption><img src="journal-v2-j2j3/before-trades-390-dark.png" alt="Trades tab before"></figure>
+  <figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j2j3/after-trades-390-dark.png" alt="Trades tab after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (390, dark)</figcaption><img src="journal-v2-j2j3/before-checkin-390-dark.png" alt="Entry sheet before"></figure>
+  <figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j2j3/after-checkin-390-dark.png" alt="Entry sheet after"></figure>
+</div>
+<div class="pair">
+  <figure><figcaption>Before (390, dark)</figcaption><img src="journal-v2-j2j3/before-week-390-dark.png" alt="Reviews, week before"></figure>
+  <figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j2j3/after-week-390-dark.png" alt="Reviews, week after"></figure>
+</div>
+<div class="pair"><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j2j3/after-day-390-dark.png" alt="Reviews, day"></figure></div>
+<div class="pair"><figure><figcaption>After (390, dark)</figcaption><img src="journal-v2-j2j3/after-month-390-dark.png" alt="Reviews, month"></figure></div>
+<p>Made-up data only. No sideways scroll at 390 (asserted in the spec).</p>
+</main>
+</body>
+</html>

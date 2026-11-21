@@ -939,6 +939,8 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | SRV2-Q2 | atp-private CI fails within seconds on main since 9 Nov with no log (likely Actions minutes / billing on the private repo) | owner checks GitHub Billing -> Actions; atp-private PRs #18 / #19 wait (merge only on green) | atp-private | closed 20 Nov (DECISIONS ATP-PRIVATE-PUBLIC: the private-repo Actions spending limit; the repo is public now) |
 | SRV2-Q2 | atp-private CI fails within seconds on main since 9 Nov with no log (likely Actions minutes / billing on the private repo) | owner checks GitHub Billing -> Actions; atp-private PRs #18 / #19 wait (merge only on green) | atp-private | closed 20 Nov (duplicate of the row above; DECISIONS ATP-PRIVATE-PUBLIC) |
 
+## Moved 21 Nov 2026 (approved 10 Nov) - M95: Front door + link preview (10 Nov, docs/design/M95_FRONT_DOOR.md section 2)
+
 <!-- moved from docs/OPEN_QUESTIONS.md on 21 Nov: approved by the owner 10 Nov ("Yes default", DECISIONS) -->
 ## M95: Front door + link preview (10 Nov, docs/design/M95_FRONT_DOOR.md section 2)
 | ID | Question | Default - APPROVED by the owner 10 Nov ("Yes default", DECISIONS) |
@@ -950,3 +952,4 @@ Moved from docs/OPEN_QUESTIONS.md on 2026-10-24 (answered / done rows), verbatim
 | M95-Q5 | One og:description: how to make it Marathi-friendly | English + the same sentence in Marathi |
 | M95-Q6 | FAQ "cost" with no price decided | "Free during the beta." until Abhi sets a price |
 | M95-Q7 | WhatsApp / Telegram preview proof before deploy | Render at their sizes now; Abhi's real screenshot after deploy |
+

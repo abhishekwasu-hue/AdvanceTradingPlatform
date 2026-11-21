@@ -15,7 +15,8 @@ Numbers only; nothing here judges the structure.
 from __future__ import annotations
 
 import json
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 
 def _meta(raw: str | None) -> dict[str, Any]:

@@ -11,16 +11,16 @@ Revision ID: e3a5c7e9b1d4
 Revises: d2f4b6c8e0a1
 Create Date: 2026-11-21 12:00:00
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 
 from alembic import op
 
 revision: str = 'e3a5c7e9b1d4'
-down_revision: Union[str, Sequence[str], None] = 'd2f4b6c8e0a1'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'd2f4b6c8e0a1'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 ROLLBACK_SAFE = True
 ROLLBACK_SAFE_REASON = ("new tables and one nullable column only: the previous release never reads or writes them, so a "
                         "code-only rollback leaves them unused and intact")

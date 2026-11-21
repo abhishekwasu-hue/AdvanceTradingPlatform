@@ -4,7 +4,7 @@ import { apiErrorFrom, NETWORK_MESSAGE } from "../api/errors";
 import type {
   ChecklistItem, DisciplineSettings, EntryKind, JournalAttachment, JournalEntryFull, JournalFilters, JournalList, JournalSettingsResponse,
   ImportMapping, ImportPreview, ImportResult, JournalStatsResponse, JournalTag, JournalWeek, JournalWeekV2, ManualTradeBody, TagStatus,
-  TradeChart, WeeklyReview, BrokerSyncResult,
+  TradeChart, WeeklyReview, BrokerSyncResult, Checkin, CheckinBody, DailyCard, MonthlyReview, WaitingCheckin, WeeklyExtras,
 } from "./types";
 
 /** The query string of the journal filters (empty values left out; manual entries are in unless asked otherwise). */
@@ -98,6 +98,23 @@ export const journalApi = {
   tradeChart: (serverPath: string) => request<TradeChart>(apiPath(serverPath)),
   // P2-8 J1-1: today's trades from his own broker sessions (read-only), journalled once
   brokerSync: () => request<BrokerSyncResult>("/journal/broker-sync", { method: "POST" }),
+
+  // P2-8 J2: the 20-second check-in (every field optional; only his own routes read it)
+  checkin: (kind: EntryKind, id: number) => request<Checkin>(`${entryBase(kind, id)}/checkin`),
+  saveCheckin: (kind: EntryKind, id: number, body: CheckinBody) =>
+    request<Checkin>(`${entryBase(kind, id)}/checkin`, { method: "PUT", body: JSON.stringify(body) }),
+  addCheckinNote: (kind: EntryKind, id: number, text: string) =>
+    request<Checkin>(`${entryBase(kind, id)}/checkin/notes`, { method: "POST", body: JSON.stringify({ text }) }),
+  dismissCheckin: (kind: EntryKind, id: number, moment: "open" | "close") =>
+    request<{ dismissed: string }>(`${entryBase(kind, id)}/checkin/dismiss`, { method: "POST", body: JSON.stringify({ moment }) }),
+  waitingCheckins: () => request<{ waiting: WaitingCheckin[] }>("/journal/checkins/waiting"),
+
+  // P2-8 J3: daily / weekly / monthly reviews and his reflection answers
+  daily: (day?: string) => request<DailyCard>(`/journal/daily${day ? `?day=${day}` : ""}`),
+  weeklyExtras: (week?: string) => request<WeeklyExtras>(`/journal/review/extras${week ? `?week=${encodeURIComponent(week)}` : ""}`),
+  monthly: (month?: string) => request<MonthlyReview>(`/journal/monthly${month ? `?month=${month}` : ""}`),
+  saveReflection: (period: string, answer: string) =>
+    request<{ period: string; answer: string | null }>("/journal/reflection", { method: "PUT", body: JSON.stringify({ period, answer }) }),
 };
 
 function importForm(file: Blob, name: string, mapping?: ImportMapping): FormData {

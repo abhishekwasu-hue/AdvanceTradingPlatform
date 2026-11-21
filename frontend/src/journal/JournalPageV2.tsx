@@ -19,8 +19,15 @@ import { OwnListsV2 } from "./OwnListsV2";
 import { journalTarget } from "./recall";
 import { MyStudiesV2 } from "../study/MyStudiesV2";
 import SimilarSetupsV2 from "./SimilarSetupsV2";
-import type { JournalFilters } from "./types";
+import { DailyCardV2, MonthlyV2, PeriodSwitchV2, WeeklyExtrasV2, shiftDay, shiftMonth, type Load, type ReviewPeriod } from "./ReviewsV2";
+import type { DailyCard, JournalFilters, MonthlyReview, WaitingCheckin, WeeklyExtras } from "./types";
+import { WaitingCheckinsV2 } from "./WaitingCheckinsV2";
 import { WeeklyReviewV2, type WeekState } from "./WeeklyReviewV2";
+
+/** Today's IST calendar day as YYYY-MM-DD. */
+export function istToday(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
 
 /**
  * M62 JN-3 / JN-4 (`ui_v2`): the Journal page - the list first (with its filters and the CSV / PDF export), the entry
@@ -68,6 +75,14 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState<"csv" | "pdf" | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // P2-8 J2 / J3: the check-in prompts and the day / week / month reviews
+  const [waiting, setWaiting] = useState<WaitingCheckin[]>([]);
+  const [period, setPeriod] = useState<ReviewPeriod>("week");
+  const [day, setDay] = useState(() => istToday());
+  const [month, setMonth] = useState(() => istToday().slice(0, 7));
+  const [daily, setDaily] = useState<Load<DailyCard>>({ status: "loading" });
+  const [extras, setExtras] = useState<Load<WeeklyExtras>>({ status: "loading" });
+  const [monthly, setMonthly] = useState<Load<MonthlyReview>>({ status: "loading" });
   const [customTags, setCustomTags] = useState<string[]>([]);
   const refresh = useCallback(() => setRound((r) => r + 1), []);
 
@@ -99,6 +114,40 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
     api.weekV2(week).then((data) => { if (alive) setWeekState({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setWeekState); });
     return () => { alive = false; };
   }, [api, tab, week, round, fail]);
+
+  useEffect(() => {
+    let alive = true;
+    api.waitingCheckins().then((d) => { if (alive) setWaiting(d.waiting); }).catch(() => { /* intentional: no prompt card */ });
+    return () => { alive = false; };
+  }, [api, round]);
+
+  useEffect(() => {
+    if (tab !== "review") return undefined;
+    let alive = true;
+    if (period === "day") {
+      setDaily({ status: "loading" });
+      api.daily(day).then((data) => { if (alive) setDaily({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setDaily); });
+    } else if (period === "week") {
+      setExtras({ status: "loading" });
+      api.weeklyExtras(week).then((data) => { if (alive) setExtras({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setExtras); });
+    } else {
+      setMonthly({ status: "loading" });
+      api.monthly(month).then((data) => { if (alive) setMonthly({ status: "ok", data }); }).catch((e) => { if (alive) fail(e, setMonthly); });
+    }
+    return () => { alive = false; };
+  }, [api, tab, period, day, week, month, round, fail]);
+
+  async function saveAnswer(periodLabel: string, text: string) {
+    try {
+      await api.saveReflection(periodLabel, text);
+      toast.success("Your answer is saved.");
+    } catch (e) { toast.error(errorSentence(e)); }
+  }
+
+  async function dismissWaiting(w: WaitingCheckin) {
+    setWaiting((all) => all.filter((x) => !(x.kind === w.kind && x.id === w.id)));
+    try { await api.dismissCheckin(w.kind, w.id, w.moment); } catch (e) { toast.error(errorSentence(e)); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -136,9 +185,10 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
       {shareCard && <PageDishV2 page="journal" />}
       {shareCard && <DisciplineCardV2 />}
       <PageTabs label="Journal" value={tab} onChange={setTab} idPrefix="journal"
-        items={[{ key: "trades", label: "Trades" }, { key: "stats", label: "Stats" }, { key: "review", label: "Weekly review", short: "Week" },
+        items={[{ key: "trades", label: "Trades" }, { key: "stats", label: "Stats" }, { key: "review", label: "Reviews", short: "Review" },
           ...(studiesOn ? [{ key: "studies" as const, label: "My studies", short: "Studies" }] : []), { key: "settings", label: "Settings" }]} />
       <div role="tabpanel" id={`journal-panel-${tab}`} aria-labelledby={`journal-tab-${tab}`}>
+        {tab === "trades" && <WaitingCheckinsV2 items={waiting} onOpen={(kind, id) => setSheet({ kind, id })} onDismiss={dismissWaiting} />}
         {tab === "trades" && (
           <JournalListV2 state={list} filters={filters} onFilters={changeFilters} api={api} onRetry={refresh}
             onOpen={(r) => setSheet({ kind: r.kind, id: r.id })} onAddManual={() => setManualOpen(true)} onImport={() => setImportOpen(true)}
@@ -147,8 +197,20 @@ export default function JournalPageV2({ api = defaultApi, shareCard = false, rec
         )}
         {tab === "stats" && <JournalStatsV2 state={stats} onRetry={refresh} />}
         {tab === "review" && (
-          <WeeklyReviewV2 state={weekState} week={week} onWeek={(o) => setWeek((w) => shiftWeek(w, o))} onRetry={refresh}
-            onOpen={(kind, id) => setSheet({ kind, id })} acceptedOn={acceptedOn} />
+          <div className="space-y-space-4">
+            <PeriodSwitchV2 value={period} onChange={setPeriod} />
+            {period === "day" && <DailyCardV2 state={daily} day={day} onStep={(by) => setDay((d) => shiftDay(d, by))} onRetry={refresh}
+              onOpen={(kind, id) => setSheet({ kind, id })} />}
+            {period === "week" && (
+              <>
+                <WeeklyReviewV2 state={weekState} week={week} onWeek={(o) => setWeek((w) => shiftWeek(w, o))} onRetry={refresh}
+                  onOpen={(kind, id) => setSheet({ kind, id })} acceptedOn={acceptedOn} />
+                <WeeklyExtrasV2 state={extras} onRetry={refresh} onOpen={(kind, id) => setSheet({ kind, id })} onAnswer={saveAnswer} />
+              </>
+            )}
+            {period === "month" && <MonthlyV2 state={monthly} month={month} onStep={(by) => setMonth((m) => shiftMonth(m, by))} onRetry={refresh}
+              onAnswer={saveAnswer} />}
+          </div>
         )}
         {tab === "studies" && studiesOn && <MyStudiesV2 />}
         {tab === "settings" && (

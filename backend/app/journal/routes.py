@@ -543,3 +543,190 @@ async def broker_sync_now(user: User = Depends(get_current_user), session: Async
     await _flag(session, user)
     from app.journal import broker_sync
     return await broker_sync.sync_user(session, user)
+
+
+# --- P2-8 J2: the 20-second check-in (his own answers; private: only his own routes read them) ------------------------
+
+class CheckinBody(BaseModel):
+    """Every field optional; a field left out is not touched, null clears it."""
+    model_config = {"extra": "forbid"}
+    feeling_before: str | None = None
+    confidence: int | None = None
+    feeling_after: str | None = None
+    plan_followed: str | None = None
+    mistake: str | None = None
+    lesson: str | None = Field(default=None, max_length=1000)
+    setup_name: str | None = Field(default=None, max_length=300)
+
+
+class CheckinNote(BaseModel):
+    text: str = Field(max_length=1000)
+
+
+class CheckinDismiss(BaseModel):
+    moment: str = Field(pattern=r"^(open|close)$")
+
+
+async def _checkin_view(session: AsyncSession, user: User, ref: entries.Ref) -> dict[str, Any]:
+    from app.journal import checkin
+    s = await journal_settings.load(session, user)
+    default_setup = ref.trade.strategy_id if ref.trade is not None else (ref.manual.setup if ref.manual is not None else None)
+    return checkin.view(await checkin.load(session, user, ref), s, default_setup=default_setup)
+
+
+async def _checkin_get(kind: str, ref_id: int, user: User, session: AsyncSession) -> dict[str, Any]:
+    return await _checkin_view(session, user, await _ref(session, user, kind, ref_id))
+
+
+async def _checkin_put(kind: str, ref_id: int, body: CheckinBody, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    s = await journal_settings.load(session, user)
+    try:
+        await checkin.save(session, user, ref, body.model_dump(exclude_unset=True), s)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return await _checkin_view(session, user, ref)
+
+
+async def _checkin_note(kind: str, ref_id: int, body: CheckinNote, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    try:
+        await checkin.add_note(session, user, ref, body.text)
+    except entries.EntryError as exc:
+        raise _http(exc) from exc
+    return await _checkin_view(session, user, ref)
+
+
+async def _checkin_dismiss(kind: str, ref_id: int, body: CheckinDismiss, user: User, session: AsyncSession) -> dict[str, Any]:
+    from app.journal import checkin
+    ref = await _ref(session, user, kind, ref_id)
+    await checkin.dismiss(session, user, ref, body.moment)
+    return {"dismissed": body.moment}
+
+
+@router.get("/trades/{trade_id}/checkin")
+async def trade_checkin(trade_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_get("trade", trade_id, user, session)
+
+
+@router.put("/trades/{trade_id}/checkin")
+async def save_trade_checkin(trade_id: int, body: CheckinBody, user: User = Depends(get_current_user),
+                             session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_put("trade", trade_id, body, user, session)
+
+
+@router.post("/trades/{trade_id}/checkin/notes", status_code=201)
+async def trade_checkin_note(trade_id: int, body: CheckinNote, user: User = Depends(get_current_user),
+                             session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_note("trade", trade_id, body, user, session)
+
+
+@router.post("/trades/{trade_id}/checkin/dismiss")
+async def trade_checkin_dismiss(trade_id: int, body: CheckinDismiss, user: User = Depends(get_current_user),
+                                session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_dismiss("trade", trade_id, body, user, session)
+
+
+@router.get("/manual/{manual_id}/checkin")
+async def manual_checkin(manual_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_get("manual", manual_id, user, session)
+
+
+@router.put("/manual/{manual_id}/checkin")
+async def save_manual_checkin(manual_id: int, body: CheckinBody, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_put("manual", manual_id, body, user, session)
+
+
+@router.post("/manual/{manual_id}/checkin/notes", status_code=201)
+async def manual_checkin_note(manual_id: int, body: CheckinNote, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_note("manual", manual_id, body, user, session)
+
+
+@router.post("/manual/{manual_id}/checkin/dismiss")
+async def manual_checkin_dismiss(manual_id: int, body: CheckinDismiss, user: User = Depends(get_current_user),
+                                 session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    return await _checkin_dismiss("manual", manual_id, body, user, session)
+
+
+@router.get("/checkins/waiting")
+async def checkins_waiting(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His entries opened / closed in the last days whose check-in half is not answered (or put off with "Not now")."""
+    await _flag(session, user)
+    from app.journal import checkin
+    return {"waiting": await checkin.waiting(session, user)}
+
+
+# --- P2-8 J3: daily / weekly / monthly reviews (his own trades; the first-20 rule) -----------------------------------
+
+MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+@router.get("/daily")
+async def daily_review(day: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"), user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """One day's card (IST day; default today): trades, result, plan followed, feelings, confirmed tags, one fact
+    done well."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    from app.market_data.calendar import IST
+    try:
+        the_day = datetime.fromisoformat(day).date() if day else datetime.now(IST).date()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="day must be a date (YYYY-MM-DD)") from exc
+    s = await journal_settings.load(session, user)
+    start, end = review_data.day_bounds(the_day)
+    units = await review_data.units(session, user, start, end)
+    return reviews.daily_card(the_day.isoformat(), units, await review_data.gate(session, user, s), s.feelings)
+
+
+@router.get("/review/extras")
+async def weekly_extras(week: str | None = Query(default=None, pattern=WEEK_PATTERN), user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The weekly review's additions: plan followed, feeling / confidence vs result, the most frequent mistake, the
+    biggest moves, the notable trades and his answer to the week's question."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    label, start, end = service.week_bounds(_week_or_422(week))
+    s = await journal_settings.load(session, user)
+    units = await review_data.units(session, user, start, end)
+    return reviews.weekly_extras(label, units, await review_data.gate(session, user, s), s.feelings,
+                                 await review_data.answer_of(session, user, label))
+
+
+@router.get("/monthly")
+async def monthly_review(month: str | None = Query(default=None, pattern=MONTH_PATTERN), user: User = Depends(get_current_user),
+                         session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """The month: the discipline score and plan followed week by week, best / worst setup by his own numbers, totals."""
+    await _flag(session, user)
+    from app.journal import review_data, reviews
+    from app.market_data.calendar import IST
+    label = month or datetime.now(IST).strftime("%Y-%m")
+    start, end = review_data.month_bounds(label)
+    s = await journal_settings.load(session, user)
+    units = await review_data.units(session, user, start, end)
+    g = await review_data.gate(session, user, s)
+    weeks = []
+    for week in review_data.month_weeks(label):
+        data = await service.refresh_week(session, user, week)
+        w_units = await review_data.units(session, user, data["start"], data["end"])
+        weeks.append({"week": week, "score": data["score"]["score"], "plan": reviews.plan_counts(w_units, g.needed),
+                      "trades": len(w_units)})
+    return reviews.monthly(label, units, g, weeks, await review_data.answer_of(session, user, label))
+
+
+class ReflectionBody(BaseModel):
+    period: str = Field(pattern=r"^\d{4}-(W\d{2}|0[1-9]|1[0-2])$")
+    answer: str = Field(max_length=1000)
+
+
+@router.put("/reflection")
+async def save_reflection(body: ReflectionBody, user: User = Depends(get_current_user),
+                          session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """His answer to a week's / month's reflection question (his own words; empty removes it)."""
+    await _flag(session, user)
+    from app.journal import review_data
+    return {"period": body.period, "answer": await review_data.save_answer(session, user, body.period, body.answer)}

@@ -40,8 +40,10 @@ from app.db.models import (
     ExperienceOptOutRecord,
     FeedbackRecord,
     JournalBrokerFillRecord,
+    JournalCheckinRecord,
     JournalEntryRecord,
     JournalManualTradeRecord,
+    JournalReflectionRecord,
     JournalSnapshotRecord,
     JournalTagRecord,
     LlmCallRecord,
@@ -76,7 +78,9 @@ _DATASETS = (("preferences", UserPrefsRecord), ("orders", OrderRecord), ("trades
              # P2-8: his outside-ATP entries (typed, imported, synced from his broker), the broker fills read and the
              # stored chart pictures (their rows; the image files stay in the private store)
              ("journal_outside_trades", JournalManualTradeRecord), ("journal_broker_fills", JournalBrokerFillRecord),
-             ("journal_snapshots", JournalSnapshotRecord), ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
+             ("journal_snapshots", JournalSnapshotRecord),
+             ("journal_checkins", JournalCheckinRecord), ("journal_reflections", JournalReflectionRecord),   # P2-8 J2 / J3: his own answers
+             ("ai_conversations", LlmCallRecord), ("feedback", FeedbackRecord),
              ("copilot_conversation", CopilotChatTurnRecord),      # CP-UX CU6
              ("copilot_conversations", CopilotChatSessionRecord),  # CH-2: the named conversations (titles)
              ("studies", CopilotStudyRecord),

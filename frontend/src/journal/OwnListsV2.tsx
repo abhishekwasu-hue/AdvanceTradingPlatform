@@ -21,6 +21,8 @@ export function OwnListsV2({ api, onSaved }: { api: Pick<JournalApi, "settings" 
   const [tags, setTags] = useState("");
   const [rules, setRules] = useState("");
   const [mb, setMb] = useState("");
+  const [feelings, setFeelings] = useState("");
+  const [minClosed, setMinClosed] = useState("");
   const [busy, setBusy] = useState(false);
   const [round, setRound] = useState(0);
   useEffect(() => {
@@ -31,6 +33,8 @@ export function OwnListsV2({ api, onSaved }: { api: Pick<JournalApi, "settings" 
       setTags((d.settings.custom_tags ?? []).join("\n"));
       setRules((d.settings.checklist_rules ?? []).join("\n"));
       setMb(String(d.settings.attachment_max_mb ?? ""));
+      setFeelings((d.settings.feelings ?? []).join("\n"));
+      setMinClosed(String(d.settings.min_closed_for_review ?? ""));
     }).catch((e) => { if (alive) setError(e); });
     return () => { alive = false; };
   }, [api, round]);
@@ -43,9 +47,16 @@ export function OwnListsV2({ api, onSaved }: { api: Pick<JournalApi, "settings" 
       toast.error(`Largest image: enter a number${range ? ` from ${range[0]} to ${range[1]}` : ""} (MB).`);
       return;
     }
+    const least = Number(minClosed);
+    const span = data?.ranges.min_closed_for_review;
+    if (minClosed !== "" && (!Number.isInteger(least) || (span && (least < span[0] || least > span[1])))) {
+      toast.error(`Trades before percentages: a whole number${span ? ` from ${span[0]} to ${span[1]}` : ""}.`);
+      return;
+    }
     setBusy(true);
     try {
-      const d = await api.saveSettings({ custom_tags: lines(tags), checklist_rules: lines(rules), attachment_max_mb: size });
+      const d = await api.saveSettings({ custom_tags: lines(tags), checklist_rules: lines(rules), attachment_max_mb: size,
+        ...(feelings.trim() ? { feelings: lines(feelings) } : {}), ...(minClosed !== "" ? { min_closed_for_review: least } : {}) });
       setData(d);
       setTags((d.settings.custom_tags ?? []).join("\n"));
       setRules((d.settings.checklist_rules ?? []).join("\n"));
@@ -63,6 +74,14 @@ export function OwnListsV2({ api, onSaved }: { api: Pick<JournalApi, "settings" 
         <label className="min-w-0">
           <span className={LABEL}>Your rules (one per line)</span>
           <textarea className={`${TEXTAREA} h-32`} value={rules} onChange={(e) => setRules(e.target.value)} data-own-rules-input />
+        </label>
+        <label className="min-w-0">
+          <span className={LABEL}>Check-in feelings (one per line)</span>
+          <textarea className={`${TEXTAREA} h-32`} value={feelings} onChange={(e) => setFeelings(e.target.value)} data-own-feelings-input />
+        </label>
+        <label className="min-w-0">
+          <span className={LABEL}>Trades before percentages</span>
+          <input className={FIELD} type="number" step="1" inputMode="numeric" value={minClosed} onChange={(e) => setMinClosed(e.target.value)} data-own-min-closed />
         </label>
         <label className="min-w-0">
           <span className={LABEL}>Largest image (MB)</span>

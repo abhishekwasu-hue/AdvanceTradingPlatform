@@ -77,10 +77,11 @@ open, grep by ID. Of those, these wait for the owner: SIG1-1, OKT-9, KN-1, GW-1,
 | JV2-Q1 | When are broker-app trades synced (Upstox gives only today's fills)? | Daily after the close (15:45 IST) + a "Sync from broker" button; read-only | open |
 | JV2-Q2 | Where do synced trades live? | Outside-ATP entries "From your broker"; never an order / position row | open |
 | JV2-Q3 | When is the chart picture stored? | On its first draw; served from the store after that | open |
-| JV2-Q4 | Check-in prompt at open / close: where in PR 2? | In-app card on the Journal; Telegram / e-mail with J6 (PR 3) | open |
-| JV2-Q5 | Feelings list | calm, confident, unsure, anxious, excited, fearful, FOMO; he edits it in Journal settings | open |
-| JV2-Q6 | First formal review | After 20 closed trades (setting, min 5); fewer: counts only, no percentages | open |
+| JV2-Q4 | Check-in prompt: where? | Journal card now; Telegram / e-mail in PR 3 | open |
+| JV2-Q5 | Feelings list | calm, confident, unsure, anxious, excited, fearful, FOMO; editable | open |
+| JV2-Q6 | First formal review | After 20 closed trades (setting); fewer: counts only | open |
 | JV2-Q7 | Monthly export | A print-friendly page | open |
+| JV2-Q8 | First-20 rule: Stats tab too? | Reviews only; Stats keeps its numbers | open |
 
 ## LIVE-1: one live switch (owner order 11 Nov, BINDING; PR `claude/live-1-one-switch`)
 | ID | Question | Default (provisional, until Abhi answers) |

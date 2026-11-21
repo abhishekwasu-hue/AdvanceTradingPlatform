@@ -140,6 +140,9 @@ export interface DisciplineSettings {
   custom_tags?: string[];
   checklist_rules?: string[];
   attachment_max_mb?: number;
+  /** P2-8 J2 / J3: the feelings offered in the check-in and the trades needed before any percentage. */
+  feelings?: string[];
+  min_closed_for_review?: number;
 }
 
 export interface JournalSettingsResponse {
@@ -409,4 +412,62 @@ export interface TradeChart {
   /** Owner 19 Nov: the timeframe answered and the ones he may pick (absent from an older server: Daily). */
   tf?: string; timeframes?: string[];
   missing: boolean; missing_text: string | null; image: string;
+}
+
+// --- P2-8 J2: the 20-second check-in (his own answers; private) --------------------------------------------------------
+
+export type PlanAnswer = "YES" | "PARTLY" | "NO";
+
+export interface CheckinNote { at: string; text: string }
+
+export interface Checkin {
+  feeling_before: string | null;
+  confidence: number | null;
+  feeling_after: string | null;
+  plan_followed: PlanAnswer | null;
+  mistake: string | null;
+  lesson: string | null;
+  setup_name: string | null;
+  setup_name_suggested?: string | null;
+  notes: CheckinNote[];
+  feelings: string[];
+  mistakes: string[];
+  plan_answers: PlanAnswer[];
+  answered: boolean;
+}
+
+export type CheckinBody = Partial<Pick<Checkin, "feeling_before" | "confidence" | "feeling_after" | "plan_followed" | "mistake" | "lesson" | "setup_name">>;
+
+export interface WaitingCheckin { kind: EntryKind; id: number; symbol: string; moment: "open" | "close"; mode: string | null; at: string }
+
+// --- P2-8 J3: the reviews ------------------------------------------------------------------------------------------------
+
+export interface ReviewGate { ready: boolean; closed_total: number; needed: number; note?: string }
+
+export interface PlanCounts { yes: number; partly: number; no: number; answered: number; unanswered: number; rate: number | null }
+
+export interface DailyCard {
+  day: string; trades: number; closed: number; net_pnl: number | null; plan: PlanCounts;
+  feelings: { feeling: string; count: number }[];
+  confirmed_tags: { tag: string; label: string; count: number }[];
+  done_well: string | null; lines: string[]; gate: ReviewGate;
+  entries: { kind: EntryKind; id: number; symbol: string; pnl: number | null }[];
+}
+
+export interface ResultRow { value: string | number; trades: number; wins: number; losses: number; net_pnl: number; avg_pnl: number; win_rate: number | null; small: boolean }
+
+export interface WeeklyExtras {
+  week: string; gate: ReviewGate; plan: PlanCounts; feelings: ResultRow[]; feelings_after: ResultRow[]; confidence: ResultRow[];
+  mistake: { value: string; label: string; count: number } | null; lines: string[];
+  notable: { kind: EntryKind; id: number; symbol: string; pnl: number | null; chart: string | null }[];
+  done_well: string | null; question: string; answer: string | null;
+}
+
+export interface MonthlyReview {
+  month: string; gate: ReviewGate; trades: number; closed: number; net_pnl: number | null; plan: PlanCounts;
+  weeks: { week: string; score: number | null; plan: PlanCounts; trades: number }[];
+  setups: { setup: string; trades: number; net_pnl: number; win_rate: number | null; small: boolean }[];
+  best_setup: { setup: string; net_pnl: number; trades: number; small: boolean } | null;
+  worst_setup: { setup: string; net_pnl: number; trades: number; small: boolean } | null;
+  lines: string[]; done_well: string | null; question: string; answer: string | null;
 }

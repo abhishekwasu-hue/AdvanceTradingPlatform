@@ -35,6 +35,11 @@ def _default_weights() -> Dict[str, float]:
     return {"stop_discipline": 25.0, "plan_adherence": 20.0, "emotional_control": 25.0, "frequency_control": 15.0, "event_awareness": 15.0}
 
 
+def _default_feelings() -> List[str]:
+    """P2-8 J2 (OPEN_QUESTIONS JV2-Q5): the feelings offered in the check-in; his own list once he edits it."""
+    return ["calm", "confident", "unsure", "anxious", "excited", "fearful", "FOMO"]
+
+
 def _default_event_kinds() -> List[str]:
     return ["BUDGET", "RBI_POLICY", "RESULTS", "FED", "ELECTION", "OTHER"]
 
@@ -67,6 +72,10 @@ class DisciplineSettings:
     # M62 JN-2: the largest image he may attach to an entry, and how many images one entry may hold.
     attachment_max_mb: float = 5.0
     attachments_per_trade: int = 10
+    # P2-8 J2: the feelings he picks from in the 20-second check-in (his own words once he edits the list).
+    feelings: list[str] = field(default_factory=_default_feelings)
+    # P2-8 J3: no percentage or conclusion on fewer closed trades than this; the first formal review comes after it.
+    min_closed_for_review: int = 20
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -83,10 +92,12 @@ RANGES: Dict[str, Tuple[float, float]] = {
     "overtrading_min_norm": (1, 500),
     "attachment_max_mb": (0.5, 8),          # at most the API's request body limit (MAX_REQUEST_BODY_BYTES, 8 MB)
     "attachments_per_trade": (1, 50),
+    "min_closed_for_review": (5, 200),
 }
-_INTEGER_KEYS = ("overtrading_daily_norm", "overtrading_lookback_days", "overtrading_min_norm", "attachments_per_trade")
+_INTEGER_KEYS = ("overtrading_daily_norm", "overtrading_lookback_days", "overtrading_min_norm", "attachments_per_trade",
+                 "min_closed_for_review")
 # The trader's own lists: (most items, longest item).
-LIST_LIMITS: dict[str, tuple[int, int]] = {"custom_tags": (30, 30), "checklist_rules": (20, 120)}
+LIST_LIMITS: dict[str, tuple[int, int]] = {"custom_tags": (30, 30), "checklist_rules": (20, 120), "feelings": (15, 20)}
 _TAG_TEXT = re.compile(r"^[a-z0-9][a-z0-9 _-]*$")
 WEIGHT_RANGE = (0.0, 100.0)
 

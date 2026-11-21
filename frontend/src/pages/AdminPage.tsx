@@ -10,6 +10,7 @@ import { Card, StatTile } from "../components/ui";
 import FeatureFlagsCard from "../admin/FeatureFlagsCard";
 import TraderPackCard from "../admin/TraderPackCard";
 import AgentModeCard from "../admin/AgentModeCard";
+import AgentSettingsCard from "../admin/AgentSettingsCard";
 import AiPlatformLimitsCard from "../admin/AiPlatformLimitsCard";
 import CopilotAgentLimitsCard from "../admin/CopilotAgentLimitsCard";
 import AiProviderCard from "../components/AiProviderCard";
@@ -171,6 +172,8 @@ export default function AdminPage({ section, controlsGroup }: PageProps & { sect
 
       {/* SRV2 P3 (ADR-0029): the owner's trading agent mode - only the owner account sees it (server: can_switch). */}
       {section === "controls" && inGroup("safety") && <AgentModeCard />}
+      {/* SRV2 P2 + P4: the bot's settings per symbol and its positions (owner only; the server answers 403 to anyone else). */}
+      {section === "controls" && inGroup("safety") && <AgentSettingsCard />}
 
       {inGroup("safety") && <Card title="Platform controls">
         <div className="grid lg:grid-cols-2 gap-4 text-xs">

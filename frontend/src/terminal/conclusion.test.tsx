@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ConclusionViewV2, SummaryV2 } from "./ConclusionPanelV2";
-import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
+import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, strategyTimeframes, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
 import { CHOOSER_PANEL_IDS, PANEL_IDS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
 import pageSource from "./TerminalPageV2.tsx?raw";
@@ -120,5 +120,15 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     expect(nokey).toContain("Summarise with AI");
     expect(costText(null)).toBe("");
     expect(renderToStaticMarkup(<ConclusionViewV2 data={BODY} state="ok" summary={<i data-x />} />)).toContain("data-x");
+  });
+
+  it("TC-Q2: the timeframes of his ACTIVE / PAUSED bots on this symbol, besides the chart's, at most two", () => {
+    const bot = (symbol: string, timeframe: string, status = "ACTIVE") => ({ symbol, timeframe, status });
+    const bots = [bot("NIFTY 50", "60min"), bot("NIFTY25NOV25800CE", "5min", "PAUSED"), bot("NIFTY", "15min"), bot("NIFTY", "day"),
+      bot("BANKNIFTY", "30min"), bot("NIFTYNXT50", "3min"), bot("NIFTY", "1min", "STOPPED"), bot("NIFTY", "week")];
+    expect(strategyTimeframes(bots, "NIFTY", "NIFTY 50", "15m")).toEqual(["1h", "5m"]);       // 15m = the chart's; at most two
+    expect(strategyTimeframes(bots.slice(4), "NIFTY", "NIFTY 50", "15m")).toEqual([]);        // other symbols, stopped, no read TF
+    expect(strategyTimeframes([], "NIFTY", "NIFTY 50", "15m")).toEqual([]);
+    expect(pageSource).toMatch(/also=\{conclusionAlso\}/);
   });
 });

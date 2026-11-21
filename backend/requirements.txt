@@ -36,3 +36,7 @@ opentelemetry-exporter-otlp-proto-http>=1.45.1,<1.46
 opentelemetry-instrumentation-fastapi>=0.66b1,<0.67
 opentelemetry-instrumentation-sqlalchemy>=0.66b1,<0.67
 opentelemetry-instrumentation-httpx>=0.66b1,<0.67
+# SRV2-Q7 (owner 'Default yes' 21 Nov): the 15M SRv2 bot's Telegram card carries its chart photo (Trade: plotly~=7.0,
+# kaleido 1.x; the browser is the image's Debian chromium, BROWSER_PATH in the Dockerfile).
+plotly~=7.0
+kaleido>=1.0.0,<2.0.0

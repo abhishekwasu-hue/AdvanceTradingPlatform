@@ -54,13 +54,46 @@ async def run_once(session_factory: Callable, usable_adapter: Callable, now: dat
     async with session_factory() as s:
         who = await owner(s)
         if who is None or not await flag_enabled(s, FLAG, who.tenant_id):
+            stop_services()
             return None
         cal = await calendar_for(s, now)
     loop = asyncio.get_running_loop()
     bot.host.register(**bot_io.build(loop, session_factory, who, usable_adapter))
+    if not _services["on"]:
+        await _start_services(bot, session_factory, who)
     from app.market_data.calendar import IST
     ist = now.astimezone(IST).replace(tzinfo=None)
     return await asyncio.to_thread(bot.runner.tick, ist, cal)
+
+
+_services: dict = {"on": False, "bot": None}
+
+
+async def _start_services(bot: Any, session_factory: Callable, who: bot_io.Owner) -> None:
+    """SRV2 P3 (ADR-0029): once the bot is ON, store the default agent mode (human_confirm, only when none is stored) and start the
+    private package's Vision worker and Telegram ✅ service (daemon threads outside `tick`, so exits are never delayed). An older
+    private package without them: the bot runs as before."""
+    from app.srv2bot import mode as agent_mode
+    async with session_factory() as s:
+        if await agent_mode.ensure_default(s, getattr(who.user, "id", None)) is not None:
+            await s.commit()
+    start = getattr(bot.runner, "start_services", None)
+    if start is not None:
+        await asyncio.to_thread(start)
+    _services.update(on=True, bot=bot)
+
+
+def stop_services() -> None:
+    """The bot is OFF (or the worker stops): stop the Vision / Telegram threads if this worker started them."""
+    bot = _services["bot"]
+    if not _services["on"] or bot is None:
+        return
+    stop = getattr(bot.runner, "stop_services", None)
+    try:
+        if stop is not None:
+            stop()
+    finally:
+        _services.update(on=False, bot=None)
 
 
 async def loop_forever(session_factory: Callable, usable_adapter: Callable) -> None:

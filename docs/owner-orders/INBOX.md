@@ -762,6 +762,13 @@ his switch alone.
 | 2026-11-21 | "Merge" | Merge the open PRs once CI is green (ATP #1143, #1146; atp-private #21 needs his word in its own session) |
 | 2026-11-21 | "Default yes" | Yes to the open SRV2 P3 defaults: SRV2-Q5 (Automatic + Vision silent = no entry), SRV2-Q6 (gray verdict = Trade's own half rule, advice only), SRV2-Q7 (chart photo on the Telegram card: plotly + kaleido + Chrome in the backend image, own PR), the card status list (built in #1146), atp-private #21 merges on green CI |
 
+## 21 Nov - owner (Marathi, transliterated)
+
+> "pudhil kaam kr"
+
+Note: "do the next work" - continue in roadmap order. TERM-CON, CP-CHAT and BT-DRAW 2c wait only on the owner's deploy
+and checks; SRV2 P3 has its own running session; the next build item is CA-CHAT (approved 18 Nov, OPEN_QUESTIONS
+CA-CHAT-Q1): audit Analyze a chart first, then build behind a flag (branch claude/ca-chat).
 ## 21 Nov - TERM-CON follow-up (strategy timeframes)
 
 Owner answer (21 Nov, transliterated; to "the panel reads only the Terminal chart's timeframe - add his strategies' timeframes too? Default: yes, in a small next PR"):

@@ -175,3 +175,25 @@ def test_the_worker_starts_the_bots_loop_once():
         assert worker._srv2_task is first and first is not None
         first.cancel()
     _run(go())
+
+
+def test_the_worker_gets_the_bots_own_telegram_and_vision_settings_from_srv2_names():
+    """Owner 24 Nov ("srv2 bot functional jhala ka"): the copied Trade code reads TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID /
+    TELEGRAM_APPROVER_IDS / VISION_CALLBACK_SECRET (its ✅ cards and their taps) and VISION_SIGNAL_MODEL / ANTHROPIC_API_KEY
+    (Vision); compose passed none, so its cards had no buttons and "Ask me first" could place no entry. Now the worker - only
+    the worker - gets them from SRV2_* in .env, and .env.example names each one."""
+    from pathlib import Path
+
+    import yaml
+    root = Path(__file__).resolve().parents[2]
+    services = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]
+    wanted = {"TELEGRAM_BOT_TOKEN": "SRV2_TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID": "SRV2_TELEGRAM_CHAT_ID",
+              "TELEGRAM_APPROVER_IDS": "SRV2_TELEGRAM_APPROVER_IDS", "VISION_CALLBACK_SECRET": "SRV2_VISION_CALLBACK_SECRET",
+              "VISION_SIGNAL_MODEL": "SRV2_VISION_SIGNAL_MODEL", "ANTHROPIC_API_KEY": "SRV2_ANTHROPIC_API_KEY"}
+    worker = services["worker"]["environment"]
+    for name, source in wanted.items():
+        assert worker[name] == "${" + source + ":-}", name
+        assert name not in (services["backend"].get("environment") or {}), name      # the web process never holds them
+    example = (root / ".env.example").read_text()
+    for source in wanted.values():
+        assert f"\n{source}=\n" in example, source

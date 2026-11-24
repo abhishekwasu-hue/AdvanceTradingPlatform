@@ -270,6 +270,23 @@ users see "Chart analysis is not available right now". Owner steps, once:
 
 A new engine version = a new tag (or commit sha) in `ATP_PRIVATE_REF`, then the deploy. No migration.
 
+## 4e. The owner's 15M SRv2 bot (flag `srv2_bot`, owner only)
+
+Needs the private package (section 4d). PAPER only, in the bot's own store; it places no ATP order.
+
+1. **Its own Telegram bot.** In Telegram, @BotFather -> /newbot. Use a NEW bot, never the Trade bot's token: two services
+   reading one bot's updates take each other's taps. Send the new bot one message, then read your chat id (for example
+   from @userinfobot).
+2. **`.env`** (`nano /opt/atp/.env`, as `atp`; values only on the server):
+   `SRV2_TELEGRAM_BOT_TOKEN`, `SRV2_TELEGRAM_CHAT_ID`, `SRV2_TELEGRAM_APPROVER_IDS` (at least the same chat id),
+   `SRV2_VISION_CALLBACK_SECRET` (`openssl rand -hex 32`). Optional, Vision on its setups: `SRV2_VISION_SIGNAL_MODEL` and
+   `SRV2_ANTHROPIC_API_KEY` (empty = Vision "unavailable"; the card still goes). Without the four Telegram values the cards
+   carry no buttons, and in "Ask me first" no entry is placed (Trade's rule).
+3. The one deploy command.
+4. In ATP, signed in as the owner account (`LIVE_OWNER_USER_ID`, with MFA): Upstox connected (ATP's own app), then
+   Admin -> Controls: flag `srv2_bot` ON; in Safety, the bot's agent mode ("Ask me first" is the default) and its settings
+   card (signal symbols, then Save). The positions list on the same card shows what it opened.
+
 ## 5. DNS and TLS
 
 - **No domain yet:** `DOMAIN=<SERVER_IP>`, `ACME_EMAIL=ops@localhost`, `CADDYFILE=Caddyfile.ip`. Caddy serves HTTPS

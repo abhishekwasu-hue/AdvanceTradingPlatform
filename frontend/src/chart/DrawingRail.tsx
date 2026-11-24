@@ -39,13 +39,7 @@ function useDrawingActions({ tools, symbol, hidden }: DrawingToolsProps) {
   const pick = (kind: DrawingKind) => {
     if (!ctl) return;
     if (view?.tool === kind) { ctl.setTool(null); return; }
-    if (kind === "text") {
-      const text = window.prompt("Text for the label (no < or >)", "");
-      if (text == null) return;
-      ctl.setTool(kind, text);
-      return;
-    }
-    ctl.setTool(kind);
+    ctl.setTool(kind);                     // a text label is typed on the chart once placed (no browser prompt)
   };
   const question = deleteAllText(symbol, drawings);
   const confirm = () => { setAsking(false); void ctl?.deleteAll(); };

@@ -22,7 +22,7 @@ export const TOOLBAR_KINDS: { kind: DrawingKind; label: string; title: string }[
   { kind: "measure", label: "Measure", title: "Measure: change and % between two points" },
   { kind: "long_position", label: "Long", title: "Long position: entry, then stop, then target (a planning drawing only)" },
   { kind: "short_position", label: "Short", title: "Short position: entry, then stop, then target (a planning drawing only)" },
-  { kind: "text", label: "Text", title: "Text: one click" },
+  { kind: "text", label: "Text", title: "Text: one click, then type it on the chart" },
 ];
 
 /** Binds the drawing tools to a chart while `enabled`; returns the controller and its latest view. `timeframe`

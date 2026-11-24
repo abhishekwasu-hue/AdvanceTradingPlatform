@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DrawingConflict, type DrawingV1, type StoredDrawing } from "./drawings";
 import { timeToLogical, type Converters } from "./geometry";
 import {
+  NEW_TEXT,
   DrawingController, HISTORY_LIMIT, anchorFor, sameDrawing, distanceToShape, handles, hitTest, logicalToTime, moveAnchor, placementPreview,
   translate, type DrawingsStore, type ToolView,
 } from "./tools";
@@ -492,5 +493,30 @@ describe("owner 21 Nov: settings, copy and the selection toolbar's contract", ()
     t.ctl.cancel();
     t.ctl.select(null);
     expect(t.ctl.selectedDrawing()).toBeNull();
+  });
+});
+
+describe("owner 24 Nov: the text label is typed on the chart, not in a browser prompt", () => {
+  it("picking Text arms it with the starting label; placing it selects it and asks the bar to open its text field once", async () => {
+    const t = setup();
+    t.ctl.setTool("text");
+    expect(t.ctl.armed()).toEqual({ kind: "text", text: NEW_TEXT });
+    await t.ctl.click(pt(2, 100));
+    expect(t.store.rows.get(1)?.drawing.text).toBe(NEW_TEXT);
+    expect(t.ctl.view().selected).toBe("1");
+    expect(t.ctl.view().editText).toBe("1");
+    t.ctl.textEditOpened();
+    expect(t.ctl.view().editText).toBeNull();
+  });
+
+  it("another selection or tool drops the request; a non-text drawing never asks", async () => {
+    const t = setup();
+    t.ctl.setTool("text");
+    await t.ctl.click(pt(2, 100));
+    t.ctl.select(null);
+    expect(t.ctl.view().editText).toBeNull();
+    t.ctl.setTool("hline");
+    await t.ctl.click(pt(3, 105));
+    expect(t.ctl.view().editText).toBeNull();
   });
 });

@@ -317,3 +317,49 @@ for (const [width, height, phone] of [[1440, 900, false], [390, 844, true]] as c
     }
   });
 }
+
+// Owner 24 Nov ("Yes" to the inline text tool): Text is typed on the chart - no browser prompt. Tap the chart, the label
+// appears with its text field open and the starting text selected; typing and Enter save it; Escape keeps "Text".
+const TEXT_SHOTS = process.env.TEXT_SHOTS;
+for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+  test.describe(`Terminal text label typed on the chart ${width}`, () => {
+    test.use(width < 600 ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+    for (const theme of ["dark", "light"] as const) {
+      test(`${theme}: pick Text, tap the chart, type, Enter - saved; no browser dialog`, async ({ page }) => {
+        const dialogs: string[] = [];
+        page.on("dialog", (d) => { dialogs.push(d.message()); void d.dismiss(); });
+        const calls = await open(page, theme);
+        const chart = chartOf(page);
+        if (width < 600) {
+          const tab = page.getByRole("tab", { name: "Chart" });
+          if (await tab.count()) await tab.first().click();
+          await chart.getByRole("button", { name: "Drawing tools" }).click();
+          await page.getByRole("dialog", { name: "Drawing tools" }).getByRole("button", { name: /^Text/ }).click();
+        } else {
+          await chart.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: /^Text/ }).click();
+        }
+        const box = (await chart.locator(".tv-lightweight-charts").first().boundingBox())!;
+        const at = { x: box.x + box.width * 0.45, y: box.y + box.height * 0.45 };
+        if (width < 600) await page.touchscreen.tap(at.x, at.y); else await page.mouse.click(at.x, at.y);
+        await expect.poll(() => calls.drawingPosts.length).toBe(1);
+        expect(calls.drawingPosts[0].drawing).toMatchObject({ kind: "text", text: "Text" });
+        const field = page.getByRole("textbox", { name: "Label text" });
+        await expect(field).toBeFocused();
+        expect(await field.evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 4]);
+        if (width < 600) await expectPhoneLayout(page);
+        if (TEXT_SHOTS) await page.screenshot({ path: `${TEXT_SHOTS}/after-typing-${width}-${theme}.png`, animations: "disabled" });
+        await page.keyboard.type("Breakout area");
+        await page.keyboard.press("Enter");
+        await expect.poll(() => calls.drawingPuts.length).toBe(1);
+        expect(calls.drawingPuts[0].drawing).toMatchObject({ kind: "text", text: "Breakout area" });
+        await expect(field).toHaveCount(0);
+        expect(dialogs).toEqual([]);
+        if (TEXT_SHOTS) {
+          await page.waitForLoadState("networkidle");
+          await page.mouse.move(box.x + 5, box.y + box.height - 5);
+          await page.screenshot({ path: `${TEXT_SHOTS}/after-saved-${width}-${theme}.png`, animations: "disabled" });
+        }
+      });
+    }
+  });
+}

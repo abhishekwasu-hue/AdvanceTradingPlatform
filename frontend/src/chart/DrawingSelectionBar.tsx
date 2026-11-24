@@ -62,6 +62,7 @@ export function DrawingSelectionBar({ view, controller, insets, root, avoid = nu
   const key = sel?.key ?? null;
 
   useEffect(() => { setPanel(null); setDraftProblem(null); }, [key]);
+  useLayoutEffect(() => { setTop(BAR_TOP); }, [key]);                 // a new selection starts at the top again
   useEffect(() => {
     if (!panel) return undefined;
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setPanel(null); };
@@ -86,7 +87,9 @@ export function DrawingSelectionBar({ view, controller, insets, root, avoid = nu
       const b = bar.getBoundingClientRect();
       const base = root.getBoundingClientRect().top;
       const clash = !!r && r.width > 0 && r.left < b.right && r.right > b.left && r.bottom > base + BAR_TOP;
-      setTop(clash ? Math.ceil(r.bottom - base) + BAR_GAP : BAR_TOP);
+      // Only ever down while the same drawing stays selected: the readout widens under the crosshair, and a bar that
+      // moved back up as it shrank would sit under the pointer, hide the crosshair, and jump back and forth.
+      if (clash) setTop((cur) => Math.max(cur, Math.ceil(r.bottom - base) + BAR_GAP));
     };
     place();
     if (typeof ResizeObserver === "undefined") return undefined;

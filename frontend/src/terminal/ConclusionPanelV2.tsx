@@ -1,6 +1,7 @@
 import { CandlestickChart, ChevronRight, Layers, ListChecks, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wallet, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "../components/primitives/cx";
+import { expiryLabel } from "../trading/model";
 import {
   chipLabel, costText, fetchConclusion, glyph, segments, shortTime, summarizeConclusion, toneOf, type Conclusion, type ConclusionSection,
   type ConclusionSummary, type Reading,
@@ -40,6 +41,13 @@ export function ConclusionPanelV2({ symbol, expiry, tf, also = [], refresh = 0, 
     return () => { live = false; };
   }, [enabled, load, symbol, expiry, tf, alsoKey, refresh, tick]);
   useEffect(() => { last.current = ""; setData(null); setState("loading"); }, [symbol, expiry, tf]);
+  // The chart was still being built (his Chart panel building the same chart): read once more shortly.
+  const retryAfter = data?.retry_after ?? 0;
+  useEffect(() => {
+    if (!enabled || !retryAfter) return undefined;
+    const id = window.setTimeout(() => setTick((t) => t + 1), retryAfter * 1000);
+    return () => window.clearTimeout(id);
+  }, [enabled, retryAfter, data, tick]);
   // C4: a summary belongs to the read it was made from; a new read (another fingerprint) clears it.
   const [sum, setSum] = useState<{ busy: boolean; result: ConclusionSummary | null; failed: boolean; of: string }>({ busy: false, result: null, failed: false, of: "" });
   const fingerprint = data?.fingerprint ?? "";
@@ -111,7 +119,7 @@ export function ConclusionViewV2({ data, state, onRefresh, summary }: {
   return (
     <div data-panel-body="conclusion" className="space-y-space-3 text-t13" data-conclusion-state={state} data-fingerprint={data.fingerprint}>
       <div className="flex items-center justify-between gap-space-2 text-t12 text-fg-muted">
-        <span className="truncate font-semibold text-fg">{data.symbol}{data.expiry ? ` · ${data.expiry}` : ""}</span>
+        <span className="truncate font-semibold text-fg">{data.symbol}{data.expiry ? ` · Expiry ${expiryLabel(data.expiry) ?? data.expiry}` : ""}</span>
         <span className="flex shrink-0 items-center gap-space-1">
           <span data-conclusion-time>{shortTime(data.as_of)}</span>
           {onRefresh && (
@@ -211,6 +219,12 @@ function OrdersChip({ data }: { data: Conclusion }) {
   );
 }
 
+/** A line's own time, only when it differs from its section's time (owner 24 Nov: no source label, no repeated time). */
+export function lineTime(lineAt: string | null, sectionAt: string | null): string {
+  const t = shortTime(lineAt);
+  return t && t !== shortTime(sectionAt) ? t : "";
+}
+
 function SectionV2({ s }: { s: ConclusionSection }) {
   return (
     <details data-section={s.key} data-section-status={s.status} className="group py-space-1">
@@ -218,7 +232,7 @@ function SectionV2({ s }: { s: ConclusionSection }) {
         <span className="inline-flex items-center gap-space-1">
           <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />{s.title}
           {s.status === "stale" && <span className="text-t12 text-warn">· stale</span>}
-          {s.status === "na" && <span className="text-t12 text-fg-muted">· not available</span>}
+          {s.status === "na" && <span className="text-t12 text-fg-muted">{s.busy ? "· being read" : "· not available"}</span>}
         </span>
         <span className="text-t12 font-normal text-fg-muted">{shortTime(s.as_of)}</span>
       </summary>
@@ -226,7 +240,7 @@ function SectionV2({ s }: { s: ConclusionSection }) {
         {s.lines.map((l, i) => (
           <li key={i} data-line-kind={l.kind} className={cx("flex gap-space-2", toneOf(l.tone).text)}>
             <span aria-hidden className="shrink-0">{l.tone === "up" ? "▲" : l.tone === "down" ? "▼" : l.tone === "warn" ? "!" : "·"}</span>
-            <span className="min-w-0 text-fg">{l.text}<span className="ml-space-1 text-t12 text-fg-muted">{l.source}{l.as_of && shortTime(l.as_of) ? ` · ${shortTime(l.as_of)}` : ""}</span></span>
+            <span className="min-w-0 text-fg">{l.text}{lineTime(l.as_of, s.as_of) && <span className="ml-space-1 text-t12 text-fg-muted">{lineTime(l.as_of, s.as_of)}</span>}</span>
           </li>
         ))}
         {s.note && <li className="text-t12 text-fg-muted">{s.note}</li>}

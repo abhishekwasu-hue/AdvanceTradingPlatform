@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ConclusionViewV2, SummaryV2, summaryLines } from "./ConclusionPanelV2";
+import { ConclusionViewV2, SummaryV2, lineTime, summaryLines } from "./ConclusionPanelV2";
 import { OI_SLOT_MS, SETTLE_MS, chipLabel, costText, strategyTimeframes, closedIndex, conclusionPath, glyph, msToNext, segments, tfMs, toneOf, type Conclusion } from "./conclusion";
 import { CHOOSER_PANEL_IDS, PANEL_IDS, PINNED_PANELS, PRESETS, layoutProblem, phoneTabs, presetLayout, withConclusion, withoutConclusion } from "./layoutModel";
 import { callWords } from "../signals/language";
@@ -138,5 +138,31 @@ describe("TERM-CON C2: the Conclusion panel", () => {
     expect(strategyTimeframes(bots.slice(4), "NIFTY", "NIFTY 50", "15m")).toEqual([]);        // other symbols, stopped, no read TF
     expect(strategyTimeframes([], "NIFTY", "NIFTY 50", "15m")).toEqual([]);
     expect(pageSource).toMatch(/also=\{conclusionAlso\}/);
+  });
+});
+
+describe("owner screenshot 24 Nov: the Conclusion reads like a trader's page", () => {
+  it("shows no source labels on the lines, and a line's time only when it differs from its section's", () => {
+    const at = "2026-11-24T12:30:00+00:00";
+    const data: Conclusion = { ...BODY, sections: [{ key: "oi", title: "OI", status: "ok", source: "OI banner (stored slots)", as_of: at, note: null,
+      lines: [{ text: "PCR 1.06 (High PCR zone).", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: at }] }] };
+    const html = renderToStaticMarkup(<ConclusionViewV2 data={data} state="ok" />);
+    expect(html).toContain("PCR 1.06 (High PCR zone).");
+    expect(html).not.toContain("stored slots");
+    expect(html).not.toContain("Stored areas");
+    expect(lineTime(at, at)).toBe("");
+    expect(lineTime("2026-11-24T12:45:00+00:00", at)).not.toBe("");
+    expect(lineTime(null, at)).toBe("");
+  });
+
+  it("names the expiry as a day, not a raw date", () => {
+    const html = renderToStaticMarkup(<ConclusionViewV2 data={{ ...BODY, expiry: "2026-12-01" }} state="ok" />);
+    expect(html).toContain("NIFTY · Expiry 1 Dec");
+    expect(html).not.toContain("2026-12-01");
+  });
+
+  it("reads again after the server's retry_after while the chart is still being built", () => {
+    expect(panelSource).toContain("data?.retry_after");
+    expect(panelSource).toMatch(/setTimeout\(\(\) => setTick/);
   });
 });

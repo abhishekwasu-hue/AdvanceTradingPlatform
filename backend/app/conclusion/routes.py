@@ -44,7 +44,8 @@ async def terminal_conclusion(symbol: str = Query(..., min_length=1, max_length=
     if (hit := gather.cached(key, now)) is not None:
         return hit
     body = await gather.conclusion(session, user, symbol, expiry, tf, also=tuple(also))
-    gather.remember(key, body, now)
+    if not body.get("retry_after"):                      # a read with the chart still busy is not kept: the retry reads anew
+        gather.remember(key, body, now)
     return body
 
 
@@ -86,7 +87,8 @@ async def terminal_conclusion_summary(body: SummaryBody, user: User = Depends(re
     read = gather.cached(key, now)
     if read is None:
         read = await gather.conclusion(session, user, body.symbol, body.expiry, body.tf, also=tuple(body.also))
-        gather.remember(key, read, now)
+        if not read.get("retry_after"):
+            gather.remember(key, read, now)
     text, why = await summary.summarize(provider, read)
     return {"ready": True, "text": text, "reason": None if text else "The summary was withheld: it did not pass ATP's checks. The readings above are unchanged.",
             "usage": metering.spent_by(provider), "fingerprint": read.get("fingerprint")}

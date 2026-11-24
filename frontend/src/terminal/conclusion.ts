@@ -14,6 +14,8 @@ export type Tone = "up" | "down" | "neutral" | "warn";
 export interface ConclusionLine { text: string; tone: Tone; kind: "signal" | "data" | "record"; source: string; as_of: string | null }
 export interface ConclusionSection {
   key: string; title: string; status: "ok" | "stale" | "na"; source: string; as_of: string | null; lines: ConclusionLine[]; note: string | null;
+  /** The chart is still being built: "being read", not "not available". */
+  busy?: boolean;
 }
 export interface Reading { source: string; label: string; tf: string | null; direction: Direction; as_of: string | null; stale?: boolean }
 export interface NeedsYou { key: string; text: string; action: string | null }
@@ -27,6 +29,8 @@ export interface Glance {
 export interface Conclusion {
   symbol: string; expiry: string | null; tf: string; as_of: string; sections: ConclusionSection[]; readings: Reading[];
   needs_you: NeedsYou[]; glance: Glance; note: string; fingerprint: string;
+  /** Set when the chart was still being built: read again after this many seconds. */
+  retry_after?: number;
 }
 
 export function conclusionPath(symbol: string, expiry: string | null, tf: string, also: readonly string[] = [], v?: string): string {

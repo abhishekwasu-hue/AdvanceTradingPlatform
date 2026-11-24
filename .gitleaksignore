@@ -73,3 +73,6 @@ f633ec1a7fc54fdb371b1c8700d05a4e432a7a17:backend/app/study/routes.py:generic-api
 # The first version of this comment (commit 7ffb92d1) quoted that annotation and was itself flagged; it is ignored too.
 6bea545ff19a4edfe07e24853fbab722cd1e616f:backend/tests/test_runner_s3_pairing.py:generic-api-key:79
 7ffb92d1a2442987542b986965302e7467223048:.gitleaksignore:generic-api-key:71
+# SRV2 Vision env (claude/srv2-vision-env): the first version of test_srv2_bot.py mapped variable NAMES to their SRV2_ source
+# names in a dict literal, read as a credential; there is no value in it. Rewritten to build the names in the next commit.
+c7c3799b74ab9095a19c6e3498e263e50708bdd5:backend/tests/test_srv2_bot.py:generic-api-key:192

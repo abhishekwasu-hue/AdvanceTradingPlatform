@@ -187,9 +187,9 @@ def test_the_worker_gets_the_bots_own_telegram_and_vision_settings_from_srv2_nam
     import yaml
     root = Path(__file__).resolve().parents[2]
     services = yaml.safe_load((root / "docker-compose.yml").read_text())["services"]
-    wanted = {"TELEGRAM_BOT_TOKEN": "SRV2_TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID": "SRV2_TELEGRAM_CHAT_ID",
-              "TELEGRAM_APPROVER_IDS": "SRV2_TELEGRAM_APPROVER_IDS", "VISION_CALLBACK_SECRET": "SRV2_VISION_CALLBACK_SECRET",
-              "VISION_SIGNAL_MODEL": "SRV2_VISION_SIGNAL_MODEL", "ANTHROPIC_API_KEY": "SRV2_ANTHROPIC_API_KEY"}
+    names = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_APPROVER_IDS", "VISION_CALLBACK_SECRET", "VISION_SIGNAL_MODEL",
+             "ANTHROPIC_API_KEY")
+    wanted = {name: "SRV2_" + name for name in names}
     worker = services["worker"]["environment"]
     for name, source in wanted.items():
         assert worker[name] == "${" + source + ":-}", name

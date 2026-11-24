@@ -1334,6 +1334,7 @@ test.describe("v2 Charts 1440: the selected drawing's bar", () => {
     await expect.poll(() => calls.drawingPosts.length).toBe(1);
     const bar = drawingBar(page);
     const toolbar = bar.getByRole("toolbar", { name: "Horizontal line settings" });
+    await expect(toolbar).toBeVisible();                       // the bar renders after the save comes back
     expect(await toolbar.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual([
       "Colour", "Line width and style", "Lock", "Duplicate", "Delete", "Close"]);
     await toolbar.getByRole("button", { name: "Line width and style" }).click();

@@ -197,7 +197,7 @@ def test_his_own_stop_goes_to_the_broker_as_his_stop(setup):
 
 
 @pytest.mark.parametrize("extra,words", [
-    ({"order_type": "LIMIT", "price": 101.0}, fno_ticket.LIVE_MARKET_ONLY),
+    ({"order_type": "SL-M", "trigger_price": 101.0}, fno_ticket.LIVE_MARKET_ONLY),
     ({"order_type": "LIMIT", "price": 95.0, "rest_if_waiting": True, "trigger_mode": "TOUCH"}, fno_ticket.LIVE_NO_WAIT),
     ({"client_ref": None}, fno_ticket.LIVE_NO_REF),
 ])
@@ -299,3 +299,31 @@ def test_a_live_order_the_broker_refuses_says_why_first(setup, monkeypatch):
     assert placed["status"] != "PLACED", placed
     assert "product" in placed["reasons"][0] and "invalid" in placed["reasons"][0], placed["reasons"]
     assert len(placed["reasons"]) > 1                                # the notes are still there, after the failure
+
+
+def test_a_live_limit_the_price_has_reached_goes_to_his_broker_as_a_limit_at_his_price(setup, monkeypatch):
+    """Owner 24 Nov ("LIVE Limit pathva"): a LIVE Limit is sent as a LIMIT at HIS price (fills there or better)."""
+    t, expiry, strike, symbol, spy = setup
+    _price(monkeypatch, 60.0)
+    spy.ltp = 60.0
+    _switches(t, live_on=True, granted=True, lock=False)
+    body = _body(expiry, strike, mode="LIVE", lots=2, product="NRML", order_type="LIMIT", price=61.0, client_ref=_ref())
+    view = _preview(t, body)
+    assert view["can_place"], (view["errors"], view["refusals"])
+    placed = _place(t, body)
+    assert placed["status"] == "PLACED", placed
+    assert len(spy.placed) == 1
+    order = spy.placed[0]
+    assert order.order_type == "LIMIT" and order.price == 61.0 and order.symbol == symbol and order.intent == ORDER_INTENT_ENTRY
+
+
+def test_a_live_limit_the_price_has_not_reached_is_not_sent_and_says_why(setup, monkeypatch):
+    t, expiry, strike, _, spy = setup
+    _price(monkeypatch, 60.0)
+    spy.ltp = 60.0
+    _switches(t, live_on=True, granted=True, lock=False)
+    body = _body(expiry, strike, mode="LIVE", lots=2, product="NRML", order_type="LIMIT", price=55.0, client_ref=_ref())
+    view = _preview(t, body)
+    assert not view["can_place"]
+    assert any("has not reached your limit 55.00" in r and "does not leave a waiting order at your broker" in r for r in view["refusals"]), view
+    assert _place(t, body)["status"] == "REFUSED" and spy.placed == []

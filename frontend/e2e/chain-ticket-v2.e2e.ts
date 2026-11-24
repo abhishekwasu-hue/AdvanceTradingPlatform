@@ -591,3 +591,42 @@ for (const width of [390, 360, 1440] as const) {
     });
   });
 }
+
+// Owner 24 Nov ("PAPER Limit thambat nahi"): a PAPER Limit the price has not reached waits for it; how it fires is his own
+// choice (Touch / Candle close; none = his saved setting). A LIVE Limit never waits in ATP. WAIT_SHOTS=<dir>: the proof shots.
+for (const [width, height, phone] of [[390, 844, true], [1440, 900, false]] as const) {
+  test.describe(`Ticket waits for a PAPER limit at ${width}`, () => {
+    test.use(phone ? { viewport: { width, height }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : { viewport: { width, height } });
+    for (const theme of ["light", "dark"] as const) {
+      test(`the wait choice is sent with the PAPER limit; LIVE shows none (${theme})`, async ({ page }) => {
+        const seen = await open(page, theme);
+        const tap = async (l: Locator) => (phone ? l.tap() : l.click());
+        await tap(callCell(page));
+        await tap(page.locator("[data-chain-actions] [data-action='buy']"));
+        const ticket = page.locator("[data-order-ticket]");
+        await tap(ticket.locator("[data-ticket='lots-more']"));
+        await tap(ticket.getByRole("radio", { name: "Limit" }));
+        await ticket.locator("[data-ticket='price']").fill("140");
+        const wait = ticket.locator("[data-ticket='wait']");
+        await expect(wait).toBeVisible();
+        await expect(wait).toContainText("Not chosen: your saved setting is used.");
+        await tap(wait.locator("[data-ticket='wait-on'] [data-option='TOUCH']"));
+        await expect(wait).toContainText("Waits for your price until today's close");
+        if (phone) await expectPhoneLayout(page);
+        if (process.env.WAIT_SHOTS) await ticket.screenshot({ path: `${process.env.WAIT_SHOTS}/paper-limit-wait-${width}-${theme}.png`, animations: "disabled" });
+        await pickProduct(ticket);
+        await tap(ticket.locator("[data-ticket='review']"));
+        await tap(ticket.locator("[data-ticket='place']"));
+        const placed = seen.posts.filter((p) => p.url.endsWith("/paper/fno/order"));
+        expect(placed).toHaveLength(1);
+        expect(placed[0].body).toMatchObject({ order_type: "LIMIT", price: 140, mode: "PAPER", rest_if_waiting: true, trigger_mode: "TOUCH" });
+        await tap(ticket.locator("[data-ticket='done']"));
+        await tap(callCell(page));
+        await tap(page.locator("[data-chain-actions] [data-action='buy']"));
+        await tap(ticket.locator("[data-ticket='mode'] [data-option='LIVE']"));
+        await tap(ticket.getByRole("radio", { name: "Limit" }));
+        await expect(ticket.locator("[data-ticket='wait']")).toHaveCount(0);            // a LIVE order never waits in ATP
+      });
+    }
+  });
+}

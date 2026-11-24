@@ -44,8 +44,9 @@ LIVE (`entry_refusals` adds the plan / LIVE grant, the SEBI algo id and the brok
 * the order goes through the same pipeline (`execute_signal_for_user`, mode LIVE) to HIS OWN broker session (one
   signed-in credential of his, never a teammate's) wrapped in the order chokepoint `RateLimitedBroker` (an ENTRY is
   refused there too under the lock), with the ticket's idempotency key and the order record / trail of every order;
-* a LIVE order from the ticket is a Market order (the shared LIVE router sends MARKET / a protected limit only); a
-  waiting LIVE order is not kept in ATP. Both are said in plain words;
+* a LIVE order from the ticket is a Market or a Limit order (owner 24 Nov): a Limit goes to his broker at HIS price and
+  only when it can fill now (it fills there or better; unfilled in the router's poll window it is cancelled at the
+  broker, P0.5 / T1); SL / SL-M are not sent, and a waiting LIVE order is not kept in ATP. All said in plain words;
 * exits of a LIVE position go through the existing exit paths at the account that holds it (never blocked, ADR-0004).
 """
 from __future__ import annotations
@@ -93,8 +94,9 @@ LIVE_TEXT = "LIVE: a real order goes to your own broker and real money moves."
 LIVE_OFF = "Live trading is switched off by the admin."
 LIVE_NO_BROKER = "Sign in to your own broker (Settings > Broker) to place a LIVE order."
 LIVE_MANY_BROKERS = "More than one of your brokers is signed in: a LIVE order from the ticket needs exactly one signed in."
-LIVE_MARKET_ONLY = "A LIVE order from the ticket is sent as a Market order: Limit, SL and SL-M are not sent to the broker from here yet."
-LIVE_NO_WAIT = "A LIVE order cannot wait for its price in ATP: send it as a Market order."
+LIVE_MARKET_ONLY = "A LIVE order from the ticket is a Market or a Limit order: SL and SL-M are not sent to the broker from here yet."
+LIVE_TYPES = ("MARKET", "LIMIT")
+LIVE_NO_WAIT = "A LIVE order cannot wait for its price in ATP: send it as a Market order, or a Limit the price has reached."
 LIVE_NO_REF = "A LIVE order needs the ticket's reference (refresh the page and try again)."
 # TM-1: the ticket's PAPER order fills through the PaperExecutionAdapter (a BrokerInterface), the first path moved onto it;
 # parity with the direct PaperBroker fill is tests/test_tm1_paper_adapter.py.
@@ -551,7 +553,7 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
     fill, fill_note = None, ""
     resting = False
     if price is not None and not errors and ask.order_type is not None:      # errors already asks for a missing order type
-        # LIVE: a Market order only (live_ask_errors) - the figures are at the live price; the broker's fill decides.
+        # LIVE: a Market or a Limit order (live_ask_errors) - the figures are at the live price; the broker's fill decides.
         fill, fill_note = paper_fill(ask.order_type, side, price, ask.price, ask.trigger_price)
         if fill is None and ask.rest_if_waiting and rest_errors(ask):
             errors.extend(rest_errors(ask))           # it would wait, but cannot be kept as it is
@@ -561,6 +563,10 @@ async def assess(session: AsyncSession, user: User, ask: OrderAsk, *, price_look
                 resting = True
                 warn("status", f"Waits for your price {rest_level(ask):,.2f} and is placed when the price reaches it "
                                 "(every check runs again then). It lasts until today's close; cancel it any time.")
+            elif mode == LIVE and ask.order_type == "LIMIT":
+                # Owner 24 Nov: a LIVE limit goes to the broker only when it can fill now (ATP leaves no working order there).
+                refusals.append(f"The price ({price:,.2f}) has not reached your limit {float(ask.price or 0):,.2f}. A LIVE limit order "
+                                "is sent only when it can fill now: ATP does not leave a waiting order at your broker.")
             else:
                 refusals.append(fill_note)
     # The figures below are at the fill price, or at the order's own price while it waits (TM-2).
@@ -709,6 +715,7 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
     if view.get("resting"):
         return await _rest(session, user, ask, contract, view, mode, now, origin)
     fill = float(view["fill_price"])
+    live_limit = mode == LIVE and (ask.order_type or "").upper() == "LIMIT"
     stop = position_stop(ask.side, ask.stop_loss, contract.tick_size)
     key = f"fno:{user.id}:{ask.client_ref}" if ask.client_ref else None
     freeze = (view.get("smart") or {}).get("freeze_quantity")
@@ -722,7 +729,9 @@ async def place(session: AsyncSession, user: User, ask: OrderAsk, *, price_looku
             session, user, mode=mode, strategy_id=STRATEGY_ID, signal=_signal(contract, ask.side, fill, stop, now, view["fill_note"] or ""),
             # M68 PR-1: the holding follows the product HE picked; the fill price is already set by his own order type
             # (paper_fill), so the router books it as a market fill at that price.
-            idempotency_key=key, holding=order_defaults.holding_of_product(ask.product), order_style="MARKET",
+            idempotency_key=key, holding=order_defaults.holding_of_product(ask.product),
+            # Owner 24 Nov: a LIVE Limit goes to his broker as a limit at HIS price (fills there or better, else cancelled).
+            order_style="LIMIT" if live_limit else "MARKET", limit_price=ask.price if live_limit else None,
             max_quantity=float(view["units"]),
             journal_source=journal_source, manual_contract_spec=_spec(contract), manual_contract_meta=_meta(contract, ask.side),
             paper_execution=PAPER_EXECUTION, freeze_quantity=freeze, market_protection_pct=band, origin=origin,
@@ -785,7 +794,7 @@ class LiveRoute:
 def live_ask_errors(ask: OrderAsk) -> list[str]:
     """What the ticket itself cannot send LIVE from here (said plainly; nothing about the trade is decided)."""
     errors: list[str] = []
-    if ask.order_type is not None and ask.order_type != "MARKET":
+    if ask.order_type is not None and ask.order_type.upper() not in LIVE_TYPES:
         errors.append(LIVE_MARKET_ONLY)
     if ask.rest_if_waiting:
         errors.append(LIVE_NO_WAIT)

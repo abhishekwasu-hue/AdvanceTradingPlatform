@@ -209,3 +209,26 @@ def test_order_router_reports_broker_rejection():
     assert not result.executed
     assert state.trades_today == 0
     assert any("rejected" in r.lower() for r in result.reasons)
+
+
+def test_order_router_sends_the_users_own_limit_at_his_price_even_where_no_market_order_is_taken():
+    """Owner 24 Nov (the ticket's LIVE Limit): order_style LIMIT sends a LIMIT at `limit_price` - no protection band is
+    needed for it, also on a broker that takes no market order; without a price nothing is sent."""
+    from app.brokers.base import BrokerCapabilities
+
+    class _NoMarket(_FakeBroker):
+        capabilities = BrokerCapabilities(market_orders_allowed=False)
+
+    broker = _NoMarket()
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=broker, product="MIS",
+                         order_style="LIMIT", limit_price=101.5)
+    result = asyncio.run(router.execute(_sample_signal(), TradingDayState()))
+    assert result.executed, result.reasons
+    entry = broker.placed_orders[0]
+    assert entry.order_type == "LIMIT" and entry.price == 101.5
+    assert any("Limit order at 101.5 (your price)" in r for r in result.reasons)
+
+    none = _NoMarket()
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=legacy(risk_per_trade_pct=1.0), broker=none, product="MIS", order_style="LIMIT")
+    result = asyncio.run(router.execute(_sample_signal(), TradingDayState()))
+    assert not result.executed and none.placed_orders == [] and "A limit order needs its limit price" in result.reasons

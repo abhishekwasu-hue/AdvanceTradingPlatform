@@ -71,6 +71,11 @@ export interface OrderAsk {
   accepted_warnings?: string[];
   /** M96-Q1: his own choice on the ticket; not sent = PAPER. */
   mode?: OrderMode;
+  /** Owner 24 Nov (TM-2): a PAPER limit / stop the price has not reached waits for it; how it fires is his own
+   * (null = his saved Trade setting). */
+  rest_if_waiting?: boolean;
+  trigger_mode?: "TOUCH" | "CLOSE" | null;
+  timeframe_minutes?: number | null;
 }
 
 /** M96-Q1: whether a LIVE ticket order can go now, and the plain sentence why not. */
@@ -110,12 +115,15 @@ export interface OrderPreview {
   can_place: boolean;
   confirm_label: string | null;
   as_of: string;
+  /** TM-2: a PAPER order that waits for its price, and the price it waits for. */
+  resting?: boolean;
+  rest_level?: number | null;
   /** TM Part 7 (flag smart_execution): the exchange's freeze limit and the slices (lots) the order goes in. */
   smart?: { freeze_quantity: number | null; slices: number[]; note: string | null } | null;
 }
 
 export interface OrderResult extends OrderPreview {
-  status: "PLACED" | "REFUSED" | "FAILED";
+  status: "PLACED" | "REFUSED" | "FAILED" | "RESTING";
   reasons: string[];
   order_id: number | null;
   trade_id: number | null;

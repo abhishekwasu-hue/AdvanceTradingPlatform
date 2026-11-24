@@ -57,16 +57,39 @@ async def run_once(session_factory: Callable, usable_adapter: Callable, now: dat
             stop_services()
             return None
         cal = await calendar_for(s, now)
+        refreshed = await refresh_settings(s, who, now)
     loop = asyncio.get_running_loop()
     bot.host.register(**bot_io.build(loop, session_factory, who, usable_adapter))
     if not _services["on"]:
         await _start_services(bot, session_factory, who)
+    elif refreshed and (start := getattr(bot.runner, "start_services", None)) is not None:
+        await asyncio.to_thread(start)          # idempotent: starts again only a service thread that has ended
     from app.market_data.calendar import IST
     ist = now.astimezone(IST).replace(tzinfo=None)
     return await asyncio.to_thread(bot.runner.tick, ist, cal)
 
 
 _services: dict = {"on": False, "bot": None}
+REFRESH_SECONDS = 300.0     # the dashboard's Telegram / AI key are read again this often
+_settings: dict = {"at": None, "names": None}
+
+
+async def refresh_settings(session: Any, who: bot_io.Owner, now: datetime) -> bool:
+    """Owner 24 Nov: the bot's Telegram ✅ cards and Vision from what he set in the dashboard (dashboard_env; .env wins). When
+    the names that are set change (he linked Telegram or added his key), the bot's services restart on the next step, so the
+    Telegram service starts with buttons. True when it read them now."""
+    from app.srv2bot import dashboard_env
+    at = _settings["at"]
+    if at is not None and (now - at).total_seconds() < REFRESH_SECONDS:
+        return False
+    _settings["at"] = now
+    names = dashboard_env.apply(await dashboard_env.values(session, who))
+    if names != _settings["names"]:
+        if _settings["names"] is not None:
+            stop_services()
+        logger.info("srv2 bot: settings set: %s", ", ".join(names) or "none")
+        _settings["names"] = names
+    return True
 
 
 async def _start_services(bot: Any, session_factory: Callable, who: bot_io.Owner) -> None:

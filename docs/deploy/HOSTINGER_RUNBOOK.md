@@ -272,20 +272,23 @@ A new engine version = a new tag (or commit sha) in `ATP_PRIVATE_REF`, then the 
 
 ## 4e. The owner's 15M SRv2 bot (flag `srv2_bot`, owner only)
 
-Needs the private package (section 4d). PAPER only, in the bot's own store; it places no ATP order.
+Needs the private package (section 4d). PAPER only, in the bot's own store; it places no ATP order. Its Telegram ✅ cards and
+its Vision take what the owner set in ATP's dashboard (owner 24 Nov); `.env` is needed only to override them.
 
-1. **Its own Telegram bot.** In Telegram, @BotFather -> /newbot. Use a NEW bot, never the Trade bot's token: two services
-   reading one bot's updates take each other's taps. Send the new bot one message, then read your chat id (for example
-   from @userinfobot).
-2. **`.env`** (`nano /opt/atp/.env`, as `atp`; values only on the server):
-   `SRV2_TELEGRAM_BOT_TOKEN`, `SRV2_TELEGRAM_CHAT_ID`, `SRV2_TELEGRAM_APPROVER_IDS` (at least the same chat id),
-   `SRV2_VISION_CALLBACK_SECRET` (`openssl rand -hex 32`). Optional, Vision on its setups: `SRV2_VISION_SIGNAL_MODEL` and
-   `SRV2_ANTHROPIC_API_KEY` (empty = Vision "unavailable"; the card still goes). Without the four Telegram values the cards
-   carry no buttons, and in "Ask me first" no entry is placed (Trade's rule).
-3. The one deploy command.
-4. In ATP, signed in as the owner account (`LIVE_OWNER_USER_ID`, with MFA): Upstox connected (ATP's own app), then
-   Admin -> Controls: flag `srv2_bot` ON; in Safety, the bot's agent mode ("Ask me first" is the default) and its settings
-   card (signal symbols, then Save). The positions list on the same card shows what it opened.
+1. In ATP, signed in as the owner account (`LIVE_OWNER_USER_ID`, with MFA):
+   - Settings -> Alerts: the organisation's own Telegram bot (its token) and your chat linked to it. That chat gets the cards
+     and is the only one whose ✅ counts. Use a bot no other service reads (not the Trade bot's: two services reading one
+     bot take each other's taps). A chat linked only through "Connect Telegram" (the platform bot) gets messages but no
+     buttons, so "Ask me first" places no entry.
+   - Settings -> AI: your Anthropic key and the model (Vision). Without it Vision says "unavailable"; the card still goes.
+   - Upstox connected (ATP's own app).
+   - Admin -> Controls: flag `srv2_bot` ON; in Safety, the bot's agent mode ("Ask me first" is the default) and its settings
+     card (signal symbols, then Save). The positions list on the same card shows what it opened.
+2. The worker reads the dashboard again every 5 minutes and restarts the bot's Telegram / Vision services when something
+   changed. Its log names what is set (`srv2 bot: settings set: ...`), never a value.
+3. Override (optional): `SRV2_TELEGRAM_BOT_TOKEN`, `SRV2_TELEGRAM_CHAT_ID`, `SRV2_TELEGRAM_APPROVER_IDS`,
+   `SRV2_VISION_CALLBACK_SECRET`, `SRV2_VISION_SIGNAL_MODEL`, `SRV2_ANTHROPIC_API_KEY` in `.env`, then the deploy. A value
+   set there wins over the dashboard.
 
 ## 5. DNS and TLS
 

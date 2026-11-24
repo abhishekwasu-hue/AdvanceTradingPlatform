@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ticket Limit orders</title>
+<style>body{font-family:system-ui,sans-serif;margin:16px;background:#fff;color:#111}.row{display:flex;flex-wrap:wrap;gap:16px}
+figure{margin:0;max-width:100%}img{max-width:100%;border:1px solid #ccc}figcaption{font-size:13px;color:#555}</style></head><body>
+<h1>Ticket: Limit orders (owner 24 Nov)</h1>
+<p><b>PAPER, before:</b> a Limit the price had not reached was refused ("Practice mode fills an order only when the price
+reaches it now"). The server could keep a waiting order, but the ticket never asked it to.</p>
+<p><b>PAPER, after:</b> the ticket asks how the waiting order fires (Touch / Candle close). If he leaves it, his saved
+setting is used. The order then waits until the close; it is listed under Waiting orders, where he can cancel it.</p>
+<p><b>LIVE:</b> a Limit is now sent to his broker at his own price, only when the price has reached it. It fills there or
+better; if it does not fill at once, it is cancelled at the broker, so no unseen order is left working. SL / SL-M on LIVE
+stay refused in a plain sentence.</p>
+<h2>Phone 390</h2><div class="row">
+<figure><img src="before-paper-limit-390-light.png"><figcaption>before, light</figcaption></figure>
+<figure><img src="paper-limit-wait-390-light.png"><figcaption>after, light</figcaption></figure>
+<figure><img src="before-paper-limit-390-dark.png"><figcaption>before, dark</figcaption></figure>
+<figure><img src="paper-limit-wait-390-dark.png"><figcaption>after, dark</figcaption></figure></div>
+<h2>Desktop 1440</h2><div class="row">
+<figure><img src="before-paper-limit-1440-light.png"><figcaption>before, light</figcaption></figure>
+<figure><img src="paper-limit-wait-1440-light.png"><figcaption>after, light</figcaption></figure>
+<figure><img src="before-paper-limit-1440-dark.png"><figcaption>before, dark</figcaption></figure>
+<figure><img src="paper-limit-wait-1440-dark.png"><figcaption>after, dark</figcaption></figure></div>
+</body></html>

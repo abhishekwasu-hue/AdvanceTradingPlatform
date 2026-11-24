@@ -35,7 +35,19 @@ export interface Draft {
   target: string;
   /** M96-Q1 (owner): PAPER unless he picks LIVE on the ticket (no saved LIVE default exists, so never pre-selected). */
   mode: OrderMode;
+  /** Owner 24 Nov: a PAPER Limit / SL / SL-M the price has not reached waits for it. How it fires - on a touch or on a
+   * candle close - is his own: "" = his saved Trade setting (the server asks when none is saved). */
+  waitOn?: "" | "TOUCH" | "CLOSE";
+  /** The candle (minutes) a candle-close wait reads. */
+  waitTf?: number;
 }
+
+/** Owner 24 Nov: how a waiting PAPER order fires (his own choice; never pre-selected). */
+export const WAIT_ON: { value: "TOUCH" | "CLOSE"; label: string }[] = [{ value: "TOUCH", label: "Touch" }, { value: "CLOSE", label: "Candle close" }];
+export const WAIT_TIMEFRAMES: { value: string; label: string }[] = [
+  { value: "5", label: "5m" }, { value: "15", label: "15m" }, { value: "60", label: "1h" },
+];
+export const WAIT_TEXT = "Waits for your price until today's close, then places it (every check runs again). Cancel it any time under Waiting orders.";
 
 /** M63 I-7: `term` names the glossary entry behind the (?) the ticket shows for a trading term (no effect on the order). */
 export const ORDER_TYPES: { value: OrderType; label: string; term?: GlossaryKey }[] = [
@@ -52,7 +64,7 @@ export const ORDER_TYPE_MISSING = "Pick an order type: Market, Limit, SL or SL-M
 export const ORDER_MODES: { value: OrderMode; label: string }[] = [{ value: "PAPER", label: "Paper" }, { value: "LIVE", label: "Live" }];
 /** M96-Q1: the server's own words (app/paper/fno_ticket.py LIVE_OFF / LIVE_MARKET_ONLY). */
 export const LIVE_OFF_TEXT = "Live trading is switched off by the admin.";
-export const LIVE_MARKET_ONLY = "A LIVE order from the ticket is sent as a Market order: Limit, SL and SL-M are not sent to the broker from here yet.";
+export const LIVE_MARKET_ONLY = "A LIVE order from the ticket is a Market or a Limit order: SL and SL-M are not sent to the broker from here yet.";
 /** M68 PR-2 (TS1-020): no lots are pre-filled either - the ticket asks for them, with "Save as my default". */
 export const LOTS_UNSET_TEXT = "Enter the lots (none saved in your Trade settings).";
 export const LOTS_MISSING = "Enter the lots";
@@ -143,8 +155,13 @@ export function draftProblems(d: Draft, _right: ContractRight = "CE"): string[] 
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
   // M96 Q2: the server checks the target is on the profitable side of the entry (it knows the fill price).
   if ((d.target ?? "").trim() !== "" && num(d.target) === null) out.push("The target is not a price");
-  if (d.mode === "LIVE" && d.orderType !== null && d.orderType !== "MARKET") out.push(LIVE_MARKET_ONLY);
+  if (d.mode === "LIVE" && d.orderType !== null && d.orderType !== "MARKET" && d.orderType !== "LIMIT") out.push(LIVE_MARKET_ONLY);
   return out;
+}
+
+/** Owner 24 Nov: a PAPER Limit / SL / SL-M waits for its price (a LIVE order never waits in ATP). */
+export function waits(d: Pick<Draft, "mode" | "orderType">): boolean {
+  return (d.mode ?? "PAPER") === "PAPER" && d.orderType !== null && d.orderType !== "MARKET";
 }
 
 export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderAsk {
@@ -157,6 +174,7 @@ export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderA
     target: num(d.target ?? ""),
     mode: d.mode ?? "PAPER",
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,
+    ...(waits(d) ? { rest_if_waiting: true, trigger_mode: d.waitOn || null, timeframe_minutes: d.waitOn === "CLOSE" ? (d.waitTf ?? 15) : null } : {}),
   };
 }
 
@@ -182,6 +200,10 @@ export function resultText(r: OrderResult): string {
     return `${r.mode === "LIVE" ? "Sent to your broker (LIVE)" : "Placed in practice mode"}: ${sideWord(r.side, true)} ${formatNumber(lots, lots % 1 ? 2 : 0)} lot${lots === 1 ? "" : "s"} `
       + `(${formatNumber(r.filled.quantity, 0)} qty) of ${r.label} at ${formatPrice(r.filled.price)}.`
       + (r.target_order ? ` ${r.target_order.text}` : "");
+  }
+  if (r.status === "RESTING") {
+    return `Waiting in practice mode: ${sideWord(r.side, true)} ${r.lots} lot${r.lots === 1 ? "" : "s"} of ${r.label} at your price `
+      + `${typeof r.rest_level === "number" ? formatPrice(r.rest_level) : ""}. It is placed when the price reaches it (until today's close); cancel it any time under Waiting orders.`;
   }
   return r.reasons.length ? `Not placed: ${r.reasons[0]}` : "Not placed.";
 }

@@ -241,7 +241,15 @@ describe("FNO-1 order ticket", () => {
     const ask = askOf(TT, { ...newDraft("SELL", { product: "MIS" }), lots: 2, orderType: "LIMIT", price: "251", trigger: "249", stopLoss: "300" }, "ref-12345678");
     expect(ask).toEqual({ underlying: "NIFTY", expiry: "2026-11-03", strike: 24500, right: "CE", side: "SELL", lots: 2, order_type: "LIMIT",
       product: "MIS", price: 251, trigger_price: null, stop_loss: 300, target: null, chain_ltp: 250, client_ref: "ref-12345678",   // M96: no target entered = none
-      mode: "PAPER" });
+      mode: "PAPER",
+      // Owner 24 Nov: a PAPER limit waits for its price; how it fires is his saved setting until he picks (null)
+      rest_if_waiting: true, trigger_mode: null, timeframe_minutes: null });
+    const close = askOf(TT, { ...newDraft("BUY", { product: "MIS" }), lots: 1, orderType: "LIMIT", price: "240", waitOn: "CLOSE", waitTf: 5 }, "ref-2");
+    expect([close.rest_if_waiting, close.trigger_mode, close.timeframe_minutes]).toEqual([true, "CLOSE", 5]);
+    const market = askOf(TT, { ...newDraft("BUY", { product: "MIS" }), lots: 1, orderType: "MARKET" }, "ref-3");
+    expect(market.rest_if_waiting).toBeUndefined();                                        // a market order never waits
+    const live = askOf(TT, { ...newDraft("BUY", { product: "MIS" }), lots: 1, orderType: "LIMIT", price: "240", mode: "LIVE" }, "ref-4");
+    expect(live.rest_if_waiting).toBeUndefined();                                          // a LIVE order never waits in ATP
     // M96-Q1 (owner, changed): the ticket has a LIVE choice now; replaced "no mode / no LIVE" - nothing pre-selects LIVE.
     expect(newDraft("BUY", { lots: 1, product: "MIS", orderType: "MARKET" }).mode).toBe("PAPER");
   });

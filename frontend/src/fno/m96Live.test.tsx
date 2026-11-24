@@ -53,8 +53,9 @@ describe("M96-Q1 ticket mode", () => {
     expect(body(READY, { open: false, text: LIVE_OFF_TEXT })).not.toContain('data-ticket="live-off"');   // PAPER is untouched
   });
 
-  it("LIVE from the ticket is a Market order, said plainly", () => {
-    expect(draftProblems({ ...READY, mode: "LIVE", orderType: "LIMIT", price: "250" })).toEqual([LIVE_MARKET_ONLY]);
+  it("LIVE from the ticket is a Market or a Limit order (owner 24 Nov); SL / SL-M are said plainly", () => {
+    expect(draftProblems({ ...READY, mode: "LIVE", orderType: "LIMIT", price: "250" })).toEqual([]);
+    expect(draftProblems({ ...READY, mode: "LIVE", orderType: "SL-M", trigger: "250" })).toEqual([LIVE_MARKET_ONLY]);
     expect(draftProblems({ ...READY, mode: "LIVE" })).toEqual([]);
     expect(draftProblems({ ...READY, orderType: "LIMIT", price: "250" })).toEqual([]);
   });
@@ -72,5 +73,11 @@ describe("M96-Q1 ticket mode", () => {
     const placed: OrderResult = { ...preview({ mode: "LIVE" }), status: "PLACED", reasons: [], order_id: 1, trade_id: 2, filled: { price: 250, quantity: 75, lots: 1 } };
     expect(resultText(placed)).toMatch(/^Sent to your broker \(LIVE\): Bought 1 lot \(75 qty\)/);
     expect(resultText({ ...placed, mode: "PAPER" })).toMatch(/^Placed in practice mode: /);
+  });
+
+  it("owner 24 Nov: a PAPER limit the price has not reached waits, and the result says so", () => {
+    const waiting: OrderResult = { ...preview({ mode: "PAPER" }), status: "RESTING", reasons: [], order_id: null, trade_id: null, filled: null,
+      resting: true, rest_level: 240 };
+    expect(resultText(waiting)).toMatch(/^Waiting in practice mode: Bought? 1 lot of .* at your price 240\.00\. It is placed when the price reaches it/);
   });
 });

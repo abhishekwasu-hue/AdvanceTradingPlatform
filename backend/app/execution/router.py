@@ -131,7 +131,7 @@ class OrderRouter:
         exchange: str = "NSE", product: str | None = None, place_protective_stop: bool = True,
         algo_id: str | None = None, order_style: str | None = None, market_protection_pct: float | None = None,
         is_option: Optional[bool] = None, paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
-        order_ref: int | None = None, paper_charges: PaperCharges | None = None,
+        order_ref: int | None = None, paper_charges: PaperCharges | None = None, limit_price: float | None = None,
     ) -> None:
         self.mode = mode
         # M55 S4: the `orders` row this execution belongs to - its entry and protective stop carry client order ids
@@ -155,6 +155,9 @@ class OrderRouter:
         # 0.5 % chosen here). P0.5 / T2: `is_option` tells the stop which order type the broker accepts (None = infer
         # from the symbol).
         self.order_style = order_style.upper() if order_style else None
+        # Owner 24 Nov ("LIVE Limit"): order_style LIMIT = the user's own limit order at `limit_price` (the F&O ticket's
+        # LIVE Limit). It fills at that price or better; unfilled in the poll window it is cancelled at the broker (P0.5 / T1).
+        self.limit_price = limit_price
         self.market_protection_pct = market_protection_pct
         self.is_option = is_option
         self.risk_manager = RiskManager(risk_config)
@@ -232,7 +235,7 @@ class OrderRouter:
             return protected_limit_price(signal.entry, side, band)
 
         venue_caps = getattr(venue, "capabilities", None)
-        if band is None and (self.order_style == "PROTECTED_LIMIT"
+        if band is None and self.order_style != "LIMIT" and (self.order_style == "PROTECTED_LIMIT"
                              or (venue_caps is not None and not venue_caps.market_orders_allowed)):
             return ExecutionResult(executed=False, reasons=notes + [needs_band])
 
@@ -254,7 +257,12 @@ class OrderRouter:
             intent=ORDER_INTENT_ENTRY,
             lot_size=int(contract_spec.lot_size) if contract_spec is not None and contract_spec.lot_size else None,
         )
-        if self.order_style == "PROTECTED_LIMIT" and band is not None:
+        if self.order_style == "LIMIT":
+            if not self.limit_price or self.limit_price <= 0:
+                return ExecutionResult(executed=False, reasons=notes + ["A limit order needs its limit price"])
+            order_request = order_request.model_copy(update={"order_type": "LIMIT", "price": float(self.limit_price)})
+            notes.append(f"Limit order at {self.limit_price:g} (your price)")
+        elif self.order_style == "PROTECTED_LIMIT" and band is not None:
             limit = protected_limit_price(signal.entry, order_request.transaction_type, band)
             order_request = order_request.model_copy(update={"order_type": "LIMIT", "price": limit})
             notes.append(f"Protected limit entry at {limit} ({band:g}% past {signal.entry})")

@@ -21,6 +21,7 @@ import {
   ORDER_TYPES, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
   blockedBy, draftFromDefaults, newDraft, resultText, type DraftDefaults, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
   PRODUCT_UNSET_TEXT, ORDER_TYPE_UNSET_TEXT, LOTS_UNSET_TEXT, firstMissing, ORDER_MODES, LIVE_OFF_TEXT,
+  WAIT_ON, WAIT_TEXT, WAIT_TIMEFRAMES, waits,
 } from "./ticketModel";
 import { ExplainV2, RiskLineV2, useRiskBudget } from "./InsightsV2";
 import { InPlaceLink } from "../inplace/InPlaceLink";
@@ -580,6 +581,18 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
                 </div>
               </div>
             )}
+            {waits(draft) && (
+              <div className="space-y-space-1" data-ticket="wait">
+                <p className="text-t12 font-medium text-fg-muted">If the price is not there yet, place it on</p>
+                <Segmented label="If the price is not there yet, place it on" testId="wait-on" value={draft.waitOn || null}
+                  onChange={(v) => onDraft({ waitOn: v })} options={WAIT_ON} />
+                {draft.waitOn === "CLOSE" && (
+                  <Segmented label="Candle" testId="wait-tf" value={String(draft.waitTf ?? 15)}
+                    onChange={(v) => onDraft({ waitTf: Number(v) })} options={WAIT_TIMEFRAMES} />
+                )}
+                <p className="text-t12 text-fg-muted">{draft.waitOn ? WAIT_TEXT : `Not chosen: your saved setting is used. ${WAIT_TEXT}`}</p>
+              </div>
+            )}
             {/* UX-9 (ticket LOOK): side, lots, order type and its price stay in view; the product and the position's
                 stop-loss sit under "More options", their current values in its summary line. What is sent is unchanged.
                 M68 TS-3: it stays open while it asks for the product, and after he picks one (its "Save as my default"). */}
@@ -625,7 +638,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
 
         {step.kind === "done" && (
           <p role="status" data-ticket="result"
-            className={cx("rounded-control px-space-3 py-space-3 text-t14", step.result.status === "PLACED" ? "bg-surface-2 text-fg" : "bg-warn-tint text-warn")}>
+            className={cx("rounded-control px-space-3 py-space-3 text-t14", step.result.status === "PLACED" || step.result.status === "RESTING" ? "bg-surface-2 text-fg" : "bg-warn-tint text-warn")}>
             {resultText(step.result)}
           </p>
         )}

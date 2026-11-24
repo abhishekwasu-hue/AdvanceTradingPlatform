@@ -138,7 +138,7 @@ async def execute_signal_for_user(
     max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
     manual_contract_spec: Optional[ContractSpec] = None, manual_contract_meta: Optional[dict] = None,
     paper_execution: str = "direct", freeze_quantity: Optional[int] = None,
-    protective_stop: bool = True,
+    protective_stop: bool = True, limit_price: Optional[float] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -450,7 +450,7 @@ async def execute_signal_for_user(
             # M96-Q1: a manual ticket order without a stop of the user's own gets no broker stop either (`protective_stop`).
             place_protective_stop=protective_stop and not (plan is not None and plan.meta.get("instrument_kind") == "OPTION"
                                                            and plan.meta.get("premium_stop_pct") is None),
-            order_ref=order.id,
+            order_ref=order.id, limit_price=limit_price,
             # M68 PR-7 (TS1-069): a PAPER fill pays his own brokerage / slippage (Not set: statutory charges only).
             paper_charges=await paper_settings.charges_for(session, user) if execution_mode == ExecutionMode.PAPER else None,
         )

@@ -6,7 +6,7 @@
 import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from "lightweight-charts";
 import type { DrawingV1 } from "./drawings";
-import { BAND_LABEL_FONT_PX, DEFAULT_COLOR, LABEL_FONT_PX, shapes, type BandRef, type Converters, type Rect, type Shape } from "./geometry";
+import { BAND_LABEL_FONT_PX, DEFAULT_COLOR, LABEL_FONT_PX, shapes, textRect, type BandRef, type Converters, type Rect, type Shape } from "./geometry";
 import { handles } from "./tools";
 
 /** The slice of CanvasRenderingContext2D the painter uses (structural, so tests can record calls). */
@@ -188,6 +188,22 @@ export type HandleContext = Pick<CanvasRenderingContext2D, "save" | "restore" | 
  * around it (the drawing's colour as shown). */
 export interface HandleColors { fill: string; ring: string }
 
+/** A selected text label: a thin box around it instead of a round handle, which would cover its first letter (owner
+ * 24 Nov, the label typed on the chart). The label itself is still the drag handle. */
+export function paintTextBox(ctx: HandleContext & { strokeRect(x: number, y: number, w: number, h: number): void }, box: Rect, ring: string): void {
+  ctx.save();
+  try {
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = ring;
+    ctx.strokeRect(box.x - TEXT_BOX_PAD, box.y - TEXT_BOX_PAD / 2, box.w + TEXT_BOX_PAD * 2, box.h + TEXT_BOX_PAD);
+  } finally {
+    ctx.restore();
+  }
+}
+
+const TEXT_BOX_PAD = 4;
+
 export function paintHandles(ctx: HandleContext, points: readonly { x: number; y: number }[], colors: HandleColors): void {
   ctx.save();
   try {
@@ -220,7 +236,9 @@ export class SelectionPrimitive implements ISeriesPrimitive<Time> {
           const c = d ? this.converters(mediaSize.width, mediaSize.height) : null;
           if (!d || !c) return;
           const ring = d.style?.color ?? DEFAULT_COLOR;
-          paintHandles(context, handles(d, c), { ring, fill: this.fill ?? ring });
+          const label = d.kind === "text" ? shapes(d, c).find((x) => x.type === "text") : undefined;
+          if (label?.type === "text") paintTextBox(context, textRect(label), ring);
+          else paintHandles(context, handles(d, c), { ring, fill: this.fill ?? ring });
         });
       },
     };

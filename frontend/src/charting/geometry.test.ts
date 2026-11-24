@@ -211,3 +211,20 @@ describe("owner 21 Nov: the selected drawing's handles", () => {
     expect(prim.paneViews()[0].zOrder?.()).toBe("top");
   });
 });
+
+describe("owner 24 Nov: a selected text label is boxed, its first letter stays readable", () => {
+  it("a text drawing gets a thin box around the label and no round handle on it", () => {
+    const { calls, ctx } = recorder();
+    const target = { useMediaCoordinateSpace: (fn: (s: { context: unknown; mediaSize: { width: number; height: number } }) => void) =>
+      fn({ context: ctx, mediaSize: { width: 400, height: 600 } }) };
+    const d: DrawingV1 = { kind: "text", anchors: [{ t: iso(2), p: 100 }], text: "Breakout area", style: { color: "#112233" } };
+    new SelectionPrimitive(d, () => conv, "rgb(1, 2, 3)").paneViews()[0].renderer()?.draw(target as never);
+    expect(calls.filter((c) => c.startsWith("arc("))).toEqual([]);
+    const box = calls.filter((c) => c.startsWith("strokeRect("));
+    expect(box).toHaveLength(1);
+    const [x, , w] = box[0].slice("strokeRect(".length, -1).split(",").map(Number);
+    expect(x).toBeLessThan(20);                                  // starts left of the anchor (x 20): the first letter is inside
+    expect(w).toBeGreaterThan(20);
+    expect(calls).toContain("strokeStyle=#112233");
+  });
+});

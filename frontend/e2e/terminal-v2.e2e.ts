@@ -2005,3 +2005,57 @@ test.describe("v2 terminal Conclusion panel (TERM-CON C2)", () => {
     }
   }
 });
+
+// --- Owner screenshot 24 Nov: the chart read was busy ("not available"), every OI line carried "OI banner (stored slots)",
+// "No clear movement" repeated the OI line, and the expiry was a raw date. CON_FIX_SHOTS=<dir> writes the after shots.
+const CON_FIX_SHOTS = process.env.CON_FIX_SHOTS;
+const BUSY_READ = {
+  ...CONCLUSION, expiry: "2026-12-01", fingerprint: "e2e-busy", retry_after: 1, readings: [], needs_you: [],
+  glance: { lean: { side: "none", count: 0, of: 0, words: "No readings yet" }, meter: { up: 0, down: 0, range: 0, none: 0, total: 0 },
+    agrees: [], conflicts: [], line: null },
+  sections: [
+    { key: "chart", title: "Chart", status: "na", busy: true, source: "Chart reading (closed bars)", as_of: null, lines: [],
+      note: "The chart is still being read. It shows here in a moment." },
+    { key: "oi", title: "OI", status: "ok", source: "OI banner (stored slots)", as_of: "2026-11-24T12:30:00Z", note: null, lines: [
+      { text: "OI: No clear OI change.", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: "2026-11-24T12:30:00Z" },
+      { text: "PCR 1.06 (High PCR zone).", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: "2026-11-24T12:30:00Z" },
+      { text: "Max pain strike 25,450.", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: "2026-11-24T12:30:00Z" },
+      { text: "Sessions to expiry: 7.", tone: "neutral", kind: "data", source: "OI banner (stored slots)", as_of: "2026-11-24T12:30:00Z" }] },
+  ],
+};
+
+test.describe("v2 terminal Conclusion: owner screenshot 24 Nov", () => {
+  for (const [width, height] of [[1440, 1000], [390, 844]] as const) {
+    for (const theme of THEMES) {
+      test(`${width} ${theme}: a busy chart read is read again; no source labels; the expiry as a day`, async ({ page }) => {
+        await page.setViewportSize({ width, height });
+        let built = false;                                    // the chart stays "being read" until the test lets it finish
+        let after = 0;
+        await open(page, theme, { features: CON_ON, routes: async (p: Page) => {
+          await p.route(/\/api(?:\/v1)?\/terminal\/conclusion\?/, (r) => {
+            if (built) after += 1;
+            return r.fulfill({ json: built ? { ...CONCLUSION, expiry: "2026-12-01" } : BUSY_READ });
+          });
+        } });
+        if (width < 600) await page.locator("[data-tab='conclusion']").click();
+        const body = page.locator("[data-panel-body='conclusion']");
+        await expect(body).toBeVisible();
+        await expect(body).toContainText("NIFTY · Expiry 1 Dec");
+        await body.locator("details[data-section='chart'] summary").click();
+        await body.locator("details[data-section='oi'] summary").click();
+        await expect(body).toContainText("The chart is still being read.");
+        await expect(body.locator("details[data-section='chart'] summary")).toContainText("being read");
+        await expect(body.locator("details[data-section='chart'] summary")).not.toContainText("not available");
+        await expect(body).not.toContainText("stored slots");
+        await expect(body).not.toContainText("2026-12-01");
+        if (width < 600) await expectPhoneLayout(page);
+        if (CON_FIX_SHOTS) await body.screenshot({ path: `${CON_FIX_SHOTS}/after-busy-${width}-${theme}.png` });
+        built = true;
+        await expect(body.locator("[data-lean='up']")).toBeVisible({ timeout: 5000 });       // read again on its own: the chart is there now
+        expect(after).toBeGreaterThanOrEqual(1);
+        await expect(body).not.toContainText("Stored areas");
+        if (CON_FIX_SHOTS) await body.screenshot({ path: `${CON_FIX_SHOTS}/after-read-${width}-${theme}.png` });
+      });
+    }
+  }
+});

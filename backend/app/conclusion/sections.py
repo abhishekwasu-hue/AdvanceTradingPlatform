@@ -42,6 +42,7 @@ FILLED = {"FILLED", "POSITION_OPEN"}
 WORKING = {"CREATED", "VALIDATING", "RISK_CHECK", "SUBMITTED", "PENDING", "PARTIAL_FILL"}
 REFUSED = {"REJECTED", "FAILED"}
 
+BUSY_NOTE = "The chart is still being read. It shows here in a moment."
 NA_NOTES = {
     "chart": "The chart reading is not available for this symbol right now.",
     "oi": "No OI reading is stored for this symbol today.",
@@ -152,7 +153,7 @@ def oi_section(resp: Mapping[str, Any], expiry: str | None) -> Section:
     as_of = b.get("slot")
     direction = OI_DIRECTION.get(str(b.get("direction") or "NEUTRAL"), "none")
     out = [line(f"OI: {oi_words.direction_words(b.get('direction'))}.", tone=_tone(direction), kind="data", source=SOURCE_OI, as_of=as_of)]
-    if b.get("fact_message"):
+    if b.get("fact_message") and str(b["fact_message"]) != "No clear movement":   # the line above already says it
         out.append(line(str(b["fact_message"]), kind="data", source=SOURCE_OI, as_of=as_of))
     pcr = _figure(b.get("pcr"))
     if pcr is not None:

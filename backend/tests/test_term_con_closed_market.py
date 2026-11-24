@@ -71,3 +71,64 @@ def test_a_banner_today_is_used_as_it_is(monkeypatch):
         tenant_id = 1
     got = asyncio.run(G._oi(_Session(), U(), "NIFTY"))
     assert "last_session" not in got and S.oi_reading(got)["label"] == "OI"
+
+
+def test_a_busy_build_slot_is_tried_again_and_then_said_as_being_read(monkeypatch):
+    """Owner screenshot 24 Nov: "The chart reading is not available" while the Chart panel built the same chart - his one
+    build slot answered 503 busy and the panel called it "not available". Now: tried CHART_TRIES times, then "busy"."""
+    from fastapi import HTTPException
+
+    from app.charts import read_chart as rc
+    calls = {"n": 0}
+
+    async def busy(**kw):
+        calls["n"] += 1
+        raise HTTPException(status_code=503, detail="busy, retry")
+
+    monkeypatch.setattr(rc, "read_chart", busy)
+    assert asyncio.run(G._chart(_Session(), object(), "NIFTY", "15m")) == "busy"        # type: ignore[arg-type]
+    assert calls["n"] == G.CHART_TRIES
+
+    calls["n"] = 0
+
+    async def busy_then_ok(**kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise HTTPException(status_code=503, detail="busy, retry")
+        return {"bars": 10}
+
+    monkeypatch.setattr(rc, "read_chart", busy_then_ok)
+    assert asyncio.run(G._chart(_Session(), object(), "NIFTY", "15m")) == {"bars": 10}   # type: ignore[arg-type]
+
+    async def off(**kw):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    monkeypatch.setattr(rc, "read_chart", off)
+    assert asyncio.run(G._chart(_Session(), object(), "NIFTY", "15m")) == "off"          # type: ignore[arg-type]
+
+    sec = S.na("chart", "Chart", S.SOURCE_CHART, S.BUSY_NOTE)
+    assert sec["note"] == S.BUSY_NOTE and "not available" not in sec["note"]
+
+
+def test_a_busy_chart_marks_the_section_and_asks_the_panel_to_read_again(monkeypatch):
+    async def busy(session, user, symbol, tf):
+        return "busy"
+
+    async def nothing(*a, **kw):
+        return "na"
+
+    monkeypatch.setattr(G, "_chart", busy)
+    for name in ("_oi", "_positions", "_orders", "_signals", "_broker", "_kill", "_guardian", "_events"):
+        monkeypatch.setattr(G, name, nothing)
+    body = asyncio.run(G.conclusion(_Session(), type("U", (), {"id": 1, "tenant_id": 1})(), "NIFTY", "2026-12-01", "15m"))  # type: ignore[arg-type]
+    chart = next(s for s in body["sections"] if s["key"] == "chart")
+    assert chart["busy"] is True and chart["note"] == S.BUSY_NOTE
+    assert body["retry_after"] == G.RETRY_AFTER_SECONDS
+
+
+def test_the_oi_section_does_not_repeat_no_clear_movement():
+    resp = {"banner": {"slot": "2026-11-24T12:30:00+00:00", "direction": "NEUTRAL", "fact_message": "No clear movement", "pcr": 1.06}}
+    texts = [x["text"] for x in S.oi_section(resp, None)["lines"]]
+    assert texts[0] == "OI: No clear OI change." and "No clear movement" not in texts
+    resp["banner"]["fact_message"] = "Put writing → NIFTY OI readings lean up"
+    assert "Put writing → NIFTY OI readings lean up" in [x["text"] for x in S.oi_section(resp, None)["lines"]]

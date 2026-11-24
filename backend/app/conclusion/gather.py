@@ -55,12 +55,25 @@ def chart_key(symbol: str) -> str:
         return symbol
 
 
+CHART_TRIES = 3          # the chart read shares his one build slot with the Chart panel's own build (2 s wait each)
+RETRY_AFTER_SECONDS = 20  # a read whose chart was still busy asks the panel to read again after this
+
+
 async def _chart(session: AsyncSession, user: User, symbol: str, tf: str) -> dict[str, Any] | None | str:
+    """The chart reading; "busy" when his build slot stayed taken (the Chart panel building the same chart at the same
+    moment - opening the Terminal, a bar close) after CHART_TRIES waits: said as "being read", never "not available"."""
     from app.charts.read_chart import read_chart
-    try:
-        return await read_chart(instrument=chart_key(symbol), tf=tf, user=user, session=session)  # type: ignore[arg-type]
-    except HTTPException as exc:
-        return "off" if exc.status_code == 404 else "na"
+    for _ in range(CHART_TRIES):
+        try:
+            return await read_chart(instrument=chart_key(symbol), tf=tf, user=user, session=session)  # type: ignore[arg-type]
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                return "off"
+            if exc.status_code != 503:
+                log.warning("conclusion: chart read refused (%s) for %s %s", exc.status_code, symbol, tf)
+                return "na"
+    log.info("conclusion: chart build slot busy for %s %s", symbol, tf)
+    return "busy"
 
 
 async def _oi(session: AsyncSession, user: User, symbol: str, now: datetime | None = None) -> dict[str, Any] | None | str:
@@ -159,6 +172,8 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
     readings: list[dict[str, Any]] = []
     if chart == "off":
         out.append(S.off("chart", "Chart", S.SOURCE_CHART))
+    elif chart == "busy":
+        out.append({**S.na("chart", "Chart", S.SOURCE_CHART, S.BUSY_NOTE), "busy": True})
     elif not isinstance(chart, dict):
         out.append(S.na("chart", "Chart", S.SOURCE_CHART))
     else:
@@ -209,5 +224,7 @@ async def conclusion(session: AsyncSession, user: User, symbol: str, expiry: str
                                                      today=now.astimezone(IST).date().isoformat()),
                             "glance": R.glance(readings, symbol),
                             "note": "Information only: what ATP's readings show, never a recommendation. The decision is yours."}
+    if chart == "busy":
+        body["retry_after"] = RETRY_AFTER_SECONDS
     body["fingerprint"] = fingerprint(body)
     return body

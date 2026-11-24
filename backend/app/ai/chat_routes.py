@@ -192,7 +192,7 @@ AGENT_FALLBACK_NOTE = "The AI could not answer this one, so this answer uses ATP
 
 
 async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, user_id: int, question: str,
-                        context: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, str]:
+                        context: dict[str, Any] | None = None, earlier: list[dict[str, str]] | None = None) -> tuple[dict[str, Any] | None, str]:
     """M72 PR-1c (CP-1, F22): the planner first. (the answer in the chat's shape, "") when the AI answered and its answer
     passed the checks; (None, why) otherwise - the caller then answers from ATP's rules. Never an order (ADR-0006)."""
     from app.ai import agent, grounding
@@ -209,7 +209,7 @@ async def _agent_answer(session: AsyncSession, provider: Any, tenant_id: int, us
     stamp(provider, agent.PROMPT_VERSION)
     try:
         ans = await agent.run_agent(provider, ToolContext(session, tenant_id, user), question, limits=await agent.admin_limits(session),
-                                    context=context, lang=lang, memory=remembered, tone=tone)
+                                    context=context, lang=lang, memory=remembered, tone=tone, earlier=earlier)
     except Exception as exc:  # noqa: BLE001 - the planner never breaks the chat: the rules answer instead
         await session.rollback()
         return None, f"planner error ({exc.__class__.__name__})"
@@ -264,7 +264,8 @@ async def _chat_ask(body: ChatBody, session: AsyncSession, tenant_id: int, user_
             and await flag_enabled(session, AGENT_FLAG, tenant_id)):
         # M72 PR-1c: the AI planner first; ATP's rules only when the AI is down or its answer fails the checks (F22).
         agent_tried = True
-        planned, agent_why = await _agent_answer(session, provider, tenant_id, user_id, body.message, context)
+        earlier = await chat_history.for_planner(session, tenant_id, user_id, body.session_id, new_chat=body.new_chat)
+        planned, agent_why = await _agent_answer(session, provider, tenant_id, user_id, body.message, context, earlier)
         if planned is not None:
             from app.ai import metering
             run_info = planned.pop("agent")                  # the run's audit id: admin diagnostics only, never the user's view

@@ -236,7 +236,12 @@ export interface ToolView {
   canUndo: boolean;
   canRedo: boolean;
   message: string | null;
+  /** A text label just placed: its text field opens at once, so he types on the chart (no browser prompt). */
+  editText?: string | null;
 }
+
+/** The label a new text drawing starts with; he types over it at once (owner 24 Nov: like TradingView). */
+export const NEW_TEXT = "Text";
 
 interface Drag { key: string; handle: number | null; from: DataPoint; start: DrawingV1; current: DrawingV1; epoch: number }
 
@@ -249,6 +254,7 @@ export class DrawingController {
   private redoStack: Edit[] = [];
   private tool: DrawingKind | null = null;
   private toolText: string | undefined;
+  private textEdit: string | null = null;
   private placed: Anchor[] = [];
   private pointer: DataPoint | null = null;
   private selected: string | null = null;
@@ -294,7 +300,15 @@ export class DrawingController {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       message: this.message,
+      editText: this.textEdit,
     };
+  }
+
+  /** The bar has opened the new label's text field: the request is used up. */
+  textEditOpened() {
+    if (this.textEdit === null) return;
+    this.textEdit = null;
+    this.emit();
   }
 
   /** The drawing as the user last left it: a drag not yet saved, else the stored one. */
@@ -326,12 +340,14 @@ export class DrawingController {
     });
   }
 
-  /** Pick a tool (null = the pointer). A text drawing takes its text up front. */
+  /** Pick a tool (null = the pointer). A text drawing starts as NEW_TEXT unless a text is given; once placed, its text
+   * field opens on the chart (`editText`). */
   setTool(kind: DrawingKind | null, text?: string) {
     this.tool = kind;
-    this.toolText = text;
+    this.toolText = kind === "text" ? (text ?? NEW_TEXT) : text;
     this.placed = [];
     this.selected = null;
+    this.textEdit = null;
     this.message = null;
     this.emit();
   }
@@ -380,6 +396,7 @@ export class DrawingController {
         const key = String(stored.id);
         this.items.set(key, stored);
         this.selected = key;
+        if (kind === "text") this.textEdit = key;
         this.record({ key, before: null, after: stored.drawing });
       }
       this.emit();
@@ -388,6 +405,7 @@ export class DrawingController {
 
   select(key: string | null) {
     this.selected = key && this.items.has(key) ? key : null;
+    if (this.textEdit !== this.selected) this.textEdit = null;
     this.emit();
   }
 

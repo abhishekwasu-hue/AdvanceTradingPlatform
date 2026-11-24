@@ -230,6 +230,15 @@ services:
       PAPER_DATA_DIR: /data/private/srv2/paper
       ENGINE_SIGNAL_DB: /data/private/srv2/engine_signals.db
       ENGINE3_CACHE_DIR: /data/private/srv2/engine3_cache
+      # SRV2 P3 (ADR-0029, owner 24 Nov "srv2 bot ... active kase karu"): the bot's OWN Telegram bot (its ✅ cards and the taps on
+      # them) and Vision, in the names the copied Trade code reads. By default the worker takes them from the owner's dashboard
+      # (app/srv2bot/dashboard_env.py); SRV2_* in .env override them. Worker only.
+      TELEGRAM_BOT_TOKEN: ${SRV2_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${SRV2_TELEGRAM_CHAT_ID:-}
+      TELEGRAM_APPROVER_IDS: ${SRV2_TELEGRAM_APPROVER_IDS:-}
+      VISION_CALLBACK_SECRET: ${SRV2_VISION_CALLBACK_SECRET:-}
+      VISION_SIGNAL_MODEL: ${SRV2_VISION_SIGNAL_MODEL:-}
+      ANTHROPIC_API_KEY: ${SRV2_ANTHROPIC_API_KEY:-}
     volumes:
       - private_data:/data/private      # Analyze a chart: the daily retention job deletes expired images here (chart_analyze/ only)
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.

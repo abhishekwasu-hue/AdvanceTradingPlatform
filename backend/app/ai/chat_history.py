@@ -149,6 +149,42 @@ async def recent(session: AsyncSession, tenant_id: int, user_id: int, session_id
     return out
 
 
+EARLIER_TURNS = 4          # the newest turns of this conversation the planner sees (owner 24 Nov: "as per above analysis")
+EARLIER_ANSWER_CHARS = 1200
+EARLIER_QUESTION_CHARS = 300
+
+
+def _answer_text(answer: dict[str, Any] | None) -> str:
+    """The words the page showed for one answer: its text (or summary) and its section lines - no cards' raw data."""
+    if not answer:
+        return ""
+    parts: list[str] = []
+    text = answer.get("answer")
+    if isinstance(text, str) and text.strip():
+        parts.append(text.strip())
+    else:
+        parts.extend(str(x) for x in answer.get("summary") or [] if str(x).strip())
+    for sec in answer.get("sections") or []:
+        if isinstance(sec, dict):
+            parts.extend(str(x) for x in sec.get("lines") or [] if str(x).strip())
+    out = "\n".join(dict.fromkeys(parts))
+    return out if len(out) <= EARLIER_ANSWER_CHARS else out[:EARLIER_ANSWER_CHARS].rsplit(" ", 1)[0] + " …"
+
+
+async def for_planner(session: AsyncSession, tenant_id: int, user_id: int, session_id: int | None, *,
+                      new_chat: bool = False) -> list[dict[str, str]]:
+    """The newest EARLIER_TURNS turns of the conversation this question goes into (his own; none for a new chat), as
+    {"question", "answer"} text for the Copilot planner, oldest first. Raises NotYours."""
+    if new_chat:
+        return []
+    out = []
+    for turn in (await recent(session, tenant_id, user_id, session_id))[-EARLIER_TURNS:]:
+        answer = _answer_text(turn.get("answer"))
+        if answer:
+            out.append({"question": str(turn.get("question") or "")[:EARLIER_QUESTION_CHARS], "answer": answer})
+    return out
+
+
 def _day(value: Any) -> str | None:
     text = str(value or "")[:10]
     return text if len(text) == 10 and text[4] == "-" and text[7] == "-" else None
@@ -226,5 +262,5 @@ async def forget(session: AsyncSession, tenant_id: int, user_id: int) -> int:
     return int(result.rowcount or 0)
 
 
-__all__ = ["remember", "recent", "current", "sessions", "rename", "drop", "count", "forget", "keep", "sessions_keep",
+__all__ = ["remember", "recent", "for_planner", "current", "sessions", "rename", "drop", "count", "forget", "keep", "sessions_keep",
            "title_of", "NotYours", "NOT_STORED", "EARLIER", "TITLE_MAX"]

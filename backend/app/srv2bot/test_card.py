@@ -39,17 +39,30 @@ async def _usable_adapter(session: Any, tenant_id: int, broker: str, user_id: in
     return build_adapter(record)
 
 
-async def _ready(loop: asyncio.AbstractEventLoop) -> tuple[dict[str, Any] | None, str]:
-    """(the host adapters, "") for the owner with the bot ON, else (None, why)."""
+async def _ready(loop: asyncio.AbstractEventLoop) -> tuple[dict[str, Any] | None, Any, str]:
+    """(the host adapters, ATP's market calendar, "") for the owner with the bot ON, else (None, None, why). The calendar is the one the
+    worker's loop hands the engine (job.calendar_for): the TEST card's market-hours refusal reads it (owner VPS 25 Nov: a fresh process
+    has no calendar of its own)."""
     from app.db.session import _session_factory
     from app.platform.controls import flag_enabled
     async with _session_factory() as s:
         who = await job.owner(s)
         if who is None:
-            return None, "no platform owner is set on this server"
+            return None, None, "no platform owner is set on this server"
         if not await flag_enabled(s, job.FLAG, who.tenant_id):
-            return None, "the bot is OFF (Admin: srv2_bot)"
-    return bot_io.build(loop, _session_factory, who, _usable_adapter), ""
+            return None, None, "the bot is OFF (Admin: srv2_bot)"
+        calendar = await job.calendar_for(s, datetime.now(UTC))
+    return bot_io.build(loop, _session_factory, who, _usable_adapter), calendar, ""
+
+
+def _run_card(card: Any, argv: list[str] | None, calendar: Any) -> int:
+    """The private card's main with the calendar; an older package's main(argv) without it is called as before."""
+    import inspect
+    try:
+        takes = "calendar" in inspect.signature(card.main).parameters
+    except (TypeError, ValueError):
+        takes = False
+    return int(card.main(argv, calendar=calendar) if takes else card.main(argv))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,13 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     thread = threading.Thread(target=loop.run_forever, name="srv2-test-card", daemon=True)
     thread.start()
     try:
-        impls, why = asyncio.run_coroutine_threadsafe(_ready(loop), loop).result(timeout=READY_SECONDS)
+        impls, calendar, why = asyncio.run_coroutine_threadsafe(_ready(loop), loop).result(timeout=READY_SECONDS)
         if impls is None:
             print(f"❌ {why}")
             return 6
         bot.host.register(**impls)
         print(f"{datetime.now(UTC):%H:%M:%S} UTC - TEST card: sending (labelled TEST, never a position)")
-        return int(card.main(argv))
+        return _run_card(card, argv, calendar)
     finally:
         loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=5)

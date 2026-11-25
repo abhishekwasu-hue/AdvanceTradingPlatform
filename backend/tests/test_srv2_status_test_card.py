@@ -186,13 +186,27 @@ def test_the_command_registers_the_adapters_and_runs_the_private_card(monkeypatc
     class Host:
         def register(self, **impls):
             seen["names"] = sorted(impls)
-    loader.set_for_tests(NS(host=Host(), runner=None, test_card=NS(main=lambda argv: seen.setdefault("argv", argv) and 0)))
+    def card_main(argv, calendar=None):
+        seen.update(argv=argv, calendar=calendar)
+        return 0
+    loader.set_for_tests(NS(host=Host(), runner=None, test_card=NS(main=card_main)))
 
     async def owner(session):
         return bot_io.Owner(1, NS(id=1))
+
+    async def calendar_for(session, now):
+        return "atp-calendar"
     monkeypatch.setattr(job, "owner", owner)
+    monkeypatch.setattr(job, "calendar_for", calendar_for)
     _flag(monkeypatch)
     import app.db.session as dbs
     monkeypatch.setattr(dbs, "_session_factory", _session_factory)
     assert TC.main(["--symbol", "NIFTY"]) == 0
     assert seen["argv"] == ["--symbol", "NIFTY"] and {"candles", "send", "settings", "token"} <= set(seen["names"])
+    assert seen["calendar"] == "atp-calendar"          # owner VPS 25 Nov: the card reads market hours under ATP's calendar
+
+
+def test_an_older_private_card_without_a_calendar_is_called_as_before():
+    seen = []
+    assert TC._run_card(NS(main=lambda argv: seen.append(argv) or 0), ["--symbol", "NIFTY"], "cal") == 0
+    assert seen == [["--symbol", "NIFTY"]]

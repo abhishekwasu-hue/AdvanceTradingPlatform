@@ -201,3 +201,78 @@ def test_the_cards_are_listed_read_only_with_known_fields_only(monkeypatch):
         async with _session_factory() as s:
             assert (await platform_routes.get_srv2_agent_mode(me, s))["cards"] == []
     _run(broken())
+
+
+class StrictModes(FakeModes):
+    """The real private contract since e3767d4: apply / ensure_default take `trading_mode_fn`, and Trade's guard (vision/config.save)
+    refuses human_confirm unless every symbol's trading mode reads PAPER (owner VPS log 25 Nov: {'NIFTY': 'UNKNOWN'})."""
+
+    def apply(self, mode, by, owner_deployment, vision_on=True, trading_mode_fn=None):
+        modes = {"NIFTY": (trading_mode_fn or (lambda b, s: "UNKNOWN"))("srv2_momentum_reversal", "NIFTY")}
+        bad = {k: v for k, v in modes.items() if v != "PAPER"}
+        if bad:
+            raise ValueError(f"{mode} only on a PAPER bot - srv2_momentum_reversal: {bad}")
+        return super().apply(mode, by, owner_deployment, vision_on)
+
+    def ensure_default(self, by, trading_mode_fn=None):
+        if self.stored is not None:
+            return None
+        return self.apply("human_confirm", by, owner_deployment=False, trading_mode_fn=trading_mode_fn)
+
+
+def _with_settings(modes):
+    bot, started, stopped = _bot(modes)
+    bot.settings = NS(STRATEGY_KEY="15m_dynamic_sr")
+    return bot, started, stopped
+
+
+def test_the_default_mode_is_stored_because_atp_hands_the_guard_the_bots_paper_mode():
+    """Owner 25 Nov: the guard read UNKNOWN (the bot's cloud_db stand-in is not installed before the first step, nor in the web
+    process). ATP now passes its own reading of the same rule: PAPER - also for a stored LIVE, which needs a LIVE confirmation ATP's
+    port never gives."""
+    modes = StrictModes()
+    loader.set_for_tests(_with_settings(modes)[0])
+
+    async def go():
+        async with _session_factory() as s:
+            return await agent_mode.ensure_default(s, 1)
+    assert _run(go())["to"] == "human_confirm"
+    assert bot_io.effective_trading_mode(None) == "PAPER"
+    assert bot_io.effective_trading_mode({"trading_mode": "live"}) == "PAPER" and bot_io.LIVE_CONFIRMED is False
+    assert bot_io.effective_trading_mode({"trading_mode": "PAPER"}) == "PAPER"
+
+
+def test_an_unreadable_store_still_reads_unknown_and_a_failed_default_never_stops_the_bot(monkeypatch):
+    modes = StrictModes()
+    bot, started, _ = _with_settings(modes)
+    loader.set_for_tests(bot)
+    from app.srv2bot import store
+
+    async def broken(session):
+        raise RuntimeError("store down")
+    monkeypatch.setattr(store, "rows", broken)
+
+    async def an_owner(session):
+        return bot_io.Owner(10**6, NS(id=99))
+
+    async def flag(session, name, tenant_id=None):
+        return True
+
+    async def cal(session, now):
+        return None
+    monkeypatch.setattr(job, "owner", an_owner)
+    monkeypatch.setattr("app.platform.controls.flag_enabled", flag)
+    monkeypatch.setattr(job, "calendar_for", cal)
+    monkeypatch.setattr(bot_io, "build", lambda *a, **k: {})
+    assert _run(job.run_once(_session_factory, None)) == []          # the step runs; the guard refused (UNKNOWN), nothing stored
+    assert started == [1] and modes.stored is None
+
+
+def test_an_older_package_without_trading_mode_fn_is_called_as_before():
+    modes = FakeModes()
+    loader.set_for_tests(_with_settings(modes)[0])
+
+    async def go():
+        async with _session_factory() as s:
+            return await agent_mode.ensure_default(s, 1)
+    assert _run(go())["to"] == "human_confirm" and modes.calls == [("human_confirm", "user:1", False, True)]

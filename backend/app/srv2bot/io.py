@@ -24,6 +24,20 @@ UPSTOX = "upstox"
 UNDERLYING = {"NIFTY": "NIFTY", "BANKNIFTY": "BANKNIFTY", "SENSEX": "SENSEX"}
 
 
+# LIVE is not wired in ATP's port (DECISIONS 18 Nov SRV2): the bot's `live_confirmed` adapter is always False.
+LIVE_CONFIRMED = False
+
+
+def effective_trading_mode(row: dict | None) -> str:
+    """The bot's own rule for its trading mode (the private package's stand-in for Trade cloud_db.get_strategy_settings, L1041-1052): the
+    stored row's `trading_mode` (none stored = PAPER, Trade's default); a stored LIVE / LIVE_PAPER counts only with the owner's LIVE
+    confirmation, which ATP's port never gives (LIVE_CONFIRMED) -> PAPER."""
+    mode = str((row or {}).get("trading_mode") or "PAPER").upper()
+    if mode in ("LIVE", "LIVE_PAPER") and not LIVE_CONFIRMED:
+        return "PAPER"
+    return mode
+
+
 class Owner:
     def __init__(self, tenant_id: int, user: Any):
         self.tenant_id, self.user = tenant_id, user
@@ -133,4 +147,4 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             return False
 
     return {"settings": settings, "token": token, "option_expiries": option_expiries, "option_chain": option_chain, "ltp": ltp,
-            "funds": funds, "send": send, "live_confirmed": lambda *a: False}
+            "funds": funds, "send": send, "live_confirmed": lambda *a: LIVE_CONFIRMED}

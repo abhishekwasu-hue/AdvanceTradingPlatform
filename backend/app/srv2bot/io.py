@@ -3,7 +3,8 @@
   (instrument master), last prices, funds;
 - the owner's settings rows (store.py) and LIVE confirmation (none: LIVE is not wired);
 - Telegram to the owner's linked chat (the organisation's bot, else the platform bot);
-- the owner's Upstox access token (the engine reads its own candles with it, as in Trade).
+- the owner's Upstox access token (the engine reads its own candles with it, as in Trade);
+- candles in Trade's `upstox_api.fetch_candles` shape (the bot's Vision chart, the level gate, the engine service ask for them).
 The copied code is synchronous and runs in a worker thread: each callable here runs its coroutine on the worker's event loop
 (`run_coroutine_threadsafe`) with its own database session and waits for it (bounded). Reads only: nothing here places, changes or
 closes an ATP order or position."""
@@ -36,6 +37,48 @@ def effective_trading_mode(row: dict | None) -> str:
     if mode in ("LIVE", "LIVE_PAPER") and not LIVE_CONFIRMED:
         return "PAPER"
     return mode
+
+
+# Trade upstox_api.fetch_candles (L132-255): its lookback defaults, and which intervals ATP's Upstox broker serves directly (the v2
+# history / intraday endpoints: 1minute, 30minute, day); the others are resampled from 1-minute bars, as ATP's market-data service does.
+CANDLE_LOOKBACK_DAYS = {"1minute": 5, "5minute": 10, "15minute": 20, "30minute": 60, "1hour": 90, "day": 400}
+CANDLE_DIRECT = {"1minute": "1min", "30minute": "30min", "day": "day"}
+CANDLE_RESAMPLE = {"5minute": "5min", "15minute": "15min", "1hour": "60min"}
+CANDLE_CHUNK_DAYS = 28                       # Trade: at most one month of minute bars per history call
+CANDLE_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume", "oi"]
+SPOT = {"NIFTY": ("NIFTY 50", "NSE"), "BANKNIFTY": ("NIFTY BANK", "NSE"), "SENSEX": ("SENSEX", "BSE")}
+
+
+def candle_args(args: tuple, kwargs: dict) -> tuple[str, str, int]:
+    """(symbol, interval, lookback days) from Trade's call shapes: fetch_candles(token, symbol, current_spot, interval=, lookback_days=)
+    (the engine service names the third `underlying_price`). An interval Trade does not take falls back to 30minute, as Trade."""
+    symbol = str(args[1] if len(args) > 1 else kwargs.get("symbol") or "NIFTY").upper()
+    interval = str(args[3] if len(args) > 3 else kwargs.get("interval") or "30minute")
+    if interval not in CANDLE_LOOKBACK_DAYS:
+        interval = "30minute"
+    days = args[4] if len(args) > 4 else kwargs.get("lookback_days")
+    return symbol, interval, int(days if days is not None else CANDLE_LOOKBACK_DAYS[interval])
+
+
+def candle_frame(bars: list[Any], interval: str) -> Any:
+    """Bars (ATP OHLCVBar) -> Trade's frame: timestamp (India time, as Upstox sends it), open, high, low, close, volume, oi; sorted, a
+    repeated timestamp keeps the newest fetch (Trade: keep="last"); 5 / 15 minute and 1 hour resampled from 1-minute bars (bars start
+    at the session's open, left-labelled). No bars -> an empty frame with those columns."""
+    import pandas as pd
+    if not bars:
+        return pd.DataFrame(columns=CANDLE_COLUMNS)
+    frame = pd.DataFrame([{"timestamp": b.timestamp, "open": b.open, "high": b.high, "low": b.low, "close": b.close,
+                           "volume": b.volume, "oi": 0.0} for b in bars])
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"])
+    frame = frame.drop_duplicates(subset="timestamp", keep="last").sort_values("timestamp").reset_index(drop=True)
+    for col in CANDLE_COLUMNS[1:]:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    rule = CANDLE_RESAMPLE.get(interval)
+    if rule:
+        frame = (frame.set_index("timestamp").resample(rule, label="left", closed="left", origin="start_day", offset="15min")
+                 .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "oi": "last"})
+                 .dropna(subset=["open"]).reset_index())
+    return frame
 
 
 class Owner:
@@ -116,6 +159,53 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
         except Exception as exc:  # noqa: BLE001 - Trade: ({}, detail) -> that check waits for the next cycle
             return {}, f"{type(exc).__name__}: {exc}"
 
+    def candles(*args: Any, **kwargs: Any) -> Any:
+        """Trade upstox_api.fetch_candles: history up to yesterday in month chunks plus today from the intraday endpoint (minute
+        intervals), or the daily bars up to today; through the owner's Upstox session and ATP's budget. Never raises: a failure is an
+        empty frame with `attrs["failed_chunks"]`, as Trade."""
+        from datetime import timedelta
+
+        from app.market_data.calendar import IST
+        symbol, interval, days = candle_args(args, kwargs)
+        name, exchange = SPOT.get(symbol, SPOT["NIFTY"])          # Trade get_instrument_key: an unknown name reads NIFTY
+        step = CANDLE_DIRECT.get(interval, "1min")
+
+        async def go():
+            today = datetime.now(IST).date()
+            bars: list[Any] = []
+            failed = 0
+            async with session_factory() as s:
+                broker = await _broker(s)
+                if step == "day":
+                    try:
+                        bars += await broker.get_historical_data(name, exchange, "day", datetime.combine(today - timedelta(days=days), datetime.min.time()),
+                                                                 datetime.combine(today, datetime.min.time()))
+                    except Exception:  # noqa: BLE001 - Trade counts a failed chunk and goes on
+                        failed += 1
+                    return bars, failed
+                start, end = today - timedelta(days=max(days, 2)), today - timedelta(days=1)
+                while end > start:
+                    begin = max(start, end - timedelta(days=CANDLE_CHUNK_DAYS))
+                    try:
+                        bars += await broker.get_historical_data(name, exchange, step, datetime.combine(begin, datetime.min.time()),
+                                                                 datetime.combine(end, datetime.min.time()))
+                    except Exception:  # noqa: BLE001
+                        failed += 1
+                    end = begin - timedelta(days=1)
+                try:
+                    bars += await broker.get_intraday_candles(name, exchange, step)
+                except Exception:  # noqa: BLE001 - outside the session there is no intraday data
+                    pass
+            return bars, failed
+        try:
+            bars, failed = call(go)
+        except Exception as exc:  # noqa: BLE001 - Trade: an empty frame
+            logger.info("srv2 bot: candles unreadable for %s %s (%s)", symbol, interval, type(exc).__name__)
+            bars, failed = [], 1
+        frame = candle_frame(bars, interval)
+        frame.attrs["failed_chunks"] = failed
+        return frame
+
     def funds(tok: str) -> dict | None:
         async def go():
             async with session_factory() as s:
@@ -147,4 +237,4 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             return False
 
     return {"settings": settings, "token": token, "option_expiries": option_expiries, "option_chain": option_chain, "ltp": ltp,
-            "funds": funds, "send": send, "live_confirmed": lambda *a: LIVE_CONFIRMED}
+            "funds": funds, "send": send, "candles": candles, "live_confirmed": lambda *a: LIVE_CONFIRMED}

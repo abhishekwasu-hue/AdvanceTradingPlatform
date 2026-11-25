@@ -98,8 +98,12 @@ async def _start_services(bot: Any, session_factory: Callable, who: bot_io.Owner
     private package without them: the bot runs as before."""
     from app.srv2bot import mode as agent_mode
     async with session_factory() as s:
-        if await agent_mode.ensure_default(s, getattr(who.user, "id", None)) is not None:
-            await s.commit()
+        try:
+            if await agent_mode.ensure_default(s, getattr(who.user, "id", None)) is not None:
+                await s.commit()
+        except Exception:  # noqa: BLE001 - no stored mode = Trade's own defaults (approval_required: every entry needs ✅)
+            logger.exception("srv2 bot: the default agent mode could not be stored; the bot runs on Trade's own Vision defaults")
+            await s.rollback()
     start = getattr(bot.runner, "start_services", None)
     if start is not None:
         await asyncio.to_thread(start)

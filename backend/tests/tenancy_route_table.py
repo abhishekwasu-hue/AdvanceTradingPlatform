@@ -781,6 +781,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/marketplace/{listing_id}/subscribe"): "trader",
     ("POST", "/api/marketplace/{listing_id}/unsubscribe"): "trader",
     # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours), per tenant and user
+    ("GET", "/api/me/amw-breakout/status"): "member: AMW scan status for the calling tenant and user",
     ("GET", "/api/me/prefs"): "member: the caller's own preferences only (tenant and user)",
     ("GET", "/api/me/export"): "member: AUD-G1.1 - the caller's own rows only (user_id and tenant), secrets never included",
     ("GET", "/api/me/erase"): "member: AUD-G1.1 - the caller's own Delete my account request only",

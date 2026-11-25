@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { request } from "../api/client";
 import { ApiError, errorSentence } from "../api/errors";
 import { watchlistsV2Api, type WatchlistV2 } from "../chart/watchlistsV2";
+import { Combobox } from "../ui/Combobox";
+import { formatDateTimeIST } from "../ui/format";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import {
@@ -68,7 +70,7 @@ export default function BreakoutSettingsV2() {
     });
     request<Status>("/me/amw-breakout/status").then((result) => {
       if (active) setStatus(result);
-    }).catch(() => {});
+    }).catch(() => { if (active) setStatus(null); });
     return () => { active = false; };
   }, []);
 
@@ -147,9 +149,9 @@ export default function BreakoutSettingsV2() {
     <form onSubmit={save} className="space-y-space-4 text-t14">
       <dl className="grid gap-space-2 sm:grid-cols-2">
         <div><dt>Saved account opt-in</dt><dd>{saved?.enabled ? "Enabled" : "Disabled"}</dd></div>
-        <div><dt>Worker heartbeat</dt><dd>{status ? status.worker_available ? "Available" : "Unavailable" : "Unknown"}</dd></div>
+        <div><dt>Scanner connection</dt><dd>{status ? status.worker_available ? "Available" : "Unavailable" : "Unknown"}</dd></div>
         {saved?.enabled && status?.status && <div><dt>Last scan status</dt><dd>{status.status.replace(/_/g, " ")}</dd></div>}
-        {status?.last_scan_at && <div><dt>Last attempted scan</dt><dd>{new Date(status.last_scan_at).toLocaleString()}</dd></div>}
+        {status?.last_scan_at && <div><dt>Last attempted scan</dt><dd>{formatDateTimeIST(status.last_scan_at)}</dd></div>}
         {status?.counts && <div><dt>Profile scans with missing data</dt><dd>{status.counts.missing_data}</dd></div>}
       </dl>
       <fieldset disabled={saving} className="space-y-space-4">
@@ -168,10 +170,8 @@ export default function BreakoutSettingsV2() {
             <div className="flex min-w-0 flex-wrap items-end gap-space-2">
               <label className="grid min-w-0 flex-1 gap-space-1">
                 Add from your watchlist
-                <select className={INPUT} value={watchlistId} onChange={(event) => setWatchlistId(event.target.value)}>
-                  <option value="">Choose a watchlist</option>
-                  {watchlists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
-                </select>
+                <Combobox label="Add from your watchlist" placeholder="Choose a watchlist" value={watchlistId} onChange={(value) => setWatchlistId(value)}
+                    options={watchlists.map((list) => ({ value: String(list.id), label: list.name }))} />
               </label>
               <button type="button" className={INPUT} disabled={!watchlist}
                 onClick={() => watchlist && addPicks(watchlist.items)}>Add instruments</button>
@@ -213,39 +213,33 @@ export default function BreakoutSettingsV2() {
               {rule && <div className="grid gap-space-3 sm:grid-cols-2">
                 <label className="grid gap-space-1">
                   Apply a timeframe preset
-                  <select className={INPUT} value="" onChange={(event) => {
-                    const preset = PRESETS.find(([name]) => name === event.target.value);
+                  <Combobox label="Apply a timeframe preset" placeholder="Custom / choose a preset" value="" onChange={(value) => {
+                    const preset = PRESETS.find(([name]) => name === value);
                     if (!preset) return;
                     const [, tf, rsi, zones] = preset;
                     const sources = Array.isArray(rule.sources) ? rule.sources : ["B1", "B2"];
                     setPrefs({ ...draft, rules: draft.rules.map((item) => item.profile === id ?
                       { ...item, breakout_tf: tf, structure_tf: tf, confirmation_tf: null,
                         rsi_tfs: [...rsi], demand_tfs: [...zones], supply_tfs: [...zones], sources } : item) });
-                  }}>
-                    <option value="">Custom / choose a preset</option>
-                    {PRESETS.map(([name]) => <option key={name}>{name}</option>)}
-                  </select>
+                  }}
+                    options={PRESETS.map(([name]) => ({ value: name, label: name }))} />
                 </label>
                 <button type="button" className={INPUT} onClick={() => setPrefs({
                   ...draft, rules: draft.rules.map((item) => item.profile === id ? { profile: id } : item),
                 })}>Restore profile defaults</button>
                 <label className="grid gap-space-1">
                   Direction
-                  <select className={INPUT} value={String(rule.direction ?? "BOTH")} {...fieldProps("direction")}
-                    onChange={(event) => change(rule, "direction", event.target.value)}>
-                    <option value="BOTH">Bullish and bearish</option>
-                    <option value="LONG_ONLY">Bullish only</option>
-                    <option value="SHORT_ONLY">Bearish only</option>
-                  </select>
+                  <Combobox label="Direction" value={String(rule.direction ?? "BOTH")} invalid={Boolean(errorList("direction")?.length)} describedBy={errorList("direction")?.length ? errorId("direction") : undefined}
+                    onChange={(value) => change(rule, "direction", value)}
+                    options={[{ value: "BOTH", label: "Bullish and bearish" }, { value: "LONG_ONLY", label: "Bullish only" }, { value: "SHORT_ONLY", label: "Bearish only" }]} />
                   <FieldProblems id={errorId("direction")} errors={errorList("direction")} />
                 </label>
                 {[["breakout_tf", "Breakout timeframe"], ["structure_tf", "Market structure timeframe"]].map(([key, title]) =>
                   <label className="grid gap-space-1" key={key}>
                     {title}
-                    <select className={INPUT} value={String(rule[key] ?? "15m")} {...fieldProps(key)}
-                      onChange={(event) => change(rule, key, event.target.value)}>
-                      {timeframes.map((tf) => <option key={tf}>{tf}</option>)}
-                    </select>
+                    <Combobox label={title} value={String(rule[key] ?? "15m")} invalid={Boolean(errorList(key)?.length)} describedBy={errorList(key)?.length ? errorId(key) : undefined}
+                      onChange={(value) => change(rule, key, value)}
+                    options={timeframes.map((tf) => ({ value: tf, label: tf }))} />
                     <FieldProblems id={errorId(key)} errors={errorList(key)} />
                   </label>)}
                 {[
@@ -267,21 +261,15 @@ export default function BreakoutSettingsV2() {
                 })}
                 <label className="grid gap-space-1">
                   Confirmation mode
-                  <select className={INPUT} value={String(rule.acceptance ?? (id === "BO-03" ? "RETEST_BREAKOUT" : "DIRECT_BREAKOUT"))}
-                    disabled={id === "BO-03"} onChange={(event) => change(rule, "acceptance", event.target.value)}>
-                    <option value="DIRECT_BREAKOUT">Direct breakout</option>
-                    <option value="FOLLOW_THROUGH">Follow-through</option>
-                    <option value="RETEST_BREAKOUT">Retest breakout</option>
-                  </select>
+                  <Combobox label="Confirmation mode" value={String(rule.acceptance ?? (id === "BO-03" ? "RETEST_BREAKOUT" : "DIRECT_BREAKOUT"))}
+                    disabled={id === "BO-03"} onChange={(value) => change(rule, "acceptance", value)}
+                    options={[{ value: "DIRECT_BREAKOUT", label: "Direct breakout" }, { value: "FOLLOW_THROUGH", label: "Follow-through" }, { value: "RETEST_BREAKOUT", label: "Retest breakout" }]} />
                 </label>
                 <label className="grid gap-space-1">
                   Candle quality mode
-                  <select className={INPUT} value={id === "BO-04" ? "MANDATORY" : String(rule.candle_mode ?? "QUALITY_FACTOR")}
-                    disabled={id === "BO-04"} onChange={(event) => change(rule, "candle_mode", event.target.value)}>
-                    <option value="OFF">Off</option>
-                    <option value="QUALITY_FACTOR">Score contribution</option>
-                    <option value="MANDATORY">Required to publish</option>
-                  </select>
+                  <Combobox label="Candle quality mode" value={id === "BO-04" ? "MANDATORY" : String(rule.candle_mode ?? "QUALITY_FACTOR")}
+                    disabled={id === "BO-04"} onChange={(value) => change(rule, "candle_mode", value)}
+                    options={[{ value: "OFF", label: "Off" }, { value: "QUALITY_FACTOR", label: "Score contribution" }, { value: "MANDATORY", label: "Required to publish" }]} />
                 </label>
                 <label className="flex min-h-11 items-center gap-space-2">
                   <input type="checkbox" checked={rule.volume_mandatory === true}
@@ -290,12 +278,9 @@ export default function BreakoutSettingsV2() {
                 </label>
                 {id !== "BO-01" && <label className="grid gap-space-1">
                   Divergence types
-                  <select className={INPUT} value={String(rule.divergence_types ?? "BOTH_TYPES")}
-                    onChange={(event) => change(rule, "divergence_types", event.target.value)}>
-                    <option value="BOTH_TYPES">Regular and hidden</option>
-                    <option value="REGULAR_ONLY">Regular only</option>
-                    <option value="HIDDEN_ONLY">Hidden only</option>
-                  </select>
+                  <Combobox label="Divergence types" value={String(rule.divergence_types ?? "BOTH_TYPES")}
+                    onChange={(value) => change(rule, "divergence_types", value)}
+                    options={[{ value: "BOTH_TYPES", label: "Regular and hidden" }, { value: "REGULAR_ONLY", label: "Regular only" }, { value: "HIDDEN_ONLY", label: "Hidden only" }]} />
                 </label>}
                 <fieldset className="flex flex-wrap gap-space-3" {...fieldProps("sources")}>
                   <legend>Breakout sources</legend>

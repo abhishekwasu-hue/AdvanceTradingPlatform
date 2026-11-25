@@ -67,6 +67,11 @@ async def market_zones_layer(instrument: str = Query(..., min_length=1, max_leng
                              timeframe: str | None = Query(default=None, pattern=r"^(1m|3m|5m|15m|30m|1h|4h|1d|1w)$"),
                              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
+    if not isinstance(timeframe, str):
+        # A direct Python call (the chart reading, the Copilot, the hybrid analysis) that leaves `timeframe` out gets the
+        # FastAPI `Query(None)` default object, not None: it then raised "unknown timeframe Query(None)" whenever areas were
+        # stored (owner VPS log 25 Nov: the Conclusion panel's Chart read "not available"). Left out = no timeframe.
+        timeframe = None
     now = datetime.now(timezone.utc)
     try:
         key: Optional[str] = normalise_key(instrument)

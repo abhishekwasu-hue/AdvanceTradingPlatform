@@ -89,6 +89,16 @@ async def refresh_settings(session: Any, who: bot_io.Owner, now: datetime) -> bo
             stop_services()
         logger.info("srv2 bot: settings set: %s", ", ".join(names) or "none")
         _settings["names"] = names
+    from app.srv2bot import status
+    try:                                     # owner 25 Nov: the Terminal's status line reads this heartbeat (names only)
+        await status.beat(session, names, now)
+        await session.commit()
+    except Exception:  # noqa: BLE001 - the status line is information; the bot's step never fails on it
+        logger.warning("srv2 bot: the status heartbeat could not be stored")
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001,S110 - nothing to roll back
+            pass
     return True
 
 

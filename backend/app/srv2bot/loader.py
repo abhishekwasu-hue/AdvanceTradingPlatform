@@ -18,7 +18,8 @@ _reason = REASON_ABSENT
 
 
 def load() -> Any | None:
-    """The private bot's namespace: `host`, `runner`, and `modes` / `settings` / `positions` (None in an older package), or None."""
+    """The private bot's namespace: `host`, `runner`, and `modes` / `settings` / `positions` / `test_card` (None in an older package),
+    or None."""
     global _cached, _reason
     if _cached is not _UNSET:
         return _cached
@@ -38,7 +39,8 @@ def load() -> Any | None:
     optional: dict[str, Any] = {}
     # SRV2 P3 (ADR-0029): the agent modes; P2 / P4: the settings (field list, validation) and the read-only positions.
     # An older private package has some of them only: the missing ones are None and their pages say so.
-    for name in ("modes", "settings", "positions"):
+    # Owner 25 Nov: `test_card` - Trade's 🧪 TEST card (app/srv2bot/test_card.py runs it).
+    for name in ("modes", "settings", "positions", "test_card"):
         try:
             optional[name] = importlib.import_module(f"{MODULE}.{name}")
         except ImportError:

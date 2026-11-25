@@ -1,12 +1,12 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.screener.breakouts.amw_breakout import Settings
 from app.workers.amw_breakout_signals import run_closed
 
 
 def test_disabled_and_missing_bar_cannot_publish(monkeypatch):
-    clock = datetime(2026, 11, 24, 4, 0, tzinfo=timezone.utc)
+    clock = datetime(2026, 11, 24, 4, 0, tzinfo=UTC)
 
     async def unexpected(*args, **kwargs):
         raise AssertionError("Signal publication must not run")
@@ -28,7 +28,7 @@ def test_scan_facts_reused_only_for_compatible_settings(monkeypatch):
     frames = {}
     facts = ScanFacts(frames)
     cfg = Settings()
-    clock = datetime(2026, 11, 24, 4, 0, tzinfo=timezone.utc)
+    clock = datetime(2026, 11, 24, 4, 0, tzinfo=UTC)
     kwargs = {"as_of": clock, "instrument_is_index": False}
     facts.decisions(frames, cfg, **kwargs)
     facts.decisions(frames, replace(cfg, direction="LONG_ONLY"), **kwargs)

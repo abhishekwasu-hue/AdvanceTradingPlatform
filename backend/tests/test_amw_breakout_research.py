@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.screener.breakouts.amw_breakout import Candidate, Candle, Settings, Snapshot
 from app.screener.breakouts.amw_research import evaluate
 
 
 def test_replay_horizons_use_bars_after_signal_availability(monkeypatch):
-    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
     candidate = Candidate("range", 1, 100.0, ("B1",))
     frames = (
         Snapshot(t0, Candle(100.2, 101.1, 100.1, 101.0, 1.0), (candidate,), zones_ready=True, structure=1, htf=1),
@@ -26,7 +26,7 @@ def test_signal_outcome_does_not_use_holdout_candles():
     from app.screener.breakouts.amw_breakout import Decision
     from app.screener.breakouts.amw_research import signal_outcome
 
-    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
     bars = (
         Snapshot(t0, Candle(100, 102, 99, 101, 2)),
         Snapshot(t0 + timedelta(minutes=15), Candle(101, 104, 95, 99, 2)),

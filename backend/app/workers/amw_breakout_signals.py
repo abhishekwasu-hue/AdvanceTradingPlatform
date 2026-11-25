@@ -2,9 +2,9 @@
 
 import asyncio
 import logging
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta, timezone
-from typing import Iterable, Mapping
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
@@ -88,7 +88,7 @@ async def run_closed(
         return RunResult(reason="DISABLED")
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("Expected timezone-aware clock")
-    now = now.astimezone(timezone.utc)
+    now = now.astimezone(UTC)
     due = expected_bar(now, settings.breakout_tf, holidays) if scheduled_end is None else None
     source = frames.get(settings.breakout_tf)
     if source is None or source.empty or "bar_end" not in source or (due is None and scheduled_end is None):

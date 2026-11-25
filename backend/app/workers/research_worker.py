@@ -39,7 +39,7 @@ async def run_forever(session_factory: async_sessionmaker[AsyncSession], stop: a
             continue                                   # more may be queued
         try:
             await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
 

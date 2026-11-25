@@ -1,11 +1,12 @@
 """AMW informational breakout policy. Consumes ATP closed-bar facts only."""
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from hashlib import sha256
 from json import dumps
 from math import isfinite
-from typing import Iterable, Literal
+from typing import Literal
 
 VERSION = "amw-breakout/2"
 BREAKOUT_SOURCES = frozenset(("B1", "B2", "HORIZONTAL", "ZONE", "SESSION"))

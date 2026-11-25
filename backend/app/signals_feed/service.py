@@ -292,7 +292,7 @@ def _clock(value: Any) -> Optional[str]:
         return None
 
 
-def _breakout_explanation(record: Dict[str, Any]) -> Dict[str, Any]:
+def _breakout_explanation(record: dict[str, Any]) -> dict[str, Any]:
     """Allow-listed chart evidence for a saved informational breakout signal."""
     facts = record.get("evidence")
     facts = facts if isinstance(facts, dict) else {}

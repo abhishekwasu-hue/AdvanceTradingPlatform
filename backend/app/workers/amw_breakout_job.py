@@ -1,7 +1,7 @@
 """Store-only, opt-in breakout scan on ATP's non-trading research worker."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import select
@@ -58,7 +58,7 @@ async def _scan_user(session, user, prefs: BreakoutPreferences, now: datetime) -
             due.setdefault((cfg.breakout_tf, end), []).append(cfg)
     if not due:
         return
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     counts = {"processed": 0, "missing_data": 0, "signals": 0, "duplicates": 0, "failed": 0, "cache_hits": 0}
     for key in prefs.instruments:
         try:
@@ -97,8 +97,8 @@ async def _scan_user(session, user, prefs: BreakoutPreferences, now: datetime) -
             log.exception("amw_breakout_instrument_failed", extra={"instrument": key})
     status = "ERROR" if counts["failed"] else "WAITING_FOR_DATA" if counts["missing_data"] else "ENABLED"
     await write_status(session, owner_key(user), {
-        "status": status, "last_scan_at": datetime.now(timezone.utc).isoformat(),
-        "duration_seconds": (datetime.now(timezone.utc) - started).total_seconds(),
+        "status": status, "last_scan_at": datetime.now(UTC).isoformat(),
+        "duration_seconds": (datetime.now(UTC) - started).total_seconds(),
         "config_versions": {rule.profile: rule.version for rule in configs},
         "counts": counts,
     })
@@ -106,7 +106,7 @@ async def _scan_user(session, user, prefs: BreakoutPreferences, now: datetime) -
 
 async def run_opted_in(session_factory, now: datetime | None = None) -> None:
     """Read opted-in owner preferences. All scans are store-only and informational."""
-    now = now if now is not None else datetime.now(timezone.utc)
+    now = now if now is not None else datetime.now(UTC)
     query = (
         select(UserPrefsRecord.user_id, UserPrefsRecord.tenant_id, UserPrefsRecord.value_json)
         .where(UserPrefsRecord.namespace == NAMESPACE)

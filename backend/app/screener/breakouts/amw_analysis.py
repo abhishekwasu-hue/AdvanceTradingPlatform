@@ -6,9 +6,10 @@ fetching and does not infer exchange-session boundaries from a timestamp.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterator, Literal, Mapping
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd

@@ -1,6 +1,6 @@
 import unittest
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.screener.breakouts.amw_breakout import (
     WEIGHTS,
@@ -15,7 +15,7 @@ from app.screener.breakouts.amw_breakout import (
     zone_gate,
 )
 
-BASE = datetime(2026, 1, 1, tzinfo=timezone.utc)
+BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 def snapshot(i=0, side=1, *, close=101.0, candidate=False, zones=(), divs=(), **kwargs):

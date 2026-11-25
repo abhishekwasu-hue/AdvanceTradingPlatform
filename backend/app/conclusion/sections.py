@@ -186,9 +186,13 @@ def oi_reading(resp: Mapping[str, Any]) -> dict[str, Any] | None:
 
 def matches(symbol: str, name: str | None) -> bool:
     """A row belongs to the Terminal's symbol: the symbol itself or one of its contracts (NIFTY -> NIFTY25NOV25800CE),
-    never a longer name that starts the same (NIFTY is not NIFTYNXT50, BANKNIFTY is not NIFTY)."""
+    or its spot name (an F&O ticket's legs carry "NIFTY 50": master.underlying_of maps it to NIFTY; owner screenshot 25 Nov,
+    a NIFTY group showed "No open position on NIFTY"), never a longer name that starts the same (NIFTY is not
+    NIFTYNXT50 or NIFTY NEXT 50, BANKNIFTY is not NIFTY)."""
+    from app.instruments.master import underlying_of
     sym, text = (symbol or "").strip().upper(), (name or "").strip().upper()
-    return bool(sym) and (text == sym or re.match(rf"^{re.escape(sym)}\d", text) is not None)
+    return bool(sym) and (text == sym or underlying_of(text) == underlying_of(sym)
+                          or re.match(rf"^{re.escape(sym)}\d", text) is not None)
 
 
 def _money(value: float | None) -> str:

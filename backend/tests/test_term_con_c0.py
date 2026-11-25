@@ -195,6 +195,9 @@ def test_oi_section_reads_the_banner_in_fact_words_and_says_stale_and_another_ex
 def test_symbol_matching_takes_contracts_but_never_a_longer_name():
     assert S.matches("NIFTY", "NIFTY") and S.matches("NIFTY", "NIFTY25NOV25800CE") and S.matches("nifty", "nifty 25nov".replace(" ", ""))
     assert not S.matches("NIFTY", "NIFTYNXT50") and not S.matches("NIFTY", "BANKNIFTY25NOV52000PE") and not S.matches("", "NIFTY")
+    # owner screenshot 25 Nov: an F&O ticket group's underlying is the spot name "NIFTY 50" - it is NIFTY's
+    assert S.matches("NIFTY", "NIFTY 50") and S.matches("BANKNIFTY", "NIFTY BANK") and S.matches("NIFTY 50", "NIFTY")
+    assert not S.matches("NIFTY", "NIFTY BANK") and not S.matches("NIFTY", "NIFTY NEXT 50") and not S.matches("NIFTY", "")
 
 
 def test_a_position_without_a_stop_says_so_and_adds_no_default():
@@ -203,6 +206,16 @@ def test_a_position_without_a_stop_says_so_and_adds_no_default():
     text = S.positions_section([row], "RELIANCE", "t")["lines"][0]["text"]
     assert text == "PAPER · RELIANCE · gains if the price rises · not priced yet · no stop in your settings."
 
+
+
+def test_an_fno_ticket_group_on_the_spot_name_is_shown_on_its_symbol():
+    """Owner screenshot 25 Nov: a NIFTY hedge group (legs carry underlying "NIFTY 50") read "No open position on NIFTY"."""
+    row = {"symbol": "NIFTY 50", "underlying": "NIFTY 50", "mode": "PAPER", "side": "bearish", "kind": "STRUCTURE", "legs": 2,
+           "marked_pnl": 1742.0, "loss_if_stop_hit": None, "stop_now": None}
+    lines = S.positions_section([row], "NIFTY", "t")["lines"]
+    assert len(lines) == 1 and "No open position" not in lines[0]["text"] and "2 legs" in lines[0]["text"]
+    assert S.positions_reading([row], "NIFTY", "t") is not None
+    assert "No open position" in S.positions_section([row], "BANKNIFTY", "t")["lines"][0]["text"]
 
 # --- safety: no order path, no AI ------------------------------------------------------------------------------------
 

@@ -198,6 +198,19 @@ def test_symbol_matching_takes_contracts_but_never_a_longer_name():
     # owner screenshot 25 Nov: an F&O ticket group's underlying is the spot name "NIFTY 50" - it is NIFTY's
     assert S.matches("NIFTY", "NIFTY 50") and S.matches("BANKNIFTY", "NIFTY BANK") and S.matches("NIFTY 50", "NIFTY")
     assert not S.matches("NIFTY", "NIFTY BANK") and not S.matches("NIFTY", "NIFTY NEXT 50") and not S.matches("NIFTY", "")
+    # owner screenshot 25 Nov: orders and single legs carry Upstox's spaced contract name
+    assert S.matches("NIFTY", "NIFTY 25800 PE 01 DEC 26") and S.matches("NIFTY", "NIFTY FUT 30 DEC 26")
+    assert S.matches("BANKNIFTY", "BANKNIFTY 55000 CE 25 NOV 26")
+    assert not S.matches("NIFTY", "BANKNIFTY 55000 CE 25 NOV 26") and not S.matches("NIFTY", "NIFTY 100")
+    assert not S.matches("NIFTY", "NIFTY BANK FUT 30 DEC 26")
+    order = {"symbol": "NIFTY 25800 PE 01 DEC 26", "mode": "PAPER", "status": "FILLED"}
+    assert "No order" not in S.orders_section([order], "NIFTY", "t")["lines"][0]["text"]
+
+
+def test_the_broker_check_time_reads_as_india_time_never_a_raw_timestamp():
+    text = S.broker_section({"broker_uncertain": False, "last_reconciled_at": "2026-11-20T16:27:09.392668+00:00"})["lines"][0]["text"]
+    assert text == "Books agree with your broker (last check 20 Nov, 21:57)."
+    assert S.broker_section({"broker_uncertain": False})["lines"][0]["text"] == "Books agree with your broker."
 
 
 def test_a_position_without_a_stop_says_so_and_adds_no_default():

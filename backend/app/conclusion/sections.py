@@ -186,13 +186,16 @@ def oi_reading(resp: Mapping[str, Any]) -> dict[str, Any] | None:
 
 def matches(symbol: str, name: str | None) -> bool:
     """A row belongs to the Terminal's symbol: the symbol itself or one of its contracts (NIFTY -> NIFTY25NOV25800CE),
+    or its broker contract name in Upstox's spaced form ("NIFTY 25800 PE 01 DEC 26", "NIFTY FUT 30 DEC 26": orders and
+    single legs carry it; owner screenshot 25 Nov, "No order on NIFTY today" after his NIFTY basket),
     or its spot name (an F&O ticket's legs carry "NIFTY 50": master.underlying_of maps it to NIFTY; owner screenshot 25 Nov,
     a NIFTY group showed "No open position on NIFTY"), never a longer name that starts the same (NIFTY is not
     NIFTYNXT50 or NIFTY NEXT 50, BANKNIFTY is not NIFTY)."""
     from app.instruments.master import underlying_of
     sym, text = (symbol or "").strip().upper(), (name or "").strip().upper()
     return bool(sym) and (text == sym or underlying_of(text) == underlying_of(sym)
-                          or re.match(rf"^{re.escape(sym)}\d", text) is not None)
+                          or re.match(rf"^{re.escape(sym)}\d", text) is not None
+                          or re.match(rf"^{re.escape(sym)} (\d+(\.\d+)? (CE|PE)|FUT) ", text) is not None)
 
 
 def _money(value: float | None) -> str:
@@ -347,14 +350,28 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else (str(value) if value else None)
 
 
+def _when(iso: str | None) -> str | None:
+    """"20 Nov, 21:57" in India time for the text (owner screenshot 25 Nov: the raw "2026-11-20T16:27:09.39+00:00" was shown)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    if not iso:
+        return None
+    try:
+        at = datetime.fromisoformat(iso)
+    except ValueError:
+        return None
+    at = at.astimezone(ZoneInfo("Asia/Kolkata")) if at.tzinfo else at
+    return f"{at.day} {at:%b}, {at:%H:%M}"
+
+
 def broker_section(status: Mapping[str, Any]) -> Section:
     """From GET /api/reconciliation/status: whether LIVE entries wait for a broker check (Phase G1). Exits always run."""
     since, last = _iso(status.get("broker_uncertain_since")), _iso(status.get("last_reconciled_at"))
     if status.get("broker_uncertain"):
-        text = "Broker state uncertain" + (f" since {since}" if since else "") + "; new LIVE entries wait for a broker check. Exits keep running."
+        text = "Broker state uncertain" + (f" since {_when(since)}" if _when(since) else "") + "; new LIVE entries wait for a broker check. Exits keep running."
         return section("broker", "Broker", SOURCE_BROKER, as_of=since,
                        lines=[line(text, tone="warn", source=SOURCE_BROKER, as_of=since)], note=status.get("broker_uncertain_reason"))
-    text = "Books agree with your broker" + (f" (last check {last})." if last else ".")
+    text = "Books agree with your broker" + (f" (last check {_when(last)})." if _when(last) else ".")
     return section("broker", "Broker", SOURCE_BROKER, as_of=last, lines=[line(text, source=SOURCE_BROKER, as_of=last)])
 
 

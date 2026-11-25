@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 from statistics import mean, median
 from time import perf_counter
+from typing import Any
 
 import pandas as pd
 
@@ -166,7 +167,7 @@ def main() -> None:
     for field in ("profile", "acceptance", "divergence_mode", "opposite_block", "candle_mode"):
         if field in base:
             parser.error(f"Manifest settings cannot override study profile field {field}")
-    cases = {name: (Settings(profile=name, **base), None) for name in ("BO-01", "BO-02", "BO-03", "BO-04")}
+    cases: dict[str, tuple[Settings, ResearchPolicy | None]] = {name: (Settings(profile=name, **base), None) for name in ("BO-01", "BO-02", "BO-03", "BO-04")}
     if args.ablation:
         first = cases["BO-01"][0]
         no_score = ResearchPolicy(apply_score_floor=False)
@@ -201,14 +202,14 @@ def main() -> None:
     if args.sensitivity:
         for key, values in SENSITIVITY.items():
             profile = cases["BO-02"][0] if key == "divergence_age" else cases["BO-01"][0]
-            cases.update({f"{key}={value}": (
-                replace(profile, **{key: value}),
-                ResearchPolicy(score_floor=value) if key == "min_score" else None,
-            ) for value in values})
-    exports = []
+            for value in values:
+                overrides: dict[str, Any] = {key: value}
+                policy = ResearchPolicy(score_floor=int(value)) if key == "min_score" else None
+                cases[f"{key}={value}"] = replace(profile, **overrides), policy
+    exports: list[dict[str, Any]] = []
     results = {}
     for name, (cfg, policy) in cases.items():
-        rows = [] if args.signals_csv else None
+        rows: list[dict[str, Any]] | None = [] if args.signals_csv else None
         results[name] = evaluate(
             frames, cfg, instrument_is_index=instrument.startswith("NSE_INDEX:"), research=policy,
             export=rows, instrument=instrument, revision=manifest.get("dataset_revision", ""),

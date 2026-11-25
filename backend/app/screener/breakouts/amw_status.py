@@ -1,10 +1,13 @@
 """Bounded operational status for the informational breakout worker."""
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import Insert as PgInsert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import Insert as SqliteInsert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.db.models import RuntimeCounterRecord
@@ -18,7 +21,8 @@ def owner_key(user) -> str:
 
 async def write_status(session, key: str, value: dict) -> None:
     dialect = session.get_bind().dialect.name
-    insert = {"postgresql": pg_insert, "sqlite": sqlite_insert}[dialect]
+    inserts: dict[str, Callable[..., PgInsert | SqliteInsert]] = {"postgresql": pg_insert, "sqlite": sqlite_insert}
+    insert = inserts[dialect]
     now = datetime.now(UTC)
     stmt = insert(RuntimeCounterRecord).values(name=COUNTER, key=key, value=json.dumps(value), updated_at=now)
     await session.execute(stmt.on_conflict_do_update(

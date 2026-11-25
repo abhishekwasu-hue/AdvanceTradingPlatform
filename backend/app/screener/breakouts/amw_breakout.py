@@ -394,7 +394,7 @@ def replay(snapshots: Iterable[Snapshot], settings: Settings, *, research: Resea
             raise ValueError("Expected strictly increasing timezone-aware decision closes")
         previous = snapshot.at
         terminal = {key: i for key, i in terminal.items() if index - i <= settings.max_age}
-        grouped: dict[int, list[Candidate]] = {}
+        grouped: dict[Literal[1, -1], list[Candidate]] = {}
         for candidate in snapshot.candidates:
             if candidate.side not in (-1, 1) or not isfinite(candidate.level):
                 raise ValueError("Invalid breakout candidate")

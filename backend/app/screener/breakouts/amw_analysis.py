@@ -162,11 +162,12 @@ class _DivergenceSeries:
         return self.swings[i] if i >= 0 else None
 
 
-def _divergence_reads(frame: _Frame, settings: Settings) -> tuple[dict[tuple[int, str], _DivergenceSeries], np.ndarray]:
-    by_kind = {}
+def _divergence_reads(frame: _Frame, settings: Settings) -> tuple[dict[tuple[Literal[1, -1], str], _DivergenceSeries], np.ndarray]:
+    by_kind: dict[tuple[Literal[1, -1], str], _DivergenceSeries] = {}
     rsi_values = rsi(frame.bars["close"].astype(float), settings.rsi_period).to_numpy(float)
     ready = np.isfinite(rsi_values)
-    for side, word in ((1, "bullish"), (-1, "bearish")):
+    sides: tuple[tuple[Literal[1, -1], str], ...] = ((1, "bullish"), (-1, "bearish"))
+    for side, word in sides:
         for kind in ("regular", "hidden"):
             swings = _divergence_swings(frame.bars, word, settings.swing_degree, settings.rsi_period, kind)
             known = np.asarray([s.confirmed for s in swings], dtype=int)
@@ -180,7 +181,7 @@ def _divergence_reads(frame: _Frame, settings: Settings) -> tuple[dict[tuple[int
     return by_kind, ready
 
 
-def _divergences_at(frame: _Frame, reads: Mapping[tuple[int, str], _DivergenceSeries], tf: str,
+def _divergences_at(frame: _Frame, reads: Mapping[tuple[Literal[1, -1], str], _DivergenceSeries], tf: str,
                     j: int, max_age: int) -> Iterator[Divergence]:
     for (side, kind), series in reads.items():
         start = int(np.searchsorted(series.known, j - max_age, side="left"))
@@ -271,7 +272,7 @@ def iter_snapshots(
             continue
         atr_value = float(bars.atr_prev[j])
         atr = atr_value if np.isfinite(atr_value) and atr_value > 0 else None
-        zone_facts = []
+        zone_facts: list[Zone] = []
         candidates = list(_candidates(frame, j, source_rows))
         if "HORIZONTAL" in settings.sources:
             candidates.extend(horizontal_candidates(bars, frame.closes, j, settings))
@@ -285,7 +286,7 @@ def iter_snapshots(
             zone_facts.extend(_zones_at(data[tf], zones[tf], tf, i, sides))
             if "ZONE" in settings.sources and j:
                 candidates.extend(_zone_breaks(data[tf], zones[tf], tf, i, j, at, frame.closes[j - 1], sides, bars, settings))
-        divergence_facts = []
+        divergence_facts: list[Divergence] = []
         rsi_ready = bool(rsi_tfs)
         for tf in rsi_tfs:
             i = data[tf].last_at(at) if tf in divergence else -1

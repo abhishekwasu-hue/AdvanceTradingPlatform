@@ -47,6 +47,7 @@ from app.db.models import (
 )
 from app.market_data.calendar import IST
 from app.signals import language as signal_language
+from app.workers import amw_breakout_publish
 
 TABS = ("waiting", "today", "history")
 SOURCE_FILTERS = ("all", "autopilot", "scan", "copilot", "library")   # REV-1 M3: "library" = the signal generator
@@ -153,6 +154,8 @@ def strategy_name(strategy_id: str) -> str:
     engine signal shows the engine's plain name, never its id."""
     if strategy_id == ENGINE_STRATEGY_ID:
         return ENGINE_DISPLAY_NAME
+    if strategy_id == amw_breakout_publish.STRATEGY_ID:
+        return amw_breakout_publish.DISPLAY_NAME
     try:
         from app.strategy_engine.registry import registry
         return str(registry.get(strategy_id).name)
@@ -267,9 +270,109 @@ def _from_history(row: SignalHistoryRecord) -> Dict[str, Any]:
         reasons = json.loads(row.reasons_json or "[]")
     except ValueError:
         reasons = []
-    return _item(source="history", num=row.id, at=row.created_at, symbol=row.symbol, direction=row.direction, setup=strategy_name(row.strategy_id),
+    item = _item(source="history", num=row.id, at=row.created_at, symbol=row.symbol, direction=row.direction, setup=strategy_name(row.strategy_id),
                  entry=row.entry, stop=row.stop_loss, target=row.target1, rr=row.risk_reward, kind="library",
                  name=KIND_LABELS["library"], mode=None, status="info", reasons=reasons)
+    if row.strategy_id == amw_breakout_publish.STRATEGY_ID:
+        item["signal_type"] = "amw_breakout"
+    return item
+
+
+BREAKOUT_FACTORS = ("level", "candle", "structure", "momentum", "rsi", "retest", "zones", "mtf")
+BREAKOUT_CLOCKS = ("detected_at", "confirmed_at", "available_at", "published_at")
+
+
+def _clock(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    try:
+        instant = datetime.fromisoformat(value)
+        return _iso(instant) if instant.utcoffset() is not None else None
+    except ValueError:
+        return None
+
+
+def _breakout_explanation(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Allow-listed chart evidence for a saved informational breakout signal."""
+    facts = record.get("evidence")
+    facts = facts if isinstance(facts, dict) else {}
+    score = _num(record.get("score"))
+    timeframe = record.get("timeframe")
+    out: Dict[str, Any] = {"score": score if score is not None and 0 <= score <= 100 else None}
+    if isinstance(timeframe, str) and timeframe in signal_language.TIMEFRAMES:
+        out["timeframe"] = timeframe
+    for key in ("rsi_tfs", "supply_tfs", "demand_tfs"):
+        frames = facts.get(key)
+        if isinstance(frames, list):
+            out[key] = list(dict.fromkeys(tf for tf in frames if isinstance(tf, str) and tf in signal_language.TIMEFRAMES))
+    sources = facts.get("sources")
+    if isinstance(sources, list):
+        out["sources"] = list(dict.fromkeys(source for source in sources if source in ("B1", "B2", "HORIZONTAL", "ZONE", "SESSION")))
+    for key in BREAKOUT_CLOCKS:
+        stamp = _clock(facts.get(key))
+        if stamp is not None:
+            out[key] = stamp
+    out.setdefault("confirmed_at", _clock(record.get("bar_end")))
+
+    factors = facts.get("breakdown")
+    if isinstance(factors, dict):
+        breakdown = []
+        for key in BREAKOUT_FACTORS:
+            component = factors.get(key)
+            if not isinstance(component, dict):
+                continue
+            maximum, awarded = _num(component.get("maximum")), _num(component.get("awarded"))
+            if maximum is not None and awarded is not None and 0 <= awarded <= maximum <= 100 and maximum > 0:
+                breakdown.append({"component": key, "maximum": maximum, "awarded": awarded})
+        out["factors"] = breakdown
+
+    zone = facts.get("zone")
+    if isinstance(zone, dict):
+        low, high, tf = _num(zone.get("low")), _num(zone.get("high")), zone.get("tf")
+        if low is not None and high is not None and 0 < low <= high and isinstance(tf, str) and tf in signal_language.TIMEFRAMES:
+            out["opposing_area"] = {"low": low, "high": high, "timeframe": tf}
+    trigger = facts.get("trigger_ohlc")
+    if isinstance(trigger, dict):
+        prices = {key: _num(trigger.get(key)) for key in ("open", "high", "low", "close")}
+        if all(value is not None and value > 0 for value in prices.values()):
+            out["trigger_ohlc"] = prices
+            for source, key in (("level", "breakout_level"), ("reference_price", "reference_price"),
+                                ("previous_atr", "previous_atr"), ("buffer", "buffer"), ("clearance", "clearance")):
+                value = _num(facts.get(source))
+                if value is not None and value >= 0:
+                    out[key] = value
+    gates = facts.get("gates")
+    if isinstance(gates, list):
+        out["gates"] = [
+            {"name": gate["name"], "status": gate["status"]}
+            for gate in gates
+            if isinstance(gate, dict)
+            and gate.get("name") in ("Breakout acceptance", "Extension", "Opposing zone",
+                                     "RSI divergence", "Directional candle", "Volume")
+            and gate.get("status") in ("PASS", "WAIT", "BLOCK", "DATA_UNAVAILABLE", "NOT_APPLICABLE")
+        ]
+    candle = facts.get("candle")
+    if isinstance(candle, dict):
+        for source, key in (("body", "candle_body_fraction"), ("close", "close_from_edge_fraction")):
+            number = _num(candle.get(source))
+            if number is not None and 0 <= number <= 1:
+                out[key] = number
+    for source, key in (("clearance_atr", "clearance_atr"), ("extension", "extension_atr")):
+        number = _num(facts.get(source))
+        if number is not None and number >= 0:
+            out[key] = number
+    for key, allowed in (
+        ("zone_reason", ("NO_OPPOSING_ZONE_IN_SCOPE", "ZONE_CLEARANCE")),
+        ("volume_source", ("genuine", "proxy", "unavailable")),
+        ("acceptance", ("DIRECT_BREAKOUT", "FOLLOW_THROUGH", "RETEST_BREAKOUT")),
+    ):
+        value = facts.get(key)
+        if isinstance(value, str) and value in allowed:
+            out[key] = value
+    for key in ("compatible_divergence", "opposing_divergence", "divergence_conflict", "retested", "volume_confirmed"):
+        if isinstance(facts.get(key), bool):
+            out[key] = facts[key]
+    return out
 
 
 def signal_text(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -495,6 +598,18 @@ async def feed(session: AsyncSession, user: User, *, tab: str = "today", source:
     q = FeedQuery(user=user, tab=tab, source=source, symbol=sym, now=now, flags=flags, dialect=dialect)
     at = decode_cursor(cursor) if cursor else None
     items, nxt = await _page(session, q, at, max(1, min(int(limit), MAX_LIMIT)))
+    breakout_rows = {
+        int(item["id"].removeprefix("history:")): item for item in items
+        if item.get("signal_type") == "amw_breakout"
+    }
+    details = await amw_breakout_publish.feed_labels(session, user, tuple(breakout_rows), include_evidence=True)
+    for history_id, values in details.items():
+        item = breakout_rows[history_id]
+        for key in ("variant", "grade"):
+            if key in values:
+                item[key] = values[key]
+        if isinstance(values.get("evidence_record"), dict):
+            item["breakout"] = _breakout_explanation(values["evidence_record"])
     if flags.get(signal_language.FLAG):
         items = [signal_text(i) for i in items]
     counts: Optional[Dict[str, Any]] = None

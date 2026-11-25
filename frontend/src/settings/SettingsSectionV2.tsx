@@ -49,6 +49,7 @@ const TITLE: Record<SettingsSectionId, string> = {
 };
 
 // M64: Settings › Risk limits, its own chunk.
+const BreakoutSettingsV2 = lazy(() => import("./BreakoutSettingsV2"));
 const RiskLimitsV2 = lazy(() => import("./RiskLimitsV2"));
 // M68 PR-0: Settings › Trade settings, its own chunk.
 const TradeSettingsV2 = lazy(() => import("./TradeSettingsV2"));
@@ -192,12 +193,18 @@ function AdvancedSection() {
   const features = useFeatures();
   const liveHidden = useLiveHidden();
   const location = useLocation();
+  const [breakoutOpened, setBreakoutOpened] = useState(location.hash === "#amw-breakout");
   // The checklist loads only once opened (as today), or when the address points at it.
   const [goLiveOpen, setGoLiveOpen] = useState(location.hash === "#go-live");
   useEffect(() => { if (location.hash === "#go-live") setGoLiveOpen(true); }, [location.hash]);
   return (
     <div id="advanced" className="space-y-space-3">
       <p className="text-t14 text-fg-muted">For connecting other tools. Most people never need these.</p>
+      <Fold id="amw-breakout" title="AMW Breakout Signal Intelligence" onOpen={(open) => { if (open) setBreakoutOpened(true); }}>
+        {breakoutOpened && <Suspense fallback={<p>Loading breakout settings…</p>}>
+          <BreakoutSettingsV2 />
+        </Suspense>}
+      </Fold>
       <Fold id="webhook" title="TradingView webhook" line="Send TradingView alerts here">
         <WebhookCard />
       </Fold>

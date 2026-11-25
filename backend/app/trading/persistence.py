@@ -15,7 +15,9 @@ from app.signal_scoring.models import EnrichedSignal
 from app.trading.trade_split import not_a_split
 
 
-async def persist_signal_history(session: AsyncSession, user: User, enriched: EnrichedSignal) -> SignalHistoryRecord:
+async def persist_signal_history(
+    session: AsyncSession, user: User, enriched: EnrichedSignal, *, commit: bool = True,
+) -> SignalHistoryRecord:
     """Logs every enriched signal a logged-in user generates, tradeable or not - a history of
     what the engine said, independent of whether it was ever executed. Visible to the whole
     tenant (tenant_id), attributed to the user who generated it (user_id).
@@ -39,8 +41,11 @@ async def persist_signal_history(session: AsyncSession, user: User, enriched: En
         timeframe_combo=signal.timeframe_combo,
     )
     session.add(record)
-    await session.commit()
-    await session.refresh(record)
+    if commit:
+        await session.commit()
+        await session.refresh(record)
+    else:
+        await session.flush()
     return record
 
 

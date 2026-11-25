@@ -12,7 +12,7 @@ import { Freshness } from "../ui/Freshness";
 import { PageFootnote } from "../ui/PageFootnote";
 import { PageIntro } from "../ui/PageIntro";
 import {
-  SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
+  SOURCES, TABS, breakoutCaption, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
   type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
 import DayOneV2 from "./DayOneV2";
@@ -290,7 +290,7 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                   </div>
                 </td>
                 <td className="px-space-2 py-space-3">
-                  <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{setupWords(item.setup)}</span>
+                  <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{breakoutCaption(item) || setupWords(item.setup)}</span>
                   <span className="block hyphens-auto text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
                 </td>
                 <td className="whitespace-nowrap px-space-2 py-space-3"><StatusChip item={item} now={now} short /></td>
@@ -318,9 +318,9 @@ function SignalCard({ item, now, open, canTrade, proposalAction, onOpen, onDone,
           </h2>
           <StatusChip item={item} now={now} />
         </div>
-        <p className="text-t14 text-fg-muted">{setupWords(item.setup)} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
+        <p className="text-t14 text-fg-muted">{breakoutCaption(item) || setupWords(item.setup)} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
         {/* M72 PR-3: the Copilot beside the page, about this signal (no price is sent; the server re-reads it) */}
-        <AskAiAbout ctx={{ symbol: item.symbol, object: signalObject(item.id), page: "signals" }} />
+        {item.signal_type !== "amw_breakout" && <AskAiAbout ctx={{ symbol: item.symbol, object: signalObject(item.id), page: "signals" }} />}
         {open ? (
           <SignalDetail item={item} proposal={proposalAction} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         ) : (

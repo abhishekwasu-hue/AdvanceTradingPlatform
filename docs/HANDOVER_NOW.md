@@ -11,3 +11,7 @@ Open PRs (merge on green CI):
 
 Owner: deploy after 15:30 IST (migration yes) with the new ATP_PRIVATE_REF; flags srv2_bot,
 terminal_conclusion, discipline_engine on; check Journal, agent cards, Conclusion on phone.
+
+AMW-BO development branch adds disabled informational breakout scans. Validate stored NSE coverage and runtime performance before any separate activation approval. No migration.
+
+AMW-BO Phase 2 changes are in the local development diff. Keep the worker disabled pending authorized stored-data research, browser E2E and full CI review.

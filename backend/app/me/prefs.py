@@ -67,6 +67,7 @@ from app.db.models import User, UserPrefsRecord
 from app.db.session import get_session
 from app.me import trade_settings
 from app.option_chain.ask_spec import AnalysisSpec
+from app.screener.breakouts.amw_preferences import BreakoutPreferences
 
 MAX_BODY_BYTES = 16 * 1024
 HEX = r"^#[0-9a-fA-F]{6}$"
@@ -782,7 +783,7 @@ class JournalDeliveryPrefs(_Prefs):
     weekly_day: Literal["SAT", "SUN"] = "SAT"
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
+NAMESPACES: Dict[str, Type[BaseModel]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
@@ -792,7 +793,8 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
                                        "copilot_watch": CopilotWatchPrefs, "ai": AiPrefs, "ai_memory": AiMemoryPrefs,
                                        "what_if": WhatIfPrefs, "own_events": OwnEventsPrefs,
                                        "workspace_watch": WorkspaceWatchPrefs, "chart_reader": ChartReaderPrefs,
-                                       "runner": RunnerPrefs, "journal_delivery": JournalDeliveryPrefs}
+                                       "runner": RunnerPrefs, "journal_delivery": JournalDeliveryPrefs,
+                                       "amw_breakout": BreakoutPreferences}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -860,6 +862,14 @@ def _validate(namespace: str, raw: bytes) -> Dict[str, Any]:
         # The input is never echoed back (main.py's rule for 422s): where and what only.
         problems = [{"loc": list(e.get("loc", ())), "msg": e.get("msg", "invalid")} for e in exc.errors(include_input=False, include_url=False)]
         raise HTTPException(status_code=422, detail=problems) from None
+
+
+@router.get("/amw-breakout/status")
+async def breakout_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    from app.screener.breakouts.amw_breakout import BREAKOUT_SOURCES, TIMEFRAMES
+    from app.screener.breakouts.amw_status import owner_status
+
+    return {**await owner_status(session, user), "timeframes": sorted(TIMEFRAMES), "sources": sorted(BREAKOUT_SOURCES)}
 
 
 @router.get("/prefs")

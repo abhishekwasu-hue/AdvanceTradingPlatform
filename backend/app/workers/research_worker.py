@@ -43,6 +43,20 @@ async def run_forever(session_factory: async_sessionmaker[AsyncSession], stop: a
             pass
 
 
+async def run_breakout_schedule(session_factory: async_sessionmaker[AsyncSession], stop: asyncio.Event) -> None:
+    from app.workers.amw_breakout_job import run_opted_in
+
+    while not stop.is_set():
+        try:
+            await run_opted_in(session_factory)
+        except Exception:
+            logger.exception("Breakout scheduler cycle failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def main() -> None:
     configure_logging()
     from app.observability import tracing
@@ -62,7 +76,12 @@ async def main() -> None:
     except (NotImplementedError, ImportError):  # Windows / restricted environments
         pass
     logger.info("Research worker started (poll every %ss)", POLL_SECONDS)
-    await run_forever(_session_factory, stop)
+    if os.getenv("AMW_BREAKOUT_SCAN_ENABLED") == "1":
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(run_breakout_schedule(_session_factory, stop))
+            tasks.create_task(run_forever(_session_factory, stop))
+    else:
+        await run_forever(_session_factory, stop)
 
 
 if __name__ == "__main__":

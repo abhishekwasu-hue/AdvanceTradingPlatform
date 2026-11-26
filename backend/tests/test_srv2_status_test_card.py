@@ -258,3 +258,19 @@ def test_the_bots_own_button_press_is_handed_to_the_bot_only_for_the_owner_with_
     _flag(monkeypatch)
     loader.set_for_tests(NS(host=None, runner=NS(enqueue_update=lambda u: (_ for _ in ()).throw(OSError("disk")))))
     assert asyncio.run(inbox.forward(None, 1, upd)) is False                 # a failed hand-over falls back
+
+
+def test_a_typed_reply_goes_to_the_bot_only_while_it_waits_for_one(monkeypatch):
+    from app.srv2bot import inbox
+    seen, waiting = [], {"42"}
+    loader.set_for_tests(NS(host=None, runner=NS(enqueue_update=lambda u: seen.append(u) or True, wants_text=lambda uid: uid in waiting)))
+
+    async def owner(session):
+        return bot_io.Owner(1, NS(id=1))
+    monkeypatch.setattr(job, "owner", owner)
+    _flag(monkeypatch)
+    upd = {"update_id": 2, "message": {"text": "entry 25950", "from": {"id": 42}}}
+    assert asyncio.run(inbox.forward_text(None, 1, upd, "42")) is True and seen == [upd]
+    assert asyncio.run(inbox.forward_text(None, 1, upd, "7")) is False          # not waiting for this user: ATP answers
+    loader.set_for_tests(NS(host=None, runner=NS(enqueue_update=lambda u: True)))  # an older package without wants_text
+    assert asyncio.run(inbox.forward_text(None, 1, upd, "42")) is False

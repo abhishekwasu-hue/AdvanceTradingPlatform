@@ -779,6 +779,9 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
                 await session.commit()
             await reply(cfg, chat_id, "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings > Advanced > Your own Telegram bot.", client, parse_mode=None)
             return {"handled": "refused", "reason": "sender not an approver"}
+        from app.srv2bot import inbox as srv2_inbox
+        if not text.startswith("/") and await srv2_inbox.forward_text(session, tenant.id, update, from_id):
+            return {"handled": "srv2"}          # owner 26 Nov audit: the bot waits for this typed reply (✏️ / 📝 / ❌ other)
         try:
             answer = await answer_text(session, tenant, user, text)
         except Exception as exc:  # noqa: BLE001 - the chat gets a plain error, the log the detail

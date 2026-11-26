@@ -18,19 +18,42 @@ def is_bot_callback(data: str) -> bool:
     return str(data or "").startswith(PREFIX)
 
 
-async def forward(session: Any, tenant_id: int, update: dict) -> bool:
-    """True when the update was handed to the bot (it then answers the press itself); False = ATP handles it as before."""
+async def _bot_for(session: Any, tenant_id: int) -> Any:
+    """The private bot's runner for the owner's tenant with the bot ON, else None."""
     from app.platform.controls import flag_enabled
     from app.srv2bot import job, loader
-    bot = loader.load()
-    enqueue = getattr(getattr(bot, "runner", None), "enqueue_update", None)
-    if enqueue is None:
-        return False
+    runner = getattr(loader.load(), "runner", None)
+    if getattr(runner, "enqueue_update", None) is None:
+        return None
     who = await job.owner(session)
     if who is None or who.tenant_id != tenant_id or not await flag_enabled(session, job.FLAG, tenant_id):
+        return None
+    return runner
+
+
+async def forward_text(session: Any, tenant_id: int, update: dict, from_id: str) -> bool:
+    """Owner 26 Nov audit: a plain text goes to the bot only while it waits for a typed reply from this user (after ✏️ Modify /
+    📝 Correct / ❌ other); otherwise ATP answers it as before. True when handed over."""
+    runner = await _bot_for(session, tenant_id)
+    wants = getattr(runner, "wants_text", None)
+    if runner is None or wants is None or not from_id:
         return False
     try:
-        return bool(await asyncio.to_thread(enqueue, update))
+        if not await asyncio.to_thread(wants, from_id):
+            return False
+        return bool(await asyncio.to_thread(runner.enqueue_update, update))
+    except Exception:  # noqa: BLE001 - a failed hand-over falls back to ATP's own answer
+        logger.exception("srv2 bot: a typed reply could not be handed to the bot")
+        return False
+
+
+async def forward(session: Any, tenant_id: int, update: dict) -> bool:
+    """True when the update was handed to the bot (it then answers the press itself); False = ATP handles it as before."""
+    runner = await _bot_for(session, tenant_id)
+    if runner is None:
+        return False
+    try:
+        return bool(await asyncio.to_thread(runner.enqueue_update, update))
     except Exception:  # noqa: BLE001 - a failed hand-over falls back to ATP's own answer
         logger.exception("srv2 bot: a Telegram update could not be handed to the bot")
         return False

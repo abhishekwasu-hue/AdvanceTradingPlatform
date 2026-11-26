@@ -20,8 +20,9 @@ import { DirectionChip } from "../ui/DirectionChip";
 import { useFeatures } from "../ui/useFeatures";
 import { EntryBrokerApp } from "../proposals/BrokerAppAction";
 import SimilarSetupsV2 from "../journal/SimilarSetupsV2";
+import { BreakoutEvidenceV2 } from "./BreakoutEvidenceV2";
 import {
-  canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
+  breakoutCaption, canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
   type FeedTab, type SignalFeedItem,
 } from "./feed";
 import { LEVEL_LABELS, reasonWords, setupWords } from "./signalText";
@@ -369,7 +370,7 @@ export function SignalActions({ item, now, compact = false, canTrade, chartTimef
   );
   // Route 3 (BIZ-1 B3): "Trade in your broker app" on a live signal (not an ended one) - his own settings only.
   const status = effectiveStatus(item, now);
-  const broker = (item.direction || item.legs?.length) && (status === "waiting" || status === "snoozed" || status === "info")
+  const broker = item.signal_type !== "amw_breakout" && (item.direction || item.legs?.length) && (status === "waiting" || status === "snoozed" || status === "info")
     ? <EntryBrokerApp testId="signal" signal={{ symbol: item.symbol, exchange: item.exchange, direction: item.direction, legs: item.legs }} />
     : null;
   if (!decidable || id === null) return <div className="flex flex-wrap gap-space-2">{chart}{broker}</div>;
@@ -438,6 +439,23 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
   const menuId = useId();
   // AUD-T6 (BR-M3): his own similar past closed trades for an entry approval (flags ui_v2 + setup_recall).
   const features = useFeatures();
+  if (item.signal_type === "amw_breakout") {
+    if (compact) return <BreakoutEvidenceV2 item={item} />;
+    return (
+      <section aria-label={`${item.symbol} in detail`} data-signal-detail={item.id}
+        className="space-y-space-4 rounded-panel border border-subtle bg-surface-1 p-space-5 shadow-card">
+        <div>
+          <div className="flex flex-wrap items-center gap-space-2">
+            <h2 className="text-t20 font-semibold text-fg">{item.symbol}</h2>
+            <Direction value={item.direction} className="text-t15" />
+            <StatusChip item={item} now={now} />
+          </div>
+          <p className="mt-space-1 text-t14 text-fg-muted">{breakoutCaption(item)}</p>
+        </div>
+        <BreakoutEvidenceV2 item={item} />
+      </section>
+    );
+  }
   const recall = item.action_id !== null && features.on("ui_v2") && features.on("setup_recall")
     ? <SimilarSetupsV2 kind="proposal" id={item.action_id} /> : null;
   if (compact) {

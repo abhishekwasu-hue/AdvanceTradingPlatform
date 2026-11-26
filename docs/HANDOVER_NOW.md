@@ -10,3 +10,6 @@ Next session:
 3. Owner decision pending - one Telegram system for all bots: default B (each bot's own card + one router by callback
    prefix, one status line / TEST card / heartbeat per bot); /status: ATP answers and adds the SRV2 line.
 4. #1170 AMW Breakout: merge on green (owner said Merge); keep AMW_BREAKOUT_SCAN_ENABLED=0.
+
+AMW-BO (#1170 merged 26 Nov): informational breakout scans, worker disabled (AMW_BREAKOUT_SCAN_ENABLED=0); validate stored NSE coverage
+and runtime performance before any separate activation approval.

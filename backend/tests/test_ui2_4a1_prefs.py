@@ -51,7 +51,7 @@ def test_defaults_before_anything_is_saved():
     got = client.get(BASE, headers=who["headers"])
     assert got.status_code == 200, got.text
     assert got.json()["prefs"]["chart"] == CHART_DEFAULTS and got.json()["versions"]["chart"] == 0
-    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno", "smart_execution", "notices", "option_chain", "chain_analytics", "terminal", "strategy_exits", "my_limits", "shell", "trade_settings", "ai_usage", "copilot_watch", "ai", "ai_memory", "what_if", "own_events", "workspace_watch", "chart_reader", "daily_report", "runner", "journal_delivery"}      # the allow-list, exactly (P2-8 J6 journal_delivery, Runner S3 runner, M96 chain_analytics, M89 daily_report, M86 W4 chart_reader, M76 MP-11 workspace_watch, M76 MP-7 own_events, M76 MP-6 what_if, M72 PR-11 ai_memory, M72 PR-10 ai, M72 PR-7 copilot_watch, M72 PR-1b ai_usage, M68 trade_settings, M57 shell, DEF-0 my_limits, SX1 strategy_exits, B4 option_chain, OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno, TM Part 7 smart_execution, TT12-1 notices)
+    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours", "trading_defaults", "daily_rhythm", "fno", "smart_execution", "notices", "option_chain", "chain_analytics", "terminal", "strategy_exits", "my_limits", "shell", "trade_settings", "ai_usage", "copilot_watch", "ai", "ai_memory", "what_if", "own_events", "workspace_watch", "chart_reader", "daily_report", "runner", "journal_delivery", "amw_breakout"}      # the allow-list, exactly (P2-8 J6 journal_delivery, Runner S3 runner, M96 chain_analytics, M89 daily_report, M86 W4 chart_reader, M76 MP-11 workspace_watch, M76 MP-7 own_events, M76 MP-6 what_if, M72 PR-11 ai_memory, M72 PR-10 ai, M72 PR-7 copilot_watch, M72 PR-1b ai_usage, M68 trade_settings, M57 shell, DEF-0 my_limits, SX1 strategy_exits, B4 option_chain, OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours, part C trading_defaults, MO4 daily_rhythm, FNO-8B-28 fno, TM Part 7 smart_execution, TT12-1 notices)
     assert prefs.defaults("chart") == CHART_DEFAULTS                    # no grid by default; volume and RSI on
 
 
@@ -241,3 +241,48 @@ def test_tf1_timeframe_favourites_round_trip_and_are_validated():
     assert _put(who, {"timeframe_favourites": []}).json()["value"]["timeframe_favourites"] == []
     for bad in (["2min"], ["5min", "5min"], "5min", ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month", "day"]):
         assert _put(who, {"timeframe_favourites": bad}).status_code == 422, bad
+
+
+def test_breakout_settings_round_trip_and_stale_version():
+    who = _who("breakout")
+    namespace = "amw_breakout"
+    body = {
+        "enabled": False,
+        "instruments": ["NSE_INDEX:NIFTY50"],
+        "rules": [{"profile": "BO-02", "direction": "BOTH", "supply_tfs": ["1h", "1d"]}],
+    }
+    saved = _put(who, body, namespace, version=0)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["value"]["rules"][0]["divergence_mode"] == "MANDATORY"
+    assert saved.json()["value"]["enabled"] is False
+    assert _put(who, body, namespace, version=0).status_code == 409
+    assert _put(who, {**body, "rules": [{"profile": "BO-02", "breakout_tf": "4h"}]}, namespace).status_code == 422
+    got = client.get(BASE, headers=who["headers"]).json()
+    assert got["prefs"][namespace] == saved.json()["value"]
+
+
+def test_breakout_worker_status_is_owner_scoped():
+    from types import SimpleNamespace
+
+    from app.screener.breakouts.amw_status import owner_key, write_status
+
+    one, two = _who("status-one"), _who("status-two")
+
+    async def seed():
+        async with _session_factory() as session:
+            await write_status(session, "worker", {})
+            await write_status(session, owner_key(SimpleNamespace(
+                id=one["user_id"], tenant_id=one["tenant_id"],
+            )), {"status": "WAITING_FOR_DATA", "counts": {"missing_data": 1}})
+
+    _run(seed())
+    url = "/api/me/amw-breakout/status"
+    got = client.get(url, headers=one["headers"]).json()
+    assert got["worker_available"] is True
+    assert got["status"] == "WAITING_FOR_DATA"
+    other = client.get(url, headers=two["headers"]).json()
+    assert other["worker_available"] is True
+    assert "status" not in other and "counts" not in other
+    assert "4h" not in other["timeframes"]
+    assert {"HORIZONTAL", "ZONE", "SESSION"} <= set(other["sources"])
+    assert client.get(url).status_code == 401

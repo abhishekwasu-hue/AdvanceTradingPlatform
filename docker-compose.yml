@@ -282,6 +282,7 @@ services:
       BACKTEST_HOLDOUT_START: ${BACKTEST_HOLDOUT_START:-}
       EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
       RESEARCH_POLL_SECONDS: ${RESEARCH_POLL_SECONDS:-15}
+      AMW_BREAKOUT_SCAN_ENABLED: ${AMW_BREAKOUT_SCAN_ENABLED:-0}
     # no HTTP server: the image's API healthcheck does not apply
     healthcheck:
       disable: true

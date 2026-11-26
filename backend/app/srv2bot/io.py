@@ -44,7 +44,10 @@ def effective_trading_mode(row: dict | None) -> str:
 CANDLE_LOOKBACK_DAYS = {"1minute": 5, "5minute": 10, "15minute": 20, "30minute": 60, "1hour": 90, "day": 400}
 CANDLE_DIRECT = {"1minute": "1min", "30minute": "30min", "day": "day"}
 CANDLE_RESAMPLE = {"5minute": "5min", "15minute": "15min", "1hour": "60min"}
-CANDLE_CHUNK_DAYS = 28                       # Trade: at most one month of minute bars per history call
+CANDLE_CHUNK_DAYS = 28                       # 30-minute history per call
+# Owner 26 Nov: the card read "no chart: no 1m candles" - 28-day 1-minute requests are over Upstox's range limit; ATP's own minute
+# history asks 7 days per call (market_lake/index_history.py LAKE_MINUTE_WINDOW_DAYS, "well under the broker's range limit").
+CANDLE_CHUNK_DAYS_BY_STEP = {"1min": 7}
 CANDLE_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume", "oi"]
 SPOT = {"NIFTY": ("NIFTY 50", "NSE"), "BANKNIFTY": ("NIFTY BANK", "NSE"), "SENSEX": ("SENSEX", "BSE")}
 
@@ -185,7 +188,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
                     return bars, failed
                 start, end = today - timedelta(days=max(days, 2)), today - timedelta(days=1)
                 while end > start:
-                    begin = max(start, end - timedelta(days=CANDLE_CHUNK_DAYS))
+                    begin = max(start, end - timedelta(days=CANDLE_CHUNK_DAYS_BY_STEP.get(step, CANDLE_CHUNK_DAYS) - 1))
                     try:
                         bars += await broker.get_historical_data(name, exchange, step, datetime.combine(begin, datetime.min.time()),
                                                                  datetime.combine(end, datetime.min.time()))

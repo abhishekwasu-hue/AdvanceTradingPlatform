@@ -737,6 +737,9 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
                 logger.warning("Telegram callback from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
         data = str(callback.get("data") or "")
+        from app.srv2bot import inbox as srv2_inbox
+        if srv2_inbox.is_bot_callback(data) and await srv2_inbox.forward(session, tenant.id, update):
+            return {"handled": "srv2"}          # owner 26 Nov: the 15M SRv2 bot's own button - its Telegram service answers it
         if data.startswith("oi:"):                   # OI Banner O4b: snooze / mute - an authorised sender only, never an order
             from app.option_chain import oi_alerts
             actor = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)
@@ -776,6 +779,9 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
                 await session.commit()
             await reply(cfg, chat_id, "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings > Advanced > Your own Telegram bot.", client, parse_mode=None)
             return {"handled": "refused", "reason": "sender not an approver"}
+        from app.srv2bot import inbox as srv2_inbox
+        if not text.startswith("/") and await srv2_inbox.forward_text(session, tenant.id, update, from_id):
+            return {"handled": "srv2"}          # owner 26 Nov audit: the bot waits for this typed reply (✏️ / 📝 / ❌ other)
         try:
             answer = await answer_text(session, tenant, user, text)
         except Exception as exc:  # noqa: BLE001 - the chat gets a plain error, the log the detail

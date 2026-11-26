@@ -12,7 +12,9 @@ migration. ATP's part:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy import select
@@ -102,13 +104,42 @@ async def _audit(session: AsyncSession, user_id: int | None, record: dict[str, A
     await write_audit_log(session, None, user_id, EVENT, json.dumps(keep, ensure_ascii=False, default=str))
 
 
+async def trading_mode_fn(session: AsyncSession) -> Callable[[str, str], str]:
+    """Owner 25 Nov (VPS log: "human_confirm ... PAPER bot - srv2_momentum_reversal: {'NIFTY': 'UNKNOWN'}"): Trade's own guard in
+    `vision/config.save` reads the bot's trading mode per symbol and refuses human_confirm / auto_veto unless it is PAPER. Its own read
+    imports the bot's `cloud_db` stand-in, which exists only after the worker's first step (and never in the web process), so it read
+    UNKNOWN. ATP hands it the same rule on ATP's own store (`io.effective_trading_mode`); a store that cannot be read = UNKNOWN
+    (refused, as before)."""
+    from app.srv2bot import io as bot_io
+    from app.srv2bot import store
+    bot = loader.load()
+    key = getattr(getattr(bot, "settings", None), "STRATEGY_KEY", None) if bot is not None else None
+    try:
+        rows: dict[str, Any] | None = await store.rows(session)
+    except Exception:  # noqa: BLE001 - unreadable = UNKNOWN below
+        rows = None
+
+    def fn(_bot: str, symbol: str) -> str:
+        if rows is None or not key:
+            return "UNKNOWN"
+        return bot_io.effective_trading_mode(rows.get(store._key(key, symbol)))   # noqa: SLF001 - the store's own key rule
+    return fn
+
+
+def _with_modes_fn(call: Callable[..., Any], fn: Callable[[str, str], str]) -> dict[str, Any]:
+    """`trading_mode_fn=` only for a private package that takes it (an older one is called as before)."""
+    return {"trading_mode_fn": fn} if "trading_mode_fn" in inspect.signature(call).parameters else {}
+
+
 async def switch(session: AsyncSession, user: Any, mode: str, *, vision_on: bool, owner: bool) -> dict[str, Any]:
     """The owner's switch. `owner` is the route's check (the configured owner account); every other caller is refused before this.
     Writes the private settings, then the audit row; the caller commits."""
     if mode not in MODES:
         raise ValueError(f"The mode must be one of: {', '.join(MODES)}.")
     modes = _modes()
-    record = await asyncio.to_thread(modes.apply, mode, f"user:{user.id}", owner is True, bool(vision_on))
+    fn = await trading_mode_fn(session)
+    record = await asyncio.to_thread(modes.apply, mode, f"user:{user.id}", owner is True, bool(vision_on),
+                                     **_with_modes_fn(modes.apply, fn))
     await _audit(session, user.id, record)
     return record
 
@@ -119,7 +150,8 @@ async def ensure_default(session: AsyncSession, user_id: int | None) -> dict[str
     modes = getattr(bot, "modes", None) if bot is not None else None
     if modes is None:
         return None
-    record = await asyncio.to_thread(modes.ensure_default, f"user:{user_id}")
+    fn = await trading_mode_fn(session)
+    record = await asyncio.to_thread(modes.ensure_default, f"user:{user_id}", **_with_modes_fn(modes.ensure_default, fn))
     if record is not None:
         await _audit(session, user_id, record)
     return record

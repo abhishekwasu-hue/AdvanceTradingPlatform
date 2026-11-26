@@ -80,7 +80,8 @@ def test_flag_on_registers_atps_io_and_runs_one_step_on_the_ist_clock(monkeypatc
     ran = _run(job.run_once(_session_factory, None, now=datetime(2030, 1, 7, 4, 30, tzinfo=UTC)))
     assert ran == ["exits"]
     assert bot.ticks == [(datetime(2030, 1, 7, 10, 0), "calendar")]          # 04:30 UTC = 10:00 IST, naive
-    assert set(bot.registered) == {"settings", "token", "option_expiries", "option_chain", "ltp", "funds", "send", "live_confirmed"}
+    assert set(bot.registered) == {"settings", "token", "option_expiries", "option_chain", "ltp", "funds", "send", "candles",
+                                   "live_confirmed"}   # owner 25 Nov: candles (the Vision chart's bars) - it was never registered
     assert bot.registered["live_confirmed"]("15m_dynamic_sr", "NIFTY", "LIVE") is False   # LIVE is not wired
 
 

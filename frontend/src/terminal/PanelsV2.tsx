@@ -44,6 +44,8 @@ import { NoteV2 } from "../trading/PartsV2";
 import type { Deployment, PortfolioExposure, TradeRecord } from "../types";
 import { EMPTY, formatCount, formatCountChange, formatDateIST, formatNumber, formatPrice, formatTimeIST } from "../ui/format";
 import { Chip } from "../ui/Chip";
+import { useOptionalAuth } from "../auth/AuthContext";
+import { AGENT_CHIP, agentDetail, agentShown, fetchAgentStatus, type AgentStatus } from "./agentStatus";
 import { Signed } from "../ui/Signed";
 import { SubTabs } from "../ui/SubTabs";
 import type { ChartLive, TerminalSpot } from "./spot";
@@ -511,12 +513,15 @@ const BOTS_MS = 30_000;
  * tab "waiting"), read only: the names, status and words of the Trading bot and Signals pages (paperbot/model.ts,
  * signals/SignalPartsV2.tsx), no price, no call word. Pause, stop, approve and skip stay on those pages - the links open
  * them in place. Read only while the panel is shown. */
-export function BotsPanelV2({ enabled = true, loadBots = () => api.listDeployments(), loadSignals = loadWaiting }: {
-  enabled?: boolean; loadBots?: () => Promise<Deployment[]>; loadSignals?: () => Promise<SignalFeedItem[]>;
+export function BotsPanelV2({ enabled = true, loadBots = () => api.listDeployments(), loadSignals = loadWaiting, loadAgent = fetchAgentStatus }: {
+  enabled?: boolean; loadBots?: () => Promise<Deployment[]>; loadSignals?: () => Promise<SignalFeedItem[]>; loadAgent?: () => Promise<AgentStatus>;
 }) {
+  const user = useOptionalAuth()?.user;
   const [bots] = usePolled(loadBots, () => BOTS_MS, enabled);
   const [signals] = usePolled(loadSignals, () => BOTS_MS, enabled);
-  return <BotsViewV2 bots={asRead(bots)} signals={asRead(signals)} now={new Date()} />;
+  // Owner 25 Nov: his trading agent's line - asked only for an admin (the server shows it to the owner only)
+  const [agent] = usePolled(loadAgent, () => BOTS_MS, enabled && user?.role === "SUPER_ADMIN");
+  return <BotsViewV2 bots={asRead(bots)} signals={asRead(signals)} now={new Date()} agent={agent.status === "ok" ? agent.data : null} />;
 }
 
 const loadWaiting = () => fetchFeed({ tab: "waiting", limit: SIGNALS_SHOWN }).then((f) => f.items);
@@ -527,17 +532,29 @@ const asRead = <T,>(l: Loadable<T>): Read<T> =>
 const SUBHEAD = "flex items-baseline justify-between gap-space-2 text-t13 font-semibold text-fg";
 
 /** The panel's content (no state: the tests render it). */
-export function BotsViewV2({ bots, signals, now }: { bots: Read<Deployment[]>; signals: Read<SignalFeedItem[]>; now: Date }) {
+export function BotsViewV2({ bots, signals, now, agent = null }: {
+  bots: Read<Deployment[]>; signals: Read<SignalFeedItem[]>; now: Date; agent?: AgentStatus | null;
+}) {
   const shownBots = bots.status === "ok" ? sortBots(bots.value) : [];
+  const showAgent = agentShown(agent);
   const shownSignals = signals.status === "ok" ? signals.value.slice(0, SIGNALS_SHOWN) : [];
   return (
     <div className="space-y-space-3" data-panel-body="bots">
       <section aria-label="Your bots" data-bots-list>
         <h3 className={SUBHEAD}><span className="inline-flex items-center gap-space-2"><Bot size={16} aria-hidden className="text-brand" />Your bots</span>
           {bots.status === "ok" && <span className="font-tabular text-fg-muted" data-bots-count>{shownBots.length}</span>}</h3>
+        {showAgent && (
+          <div data-agent-status={agent.state} className="flex items-center justify-between gap-space-2 border-b border-subtle py-space-1 text-t13">
+            <span className="min-w-0">
+              <span className="block truncate font-semibold text-fg">My trading agent</span>
+              <span className="block text-t12 text-fg-muted" data-agent-detail>{agentDetail(agent)}</span>
+            </span>
+            <Chip tone={AGENT_CHIP[agent.state].tone} name="agent-status">{AGENT_CHIP[agent.state].text}</Chip>
+          </div>
+        )}
         {bots.status === "loading" ? <LoadingRowsV2 rows={2} />
           : bots.status === "error" ? <EmptyText testId="bots-error">We could not load your bots. We will try again in a moment.</EmptyText>
-          : !shownBots.length ? <EmptyText testId="bots-empty">No bot is running. Start one on the Trading bot page.</EmptyText>
+          : !shownBots.length ? (showAgent ? null : <EmptyText testId="bots-empty">No bot is running. Start one on the Trading bot page.</EmptyText>)
           : (
             <ul className="divide-y divide-subtle text-t13">
               {shownBots.map((d) => (

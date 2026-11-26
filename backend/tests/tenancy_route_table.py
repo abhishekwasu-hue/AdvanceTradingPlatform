@@ -203,6 +203,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/admin/controls/srv2-settings/{symbol}"): "admin",
     ("PUT", "/api/admin/controls/srv2-signal-symbols"): "admin",
     ("GET", "/api/admin/controls/srv2-positions"): "admin",              # SRV2 P4: the bot's positions, read-only
+    ("GET", "/api/admin/controls/srv2-status"): "admin",                 # owner 25 Nov: the bot's one-line status on his Terminal
     ("PUT", "/api/admin/controls/maintenance"): "admin",
     ("GET", "/api/admin/controls/marketplace-terms"): "admin",
     ("PUT", "/api/admin/controls/marketplace-terms"): "admin",

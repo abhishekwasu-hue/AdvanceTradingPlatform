@@ -89,6 +89,16 @@ async def refresh_settings(session: Any, who: bot_io.Owner, now: datetime) -> bo
             stop_services()
         logger.info("srv2 bot: settings set: %s", ", ".join(names) or "none")
         _settings["names"] = names
+    from app.srv2bot import status
+    try:                                     # owner 25 Nov: the Terminal's status line reads this heartbeat (names only)
+        await status.beat(session, names, now)
+        await session.commit()
+    except Exception:  # noqa: BLE001 - the status line is information; the bot's step never fails on it
+        logger.warning("srv2 bot: the status heartbeat could not be stored")
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001,S110 - nothing to roll back
+            pass
     return True
 
 
@@ -98,8 +108,12 @@ async def _start_services(bot: Any, session_factory: Callable, who: bot_io.Owner
     private package without them: the bot runs as before."""
     from app.srv2bot import mode as agent_mode
     async with session_factory() as s:
-        if await agent_mode.ensure_default(s, getattr(who.user, "id", None)) is not None:
-            await s.commit()
+        try:
+            if await agent_mode.ensure_default(s, getattr(who.user, "id", None)) is not None:
+                await s.commit()
+        except Exception:  # noqa: BLE001 - no stored mode = Trade's own defaults (approval_required: every entry needs ✅)
+            logger.exception("srv2 bot: the default agent mode could not be stored; the bot runs on Trade's own Vision defaults")
+            await s.rollback()
     start = getattr(bot.runner, "start_services", None)
     if start is not None:
         await asyncio.to_thread(start)

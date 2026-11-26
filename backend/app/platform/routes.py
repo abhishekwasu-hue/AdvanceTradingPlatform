@@ -496,3 +496,13 @@ async def get_srv2_positions(user: User = Depends(require_role()), session: Asyn
     from app.srv2bot import settings_page
     await _owner_or_403(session, user, "read positions")
     return await settings_page.positions()
+
+
+@admin_router.get("/srv2-status")
+async def get_srv2_status(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    """Owner 25 Nov: the bot's one-line status on his Terminal (ON, stepping, Telegram, Vision). Owner only, read only; names only."""
+    from app.platform import live_owner
+    from app.srv2bot import status
+    if not live_owner.is_owner(user):          # another admin's Terminal polls too: no line for them, and no audit row per poll
+        return {"state": "hidden"}
+    return await status.read(session, user.tenant_id)

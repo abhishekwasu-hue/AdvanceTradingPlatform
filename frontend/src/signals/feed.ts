@@ -15,6 +15,40 @@ export type FeedSource = "all" | "autopilot" | "scan" | "copilot" | "library";
 export type SignalKind = "autopilot" | "scan" | "copilot" | "library";
 export type SignalStatus = "waiting" | "snoozed" | "taken" | "skipped" | "expired" | "not_placed" | "info";
 
+export interface BreakoutEvidence {
+  score: number | null;
+  timeframe?: string;
+  detected_at?: string;
+  confirmed_at?: string | null;
+  available_at?: string;
+  published_at?: string;
+  factors?: { component: string; maximum: number; awarded: number }[];
+  opposing_area?: { low: number; high: number; timeframe: string };
+  candle_body_fraction?: number;
+  close_from_edge_fraction?: number;
+  clearance_atr?: number;
+  extension_atr?: number;
+  zone_reason?: "NO_OPPOSING_ZONE_IN_SCOPE" | "ZONE_CLEARANCE";
+  volume_source?: "genuine" | "proxy" | "unavailable";
+  acceptance?: "DIRECT_BREAKOUT" | "FOLLOW_THROUGH" | "RETEST_BREAKOUT";
+  compatible_divergence?: boolean;
+  opposing_divergence?: boolean;
+  divergence_conflict?: boolean;
+  retested?: boolean;
+  volume_confirmed?: boolean;
+  rsi_tfs?: string[];
+  supply_tfs?: string[];
+  demand_tfs?: string[];
+  sources?: ("B1" | "B2" | "HORIZONTAL" | "ZONE" | "SESSION")[];
+  trigger_ohlc?: { open: number; high: number; low: number; close: number };
+  breakout_level?: number;
+  reference_price?: number;
+  previous_atr?: number;
+  buffer?: number;
+  clearance?: number;
+  gates?: { name: string; status: string }[];
+}
+
 /** One row, the same shape for every source (proposal, scan setup or match, Autopilot fill, generated signal). */
 export interface SignalFeedItem {
   /** "<source>:<id>" - action, intent, alert, trade or history. */
@@ -40,6 +74,15 @@ export interface SignalFeedItem {
   outcome: string | null;
   /** M55 T2: an option / structure proposal's legs in order words (his own order), e.g. "Sell 1 lot NIFTY 24500 PE, ...". */
   legs?: string[];
+  signal_type?: "amw_breakout";
+  variant?: "BO-01" | "BO-02" | "BO-03" | "BO-04";
+  grade?: "A1" | "STRONG";
+  breakout?: BreakoutEvidence;
+}
+
+export function breakoutCaption(item: SignalFeedItem): string {
+  if (item.signal_type !== "amw_breakout") return "";
+  return [item.setup, item.variant, item.grade === "STRONG" ? "Strong" : item.grade].filter(Boolean).join(" · ");
 }
 
 export interface SignalFeed {
@@ -127,7 +170,7 @@ export function effectiveStatus(item: Pick<SignalFeedItem, "status" | "expires_a
 
 /** True when the trader can decide this row now: a waiting entry proposal that has not expired. */
 export function canDecide(item: SignalFeedItem, now: Date): boolean {
-  return item.action_id !== null && effectiveStatus(item, now) === "waiting";
+  return item.signal_type !== "amw_breakout" && item.action_id !== null && effectiveStatus(item, now) === "waiting";
 }
 
 /** "8 min", "1 h 5 min"; null when expired or without an expiry. */

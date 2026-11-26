@@ -782,7 +782,7 @@ class JournalDeliveryPrefs(_Prefs):
     weekly_day: Literal["SAT", "SUN"] = "SAT"
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
+NAMESPACES: Dict[str, Type[BaseModel]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
                                        "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs, "daily_report": DailyReportPrefs,
                                        "fno": FnoPrefs, "smart_execution": SmartExecutionPrefs, "notices": NoticesPrefs,
@@ -797,8 +797,17 @@ NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs,
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 
+def _namespace_model(namespace: str) -> type[BaseModel]:
+    # Paper runners import shared preferences but must not load screener modules.
+    if namespace == "amw_breakout":
+        from app.screener.breakouts.amw_preferences import BreakoutPreferences
+
+        return BreakoutPreferences
+    return NAMESPACES[namespace]
+
+
 def defaults(namespace: str) -> Dict[str, Any]:
-    return NAMESPACES[namespace]().model_dump(mode="json")
+    return _namespace_model(namespace)().model_dump(mode="json")
 
 
 def _drop_at(data: Dict[str, Any], loc: Tuple[Any, ...]) -> bool:
@@ -818,7 +827,7 @@ def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
     dropped, and so is each value that no longer validates (that field takes its default, the rest is kept - one bad
     setup mark never loses the others); a value that still cannot be read falls back to the defaults, so a read never
     fails."""
-    model = NAMESPACES[namespace]
+    model = _namespace_model(namespace)
     try:
         data = json.loads(raw or "{}")
     except (TypeError, ValueError):
@@ -855,11 +864,19 @@ async def read_body(request: Request) -> bytes:
 
 def _validate(namespace: str, raw: bytes) -> Dict[str, Any]:
     try:
-        return NAMESPACES[namespace].model_validate_json(raw or b"null").model_dump(mode="json")
+        return _namespace_model(namespace).model_validate_json(raw or b"null").model_dump(mode="json")
     except ValidationError as exc:
         # The input is never echoed back (main.py's rule for 422s): where and what only.
         problems = [{"loc": list(e.get("loc", ())), "msg": e.get("msg", "invalid")} for e in exc.errors(include_input=False, include_url=False)]
         raise HTTPException(status_code=422, detail=problems) from None
+
+
+@router.get("/amw-breakout/status")
+async def breakout_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    from app.screener.breakouts.amw_breakout import BREAKOUT_SOURCES, TIMEFRAMES
+    from app.screener.breakouts.amw_status import owner_status
+
+    return {**await owner_status(session, user), "timeframes": sorted(TIMEFRAMES), "sources": sorted(BREAKOUT_SOURCES)}
 
 
 @router.get("/prefs")
@@ -867,7 +884,7 @@ async def get_prefs(user: User = Depends(get_current_user), session: AsyncSessio
     """Every namespace of the caller's own preferences, defaults filled in; version 0 = never saved."""
     rows = {r.namespace: r for r in await session.scalars(select(UserPrefsRecord).where(*_own(user.tenant_id, user.id)))}
     prefs, versions = {}, {}
-    for namespace in NAMESPACES:
+    for namespace in (*NAMESPACES, "amw_breakout"):
         row = rows.get(namespace)
         prefs[namespace] = stored_value(namespace, row.value_json if row else None)
         versions[namespace] = row.version if row else 0
@@ -879,7 +896,7 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
                     session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Replaces one namespace of the caller's own preferences with the body (fields left out take their defaults).
     `version` (optional): the version the change was made on; a stale one is refused with 409 and the current value."""
-    if namespace not in NAMESPACES:
+    if namespace != "amw_breakout" and namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
     if namespace == trade_settings.NAMESPACE:            # one write path: it saves only the fields sent (M68 PR-0)
         raise HTTPException(status_code=405, detail="Trade settings are saved at PUT /api/me/trade-settings")

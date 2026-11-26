@@ -363,3 +363,9 @@ now P1-2b, P1-4, P1-6.
 
 ## Owner tasks (shown in every report until done)
 - R2 bucket + key escrow; Telegram bot / SMTP; company registration; lawyer (legal pages, SEBI / static-IP list); Razorpay; Firebase / Play Console; WhatsApp number; Google OAuth credentials.
+
+### AMW-BO — Informational breakout signals
+
+Development branch implements the shared B1/B2 policy and informational publisher. Isolated validation and production data coverage are required before activation. See [AMW Breakout](AMW_BREAKOUT_SIGNALS.md).
+
+Phase 2 development adds opt-in sources, dashboard status, Inbox evidence, scan-local memoization and offline replay. Full CI, browser E2E and real-market validation remain release gates.

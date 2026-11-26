@@ -11,7 +11,7 @@ import copilotPageSource from "../pages/AiCopilotPage.tsx?raw";
 import type { AiAction, StrategyInfo } from "../types";
 import { FeaturesProvider } from "../ui/useFeatures";
 import feedSource from "./feed.ts?raw";
-import { LevelsChart, SignalDetail, StatusChip } from "./SignalPartsV2";
+import { LevelsChart, SignalActions, SignalDetail, StatusChip } from "./SignalPartsV2";
 import partsSource from "./SignalPartsV2.tsx?raw";
 import { feedItem } from "./signals.fixture";
 import SignalsV2 from "./SignalsV2";
@@ -44,6 +44,39 @@ describe("UI2-3 status chip", () => {
 });
 
 describe("UI2-3 detail panel", () => {
+  it("shows breakout evidence at phone and desktop widths without any order shortcuts", () => {
+    const item = feedItem({
+      id: "history:44", symbol: "NIFTY", setup: "AMW Breakout", signal_type: "amw_breakout",
+      status: "info", action_id: null, mode: null, entry: null, stop: null, target: null, rr: null,
+      grade: "A1", variant: "BO-02", reasons: ["The range was broken.", "Buy at 12345"],
+      breakout: {
+        score: 89, timeframe: "15m", confirmed_at: "2026-10-08T05:00:00Z", acceptance: "RETEST_BREAKOUT",
+        breakout_level: 22100, reference_price: 22150, previous_atr: 60, buffer: 0.2,
+        trigger_ohlc: { open: 22095, high: 22160, low: 22090, close: 22140 },
+        sources: ["HORIZONTAL", "SESSION"],
+        gates: [{ name: "Opposing zone", status: "PASS" }],
+        opposing_area: { low: 22400, high: 22450, timeframe: "1h" }, clearance_atr: 2.5,
+        factors: [{ component: "structure", maximum: 15, awarded: 15 }],
+      },
+    });
+    for (const compact of [false, true]) {
+      const html = renderToStaticMarkup(
+        <FeaturesProvider userKey={1} value={{ ui_v2: true, paper_account: true, setup_recall: true }}>
+          <MemoryRouter>
+            <SignalDetail item={item} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />
+            <SignalActions item={item} now={NOW} compact={compact} canTrade onDone={noop} onError={noop} />
+          </MemoryRouter>
+        </FeaturesProvider>,
+      );
+      const words = text(html);
+      for (const label of ["Why this signal", "Signal quality 89 / 100", "Retest confirmed", "Nearest supply zone",
+        "Room to the next zone", "Breakout candle", "Support or resistance", "Previous session high or low",
+        "Confirmation checks", "Open current chart", "Score breakdown", "Market structure", "The range was broken."]) expect(words).toContain(label);
+      expect(html).toContain('href="/charts/NIFTY?tf=15min"');
+      expect(html).not.toMatch(/data-setup-trade-link|data-setup-link|broker-app|Approve|>Skip<|Buy at 12345/);
+    }
+  });
+
   it("a waiting signal: header, levels, six figures, reasons, risk sentences and one primary action", () => {
     const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />);
     const words = text(html);

@@ -7,12 +7,15 @@ import type { CombinedExit } from "../fno/combinedExit";
  * basket's and the strikes he holds), the basket's breakevens (the server's figures) and his own spot-based stop /
  * target of a combined exit. Lines only, from his own data: nothing is suggested. Pure.
  */
-export function terminalLevels({ underlying, expiry, basket, held, breakevens, combined, spotSymbol }: {
+export function terminalLevels({ underlying, expiry, basket, held, heldSides, breakevens, combined, spotSymbol }: {
   underlying: string;
   expiry: string | null;
   basket: readonly BasketLeg[];
   /** "strike|CE" / "strike|PE" he holds on this underlying and expiry (the chain's "P" marks). */
   held: ReadonlySet<string>;
+  /** Owner 26 Nov ("Held ase ka, confuse karte"): his side on each held strike - the line reads "Short 25800 PE" (red) / "Long
+   *  25650 PE" (green), the Positions panel's words; a strike without a known side reads "Open 25800 PE". */
+  heldSides?: ReadonlyMap<string, "BUY" | "SELL">;
   breakevens: readonly number[] | null;
   combined: readonly CombinedExit[];
   spotSymbol: string;
@@ -31,7 +34,10 @@ export function terminalLevels({ underlying, expiry, basket, held, breakevens, c
   }
   for (const k of held) {
     const [strike, right] = k.split("|");
-    add(Number(strike), `Held ${strike} ${right}`, "neutral");
+    const side = heldSides?.get(k);
+    if (side === "SELL") add(Number(strike), `Short ${strike} ${right}`, "down");
+    else if (side === "BUY") add(Number(strike), `Long ${strike} ${right}`, "up");
+    else add(Number(strike), `Open ${strike} ${right}`, "neutral");
   }
   for (const b of breakevens ?? []) add(Math.round(b * 100) / 100, "Breakeven", "neutral");
   for (const c of combined) {

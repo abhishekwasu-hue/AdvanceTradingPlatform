@@ -753,10 +753,24 @@ describe("TERM-2 step 2: the chart's lines", () => {
     expect(lines).toEqual([
       { price: 24500, title: "Sell 24500 CE", tone: "down" },
       { price: 24600, title: "Buy 24600 CE", tone: "up" },
-      { price: 25000, title: "Held 25000 CE", tone: "neutral" },
+      { price: 25000, title: "Open 25000 CE", tone: "neutral" },
       { price: 24651.5, title: "Breakeven", tone: "neutral" },
       { price: 24800, title: "Your stop", tone: "down" },
     ]);
+  });
+});
+
+describe("owner 26 Nov: a held strike on the chart names his side, never \"Held\"", () => {
+  it("Short (red) / Long (green), as the Positions panel", () => {
+    const lines = terminalLevels({ underlying: "NIFTY", expiry: "2026-12-01", basket: [],
+      held: new Set(["25800|PE", "25650|PE", "26050|CE"]),
+      heldSides: new Map([["25800|PE", "SELL"], ["25650|PE", "BUY"]] as const), breakevens: null, combined: [], spotSymbol: "NIFTY 50" });
+    expect(lines).toEqual([
+      { price: 25800, title: "Short 25800 PE", tone: "down" },
+      { price: 25650, title: "Long 25650 PE", tone: "up" },
+      { price: 26050, title: "Open 26050 CE", tone: "neutral" },
+    ]);
+    expect(lines.map((l) => l.title).join(" ")).not.toMatch(/Held/);
   });
 });
 

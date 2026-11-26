@@ -34,12 +34,12 @@ test("breakout settings save and reload without enabling the worker", async ({ p
   await page.getByRole("option", { name: "5m", exact: true }).click();
   await rsi.getByRole("combobox", { name: "Direction" }).click();
   await page.getByRole("option", { name: "Bearish only", exact: true }).click();
-  await expect(pure.getByLabel("Direction")).toContainText("Bullish and bearish");
+  await expect(pure.getByRole("combobox", { name: "Direction" })).toContainText("Bullish and bearish");
   await expect(panel.getByText("Unsaved changes")).toBeVisible();
   await panel.getByRole("button", { name: "Save breakout settings" }).click();
   await expect(panel.getByText("Breakout settings saved.")).toBeVisible();
   await page.reload();
   await expect(pure.getByLabel("Breakout timeframe")).toContainText("5m");
-  await expect(rsi.getByLabel("Direction")).toContainText("Bearish only");
+  await expect(rsi.getByRole("combobox", { name: "Direction" })).toContainText("Bearish only");
   await expect(panel.getByLabel("Enable informational breakout signals")).not.toBeChecked();
 });

@@ -51,6 +51,9 @@ async def _ready(loop: asyncio.AbstractEventLoop) -> tuple[dict[str, Any] | None
             return None, None, "no platform owner is set on this server"
         if not await flag_enabled(s, job.FLAG, who.tenant_id):
             return None, None, "the bot is OFF (Admin: srv2_bot)"
+        from app.secrets_store.envelope import ensure_tenant_key
+        await ensure_tenant_key(s, who.tenant_id)      # owner VPS 26 Nov: a fresh process has no data key, so no token could be read
+        await s.commit()
         calendar = await job.calendar_for(s, datetime.now(UTC))
     return bot_io.build(loop, _session_factory, who, _usable_adapter), calendar, ""
 

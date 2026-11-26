@@ -101,6 +101,21 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             raise RuntimeError("the owner's Upstox session is not usable (log in again)")
         return broker
 
+    async def _data_broker(session):
+        """For market-data reads only (option chain, last prices, candles): the logged-in session first; without the daily login, the
+        owner's Upstox Analytics Token (one year, data only - CLAUDE.md: the default connection for data and PAPER), as ATP's own data
+        reads choose (market_data/candles_routes.py: token_is_usable, else data_is_usable). Never for funds or orders."""
+        broker = await usable_adapter(session, owner.tenant_id, UPSTOX, owner.user.id, datetime.now(UTC))
+        if broker is not None:
+            return broker
+        from app.brokers.token_lifecycle import build_adapter, data_is_usable, get_credential_record
+        from app.secrets_store.envelope import ensure_tenant_key
+        await ensure_tenant_key(session, owner.tenant_id)
+        record = await get_credential_record(session, owner.tenant_id, UPSTOX)
+        if not data_is_usable(record):
+            raise RuntimeError("the owner's Upstox session is not usable and no Analytics Token serves data (log in again)")
+        return build_adapter(record)
+
     def settings(strategy: str, symbol: str) -> dict | None:
         async def go():
             async with session_factory() as s:
@@ -108,14 +123,24 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
         return call(go)
 
     def token() -> str | None:
+        """The token the bot's own Upstox reads use (data only: PAPER, LIVE is not wired): the daily session's when it is usable, else
+        the Analytics Token's when it serves data (owner VPS 26 Nov: before the daily login the bot had no data at all)."""
         async def go():
             from app.brokers.token_lifecycle import get_credential_record, load_credentials, token_is_usable
+            from app.brokers.upstox_analytics import analytics_usable
+            from app.secrets_store.envelope import ensure_tenant_key
             async with session_factory() as s:
-                await _broker(s)                                   # the worker's check (refreshes the token status)
+                await ensure_tenant_key(s, owner.tenant_id)          # a fresh process (the TEST card) has no data key loaded yet
+                try:
+                    await _broker(s)                               # the worker's check (refreshes the token status)
+                except RuntimeError:
+                    pass                                           # no daily session: the Analytics Token may still serve data
                 record = await get_credential_record(s, owner.tenant_id, UPSTOX)
-                if not token_is_usable(record):
-                    return None
-                return load_credentials(record).access_token
+                if token_is_usable(record):
+                    return load_credentials(record).access_token
+                if record is not None and analytics_usable(record):
+                    return load_credentials(record).analytics_token
+                return None
         try:
             return call(go)
         except Exception as exc:  # noqa: BLE001 - Trade: no token -> the bot says so and enters nothing
@@ -142,7 +167,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
                 days = await _expiries(s, symbol)
                 if len(days) <= expiry_index:
                     return None, "no such expiry in the instrument master"
-                broker = await _broker(s)
+                broker = await _data_broker(s)
                 return await broker.get_option_chain_raw(UNDERLYING.get(symbol, symbol), date.fromisoformat(days[expiry_index])), ""
         try:
             return call(go)
@@ -152,7 +177,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
     def ltp(tok: str, keys: list[str]) -> tuple[dict[str, float], str | None]:
         async def go():
             async with session_factory() as s:
-                broker = await _broker(s)
+                broker = await _data_broker(s)
                 return await broker.get_ltp_by_key(list(keys)), None
         try:
             return call(go)
@@ -175,7 +200,7 @@ def build(loop: asyncio.AbstractEventLoop, session_factory: Callable, owner: Own
             bars: list[Any] = []
             failed = 0
             async with session_factory() as s:
-                broker = await _broker(s)
+                broker = await _data_broker(s)
                 if step == "day":
                     try:
                         bars += await broker.get_historical_data(name, exchange, "day", datetime.combine(today - timedelta(days=days), datetime.min.time()),

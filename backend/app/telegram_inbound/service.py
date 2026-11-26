@@ -737,6 +737,9 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
                 logger.warning("Telegram callback from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
         data = str(callback.get("data") or "")
+        from app.srv2bot import inbox as srv2_inbox
+        if srv2_inbox.is_bot_callback(data) and await srv2_inbox.forward(session, tenant.id, update):
+            return {"handled": "srv2"}          # owner 26 Nov: the 15M SRv2 bot's own button - its Telegram service answers it
         if data.startswith("oi:"):                   # OI Banner O4b: snooze / mute - an authorised sender only, never an order
             from app.option_chain import oi_alerts
             actor = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)

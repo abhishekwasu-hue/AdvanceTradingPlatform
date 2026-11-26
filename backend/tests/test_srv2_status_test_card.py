@@ -210,3 +210,51 @@ def test_an_older_private_card_without_a_calendar_is_called_as_before():
     seen = []
     assert TC._run_card(NS(main=lambda argv: seen.append(argv) or 0), ["--symbol", "NIFTY"], "cal") == 0
     assert seen == [["--symbol", "NIFTY"]]
+
+
+# --- owner 26 Nov: "no chart: no 1m candles" and "This button is not valid for this organisation" -----------------------------------
+
+def test_minute_history_is_asked_in_windows_of_at_most_seven_days(monkeypatch):
+    spans = []
+
+    class Broker:
+        async def get_historical_data(self, name, exchange, interval, start, end):
+            spans.append((interval, (end - start).days + 1))
+            return []
+
+        async def get_intraday_candles(self, name, exchange, interval):
+            return []
+
+    async def usable(session, tenant_id, broker, user_id, now):
+        return Broker()
+    loop = asyncio.new_event_loop()
+    import threading
+    th = threading.Thread(target=loop.run_forever, daemon=True)
+    th.start()
+    try:
+        impls = bot_io.build(loop, _session_factory, bot_io.Owner(1, NS(id=1)), usable)
+        impls["candles"]("tok", "NIFTY", 0, interval="1minute", lookback_days=21)
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        th.join(timeout=5)
+    assert spans and all(i == "1min" and d <= 7 for i, d in spans) and len(spans) >= 3
+
+
+def test_the_bots_own_button_press_is_handed_to_the_bot_only_for_the_owner_with_the_bot_on(monkeypatch):
+    from app.srv2bot import inbox
+    seen = []
+    loader.set_for_tests(NS(host=None, runner=NS(enqueue_update=lambda u: seen.append(u) or True)))
+
+    async def owner(session):
+        return bot_io.Owner(1, NS(id=1))
+    monkeypatch.setattr(job, "owner", owner)
+    _flag(monkeypatch)
+    upd = {"update_id": 1, "callback_query": {"data": "v1|sid|A|sig"}}
+    assert inbox.is_bot_callback("v1|sid|A|sig") and not inbox.is_bot_callback("p:nonce")
+    assert asyncio.run(inbox.forward(None, 1, upd)) is True and seen == [upd]
+    assert asyncio.run(inbox.forward(None, 2, upd)) is False                 # another organisation: ATP answers as before
+    _flag(monkeypatch, on=False)
+    assert asyncio.run(inbox.forward(None, 1, upd)) is False                 # the bot OFF: ATP answers as before
+    _flag(monkeypatch)
+    loader.set_for_tests(NS(host=None, runner=NS(enqueue_update=lambda u: (_ for _ in ()).throw(OSError("disk")))))
+    assert asyncio.run(inbox.forward(None, 1, upd)) is False                 # a failed hand-over falls back

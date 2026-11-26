@@ -1,13 +1,12 @@
-# HANDOVER_NOW (21 Nov, late)
+# HANDOVER_NOW (26 Nov) - SRV2 bot chain
 
-Merged: P2-8 Journal v2 (#1147/#1148/#1150, 3 migrations); #1157 Conclusion glance; #1158 SRV2-Q8 ATP; SRV2 P2+P4 settings + positions card (#1154; atp-private
-#22, #23, #24 = SRV2-Q8 advanced engine fields). ATP_PRIVATE_REF = e3767d47f337f6addb9eed8f4867d6a817cac441.
-SRV2 P5: atp-private docs/SRV2_P5_PARITY.md; SRV2-Q9 = both bots PAPER on one live day (owner).
+Done (merged / in PR): Vision chart candles (7-day 1m windows), the bot's ✅/❌ presses and typed replies routed from ATP's webhook
+to the bot (atp-private inbox, #32/#33), Vision service heartbeat + TEST card (private #27-#31), Terminal "My trading agent" line,
+OI-reversal exit no longer blocks exits (private #33), /status /positions /paper (private #29).
 
-Open PRs (merge on green CI):
-- #1161 templates: the trader picks the timeframe (no default).
-- #1164 drawings like a pro app: handles + selection bar (colour, width, style, extend, lock,
-  duplicate, delete). Open: inline text tool instead of the browser prompt (default yes).
-
-Owner: deploy after 15:30 IST (migration yes) with the new ATP_PRIVATE_REF; flags srv2_bot,
-terminal_conclusion, discipline_engine on; check Journal, agent cards, Conclusion on phone.
+Next session:
+1. Deploy + TEST card after 15:35 IST; check the card's chart and ✅.
+2. #1175 Analytics Token for the bot (owner: later).
+3. Owner decision pending - one Telegram system for all bots: default B (each bot's own card + one router by callback
+   prefix, one status line / TEST card / heartbeat per bot); /status: ATP answers and adds the SRV2 line.
+4. #1170 AMW Breakout: merge on green (owner said Merge); keep AMW_BREAKOUT_SCAN_ENABLED=0.

@@ -210,3 +210,69 @@ def test_an_older_private_card_without_a_calendar_is_called_as_before():
     seen = []
     assert TC._run_card(NS(main=lambda argv: seen.append(argv) or 0), ["--symbol", "NIFTY"], "cal") == 0
     assert seen == [["--symbol", "NIFTY"]]
+
+
+# --- owner VPS 26 Nov: the Analytics Token serves the bot's data without the daily login ----------------------------------------------
+
+def _patch_tokens(monkeypatch, *, session_ok, analytics_ok):
+    import app.brokers.token_lifecycle as TL
+    import app.brokers.upstox_analytics as UA
+    import app.secrets_store.envelope as EV
+    record = NS(id=1)
+
+    async def get_record(session, tenant_id, broker, account_label="primary"):
+        return record
+
+    async def key(session, tenant_id):
+        return None
+    monkeypatch.setattr(TL, "get_credential_record", get_record)
+    monkeypatch.setattr(TL, "token_is_usable", lambda r, now=None: session_ok)
+    monkeypatch.setattr(TL, "data_is_usable", lambda r, now=None: session_ok or analytics_ok)
+    monkeypatch.setattr(TL, "load_credentials", lambda r: NS(access_token="daily", analytics_token="analytics"))
+    monkeypatch.setattr(TL, "build_adapter", lambda r: "analytics-adapter")
+    monkeypatch.setattr(UA, "analytics_usable", lambda r, now=None: analytics_ok)
+    monkeypatch.setattr(EV, "ensure_tenant_key", key)
+
+
+def _impls(usable):
+    loop = asyncio.new_event_loop()
+    import threading
+    th = threading.Thread(target=loop.run_forever, daemon=True)
+    th.start()
+    return loop, th, bot_io.build(loop, _session_factory, bot_io.Owner(1, NS(id=1)), usable)
+
+
+@pytest.mark.parametrize("session_ok,analytics_ok,want", [(True, True, "daily"), (False, True, "analytics"), (False, False, None)])
+def test_the_bots_token_is_the_daily_one_else_the_analytics_token(monkeypatch, session_ok, analytics_ok, want):
+    _patch_tokens(monkeypatch, session_ok=session_ok, analytics_ok=analytics_ok)
+
+    async def usable(session, tenant_id, broker, user_id, now):
+        return "session-adapter" if session_ok else None
+    loop, th, impls = _impls(usable)
+    try:
+        assert impls["token"]() == want
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        th.join(timeout=5)
+
+
+def test_data_reads_fall_back_to_the_analytics_token_but_funds_never_do(monkeypatch):
+    _patch_tokens(monkeypatch, session_ok=False, analytics_ok=True)
+    seen = []
+
+    async def usable(session, tenant_id, broker, user_id, now):
+        return None
+
+    class Adapter:
+        async def get_ltp_by_key(self, keys):
+            seen.append("ltp")
+            return {"k": 1.0}
+    import app.brokers.token_lifecycle as TL
+    monkeypatch.setattr(TL, "build_adapter", lambda r: Adapter())
+    loop, th, impls = _impls(usable)
+    try:
+        assert impls["ltp"]("tok", ["k"]) == ({"k": 1.0}, None) and seen == ["ltp"]
+        assert impls["funds"]("tok") is None                       # funds need the daily session: no analytics fallback
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        th.join(timeout=5)

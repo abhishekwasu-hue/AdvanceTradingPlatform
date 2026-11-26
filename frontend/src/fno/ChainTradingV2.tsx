@@ -42,6 +42,8 @@ type Note = { kind: "done" | "warn"; text: string } | null;
 export interface ChainTrading {
   enabled: boolean;
   held: ReadonlySet<string>;
+  /** "strike|CE" -> his side on it (owner 26 Nov: the chart names a held strike Short / Long, not "Held"). */
+  heldSides?: ReadonlyMap<string, Side>;
   onPickLeg?: (row: ChainRow, side: "call" | "put") => void;
   /** Added to the table's centre key: a new value centres the ATM row again. */
   centreSuffix: string;
@@ -114,6 +116,7 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   }, [enabled, symbol, expiry, round, fno]);
 
   const heldSet = useMemo(() => new Set(held.map((h) => heldKey(h.strike, h.right))), [held]);
+  const heldSides = useMemo(() => new Map(held.map((h) => [heldKey(h.strike, h.right), h.side] as const)), [held]);
   const row = action && live ? live.rows.find((r) => r.strike === action.strike) ?? null : null;
   const target: ActionTarget | null = row && action && expiry
     ? { underlying: symbol, expiry, strike: row.strike, right: action.side === "call" ? "CE" : "PE", leg: row[action.side], spotSymbol: spotSymbolOf(symbol) }
@@ -168,10 +171,11 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
     setBasketOpen(true);
   }
 
-  if (!enabled) return { enabled: false, held: heldSet, centreSuffix: "", strip: null, layer: null };
+  if (!enabled) return { enabled: false, held: heldSet, heldSides, centreSuffix: "", strip: null, layer: null };
   return {
     enabled,
     held: heldSet,
+    heldSides,
     onPickLeg: (r, side) => { setNote(null); setAction({ strike: r.strike, side }); },
     centreSuffix: recentre ? `|${recentre}` : "",
     tradeSetup,

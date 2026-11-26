@@ -214,7 +214,8 @@ function TerminalNowV2({ terminal = defaultTerminalApi }: PageProps & { terminal
   const legs = useBasket();
   const [breakevens, setBreakevens] = useState<number[] | null>(null);
   const levels = useMemo(() => terminalLevels({ underlying, expiry: live?.expiry ?? chain.expiry, basket: legs, held: trading.held,
-    breakevens, combined: combined.list, spotSymbol }), [underlying, live?.expiry, chain.expiry, legs, trading.held, breakevens, combined.list, spotSymbol]);
+    heldSides: trading.heldSides, breakevens, combined: combined.list, spotSymbol }),
+  [underlying, live?.expiry, chain.expiry, legs, trading.held, trading.heldSides, breakevens, combined.list, spotSymbol]);
   const afterOrder = () => { reloadPositions(); reloadOrders(); reloadExposure(); };
   // TERM-CON C2: the Conclusion re-reads when his positions or orders change (the lists the Terminal already polls; no
   // timer of its own). C3 adds the bar close and the OI slot.
